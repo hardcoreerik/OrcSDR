@@ -814,6 +814,26 @@ void draw_band_label() {
 
 void draw_footer();
 
+void draw_idle_spectrum() {
+  M5.Display.fillRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, TFT_BLACK);
+  M5.Display.drawRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, kDim);
+  for (int i = 1; i < 5; ++i) {
+    M5.Display.drawFastHLine(kPlotX, kSpectrumY + i * kSpectrumH / 5, kPlotW, kDim);
+    M5.Display.drawFastVLine(kPlotX + i * kPlotW / 5, kSpectrumY, kSpectrumH, kDim);
+  }
+}
+
+void draw_waterfall_tuner_state(bool popup_over = false) {
+  const int bottom = popup_over ? kPopY : kWaterfallY + kWaterfallH - 1;
+  M5.Display.fillRect(kPlotX + 1, kWaterfallY + 1, kPlotW - 2,
+                      bottom - kWaterfallY - 1, TFT_BLACK);
+  if (current.tuner_out_of_range) {
+    const int center = kPlotX + kPlotW / 2;
+    text("Not supported by this tuner", center, kWaterfallY + 36, TFT_ORANGE, 3, middle_center);
+    text("Tune to a supported frequency", center, kWaterfallY + 69, TFT_LIGHTGREY, 2, middle_center);
+  }
+}
+
 void draw_receiver_chrome(bool keep_graphics = false) {
   if (keep_graphics) M5.Display.fillRect(kPopX, kPopY, kPopW, kPopH, TFT_BLACK);
   frame(kMainX, kMainY, kMainW, kMainH, kCyan, 12);
@@ -823,15 +843,11 @@ void draw_receiver_chrome(bool keep_graphics = false) {
     M5.Display.drawRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, kDim);
     M5.Display.drawRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, kDim);
   } else {
-    M5.Display.fillRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, TFT_BLACK);
-    M5.Display.drawRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, kDim);
-    for (int i = 1; i < 5; ++i) {
-      M5.Display.drawFastHLine(kPlotX, kSpectrumY + i * kSpectrumH / 5, kPlotW, kDim);
-      M5.Display.drawFastVLine(kPlotX + i * kPlotW / 5, kSpectrumY, kSpectrumH, kDim);
-    }
+    draw_idle_spectrum();
     M5.Display.fillRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, TFT_BLACK);
     M5.Display.drawRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, kDim);
   }
+  if (current.tuner_out_of_range) draw_waterfall_tuner_state();
   draw_frequency();
   draw_mode_chip(current.mode[0] ? current.mode : "--");
   draw_tuning_controls();
@@ -1019,6 +1035,7 @@ void update(const Snapshot& snapshot) {
     current = snapshot;
     return;
   }
+  const bool waterfall_state_changed = snapshot.tuner_out_of_range != current.tuner_out_of_range;
   const bool tuner_changed = snapshot.tuner_revision != current.tuner_revision;
   const bool audio_changed = snapshot.audio_revision != current.audio_revision;
   const bool status_changed = snapshot.status_revision != current.status_revision;
@@ -1038,6 +1055,14 @@ void update(const Snapshot& snapshot) {
   M5.Display.startWrite();
   if (status_changed || receiver_changed) draw_header_status();
   if (tuner_changed) draw_band_label();
+  if (waterfall_state_changed) {
+    if (current.tuner_out_of_range) {
+      draw_idle_spectrum();
+      g_px_valid = false;
+      spectrum_ceiling_valid = false;
+    }
+    draw_waterfall_tuner_state(covered);
+  }
   if (covered) {
     if (mode_popup && tuner_changed) draw_mode_popup();
     if (filter_popup && (bandwidth_changed || tuner_changed)) draw_filter_popup();
@@ -1083,7 +1108,8 @@ size_t g_px_first_bin = 0, g_px_visible_bins = 0;
 
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
                    float floor, bool audio_stressed) {
-  if (!shown || browser || keypad || levels == nullptr || visible_bins < 2) return;
+  if (!shown || browser || keypad || current.tuner_out_of_range ||
+      levels == nullptr || visible_bins < 2) return;
   const uint32_t now = millis();
   const uint32_t interval = audio_stressed ? 333 : plot::kSpectrumIntervalMs;
   if (now - last_spectrum_ms < interval) return;

@@ -9,8 +9,8 @@ Current source includes the Stage-1 optimized production DSP path (formerly the 
 `ORCSDR_DSP_LAB=1`, and are not WFM audio integrations. The dated
 [DSP closeout](docs/validation/dsp-stage1-stage2-closeout-2026-09-27.md) records their evidence.
 
-Current `main` pins `esp_rtl_sdr` at `43474869e061a78c209091f9b3a65c498ae64fb4`, the commit of the published driver release
-**`v0.9.4`** (the driver reports `0.9.4`). It contains the PC-measured V4L/V4/V3c gain, AGC, bias and
+The Tab5 firmware pins `esp_rtl_sdr` at `4bf017195502d1a413e155d5a79aee7cd086035b`, the commit of the published driver release
+**`v0.9.5`** (the driver reports `0.9.5`). It contains the PC-measured V4L/V4/V3c gain, AGC, bias and
 tuner-bandwidth controls, the V4L HF upconverter route, an optional direct HF route that OrcSDR uses on CB
 for the V4L and V4, and the live tuner-bandwidth fixes documented in
 [`docs/testing/v3c-tuner-bandwidth-transition-2026-09-28.md`](docs/testing/v3c-tuner-bandwidth-transition-2026-09-28.md).
@@ -49,7 +49,7 @@ and the [2026-11-04 documentation audit](docs/DOCUMENTATION_STATUS_AUDIT_2026-11
 | ESP-IDF | 5.5.4 |
 | ESP-Hosted host/C6 | 3.0.6 / 3.0.6 over Tab5 SDIO at the qualified 10 MHz clock |
 | M5Unified / M5GFX | 0.2.20 / 0.2.27 |
-| `esp-rtl-sdr` | published release `v0.9.4` (reports `0.9.4`), immutable pin `43474869e061a78c209091f9b3a65c498ae64fb4` in the manifest and lock file |
+| `esp-rtl-sdr` | published release `v0.9.5` (reports `0.9.5`), immutable pin `4bf017195502d1a413e155d5a79aee7cd086035b` in the manifest and lock file |
 | USB implementation | Current `esp-rtl-sdr` path; the legacy USB source is compiled out but remains in source. |
 | Radio policy | Receive-only. Transmission is Not Implemented. |
 
@@ -64,7 +64,7 @@ and the [2026-11-04 documentation audit](docs/DOCUMENTATION_STATUS_AUDIT_2026-11
 | RTL-SDR Blog V4 Lite (V4L) | **Fully supported / Hardware-Verified** | Physical FM streaming, hot-swap, cold-boot and live tuner-bandwidth acceptance recorded; historical start-up frequency anomalies remain documented below. [40 m FT8 reception](docs/user-guide/dashboards/ft8.md) was also accepted. |
 | Nooelec NESDR SMArt V5 | **Fully supported / RF-Verified** | Physical streaming, band-select and replug checks recorded; owner accepted [40 m FT8 at 7.074 MHz](docs/user-guide/dashboards/ft8.md) on 2026-10-09. General HF calibration/AM performance and external-upconverter setups are separate evidence gates. |
 | Earlier RTL-SDR Blog V3 variants | **Experimental / individually verify** | A V3 family profile exists, but V3c qualification does not automatically qualify all earlier hardware revisions. |
-| Nooelec NESDR SMArTee XTR / E4000 | **Driver fully implemented / OrcSDR works within tuner range** | The independent `esp-rtl-sdr` driver identifies, initializes, streams and tunes E4000 on supported frequencies; actual use in OrcSDR is maintainer-confirmed. Out-of-range dashboards (for example, broadcast AM, which E4000 cannot tune natively) may open, but do not initiate an invalid tune. OrcSDR does not currently configure an external converter for that band. Remaining work is consistent dashboard frequency/capability messaging and extended RF/band-edge calibration, **not** basic driver bring-up. See [field acceptance](docs/MAINTAINER_FIELD_ACCEPTANCE_2026-11-04.md). |
+| Nooelec NESDR SMArTee XTR / E4000 | **Driver fully implemented / OrcSDR works within tuner range** | The independent `esp-rtl-sdr` driver identifies, initializes, streams and tunes E4000 on supported frequencies; actual use in OrcSDR is maintainer-confirmed. Out-of-range dashboards (for example, broadcast AM, which E4000 cannot tune natively) may open, but do not initiate an invalid tune. OrcSDR does not currently configure an external converter for that band. An out-of-range tune shows a dashboard warning, and Home explains why the waterfall is idle. Extended RF and band-edge calibration is separate. See [field acceptance](docs/MAINTAINER_FIELD_ACCEPTANCE_2026-11-04.md). |
 | Other receivers | **Unsupported / Not Verified** | Generic RTL2832 compatibility is not claimed. |
 
 ## Capability and evidence matrix

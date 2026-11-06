@@ -2,8 +2,8 @@
 
 The public driver API is maintained in
 [`hardcoreerik/esp-rtl-sdr`](https://github.com/hardcoreerik/esp-rtl-sdr).
-Current OrcSDR uses the driver's published release **`v0.9.4`** (it reports `0.9.4`) at immutable
-commit `43474869e061a78c209091f9b3a65c498ae64fb4`. The same SHA is recorded in
+Current OrcSDR uses the driver's published release **`v0.9.5`** (it reports `0.9.5`) at immutable
+commit `4bf017195502d1a413e155d5a79aee7cd086035b`. The same SHA is recorded in
 `apps/orcsdr-tab5/main/idf_component.yml` and
 `apps/orcsdr-tab5/dependencies.lock`.
 
@@ -18,7 +18,7 @@ commit `43474869e061a78c209091f9b3a65c498ae64fb4`. The same SHA is recorded in
 | RTL-SDR Blog V4 Lite (V4L) | **Fully supported**; tested lifecycle, streaming and tuner controls, with accepted [40 m FT8 evidence](user-guide/dashboards/ft8.md). |
 | Nooelec NESDR SMArt V5 | **Fully supported**; tested streaming/controls and accepted [40 m FT8 evidence](user-guide/dashboards/ft8.md). |
 | Earlier Blog V3 variants | Experimental until individually verified; V3c acceptance does not automatically qualify them. |
-| Nooelec SMArTee XTR / E4000 | **Driver implemented; OrcSDR integration in progress**. E4000 profile lives upstream in `esp-rtl-sdr`; remaining OrcSDR work is frequency-range-aware tuning, dashboard gating, and acceptance of affected frequency-dependent workflows. Driver implementation does not establish universal dashboard compatibility. |
+| Nooelec SMArTee XTR / E4000 | **Supported within tuner range.** Dashboards show a warning for out-of-range frequencies. Home shows the reason in the waterfall and resumes reception after a supported retune. |
 | Other receivers | Unsupported / not verified without a named accepted profile. |
 
 OrcSDR deliberately selects callback delivery, three 32-KiB USB transfers, and

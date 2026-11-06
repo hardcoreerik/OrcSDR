@@ -2501,14 +2501,15 @@ void redraw_spectrum_panel();
 void draw_sdr_controls(RtlBand band, bool running);
 void handle_sdr_touch(int32_t x, int32_t y);
 void poll_sdr_touch(bool from_stream);
-bool request_hot_retune(uint32_t frequency_hz);
-bool request_hot_retune_for(orcsdr::radio::Token token, uint32_t frequency_hz);
+bool request_hot_retune(uint32_t frequency_hz, bool user_request = true);
+bool request_hot_retune_for(orcsdr::radio::Token token, uint32_t frequency_hz,
+                            bool user_request = false);
 void set_radio_session_state(orcsdr::radio::ReceiverState state);
 void ft8_native_release_rate();
 uint32_t rtl_fm_command_lo_hz(uint32_t display_hz);
 uint32_t rtl_fm_sanitize_display_hz(uint32_t frequency_hz);
 bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
-                            bool persist_navigation = true);
+                            bool persist_navigation = true, bool user_request = true);
 void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume);
 void refresh_active_screen();
 orcsdr::shortwave::Snapshot shortwave_dashboard_snapshot();
@@ -2751,7 +2752,21 @@ bool rtl_tuner_gain_available(uint32_t frequency_hz) {
   return rtl_tuner_gain_available_for_caps(frequency_hz, rtl_device_capabilities());
 }
 
+// Match the tuning limits of the pinned esp-rtl-sdr E4000 implementation.
+constexpr bool rtl_e4000_frequency_supported(uint32_t hz) {
+  return hz >= 64000000u && hz <= 1700000000u;
+}
+static_assert(!rtl_e4000_frequency_supported(63999999u));
+static_assert(rtl_e4000_frequency_supported(64000000u));
+static_assert(rtl_e4000_frequency_supported(1700000000u));
+static_assert(!rtl_e4000_frequency_supported(1700000001u));
+
+bool rtl_is_e4000() {
+  return g_rtl_profile.load(std::memory_order_acquire) == ESP_RTL_SDR_PROFILE_E4000;
+}
+
 bool rtl_frequency_supported(uint32_t frequency_hz) {
+  if (rtl_is_e4000()) return rtl_e4000_frequency_supported(frequency_hz);
   return rtl_frequency_supported_for_caps(frequency_hz, rtl_device_capabilities());
 }
 
@@ -2787,18 +2802,51 @@ void set_rtl_profile_status(const char* state) {
 }
 
 void report_unsupported_frequency(uint32_t frequency_hz) {
+  const bool e4000 = rtl_is_e4000();
   if (rtl_capture_state.load(std::memory_order_acquire) != RtlCaptureState::running) {
-    set_rtl_profile_status("below 24 MHz unavailable");
+    set_rtl_profile_status(e4000 ? "outside 64-1700 MHz" : "below 24 MHz unavailable");
   }
-  Serial.printf("RTL_TUNE_UNAVAILABLE profile=%u frequency_hz=%u reason=no_hf_upconverter\n",
+  Serial.printf("RTL_TUNE_UNAVAILABLE profile=%u frequency_hz=%u reason=%s\n",
                 static_cast<unsigned>(g_rtl_profile.load(std::memory_order_acquire)),
-                static_cast<unsigned>(frequency_hz));
+                static_cast<unsigned>(frequency_hz),
+                e4000 ? "receiver_range" : "no_hf_upconverter");
 }
 
-bool validate_rtl_tune_frequency(uint32_t frequency_hz) {
-  if (rtl_frequency_supported(frequency_hz)) return true;
+// Explicit rejected retunes keep the last valid stream. Keep their warning
+// local to the screen that made the request.
+uint32_t rtl_rejected_e4000_hz = 0;
+uint32_t rtl_rejected_screen_transition = 0;
+
+bool validate_rtl_tune_frequency(uint32_t frequency_hz, bool user_request = true) {
+  const bool supported = rtl_frequency_supported(frequency_hz);
+  if (user_request) {
+    rtl_rejected_e4000_hz = !supported && rtl_is_e4000() ? frequency_hz : 0;
+    rtl_rejected_screen_transition = orcsdr::screens::status().transitions;
+  }
+  if (supported) return true;
   report_unsupported_frequency(frequency_hz);
   return false;
+}
+
+orcsdr::map_download_notice::TuneWarning rtl_dashboard_tune_warning() {
+  using Id = orcsdr::screens::Id;
+  if (!rtl_device_ready() || !rtl_is_e4000()) {
+    rtl_rejected_e4000_hz = 0;
+    return {};
+  }
+  const auto& screen = orcsdr::screens::status();
+  switch (screen.active) {
+    case Id::home: case Id::fm: case Id::am: case Id::shortwave:
+    case Id::airband: case Id::cb: case Id::p25: case Id::adsb:
+    case Id::pocsag: case Id::lora: case Id::radio: case Id::ft8:
+    case Id::sstv: case Id::acars: case Id::dead_air: break;
+    default: return {};
+  }
+  const uint32_t hz = rtl_rejected_e4000_hz &&
+                      rtl_rejected_screen_transition == screen.transitions
+      ? rtl_rejected_e4000_hz : rtl_ui_frequency_hz;
+  if (rtl_e4000_frequency_supported(hz)) return {};
+  return {hz, g_rtl_is_nooelec_xtr.load(std::memory_order_acquire)};
 }
 #endif
 
@@ -9701,7 +9749,7 @@ static void rtl_driver_app_task(void *) {
       const RtlBand band = rtl_requested_band.load(std::memory_order_acquire);
       const uint32_t frequency_hz = rtl_requested_frequency_hz.load(std::memory_order_acquire);
       rtl_stop_requested.store(false, std::memory_order_release);
-      const bool queued = queue_local_rtl_listen(band, frequency_hz, false);
+      const bool queued = queue_local_rtl_listen(band, frequency_hz, false, false);
       Serial.printf("RTL_HOTPLUG_RESUME band=%s frequency_hz=%u queued=%d\n",
                     rtl_band_name(band), static_cast<unsigned>(frequency_hz), queued ? 1 : 0);
     }
@@ -9912,7 +9960,7 @@ static void rtl_driver_app_task(void *) {
             // FM owns its Settings/Spectrum surfaces.  Reset the shared
             // renderer for the scan, but never repaint legacy Browse chrome.
             reset_spectrum_renderer();
-            request_hot_retune(auto_fm_frequency_hz);
+            request_hot_retune(auto_fm_frequency_hz, false);
             auto_fm_sample_at_ms = now_retune + kRtlFmAutoSettleMs;
             rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
             Serial.println("RTL_AUTO_FM start");
@@ -9932,7 +9980,7 @@ static void rtl_driver_app_task(void *) {
             if (auto_fm_frequency_hz + kRtlFmAutoStepHz / 2 >= kRtlFmMaxHz) {
               auto_fm_scanning = false;
               rtl_auto_fm_active.store(false, std::memory_order_release);
-              request_hot_retune(auto_fm_best_hz);
+              request_hot_retune(auto_fm_best_hz, false);
               persist_fm_frequency(auto_fm_best_hz);
               rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
               Serial.printf("RTL_AUTO_FM done frequency_hz=%u level=%.1f\n",
@@ -9940,7 +9988,7 @@ static void rtl_driver_app_task(void *) {
             } else {
               auto_fm_frequency_hz += kRtlFmAutoStepHz;
               reset_spectrum_renderer();
-              request_hot_retune(auto_fm_frequency_hz);
+              request_hot_retune(auto_fm_frequency_hz, false);
               auto_fm_sample_at_ms = now_retune + kRtlFmAutoSettleMs;
             }
           }
@@ -13041,6 +13089,8 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
   const auto device = orcsdr::device_status::collect(
       wifi_connected, wifi_ssid, rtl_device_ready(), rtl_sdr_status);
   snapshot.frequency_hz = demo ? 145700000 : rtl_ui_frequency_hz;
+  snapshot.tuner_out_of_range = !demo && rtl_device_ready() && rtl_is_e4000() &&
+                                !rtl_e4000_frequency_supported(snapshot.frequency_hz);
   // The keypad accepts whatever the attached dongle can tune: HF too when it has direct sampling or an upconverter.
   snapshot.tune_min_hz = demo || !rtl_frequency_supported(kRtlBrowseMinHz) ? kRtlNoHfMinHz : kRtlBrowseMinHz;
   snapshot.requested_frequency_hz = demo
@@ -13173,6 +13223,7 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
 
   const bool tuner_changed = previous.revision == 0 ||
       snapshot.frequency_hz != previous.frequency_hz ||
+      snapshot.tuner_out_of_range != previous.tuner_out_of_range ||
       snapshot.requested_frequency_hz != previous.requested_frequency_hz ||
       snapshot.span_hz != previous.span_hz || snapshot.step_hz != previous.step_hz ||
       snapshot.filter_bandwidth_hz != previous.filter_bandwidth_hz ||
@@ -15941,7 +15992,7 @@ bool point_in_button(int32_t x, int32_t y) {
 }
 
 bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
-                            bool persist_navigation) {
+                            bool persist_navigation, bool user_request) {
   if (band == RtlBand::adsb) frequency_hz = kAdsbDefaultHz;
   if (band == RtlBand::lora) {
     load_lora_config();
@@ -15972,7 +16023,7 @@ bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
     return false;
   }
 #if !RTL_USE_LEGACY_USB
-  if (!validate_rtl_tune_frequency(frequency_hz)) {
+  if (!validate_rtl_tune_frequency(frequency_hz, user_request)) {
     // This receiver cannot tune here (e.g. a Blog V4L below 24 MHz), but the
     // caller still shows this band's dashboard. Show its own frequency rather
     // than the previous band's, and stop the previous band's stream instead of
@@ -16473,14 +16524,15 @@ uint32_t rtl_fm_command_lo_hz(uint32_t display_hz) {
   return rtl_clamp_frequency(RtlBand::fm, display_hz);
 }
 
-bool request_hot_retune_for(orcsdr::radio::Token token, uint32_t frequency_hz) {
+bool request_hot_retune_for(orcsdr::radio::Token token, uint32_t frequency_hz,
+                            bool user_request) {
   if (!radio_session.owns(token) || rtl_ui_band == RtlBand::wx ||
       rtl_ui_band == RtlBand::adsb)
     return false;
   frequency_hz = rtl_clamp_frequency(rtl_ui_band, frequency_hz);
   if (frequency_hz == 0) return false;
 #if !RTL_USE_LEGACY_USB
-  if (!validate_rtl_tune_frequency(frequency_hz)) return false;
+  if (!validate_rtl_tune_frequency(frequency_hz, user_request)) return false;
 #endif
   const uint32_t ui_quant_hz =
       rtl_ui_band == RtlBand::airband
@@ -16522,9 +16574,9 @@ bool request_hot_retune_for(orcsdr::radio::Token token, uint32_t frequency_hz) {
   return true;
 }
 
-bool request_hot_retune(uint32_t frequency_hz) {
+bool request_hot_retune(uint32_t frequency_hz, bool user_request) {
   const auto session = radio_session.snapshot();
-  return request_hot_retune_for({session.owner, session.generation}, frequency_hz);
+  return request_hot_retune_for({session.owner, session.generation}, frequency_hz, user_request);
 }
 
 // The C6 only relays bytes. Pairing, packet validation, and dashboard authority
@@ -23853,7 +23905,8 @@ void loop() {
     EXT_RAM_BSS_ATTR static orcsdr::maps::downloads::Snapshot notice;
     if(orcsdr::maps::downloads::snapshot(&notice)) {
       const bool blocked=map_download_notice_blocked();
-      orcsdr::map_download_notice::update(notice,orcsdr::screens::status().active,blocked);
+      orcsdr::map_download_notice::update(
+          notice, orcsdr::screens::status().active, blocked, rtl_dashboard_tune_warning());
     }
   }
   if (!rtl_ui_active.load(std::memory_order_acquire) &&
