@@ -14,6 +14,7 @@ struct Snapshot {
   uint32_t audio_revision = 0;
   uint32_t status_revision = 0;
   uint32_t frequency_hz = 0;
+  bool tuner_out_of_range = false;
   // What the attached dongle can tune; the keypad accepts exactly this range.
   uint32_t tune_min_hz = 24000000;
   uint32_t tune_max_hz = 1766000000;

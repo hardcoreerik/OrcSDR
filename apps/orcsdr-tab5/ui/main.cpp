@@ -13086,6 +13086,8 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
   const auto device = orcsdr::device_status::collect(
       wifi_connected, wifi_ssid, rtl_device_ready(), rtl_sdr_status);
   snapshot.frequency_hz = demo ? 145700000 : rtl_ui_frequency_hz;
+  snapshot.tuner_out_of_range = !demo && rtl_device_ready() && rtl_is_e4000() &&
+                                !rtl_e4000_frequency_supported(snapshot.frequency_hz);
   // The keypad accepts whatever the attached dongle can tune: HF too when it has direct sampling or an upconverter.
   snapshot.tune_min_hz = demo || !rtl_frequency_supported(kRtlBrowseMinHz) ? kRtlNoHfMinHz : kRtlBrowseMinHz;
   snapshot.requested_frequency_hz = demo
@@ -13218,6 +13220,7 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
 
   const bool tuner_changed = previous.revision == 0 ||
       snapshot.frequency_hz != previous.frequency_hz ||
+      snapshot.tuner_out_of_range != previous.tuner_out_of_range ||
       snapshot.requested_frequency_hz != previous.requested_frequency_hz ||
       snapshot.span_hz != previous.span_hz || snapshot.step_hz != previous.step_hz ||
       snapshot.filter_bandwidth_hz != previous.filter_bandwidth_hz ||
