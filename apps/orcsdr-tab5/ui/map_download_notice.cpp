@@ -12,6 +12,7 @@ bool dirty=true,drawn=false;
 screens::Id owner=screens::Id::none;
 maps::downloads::Phase previous=maps::downloads::Phase::idle;
 int previous_percent=-2;
+TuneWarning previous_warning{};
 bool eligible(screens::Id screen) {
   return screen!=screens::Id::none&&screen!=screens::Id::maps&&
       screen!=screens::Id::settings&&screen!=screens::Id::documentation&&
@@ -27,17 +28,35 @@ static_assert(x+width<audio_header::kTitleDividerX&&x+width<audio_header::kTitle
 }
 void invalidate(){dirty=true;}
 bool hit(int32_t px,int32_t py,screens::Id screen,bool blocked) {
-  return !blocked&&eligible(screen)&&drawn&&owner==screen&&
+  return !blocked&&eligible(screen)&&drawn&&!previous_warning.frequency_hz&&owner==screen&&
       px>=x&&px<x+width&&py>=y&&py<y+height;
 }
-void update(const maps::downloads::Snapshot& s,screens::Id screen,bool blocked) {
+void update(const maps::downloads::Snapshot& s,screens::Id screen,bool blocked,TuneWarning warning) {
   if(blocked||!eligible(screen)){drawn=false;owner=screens::Id::none;dirty=true;return;}
   using P=maps::downloads::Phase;
   const auto total=s.phase==P::verifying?s.verify_total_bytes:s.total_bytes;
   const auto used=s.phase==P::verifying?s.verified_bytes:s.completed_bytes;
   const int percent=total?static_cast<int>(std::min(used,total)*100/total):-1;
-  if(!dirty&&owner==screen&&previous==s.phase&&previous_percent==percent)return;
-  dirty=false;previous=s.phase;previous_percent=percent;
+  if(!dirty&&owner==screen&&(warning.frequency_hz||(previous==s.phase&&previous_percent==percent))&&
+     previous_warning.frequency_hz==warning.frequency_hz&&
+     previous_warning.nooelec_xtr==warning.nooelec_xtr)return;
+  dirty=false;previous=s.phase;previous_percent=percent;previous_warning=warning;
+  if(warning.frequency_hz) {
+    const uint16_t bg=0x0841;
+    M5.Display.fillRoundRect(x,y,width,height,6,bg);
+    M5.Display.drawRoundRect(x,y,width,height,6,TFT_ORANGE);
+    M5.Display.setFont(nullptr);
+    M5.Display.setTextDatum(middle_center);
+    M5.Display.setTextColor(TFT_ORANGE,bg);
+    M5.Display.setTextSize(1);
+    M5.Display.drawString(warning.nooelec_xtr?"Nooelec XTR":"E4000",x+width/2,y+9);
+    char frequency[16];
+    std::snprintf(frequency,sizeof(frequency),"%.3f MHz",warning.frequency_hz/1e6);
+    M5.Display.drawString(frequency,x+width/2,y+21);
+    M5.Display.drawString("Out of range",x+width/2,y+33);
+    M5.Display.drawString(warning.frequency_hz<64000000u?"Use upconverter":"64-1700 MHz",x+width/2,y+45);
+    drawn=true;owner=screen;return;
+  }
   if(!visible(s.phase)) {
     if(drawn&&owner==screen)M5.Display.fillRect(x,y,width,height,TFT_BLACK);
     drawn=false;owner=screen;return;

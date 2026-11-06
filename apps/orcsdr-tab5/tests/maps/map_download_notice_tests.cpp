@@ -53,6 +53,18 @@ int main() {
     assert(M5.Display.strings.size()==paints&&!map_download_notice::hit(360,40,screen,false));
   }
   enter(screens::Id::home);map_download_notice::update(s,screens::Id::home,false);
+  map_download_notice::update(s,screens::Id::home,false,{1600000,true});
+  assert(visible("Nooelec XTR")&&visible("1.600 MHz")&&visible("Out of range")&&visible("Use upconverter"));
+  assert(!map_download_notice::hit(360,40,screens::Id::home,false));
+  const int warning_paints=M5.Display.string_draw_calls;
+  for(int tick=0;tick<10;++tick) map_download_notice::update(s,screens::Id::home,false,{1600000,true});
+  assert(M5.Display.string_draw_calls==warning_paints&&M5.Display.screen_clears==0);
+  map_download_notice::update(s,screens::Id::home,false,{});
+  assert(visible("ERROR")&&!visible("Out of range"));
+  enter(screens::Id::am);
+  map_download_notice::update(s,screens::Id::am,false,{1600000,true});
+  assert(visible("Out of range")&&M5.Display.screen_clears==0);
+  enter(screens::Id::home);
   s.phase=P::idle;map_download_notice::update(s,screens::Id::home,false);
   assert(!map_download_notice::hit(360,40,screens::Id::home,false)&&M5.Display.screen_clears==0);
   std::puts("MAP_DOWNLOAD_NOTICE_PASS values, redraw bounds, ownership, blocked inputs and terminal states");

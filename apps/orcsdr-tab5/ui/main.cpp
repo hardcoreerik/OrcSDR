@@ -2751,7 +2751,21 @@ bool rtl_tuner_gain_available(uint32_t frequency_hz) {
   return rtl_tuner_gain_available_for_caps(frequency_hz, rtl_device_capabilities());
 }
 
+// Match the tuning limits of the pinned esp-rtl-sdr E4000 implementation.
+constexpr bool rtl_e4000_frequency_supported(uint32_t hz) {
+  return hz >= 64000000u && hz <= 1700000000u;
+}
+static_assert(!rtl_e4000_frequency_supported(63999999u));
+static_assert(rtl_e4000_frequency_supported(64000000u));
+static_assert(rtl_e4000_frequency_supported(1700000000u));
+static_assert(!rtl_e4000_frequency_supported(1700000001u));
+
+bool rtl_is_e4000() {
+  return g_rtl_profile.load(std::memory_order_acquire) == ESP_RTL_SDR_PROFILE_E4000;
+}
+
 bool rtl_frequency_supported(uint32_t frequency_hz) {
+  if (rtl_is_e4000()) return rtl_e4000_frequency_supported(frequency_hz);
   return rtl_frequency_supported_for_caps(frequency_hz, rtl_device_capabilities());
 }
 
@@ -2787,18 +2801,49 @@ void set_rtl_profile_status(const char* state) {
 }
 
 void report_unsupported_frequency(uint32_t frequency_hz) {
+  const bool e4000 = rtl_is_e4000();
   if (rtl_capture_state.load(std::memory_order_acquire) != RtlCaptureState::running) {
-    set_rtl_profile_status("below 24 MHz unavailable");
+    set_rtl_profile_status(e4000 ? "outside 64-1700 MHz" : "below 24 MHz unavailable");
   }
-  Serial.printf("RTL_TUNE_UNAVAILABLE profile=%u frequency_hz=%u reason=no_hf_upconverter\n",
+  Serial.printf("RTL_TUNE_UNAVAILABLE profile=%u frequency_hz=%u reason=%s\n",
                 static_cast<unsigned>(g_rtl_profile.load(std::memory_order_acquire)),
-                static_cast<unsigned>(frequency_hz));
+                static_cast<unsigned>(frequency_hz),
+                e4000 ? "receiver_range" : "no_hf_upconverter");
 }
 
+// Explicit rejected retunes keep the last valid stream. Keep their warning
+// local to the screen that made the request.
+uint32_t rtl_rejected_e4000_hz = 0;
+uint32_t rtl_rejected_screen_transition = 0;
+
 bool validate_rtl_tune_frequency(uint32_t frequency_hz) {
-  if (rtl_frequency_supported(frequency_hz)) return true;
+  const bool supported = rtl_frequency_supported(frequency_hz);
+  rtl_rejected_e4000_hz = !supported && rtl_is_e4000() ? frequency_hz : 0;
+  rtl_rejected_screen_transition = orcsdr::screens::status().transitions;
+  if (supported) return true;
   report_unsupported_frequency(frequency_hz);
   return false;
+}
+
+orcsdr::map_download_notice::TuneWarning rtl_dashboard_tune_warning() {
+  using Id = orcsdr::screens::Id;
+  if (!rtl_device_ready() || !rtl_is_e4000()) {
+    rtl_rejected_e4000_hz = 0;
+    return {};
+  }
+  const auto& screen = orcsdr::screens::status();
+  switch (screen.active) {
+    case Id::home: case Id::fm: case Id::am: case Id::shortwave:
+    case Id::airband: case Id::cb: case Id::p25: case Id::adsb:
+    case Id::pocsag: case Id::lora: case Id::radio: case Id::ft8:
+    case Id::sstv: case Id::acars: case Id::dead_air: break;
+    default: return {};
+  }
+  const uint32_t hz = rtl_rejected_e4000_hz &&
+                      rtl_rejected_screen_transition == screen.transitions
+      ? rtl_rejected_e4000_hz : rtl_ui_frequency_hz;
+  if (rtl_e4000_frequency_supported(hz)) return {};
+  return {hz, g_rtl_is_nooelec_xtr.load(std::memory_order_acquire)};
 }
 #endif
 
@@ -23853,7 +23898,8 @@ void loop() {
     EXT_RAM_BSS_ATTR static orcsdr::maps::downloads::Snapshot notice;
     if(orcsdr::maps::downloads::snapshot(&notice)) {
       const bool blocked=map_download_notice_blocked();
-      orcsdr::map_download_notice::update(notice,orcsdr::screens::status().active,blocked);
+      orcsdr::map_download_notice::update(
+          notice, orcsdr::screens::status().active, blocked, rtl_dashboard_tune_warning());
     }
   }
   if (!rtl_ui_active.load(std::memory_order_acquire) &&
