@@ -54,11 +54,20 @@ int main() {
   }
   enter(screens::Id::home);map_download_notice::update(s,screens::Id::home,false);
   map_download_notice::update(s,screens::Id::home,false,{1600000,true});
+  assert(visible("Out of range")&&visible("MAP ERROR"));
+  assert(map_download_notice::hit(360,40,screens::Id::home,false));
+  s.phase=P::idle;
+  map_download_notice::update(s,screens::Id::home,false,{1600000,true});
   assert(visible("Nooelec XTR")&&visible("1.600 MHz")&&visible("Out of range")&&visible("Use upconverter"));
   assert(!map_download_notice::hit(360,40,screens::Id::home,false));
   const int warning_paints=M5.Display.string_draw_calls;
   for(int tick=0;tick<10;++tick) map_download_notice::update(s,screens::Id::home,false,{1600000,true});
   assert(M5.Display.string_draw_calls==warning_paints&&M5.Display.screen_clears==0);
+  map_download_notice::update(s,screens::Id::home,false,{1701000000,true});
+  assert(visible("1701.000 MHz")&&visible("64-1700 MHz")&&!visible("Use upconverter"));
+  map_download_notice::update(s,screens::Id::home,false,{1701000000,false});
+  assert(visible("E4000")&&!visible("Nooelec XTR"));
+  s.phase=P::failed;
   map_download_notice::update(s,screens::Id::home,false,{});
   assert(visible("ERROR")&&!visible("Out of range"));
   enter(screens::Id::am);

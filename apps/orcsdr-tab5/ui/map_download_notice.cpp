@@ -28,7 +28,7 @@ static_assert(x+width<audio_header::kTitleDividerX&&x+width<audio_header::kTitle
 }
 void invalidate(){dirty=true;}
 bool hit(int32_t px,int32_t py,screens::Id screen,bool blocked) {
-  return !blocked&&eligible(screen)&&drawn&&!previous_warning.frequency_hz&&owner==screen&&
+  return !blocked&&eligible(screen)&&drawn&&visible(previous)&&owner==screen&&
       px>=x&&px<x+width&&py>=y&&py<y+height;
 }
 void update(const maps::downloads::Snapshot& s,screens::Id screen,bool blocked,TuneWarning warning) {
@@ -37,10 +37,18 @@ void update(const maps::downloads::Snapshot& s,screens::Id screen,bool blocked,T
   const auto total=s.phase==P::verifying?s.verify_total_bytes:s.total_bytes;
   const auto used=s.phase==P::verifying?s.verified_bytes:s.completed_bytes;
   const int percent=total?static_cast<int>(std::min(used,total)*100/total):-1;
-  if(!dirty&&owner==screen&&(warning.frequency_hz||(previous==s.phase&&previous_percent==percent))&&
+  if(!dirty&&owner==screen&&previous==s.phase&&previous_percent==percent&&
      previous_warning.frequency_hz==warning.frequency_hz&&
      previous_warning.nooelec_xtr==warning.nooelec_xtr)return;
   dirty=false;previous=s.phase;previous_percent=percent;previous_warning=warning;
+  const bool map_visible = visible(s.phase);
+  const char* title=s.phase==P::verifying?"MAP CK":s.phase==P::downloading?"MAP DL":"MAP";
+  char value[12]{};
+  if(s.phase==P::complete)std::snprintf(value,sizeof(value),"READY");
+  else if(s.phase==P::cancelled)std::snprintf(value,sizeof(value),"PAUSED");
+  else if(s.phase==P::failed)std::snprintf(value,sizeof(value),"ERROR");
+  else if(percent<0)std::snprintf(value,sizeof(value),"...");
+  else std::snprintf(value,sizeof(value),"%d%%",percent);
   if(warning.frequency_hz) {
     const uint16_t bg=0x0841;
     M5.Display.fillRoundRect(x,y,width,height,6,bg);
@@ -54,21 +62,21 @@ void update(const maps::downloads::Snapshot& s,screens::Id screen,bool blocked,T
     std::snprintf(frequency,sizeof(frequency),"%.3f MHz",warning.frequency_hz/1e6);
     M5.Display.drawString(frequency,x+width/2,y+21);
     M5.Display.drawString("Out of range",x+width/2,y+33);
-    M5.Display.drawString(warning.frequency_hz<64000000u?"Use upconverter":"64-1700 MHz",x+width/2,y+45);
+    const char* footer = warning.frequency_hz < 64000000u ? "Use upconverter" : "64-1700 MHz";
+    char map_status[20];
+    if (map_visible) {
+      std::snprintf(map_status, sizeof(map_status), "%s %s", title, value);
+      footer = map_status;
+      focus_nav::note(x,y,width,height);
+    }
+    M5.Display.drawString(footer,x+width/2,y+45);
     drawn=true;owner=screen;return;
   }
-  if(!visible(s.phase)) {
+  if(!map_visible) {
     if(drawn&&owner==screen)M5.Display.fillRect(x,y,width,height,TFT_BLACK);
     drawn=false;owner=screen;return;
   }
   const uint16_t color=s.phase==P::failed?TFT_ORANGE:s.phase==P::complete?0x6fe8:0x2e7f;
-  const char* title=s.phase==P::verifying?"MAP CK":s.phase==P::downloading?"MAP DL":"MAP";
-  char value[12]{};
-  if(s.phase==P::complete)std::snprintf(value,sizeof(value),"READY");
-  else if(s.phase==P::cancelled)std::snprintf(value,sizeof(value),"PAUSED");
-  else if(s.phase==P::failed)std::snprintf(value,sizeof(value),"ERROR");
-  else if(percent<0)std::snprintf(value,sizeof(value),"...");
-  else std::snprintf(value,sizeof(value),"%d%%",percent);
   M5.Display.fillRoundRect(x,y,width,height,6,0x0841);
   M5.Display.drawRoundRect(x,y,width,height,6,color);
   M5.Display.setFont(nullptr);M5.Display.setTextDatum(middle_center);
