@@ -23,7 +23,10 @@ Pinned Git trees inspected on 2026-11-06:
 The 73 files copied to Headless's `core/decoders/vendor/orcsdr/` have
 **71 identical blob hashes** to the corresponding OrcSDR files. The two
 exceptions are `lora_native_decoder.cpp` and `lora_native_decoder.hpp`;
-neither may silently replace the other. This comparison is **source parity**,
+neither may silently replace the other. Current OrcSDR includes in-place
+capture preprocessing and workspace lifecycle APIs missing from the older
+Headless copy; this is functional drift, not just formatting. See
+`TEST_RESULTS.md` for the inspected differences and actual CI evidence. This comparison is **source parity**,
 not proof of identical behavior. The Headless adapter files `orcdec_*.cpp`,
 `orcdec.cpp`, `orcdec_internal.hpp`, `include/orcdec.h`, shims, source list,
 host and WASM build scripts, ESP-IDF component, and
