@@ -514,3 +514,27 @@ Work items if approved (nothing started):
 5. Test: `RTL_TCP BENCH` at the new rate, a real V4 `rtl_tcp` FM run for 10 min (link %, drops, audio), then the
    dashboards. It is a visible dashboard behaviour change (wider span), so it needs the owner's go-ahead before it lands.
 Risk: Wi-Fi and the DSP share core time, so higher rates can starve audio; the adapter step-down is the safety net.
+
+### 1.44 MS/s remote wide bands with automatic fallback and recovery (2026-11-07)
+
+Built and flashed (M5Stack Tab5, COM17). Wide dashboard bands now ask a remote server for 1.44 MS/s (`rtl_remote_wanted_rate()`
+in `main.cpp`); other bands stay at 960 kS/s; ADS-B keeps 2.048 MS/s. `RateAdapter` (`rtl_tcp_protocol.hpp`) now uses an
+explicit ladder 1.44 -> 0.96 -> 0.48 -> 0.24 MS/s (every rung a whole multiple of 240 kS/s) and also climbs back:
+
+- Down: link under 85% for 4 samples (about 8 s) steps one rung and restarts the stream.
+- Up: after 30 healthy samples (>= 95%, about 60 s) at a reduced rate it probes one rung up. A probe that falls behind
+  again steps back down and doubles the wait before the next probe (up to about 16 min); full recovery resets the wait.
+- Note: a server paced by the dongle always delivers about 100%, so the link ratio cannot show spare capacity; the probe
+  is the only way to find out, which is why the backoff exists.
+
+Measured with a real V4 `rtl_tcp` FM stream (96.1 MHz) from the PC:
+| Test | Result |
+|---|---|
+| 1.44 MS/s, 60 s byte count | 2.88 MB/s (1.44 MS/s exactly), link 99-100%, 0 dropped |
+| 1.44 MS/s, about 4.5 min | 786 MB received, 0 dropped, no reconnects, no rate change |
+| Proxy paced to 1.5 MB/s | `RTL_TCP_RATE_DOWN link=52%` to 0.96 MS/s within about 8 s, then to 0.48 MS/s |
+| Proxy unthrottled again | 0.48 -> 0.96 -> 1.44 MS/s on its own (about 2 min per rung after one failed probe) |
+
+Host tests cover the ladder, the floor, off-ladder wanted rates, recovery, the 85-95% dead band and the probe backoff
+(`tools/test-rtl-tcp.sh`, all pass). Not verified: audio by ear at 1.44 MS/s, the scope look at the wider span, other
+bands' decoders on a remote stream, and a stream longer than about 5 min. Needs the owner's check of the wider scope span.

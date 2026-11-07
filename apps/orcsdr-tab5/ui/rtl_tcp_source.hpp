@@ -40,12 +40,13 @@ struct Status {
 uint32_t link_ratio_pct();
 
 // Remote sample rate for a stream that wants `wanted_sps`. It starts at the wanted rate and
-// steps down by halves (960 -> 480 -> 240 kS/s) when the link cannot keep up, so audio keeps
-// real time instead of stuttering. The step is forgotten when the mode or server changes.
+// steps down a ladder (1.44 -> 0.96 -> 0.48 -> 0.24 MS/s) when the link cannot keep up, so audio
+// keeps real time instead of stuttering, and probes back up after a healthy minute. The step is
+// forgotten when the mode or server changes.
 uint32_t adapted_rate(uint32_t wanted_sps);
-// Call about every 2 s with the current link ratio while streaming. Returns true when it has
-// just stepped the rate down and the caller should restart the stream at adapted_rate().
-bool note_link_and_maybe_downshift(uint32_t link_pct, uint32_t wanted_sps, uint32_t floor_sps);
+// Call about every 2 s with the current link ratio while streaming. Returns down or up when the
+// rate just changed and the caller should restart the stream at adapted_rate().
+rtl_tcp::RateAdapter::Change note_link_and_adapt(uint32_t link_pct, uint32_t wanted_sps, uint32_t floor_sps);
 
 // Loads the saved mode and server and remembers the IQ sink. Does not touch the network.
 void begin(const IqSink& sink);

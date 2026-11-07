@@ -236,32 +236,66 @@ static void test_backoff_is_bounded() {
 }
 
 static void test_rate_adapter() {
+  using C = RateAdapter::Change;
+  auto none = [](C c) { return c == C::none; };
   RateAdapter a;
   CHECK(a.rate(960000) == 960000);
   // A healthy or unmeasured link never steps, and a good sample clears the count.
-  for (int i = 0; i < 20; ++i) CHECK(!a.note(0, 960000, 240000));
-  for (int i = 0; i < 20; ++i) CHECK(!a.note(100, 960000, 240000));
-  CHECK(!a.note(50, 960000, 240000));
-  CHECK(!a.note(50, 960000, 240000));
-  CHECK(!a.note(50, 960000, 240000));
-  CHECK(!a.note(90, 960000, 240000));            // recovered: count restarts
-  CHECK(!a.note(50, 960000, 240000));
-  CHECK(!a.note(50, 960000, 240000));
-  CHECK(!a.note(50, 960000, 240000));
-  CHECK(a.note(50, 960000, 240000));             // four behind samples in a row
+  for (int i = 0; i < 20; ++i) CHECK(none(a.note(0, 960000, 240000)));
+  for (int i = 0; i < 20; ++i) CHECK(none(a.note(100, 960000, 240000)));
+  for (int i = 0; i < 3; ++i) CHECK(none(a.note(50, 960000, 240000)));
+  CHECK(none(a.note(90, 960000, 240000)));            // recovered: count restarts
+  for (int i = 0; i < 3; ++i) CHECK(none(a.note(50, 960000, 240000)));
+  CHECK(a.note(50, 960000, 240000) == C::down);       // four behind samples in a row
   CHECK(a.rate(960000) == 480000);
-  for (int i = 0; i < 3; ++i) CHECK(!a.note(40, 960000, 240000));
-  CHECK(a.note(40, 960000, 240000));
+  for (int i = 0; i < 3; ++i) CHECK(none(a.note(40, 960000, 240000)));
+  CHECK(a.note(40, 960000, 240000) == C::down);
   CHECK(a.rate(960000) == 240000);
-  for (int i = 0; i < 50; ++i) CHECK(!a.note(10, 960000, 240000));  // never below two steps
+  for (int i = 0; i < 50; ++i) CHECK(none(a.note(10, 960000, 240000)));  // ladder ends at 240k
   CHECK(a.rate(960000) == 240000);
   a.reset();
   CHECK(a.rate(960000) == 960000);
   // The consumer's floor stops the descent early.
   RateAdapter b;
-  for (int i = 0; i < 3; ++i) CHECK(!b.note(30, 960000, 500000));
-  CHECK(!b.note(30, 960000, 500000));            // 480k would be below the floor
+  for (int i = 0; i < 4; ++i) CHECK(none(b.note(30, 960000, 500000)));  // 480k is below the floor
   CHECK(b.rate(960000) == 960000);
+  // The 1.44 MS/s ladder keeps whole multiples of 240 kS/s.
+  RateAdapter c;
+  CHECK(c.rate(1440000) == 1440000);
+  const uint32_t expect[] = {960000, 480000, 240000};
+  for (uint32_t want : expect) {
+    for (int i = 0; i < 3; ++i) CHECK(none(c.note(40, 1440000, 240000)));
+    CHECK(c.note(40, 1440000, 240000) == C::down);
+    CHECK(c.rate(1440000) == want);
+  }
+  CHECK(c.rate(1440000) % 240000 == 0);
+  // A wanted rate off the ladder (ADS-B, lab override) is left alone until it steps.
+  RateAdapter d;
+  CHECK(d.rate(2048000) == 2048000);
+  // Automatic recovery: a healthy minute at a reduced rate steps up one rung at a time.
+  RateAdapter e;
+  for (int i = 0; i < 3; ++i) e.note(40, 1440000, 240000);
+  CHECK(e.note(40, 1440000, 240000) == C::down);       // 960k
+  for (int i = 0; i < 29; ++i) CHECK(none(e.note(100, 1440000, 240000)));
+  CHECK(e.note(100, 1440000, 240000) == C::up);        // 30 healthy samples
+  CHECK(e.rate(1440000) == 1440000);
+  for (int i = 0; i < 100; ++i) CHECK(none(e.note(100, 1440000, 240000)));  // nothing above the top
+  // Between 85% and 95% neither steps down nor counts toward stepping up.
+  RateAdapter f;
+  for (int i = 0; i < 3; ++i) f.note(40, 960000, 240000);
+  f.note(40, 960000, 240000);                           // 480k
+  for (int i = 0; i < 200; ++i) CHECK(none(f.note(90, 960000, 240000)));
+  CHECK(f.rate(960000) == 480000);
+  // A probe that fails doubles the wait before the next one, then settles.
+  RateAdapter g;
+  for (int i = 0; i < 3; ++i) g.note(40, 960000, 240000);
+  g.note(40, 960000, 240000);                           // 480k
+  for (int i = 0; i < 29; ++i) g.note(100, 960000, 240000);
+  CHECK(g.note(100, 960000, 240000) == C::up);          // probe 960k
+  for (int i = 0; i < 3; ++i) g.note(40, 960000, 240000);
+  CHECK(g.note(40, 960000, 240000) == C::down);         // probe failed, back to 480k
+  for (int i = 0; i < 59; ++i) CHECK(none(g.note(100, 960000, 240000)));  // wait is now 60
+  CHECK(g.note(100, 960000, 240000) == C::up);
 }
 
 int main() {

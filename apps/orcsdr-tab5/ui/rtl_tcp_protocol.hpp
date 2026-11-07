@@ -129,24 +129,64 @@ bool reconnect_delay_ms(const BackoffPolicy& policy, uint32_t attempt, uint32_t*
 // Steps the sample rate down by halves when the link stays behind real time, so a weak
 // Wi-Fi link gives slower but live audio instead of fast-forwarded stutter. One call per
 // link-ratio sample (about every 2 s). Pure, so it is host-tested.
+// The rates are an explicit ladder because every rung must be a whole multiple of the 240 kS/s
+// demodulation rate (halving 1.44 MS/s would give 720 and 360 kS/s). The adapter also climbs
+// back: after kUpTicks healthy samples at a reduced rate it probes one rung up; a probe that
+// falls behind again steps back down and doubles the wait (up to kUpTicksMax), so a link that
+// cannot carry the higher rate settles instead of flapping.
 struct RateAdapter {
   static constexpr uint32_t kBehindPct = 85;      // same threshold the status text uses
-  static constexpr uint32_t kBehindTicks = 4;     // consecutive samples before acting
-  static constexpr uint8_t kMaxSteps = 2;         // 960 -> 480 -> 240 kS/s
-  uint8_t step = 0;
-  uint8_t behind_ticks = 0;
+  static constexpr uint32_t kHealthyPct = 95;     // needed to count toward a step up
+  static constexpr uint32_t kBehindTicks = 4;     // consecutive samples before stepping down
+  static constexpr uint32_t kUpTicks = 30;        // about 60 s healthy before the first probe
+  static constexpr uint32_t kUpTicksMax = 480;    // about 16 min between probes after failures
+  static constexpr uint32_t kLadder[] = {1440000, 960000, 480000, 240000};
+  static constexpr uint8_t kLadderSize = 4;
+  enum class Change : uint8_t { none, down, up };
 
-  uint32_t rate(uint32_t wanted_sps) const { return wanted_sps >> step; }
-  void reset() { step = 0; behind_ticks = 0; }
+  uint8_t step = 0;                 // rungs below the wanted rate
+  uint8_t behind_ticks = 0;
+  uint32_t healthy_ticks = 0;
+  uint32_t up_wait = kUpTicks;
+  bool probing = false;             // just stepped up and not yet proven
+
+  static uint8_t base_index(uint32_t wanted_sps) {
+    uint8_t i = 0;
+    while (i + 1 < kLadderSize && kLadder[i] > wanted_sps) ++i;
+    return i;
+  }
+  uint32_t rate(uint32_t wanted_sps) const {
+    const uint8_t i = base_index(wanted_sps);
+    const uint8_t at = (i + step < kLadderSize) ? i + step : kLadderSize - 1;
+    // Only a ladder rate at or below the wanted one is used; a wanted rate off the ladder
+    // (ADS-B, lab overrides) stays as asked.
+    return (step == 0 && kLadder[i] != wanted_sps) ? wanted_sps : kLadder[at];
+  }
+  void reset() { step = 0; behind_ticks = 0; healthy_ticks = 0; up_wait = kUpTicks; probing = false; }
   // `link_pct` 0 means not measured yet. `floor_sps` is the lowest rate the consumer accepts.
-  // Returns true when the rate was just lowered and the stream should restart.
-  bool note(uint32_t link_pct, uint32_t wanted_sps, uint32_t floor_sps) {
-    if (link_pct == 0 || link_pct >= kBehindPct) { behind_ticks = 0; return false; }
-    if (++behind_ticks < kBehindTicks) return false;
+  // Returns the change just made; on down or up the stream should restart at rate().
+  Change note(uint32_t link_pct, uint32_t wanted_sps, uint32_t floor_sps) {
+    if (link_pct == 0) { behind_ticks = 0; return Change::none; }
+    if (link_pct >= kBehindPct) {
+      behind_ticks = 0;
+      if (step == 0) { healthy_ticks = 0; probing = false; return Change::none; }
+      if (link_pct < kHealthyPct) { healthy_ticks = 0; return Change::none; }
+      if (++healthy_ticks < up_wait) return Change::none;
+      healthy_ticks = 0;
+      --step;
+      probing = true;
+      if (step == 0) up_wait = kUpTicks;  // fully recovered
+      return Change::up;
+    }
+    healthy_ticks = 0;
+    if (++behind_ticks < kBehindTicks) return Change::none;
     behind_ticks = 0;
-    if (step >= kMaxSteps || (wanted_sps >> (step + 1)) < floor_sps) return false;
+    const uint8_t i = base_index(wanted_sps);
+    if (i + step + 1 >= kLadderSize || kLadder[i + step + 1] < floor_sps) return Change::none;
+    if (probing) up_wait = (up_wait * 2 > kUpTicksMax) ? kUpTicksMax : up_wait * 2;
+    probing = false;
     ++step;
-    return true;
+    return Change::down;
   }
 };
 

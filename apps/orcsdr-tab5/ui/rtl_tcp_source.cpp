@@ -263,7 +263,7 @@ bool set_mode(source::Mode value) {
 
 uint32_t adapted_rate(uint32_t wanted_sps) { return g_rate_adapter.rate(wanted_sps); }
 
-bool note_link_and_maybe_downshift(uint32_t link_pct, uint32_t wanted_sps, uint32_t floor_sps) {
+rtl_tcp::RateAdapter::Change note_link_and_adapt(uint32_t link_pct, uint32_t wanted_sps, uint32_t floor_sps) {
   return g_rate_adapter.note(link_pct, wanted_sps, floor_sps);
 }
 

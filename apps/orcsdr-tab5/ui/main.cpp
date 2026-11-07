@@ -3667,14 +3667,19 @@ bool rtl_wide_dashboard_band(RtlBand band) {
 // Decoders see it as the default rate, so none of them switch off.
 std::atomic<bool> g_rtl_remote_narrow{false};
 
+// Rate a remote stream asks for before the link adapter steps it down. Wide dashboard bands
+// ask for 1.44 MS/s (decimation 6, about 23 Mbit/s of the roughly 32 Mbit/s the link carries);
+// the rest stay at 960 kS/s. Both are rungs of the RateAdapter ladder.
+uint32_t rtl_remote_wanted_rate(RtlBand band) {
+  return rtl_wide_dashboard_band(band) ? 1440000u : ESP_RTL_SDR_RATE_960K;
+}
+
 uint32_t rtl_default_sample_rate(RtlBand band) {
   if (band == RtlBand::adsb) return ESP_RTL_SDR_RATE_2048K;
   const bool remote_narrow = g_rtl_remote_narrow.load(std::memory_order_acquire);
-  if (rtl_wide_dashboard_band(band))
-    return remote_narrow ? orcsdr::rtl_tcp_source::adapted_rate(ESP_RTL_SDR_RATE_960K)
-                         : ESP_RTL_SDR_RATE_2400K;
-  return remote_narrow ? orcsdr::rtl_tcp_source::adapted_rate(ESP_RTL_SDR_RATE_960K)
-                       : ESP_RTL_SDR_RATE_960K;
+  if (remote_narrow)
+    return orcsdr::rtl_tcp_source::adapted_rate(rtl_remote_wanted_rate(band));
+  return rtl_wide_dashboard_band(band) ? ESP_RTL_SDR_RATE_2400K : ESP_RTL_SDR_RATE_960K;
 }
 
 constexpr uint8_t rtl_rf_decimation(uint32_t sample_rate_sps) {
@@ -10174,12 +10179,17 @@ static void rtl_driver_app_task(void *) {
                                   link_pct > 0 && link_pct < 85;
               // A link that stays behind gets a lower rate (960 -> 480 -> 240 kS/s): slower
               // spectrum span, but live audio instead of stutter.
-              if (remote_state == orcsdr::rtl_tcp::State::streaming &&
-                  g_stream_band != RtlBand::adsb &&  // ADS-B keeps its own rate
-                  orcsdr::rtl_tcp_source::note_link_and_maybe_downshift(
-                      link_pct, ESP_RTL_SDR_RATE_960K, kRtlDemodRateSps)) {  // 240 kS/s needs the capped read size in rtl_tcp_sink_acquire
-                Serial.printf("RTL_TCP_RATE_DOWN link=%u%% new_rate=%u\n", link_pct,
-                              orcsdr::rtl_tcp_source::adapted_rate(ESP_RTL_SDR_RATE_960K));
+              // After a healthy minute it probes one rung back up, and backs off if that fails.
+              const auto rate_change =
+                  (remote_state == orcsdr::rtl_tcp::State::streaming &&
+                   g_stream_band != RtlBand::adsb)  // ADS-B keeps its own rate
+                      ? orcsdr::rtl_tcp_source::note_link_and_adapt(
+                            link_pct, rtl_remote_wanted_rate(g_stream_band), kRtlDemodRateSps)  // 240 kS/s needs the capped read size in rtl_tcp_sink_acquire
+                      : orcsdr::rtl_tcp::RateAdapter::Change::none;
+              if (rate_change != orcsdr::rtl_tcp::RateAdapter::Change::none) {
+                Serial.printf("RTL_TCP_RATE_%s link=%u%% new_rate=%u\n",
+                              rate_change == orcsdr::rtl_tcp::RateAdapter::Change::down ? "DOWN" : "UP", link_pct,
+                              orcsdr::rtl_tcp_source::adapted_rate(rtl_remote_wanted_rate(g_stream_band)));
                 rtl_restart_requested.store(true, std::memory_order_release);
                 rtl_stop_requested.store(true, std::memory_order_release);
                 break;
