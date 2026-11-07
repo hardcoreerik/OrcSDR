@@ -433,3 +433,30 @@ trampoline null-delete), which must be re-evaluated before 3.1.0 can ship; the 2
 memory and soak check. 3.1.0 builds for the C6 with `orcdial/c6` against the registry package via an
 `EXTRA_COMPONENT_DIRS` junction (see the trial commands in the session notes) and flashes with
 `RTL_ORCDIAL_C6_UPDATE CONFIRM`.
+
+### Throughput campaign, round 4: what moved TCP from 22 to 28-30 Mbit/s (2026-11-07)
+
+The biggest single gain was `CONFIG_LWIP_TCPIP_TASK_AFFINITY_CPU1=y`: the lwIP task no longer shares a core with the
+receiver, 26 -> 28.7-29.8 Mbit/s. `CONFIG_LWIP_IRAM_OPTIMIZATION=y` made it worse (19.7-21) and was reverted.
+
+| Step (cumulative) | Sustained Mbit/s |
+|---|---|
+| 256 KB window, mailboxes 64, SDIO TX/RX queues 16/8, staging 4, SDIO 20 MHz | 25.7-26.2 |
+| + lwIP task on core 1 | 28.4-29.8 |
+| SDIO 40 MHz instead of 20 | 25.7-26.4 (worse) |
+| SDIO 26 MHz instead of 20 | 28.2-28.8 (no gain) |
+| 512 KB window instead of 256 KB | 28.2-28.3 (no gain) |
+| Queues back to TX 4 / RX 2 / staging 2 | 27.1-27.8 (queues are worth about +2) |
+
+Three 120 s runs (`RTL_TCP BENCH 120`, fresh unthrottled sender each) of the final settings:
+
+| Host | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| ESP-Hosted 3.1.0 on both chips, local patches skipped | 29.0 | 29.5 | 30.2 |
+| ESP-Hosted 3.0.6 with the five local patches, C6 3.0.6 with the Wi-Fi profile (the committed configuration) | 28.4 | 28.1 | 28.1 |
+
+No errors, resets or drops in any run. A real V4 `rtl_tcp` FM stream on the final settings showed link 99%, 0 dropped.
+DMA headroom fell from about 28.1 KB to 25.4 KB (`RTL_DRAM_BUDGET`). The 20 MHz SDIO clock still needs a sustained HTTPS
+download soak (the earlier failure mode) before it can be called qualified; this is a trial default on this branch.
+The 3.1.0 variant is not committed (it skips the local patches); its manifest and lock changes are kept as a patch in the
+session scratchpad, and its C6 builds from the registry package with an `EXTRA_COMPONENT_DIRS` junction.
