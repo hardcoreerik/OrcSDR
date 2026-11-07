@@ -541,6 +541,7 @@ Action handle_touch(int32_t x,int32_t y){
 }
 bool self_check(){
   return kTabsCount==7&&kBodyY>=104&&kBodyY+kBodyHeight<kTabsY&&
-         kContent.y>kContext.y&&g_protocol>=1&&g_protocol<=28&&\n         !kReservedStatus.overlaps(kContext)&&!mapMain.overlaps(mapSummary);
+         kContent.y>kContext.y&&g_protocol>=1&&g_protocol<=28&&
+         !kReservedStatus.overlaps(kContext)&&!mapMain.overlaps(mapSummary);
 }
 } // namespace orcsdr::ais_ui
