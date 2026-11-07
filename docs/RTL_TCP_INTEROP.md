@@ -456,8 +456,12 @@ Three 120 s runs (`RTL_TCP BENCH 120`, fresh unthrottled sender each) of the fin
 | ESP-Hosted 3.0.6 with the five local patches, C6 3.0.6 with the Wi-Fi profile (the committed configuration) | 28.4 | 28.1 | 28.1 |
 
 No errors, resets or drops in any run. A real V4 `rtl_tcp` FM stream on the final settings showed link 99%, 0 dropped.
-DMA headroom fell from about 28.1 KB to 25.4 KB (`RTL_DRAM_BUDGET`). The 20 MHz SDIO clock still needs a sustained HTTPS
-download soak (the earlier failure mode) before it can be called qualified; this is a trial default on this branch.
+DMA headroom fell from about 28.1 KB to 25.4 KB (`RTL_DRAM_BUDGET`). The 20 MHz SDIO clock was then soaked with the
+earlier failure mode, a sustained HTTPS download (2026-11-07): `RTL_CATALOG_INSTALL faa_aircraft` (72.97 MB signed archive,
+35.7 MB written to SD) ran twice back to back on Wi-Fi at 20 MHz SDIO; both finished with "Pack installed and verified"
+(signature and hashes checked), no SDIO errors, no resets, no Hosted failure log lines. The second run took about 3 min
+20 s including the SD write. The pack was removed afterwards (it was not installed before). Two runs on one link is
+a pass, not a long soak; an overnight repeat would be stronger.
 The 3.1.0 variant is not committed (it skips the local patches); its manifest and lock changes are kept as a patch in the
 session scratchpad, and its C6 builds from the registry package with an `EXTRA_COMPONENT_DIRS` junction.
 
