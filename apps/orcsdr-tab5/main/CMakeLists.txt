@@ -157,6 +157,7 @@ idf_component_register(
         "../ui/acars_archive_sd.cpp"
         "../ui/acars_core.cpp"
         "../ui/acars_dashboard.cpp"
+        "../ui/ais_dashboard.cpp"
         "../ui/acars_dashboard_layout.cpp"
         "../ui/acars_dirty_rects.cpp"
         "../ui/acars_dashboard_model.cpp"
