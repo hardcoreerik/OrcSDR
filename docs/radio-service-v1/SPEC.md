@@ -80,3 +80,11 @@ A conforming dashboard consumes `capabilities`, `receiver_state`, `command_resul
 ## Acceptance gates
 
 The checked-in host suite verifies syntax, canonical fixtures, negative schema cases, preflight authorization/range/session fences, the legacy Headless/Mobile snapshot adapters and cross-field geometry. It does **not** measure RF, compile ESP-IDF/Flutter, authenticate a real network, or prove interoperability with a physical receiver. Physical-host and multi-client/fault-injection gates remain in the migration plan.
+
+## Native C ABI candidate (separate from JSON and network wire formats)
+
+`contracts/radio_service/v1/include/orc_radio_service_v1.h` defines an **in-process C ABI** with size-prefixed POD types, receiver identities, capability descriptors, verified command results, sample-frame callbacks and a provider vtable. It compiles as ISO C11 and C++17 without platform headers. The JSON schema remains the canonical portable semantic representation; ABI numeric enums are local-to-process and **must not** be sent as network bytes without a negotiated encoding. This header is a host-compile-checked interface proposal, not production provider implementation.
+
+All `struct_size` values must be supplied by the caller. All char IDs are bounded NUL-terminated strings. Scope bitmasks represent granted versus supported rights only when attached to an authenticated local caller; a client-provided bitmask must never serve as a security credential. API call results can return `pending`; later terminal outcomes arrive through the event callback. High-rate frame bytes and capability range arrays are borrowed for their documented call/callback lifetime; clients must copy before retaining. JSON decoder events remain low-rate; high-rate IQ stays in native buffers. Receiver attachment and session changes invalidate subscriptions. Physical TX operations are intentionally **not** included in this candidate C vtable; TX requires a separate future safety-reviewed API.
+
+Its minimal feature flags do not encode every JSON capability field; adapter implementations must publish the complete negotiated JSON capability model and must not infer unsupported range/rate options from missing flags. Treat this ABI as an interface target for downstream native agents, not as acceptance that any hardware backend implements it.

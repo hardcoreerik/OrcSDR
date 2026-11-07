@@ -25,3 +25,5 @@ jobs:
           python-version: '3.12'
       - run: python -m pip install 'jsonschema>=4.21,<5'
       - run: python -m unittest discover -s tests/radio_service_v1 -v
+      - run: cc -std=c11 -Wall -Wextra -Werror -pedantic tests/radio_service_v1/abi_probe.c -o /tmp/orc-radio-v1-c && /tmp/orc-radio-v1-c
+      - run: c++ -std=c++17 -Wall -Wextra -Werror -pedantic tests/radio_service_v1/abi_probe.c -o /tmp/orc-radio-v1-cpp && /tmp/orc-radio-v1-cpp
