@@ -60,3 +60,16 @@ Additional CLI modes:
 The ACARS replay file must contain CU8 at 240 kS/s, wanted carrier at +60 kHz (example actual channel 131.550 MHz). ADS-B replay requires CU8 at 2.048 MS/s tuned near 1090 MHz. These are genuine decoders, not synthetic text injectors, but still offline file modes; live streaming into a decoder and Web server remain future gates.
 
 See [decoder/Linux acceptance and reproducible log commands](../../../docs/hardware/cardputer-zero/ORCDEC_LINUX_ACCEPTANCE_20261106.md) and the [actual OrcSDR Web interoperability plan](../../../docs/hardware/cardputer-zero/LINUX_WEB_INTEROPERABILITY_PLAN.md).
+
+## Capture-to-replay workflow
+
+The CLI can now save a receiver capture as raw CU8 for later decoding or independent inspection. Saving requires real RTL-SDR hardware; an RF capture cannot be verified in GitHub CI.
+
+```sh
+./build/cardputer-zero-native/orcsdr_cardputer_zero --capture --freq 131490000 --rate 240000 --samples 262144 --save acars-240k.cu8
+./build/cardputer-zero-native/orcsdr_cardputer_zero --decode-acars acars-240k.cu8 --freq 131490000
+./build/cardputer-zero-native/orcsdr_cardputer_zero --make-acars-fixture demo-acars.cu8
+./build/cardputer-zero-native/orcsdr_cardputer_zero --decode-acars demo-acars.cu8 --freq 131490000
+```
+
+Driver support for 240 kS/s **must be verified on actual hardware**; a capture taken at another rate must not be mislabeled as 240 kS/s. The automated CTest fixture/replay pair proves the generator writes a real CU8 fixture which the same original OrcSDR ACARS decoder independently reads back and decodes. No device or Web server is needed for these offline tests.

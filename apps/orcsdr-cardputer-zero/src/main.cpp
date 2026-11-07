@@ -25,6 +25,8 @@ void usage() {
               << "  --acars-demo                  decode original OrcSDR ACARS synthetic fixture\n"
               << "  --decode-acars PATH [--freq HZ]   CU8 file: 240kS/s, carrier=center+60kHz\n"
               << "  --decode-adsb PATH            CU8 file: 2.048MS/s, centered 1090MHz\n"
+              << "  --make-acars-fixture PATH     generate reproducible 240kS/s CU8 file\n"
+              << "  --capture ... --save PATH     save the actual receiver CU8 samples\n"
               << "  --capture [--device N] [--freq HZ] [--rate SPS] [--samples N]\n"
               << "Defaults: device 0, 100100000 Hz, 1024000 sps, 32768 samples.\n"
               << "This experimental bring-up is receive-only; no GUI or audio yet.\n";
@@ -121,6 +123,32 @@ struct AdsbChain {
         decoder.process_cu8(data,bytes,on_frame,this);
     }
 };
+
+int make_acars_fixture(const std::string& path) {
+    std::ofstream out(path,std::ios::binary|std::ios::trunc);
+    if(!out)throw std::runtime_error("failed to open ACARS fixture output");
+    orcsdr::acars_selftest::Signal fixture(3023,0.0,0x1234);
+    std::array<std::uint8_t,4096> buf{};
+    std::uint64_t bytes_total=0;
+    for(;;) {
+        const auto n=fixture.next(buf.data(),buf.size());
+        if(!n)break;
+        out.write(reinterpret_cast<const char*>(buf.data()),static_cast<std::streamsize>(n));
+        if(!out)throw std::runtime_error("could not write complete ACARS fixture");
+        bytes_total+=n;
+    }
+    out.close();
+    if(!out)throw std::runtime_error("failed to finalize ACARS fixture");
+    std::cout<<"ACARS fixture bytes="<<bytes_total<<" CU8_samples="<<bytes_total/2<<'\n';
+    return bytes_total?0:2;
+}
+void write_capture_file(const std::string& path,const std::vector<std::uint8_t>& iq) {
+    std::ofstream out(path,std::ios::binary|std::ios::trunc);
+    if(!out)throw std::runtime_error("could not open IQ output");
+    out.write(reinterpret_cast<const char*>(iq.data()),static_cast<std::streamsize>(iq.size()));
+    if(!out)throw std::runtime_error("could not save all captured IQ bytes");
+    std::cout<<"saved_cu8_bytes="<<iq.size()<<" output="<<path<<'\n';
+}
 int acars_demo() {
     AcarsChain chain(131490000u);
     orcsdr::acars_selftest::Signal fixture(3023,0.0,0x1234);
@@ -160,7 +188,7 @@ int decode_file(const std::string& path,bool acars,std::uint32_t center_hz) {
 int main(int argc, char** argv) {
     try {
         if (argc == 1) { usage(); return 0; }
-        std::string mode,path;
+        std::string mode,path,save_path;
         std::uint32_t device=0,freq=100100000,rate=1024000,samples=32768;
         for (int i=1;i<argc;++i) {
             const std::string arg=argv[i];
@@ -168,7 +196,7 @@ int main(int argc, char** argv) {
             if (arg=="--demo" || arg=="--acars-demo" || arg=="--list" || arg=="--capture") {
                 if(!mode.empty())throw std::invalid_argument("select exactly one mode");
                 mode=arg;
-            } else if (arg=="--iq-file" || arg=="--decode-acars" || arg=="--decode-adsb") {
+            } else if (arg=="--iq-file" || arg=="--decode-acars" || arg=="--decode-adsb" || arg=="--make-acars-fixture") {
                 if(!mode.empty())throw std::invalid_argument("select exactly one mode");
                 mode=arg;
                 if(++i>=argc)throw std::invalid_argument(arg+" needs path");
@@ -180,10 +208,13 @@ int main(int argc, char** argv) {
                 else if(arg=="--freq")freq=parse_number(value,100000,3000000000U);
                 else if(arg=="--rate")rate=parse_number(value,225000,3200000);
                 else if(arg=="--samples")samples=parse_number(value,64,262144);
+                else if(arg=="--save")save_path=value;
                 else throw std::invalid_argument("unknown option: "+arg);
             }
         }
+        if(!save_path.empty() && mode!="--capture")throw std::invalid_argument("--save requires --capture");
         if(mode=="--demo")print_metrics(orc::synthetic_u8_tone(4096));
+        else if(mode=="--make-acars-fixture")return make_acars_fixture(path);
         else if(mode=="--acars-demo")return acars_demo();
         else if(mode=="--decode-acars")return decode_file(path,true,freq);
         else if(mode=="--decode-adsb")return decode_file(path,false,freq);
@@ -197,7 +228,11 @@ int main(int argc, char** argv) {
             iq.resize(static_cast<std::size_t>(got));
             print_metrics(iq);
         } else if(mode=="--list")list_receivers();
-        else if(mode=="--capture")print_metrics(capture(device,freq,rate,samples));
+        else if(mode=="--capture") {
+            auto iq=capture(device,freq,rate,samples);
+            if(!save_path.empty())write_capture_file(save_path,iq);
+            print_metrics(iq);
+        }
         else throw std::invalid_argument("no mode supplied");
         return 0;
     } catch(const std::exception& e) {

@@ -8,10 +8,11 @@
 
 namespace orc::linux_sdr {
 namespace {
+#ifdef ORC_HAVE_RTLSDR
 void fail(const char* operation,int rc) {
   throw std::runtime_error(std::string(operation)+" failed (librtlsdr rc="+std::to_string(rc)+")");
 }
-#ifndef ORC_HAVE_RTLSDR
+#else
 [[noreturn]] void unsupported() {
   throw std::runtime_error("librtlsdr not detected at build time; install librtlsdr-dev and rebuild");
 }

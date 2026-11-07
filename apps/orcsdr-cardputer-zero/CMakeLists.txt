@@ -46,6 +46,12 @@ if(BUILD_TESTING)
   add_test(NAME iq_metrics COMMAND orc_linux_iq_test)
   add_test(NAME simulated_receiver COMMAND orcsdr_cardputer_zero --demo)
   add_test(NAME native_acars_cli_demo COMMAND orcsdr_cardputer_zero --acars-demo)
+  add_test(NAME make_acars_fixture COMMAND orcsdr_cardputer_zero
+    --make-acars-fixture "${CMAKE_CURRENT_BINARY_DIR}/acars-fixture.cu8")
+  set_tests_properties(make_acars_fixture PROPERTIES FIXTURES_SETUP acars_file)
+  add_test(NAME decode_acars_fixture COMMAND orcsdr_cardputer_zero
+    --decode-acars "${CMAKE_CURRENT_BINARY_DIR}/acars-fixture.cu8" --freq 131490000)
+  set_tests_properties(decode_acars_fixture PROPERTIES FIXTURES_REQUIRED acars_file)
 
   add_executable(orc_native_decoder_test tests/native_decoder_test.cpp)
   target_link_libraries(orc_native_decoder_test PRIVATE orc_native_decoders)
