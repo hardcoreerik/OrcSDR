@@ -30,6 +30,16 @@ struct Status {
   esp_err_t last_error = ESP_OK;
 };
 
+// The latest RMC sentence that carried a valid fix with a usable date and time. `label_us` is the UTC the sentence
+// states (microseconds since 1970); `arrival_us` is esp_timer time when it was read. Poll `seq` for new samples.
+struct TimeSample {
+  bool valid = false;
+  uint32_t seq = 0;
+  int64_t label_us = 0;
+  int64_t arrival_us = 0;
+};
+TimeSample latest_time();
+
 // Idempotent for the same configuration. Refuses an already installed UART;
 // never reconfigures or removes a driver's UART that it does not own.
 bool start(uart_port_t port, int rx_gpio, uint32_t baud);

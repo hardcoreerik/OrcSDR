@@ -18,6 +18,9 @@ extern "C" int network_clock_test_set_wallclock(time_t utc);
 #include <esp_sntp.h>
 #include <esp_timer.h>
 #include "orcsdr_rtc.h"
+#include "gnss_service.hpp"
+#include "nvs_store.hpp"
+#include "orcsdr_gnss_time.h"
 #endif
 
 namespace network_clock {
@@ -42,6 +45,22 @@ std::atomic<bool> g_wifi_connected{false};
 std::atomic<bool> g_clock_changed{false};
 std::atomic<uint8_t> g_set_pending{0};  // 0 idle, 1 producer writing epoch, 2 ready
 std::atomic<uint32_t> g_set_epoch{0};
+// GPS time. The setting and counters are read from other threads; the sample tracking is owned by service().
+std::atomic<bool> g_gps_enabled{true};
+std::atomic<bool> g_gps_loaded{false};
+std::atomic<uint32_t> g_gps_last_utc{0};
+std::atomic<uint32_t> g_gps_corrections{0};
+std::atomic<uint8_t> g_gps_decision{0};
+#ifndef ORC_NETWORK_CLOCK_TEST
+constexpr const char* kGpsNamespace = "orcsdr_set";
+constexpr const char* kGpsKey = "gps_time";
+uint32_t g_gps_seen_seq = 0;
+bool g_gps_have_previous = false;
+int64_t g_gps_previous_label_us = 0;
+int64_t g_gps_previous_arrival_us = 0;
+bool g_gps_applied_before = false;
+int64_t g_gps_applied_us = 0;
+#endif
 
 uint32_t monotonic_ms() {
 #ifdef ORC_NETWORK_CLOCK_TEST
@@ -118,6 +137,60 @@ void follow_with_rtc() {
 #endif
 }
 
+void load_gps_setting() {
+#ifndef ORC_NETWORK_CLOCK_TEST
+  if (g_gps_loaded.exchange(true)) return;
+  orcsdr::NvsStore store;
+  if (store.begin(kGpsNamespace, true)) {
+    g_gps_enabled.store(store.get_bool(kGpsKey, true), std::memory_order_relaxed);
+    store.end();
+  }
+#endif
+}
+
+// Boards with a GNSS receiver correct the clock from RMC time when network time is not fresh. Runs on the owner
+// cadence; reads the latest sample, never blocks, and never touches the network engine.
+void service_gps_time() {
+#ifndef ORC_NETWORK_CLOCK_TEST
+  load_gps_setting();
+  const gnss_service::TimeSample sample = gnss_service::latest_time();
+  if (!sample.valid || sample.seq == g_gps_seen_seq) return;
+  g_gps_seen_seq = sample.seq;
+
+  const int64_t now_us = esp_timer_get_time();
+  timeval tv{};
+  gettimeofday(&tv, nullptr);
+  orcsdr_gnss_time_input_t in{};
+  in.enabled = g_gps_enabled.load(std::memory_order_relaxed);
+  in.network_fresh = status().level == orcsdr::clock_sync::Level::synced;
+  in.clock_valid = plausible_utc(tv.tv_sec) != 0;
+  in.clock_us = static_cast<int64_t>(tv.tv_sec) * 1000000 + tv.tv_usec;
+  in.gps_us = sample.label_us + (now_us - sample.arrival_us);
+  in.have_previous = g_gps_have_previous;
+  in.label_step_us = sample.label_us - g_gps_previous_label_us;
+  in.arrival_step_us = sample.arrival_us - g_gps_previous_arrival_us;
+  in.applied_before = g_gps_applied_before;
+  in.since_applied_us = now_us - g_gps_applied_us;
+  g_gps_have_previous = true;
+  g_gps_previous_label_us = sample.label_us;
+  g_gps_previous_arrival_us = sample.arrival_us;
+
+  const orcsdr_gnss_time_decision_t decision = orcsdr_gnss_time_decide(&in);
+  g_gps_decision.store(static_cast<uint8_t>(decision), std::memory_order_relaxed);
+  if (decision != ORCSDR_GNSS_TIME_APPLY) return;
+  timeval target{};
+  target.tv_sec = static_cast<time_t>(in.gps_us / 1000000);
+  target.tv_usec = static_cast<suseconds_t>(in.gps_us % 1000000);
+  if (settimeofday(&target, nullptr) != 0) return;
+  g_gps_applied_before = true;
+  g_gps_applied_us = now_us;
+  g_gps_last_utc.store(static_cast<uint32_t>(target.tv_sec), std::memory_order_relaxed);
+  g_gps_corrections.fetch_add(1, std::memory_order_relaxed);
+  g_step_revision.fetch_add(1, std::memory_order_acq_rel);
+  follow_with_rtc();
+#endif
+}
+
 void fail(Error error) {
   g_error.store(error, std::memory_order_relaxed);
   g_failed.store(true, std::memory_order_relaxed);
@@ -176,6 +249,7 @@ void clock_changed() { g_clock_changed.store(true, std::memory_order_release); }
 
 void service(bool wifi_connected) {
   g_wifi_connected.store(wifi_connected, std::memory_order_relaxed);
+  service_gps_time();
   const uint32_t now_ms = monotonic_ms();
   uint8_t set_ready = 2;
   if (g_set_pending.compare_exchange_strong(set_ready, 3, std::memory_order_acq_rel)) {
@@ -263,8 +337,30 @@ void service(bool wifi_connected) {
   }
 }
 
+bool gps_time_enabled() {
+  load_gps_setting();
+  return g_gps_enabled.load(std::memory_order_relaxed);
+}
+
+bool set_gps_time_enabled(bool enabled) {
+  load_gps_setting();
+#ifndef ORC_NETWORK_CLOCK_TEST
+  orcsdr::NvsStore store;
+  if (!store.begin(kGpsNamespace, false)) return false;
+  const bool saved = store.put_bool(kGpsKey, enabled);
+  store.end();
+  if (!saved) return false;
+#endif
+  g_gps_enabled.store(enabled, std::memory_order_relaxed);
+  return true;
+}
+
 Status status() {
   Status out{};
+  out.gps_time_enabled = g_gps_enabled.load(std::memory_order_relaxed);
+  out.last_gps_utc = g_gps_last_utc.load(std::memory_order_relaxed);
+  out.gps_corrections = g_gps_corrections.load(std::memory_order_relaxed);
+  out.gps_decision = g_gps_decision.load(std::memory_order_relaxed);
   const uint32_t utc = plausible_utc(wallclock_now());
   out.wallclock_valid = utc != 0;
   out.last_success_utc = g_last_success.load(std::memory_order_relaxed);

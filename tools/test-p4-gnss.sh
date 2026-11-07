@@ -14,3 +14,8 @@ cc -std=c11 -Wall -Wextra -Werror -I"$boards/include" -I"$boards/src/boards" \
   "$root/tests/p4_gnss_profile_test.c" "$boards"/src/boards/board_*.c \
   -o "$build/p4_gnss_profile_test"
 "$build/p4_gnss_profile_test"
+cc -std=c11 -O1 -Wall -Wextra -Werror -D_GNU_SOURCE \
+  -I"$root/components/orcsdr_gnss/include" \
+  "$root/tests/p4_gnss_time_test.c" \
+  -o "$build/p4_gnss_time_test"
+"$build/p4_gnss_time_test"

@@ -3,6 +3,7 @@
 #include <atomic>
 #include <climits>
 #include "orcsdr_gnss_parser.h"
+#include "orcsdr_gnss_time.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -16,6 +17,7 @@ Status g_status;
 std::atomic<bool> g_starting{false};
 orcsdr_gnss_parser_t g_parser{};
 int64_t g_last_fix_us = 0;
+TimeSample g_time;
 
 void worker(void*) {
   uint8_t bytes[kReadChunk];
@@ -49,6 +51,13 @@ void worker(void*) {
           g_status.longitude_e7 = parsed.longitude_e7;
           g_status.fix_age_ms = 0;
           g_last_fix_us = now;
+          int64_t label_us = 0;
+          if (orcsdr_gnss_time_from_result(&parsed, &label_us)) {
+            g_time.valid = true;
+            ++g_time.seq;
+            g_time.label_us = label_us;
+            g_time.arrival_us = now;
+          }
         } else if (result == ORCSDR_GNSS_NO_FIX) {
           ++g_status.no_fixes;
           g_status.current_fix_usable = false;
@@ -70,6 +79,13 @@ void worker(void*) {
   }
 }
 } // namespace
+
+TimeSample latest_time() {
+  portENTER_CRITICAL(&g_lock);
+  const TimeSample copy = g_time;
+  portEXIT_CRITICAL(&g_lock);
+  return copy;
+}
 
 Status status() {
   portENTER_CRITICAL(&g_lock);

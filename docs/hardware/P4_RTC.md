@@ -36,6 +36,28 @@ licensing rule). The codec is `ports/p4/components/orcsdr_board_hosyond/include/
   with `sdmmc_allocate_aligned_buf: not enough mem`. Do not add a task or static buffers here without re-checking C6 startup.
 - Control 1 is checked at start; if STOP, TEST1 or TESTC is set it is cleared and logged.
 
+## GPS time (L76K)
+
+The clock can also be corrected from the on-board GNSS receiver. Network time stays the preferred source.
+
+- **Source:** only RMC sentences with a valid fix, a valid time and a valid date (year 2024-2099) are used; the parser has already
+  checked the checksum. Rules and conversion: `components/orcsdr_gnss/include/orcsdr_gnss_time.h`, tested by
+  `tests/p4_gnss_time_test.c` (run through `wsl bash tools/test-p4-gnss.sh`).
+- **When it applies:** the setting is on, network time is **not** fresh (no recent NTP sync), and two consecutive sentences agree with the
+  local clock's progress to within 2 s. If the system clock is already valid, a correction is made only when GPS differs by 1 s or more,
+  at most once a minute, and never when it differs by more than a year (treated as a wrong GPS date, e.g. a week rollover). An unset clock takes the GPS time
+  once two sentences agree.
+- **What a correction does:** sets the system clock (with the time since the sentence arrived added) and asks for the RTC to be written at the next second,
+  the same path as an NTP step. It does not reset the NTP freshness, so the first NTP sync still corrects it.
+- **Accuracy:** without the PPS line, NMEA time is good to roughly half a second. That is fine for display and the RTC and is **not** FT8-grade.
+  Whether PPS is wired to the P4 is unknown.
+- **Setting:** `gps_time` in NVS namespace `orcsdr_set`, default on. Serial: `RTL_GPSTIME STATUS`, `RTL_GPSTIME ON|OFF` (auth for ON/OFF).
+  There is no on-screen toggle yet; its placement on the Settings pages is the owner's decision.
+- **No new task:** the sample is a small struct in the existing GNSS reader, polled from the network clock's existing service call.
+
+Evidence: host tests (conversion cross-checked against `timegm`, every decision branch, boundaries). On the board the receiver streams NMEA but has no
+satellite fix yet, so **no correction has been observed**; the end-to-end path needs a sky view.
+
 ## What the build does not do
 
 - No alarm or timer, so the interrupt line is unused.
@@ -49,7 +71,7 @@ licensing rule). The codec is `ports/p4/components/orcsdr_board_hosyond/include/
 | --- | --- |
 | `python tests/test_pcf8563_protocol.py` (MSVC, `/W4 /WX`) | 7 passed: BCD masks, ranges, calendar edges, leap years, century bit, VL, epoch round trips against Python `calendar` |
 | `wsl bash tools/test-p4-network-clock.sh` | passes with the new hook compiled out in the test build |
-| LilyGO firmware build | see the session record |
+| LilyGO firmware build and flash (COM32) | builds; boots; C6 matches; `dma_free` unchanged at 4015 |
 | Physical: chip answers at 0x51, VL state on a fresh unit, restore after power cycle, write after NTP | **open** (needs the board; see acceptance below) |
 
 ## Physical acceptance (open)

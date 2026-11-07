@@ -183,6 +183,7 @@ void cmd_help() {
   std::printf("RTL_HEALTH [STATUS|BUILD|HEAP_CHECK]             - development diagnostics\n");
   std::printf("RTL_GNSS STATUS                                - passive receiver health; no coordinates\n");
   std::printf("RTL_CLOCK STATUS | SYNC | SET <UTC seconds>     - system UTC; changes require auth\n");
+  std::printf("RTL_GPSTIME STATUS | ON | OFF                  - correct the clock from GNSS when network time is not fresh; ON/OFF require auth\n");
   std::printf("RTL_STATUS                                      - receiver state\n");
   std::printf("RTL_C6_ROM STATUS                               - read-only embedded recovery package status\n");
   std::printf("RTL_FREQ | RTL_FREQ <HZ>                         - query / hot retune (auth)\n");
@@ -881,6 +882,19 @@ void handle_line(char* line) {
     std::printf("RTL_CLOCK_STATUS valid=%d level=%u age_s=%u last_sync_utc=%u syncing=%d failed=%d error=%u attempts=%u revision=%u\n",
       s.wallclock_valid,unsigned(s.level),unsigned(s.freshness_age_s),unsigned(s.last_success_utc),
       s.syncing,s.failed,unsigned(s.last_error),unsigned(s.attempts),unsigned(s.time_step_revision));
+    return;
+  }
+  if (!std::strcmp(line,"RTL_GPSTIME STATUS")) {
+    const auto s=network_clock::status();
+    std::printf("RTL_GPSTIME_STATUS enabled=%d corrections=%u last_gps_utc=%u decision=%u\n",
+      s.gps_time_enabled,unsigned(s.gps_corrections),unsigned(s.last_gps_utc),unsigned(s.gps_decision));
+    return;
+  }
+  if (!std::strcmp(line,"RTL_GPSTIME ON") || !std::strcmp(line,"RTL_GPSTIME OFF")) {
+    if(!authed()){std::printf("RTL_GPSTIME_ERROR auth_required\n");return;}
+    const bool on=!std::strcmp(line,"RTL_GPSTIME ON");
+    std::printf(network_clock::set_gps_time_enabled(on)?"RTL_GPSTIME_OK enabled=%d\n":"RTL_GPSTIME_ERROR save_failed enabled=%d\n",
+      network_clock::gps_time_enabled());
     return;
   }
   if (!std::strcmp(line,"RTL_CLOCK SYNC")) {
