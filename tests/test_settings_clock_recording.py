@@ -46,7 +46,8 @@ class SettingsClockRecordingTest(unittest.TestCase):
                      "test_month_clamp_repaints_only_affected_fields",
                      "test_cancel_discards_clock_draft",
                      "test_offset_only_save_emits_offset_action",
-                     "test_invalid_dirty_clock_cannot_save", "test_titles_stay_below_navigation"):
+                     "test_invalid_dirty_clock_cannot_save", "test_titles_stay_below_navigation",
+                     "test_gps_time_toggle"):
             getattr(cls.lib, name).restype = c.c_int
 
     def test_titles_do_not_bleed_into_navigation_gap(self):
@@ -66,6 +67,9 @@ class SettingsClockRecordingTest(unittest.TestCase):
 
     def test_invalid_dirty_clock_remains_open_without_save_action(self):
         self.assertEqual(self.lib.test_invalid_dirty_clock_cannot_save(), 0)
+
+    def test_gps_time_toggle_is_gated_drawn_and_toggles(self):
+        self.assertEqual(self.lib.test_gps_time_toggle(), 0)
 
 
 if __name__ == "__main__":

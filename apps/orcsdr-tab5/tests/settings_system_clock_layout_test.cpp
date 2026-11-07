@@ -38,6 +38,41 @@ static void check_system(Rect content, bool shallow) {
   for (const auto& row : power.status) assert(row.bounds.w == 0);
 }
 
+static bool overlaps(Rect a, Rect b) {
+  return a.w > 0 && a.h > 0 && b.w > 0 && b.h > 0 && a.x < b.x + b.w && b.x < a.x + a.w &&
+         a.y < b.y + b.h && b.y < a.y + a.h;
+}
+
+// The optional GPS TIME toggle: absent unless asked for (so other profiles keep the exact old geometry), inside
+// the content when present, and clear of every other control and row.
+static void check_gps_toggle(Rect content, bool shallow) {
+  const std::size_t pages = shallow ? 2 : 1;
+  for (std::size_t page = 0; page < pages; ++page) {
+    const auto off = make_system_layout(content, page);
+    const auto explicit_off = make_system_layout(content, page, false);
+    assert(!off.has_gps_time && off.gps_time.w == 0 && off.gps_time.h == 0);
+    assert(off.note.y == explicit_off.note.y && off.note.h == explicit_off.note.h);
+    const auto on = make_system_layout(content, page, true);
+    if (shallow && page == 1) {   // the second shallow page carries only power rows and the note
+      assert(!on.has_gps_time);
+      continue;
+    }
+    assert(on.has_gps_time);
+    inside(content, on.gps_time);
+    assert(on.gps_time.h >= 26);
+    for (const Rect r : {on.title, on.set_clock, on.run_setup, on.power_bounds, on.note})
+      assert(!overlaps(on.gps_time, r));
+    for (const auto& row : on.status) assert(!overlaps(on.gps_time, row.bounds));
+    for (const auto& row : on.power) assert(!overlaps(on.gps_time, row.bounds));
+    if (on.note.w > 0) inside(content, on.note);   // the shallow first page has no note
+    // Everything else is where it was without the toggle, except the tall note that moves down one row.
+    assert(on.set_clock.y == off.set_clock.y && on.run_setup.y == off.run_setup.y);
+    for (int i = 0; i < 7; ++i) assert(on.status[i].bounds.y == off.status[i].bounds.y);
+    if (!shallow) assert(on.note.y == off.note.y + 52 && on.gps_time.h >= 44);
+    else assert(on.note.y == off.note.y);
+  }
+}
+
 static void check_clock(Rect content, Rect footer) {
   const auto l = make_clock_editor_layout(content, footer);
   inside(l.bounds, l.title);
@@ -70,6 +105,9 @@ int main() {
   check_system(portrait.content, false);
   check_system(landscape.content, true);
   check_system({72, 164, 1088, 248}, true);
+  check_gps_toggle(portrait.content, false);
+  check_gps_toggle(landscape.content, true);
+  check_gps_toggle({72, 164, 1088, 248}, true);
   check_clock(portrait.content, portrait.footer);
   check_clock(landscape.content, landscape.footer);
   check_clock({72, 164, 1088, 208}, {72, 376, 1088, 48});

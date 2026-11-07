@@ -147,6 +147,9 @@ struct State {
   uint32_t rtc_epoch = 0;     // UTC seconds, valid when rtc_valid
   char rtc_local[24]{};       // "YYYY-MM-DD HH:MM:SS" at the offset, when rtc_valid
   uint8_t ntp_state = 0;      // 0 idle, 1 syncing, 2 done, 3 failed
+  // GPS time toggle on the System page. Shown only when the profile has a GNSS receiver; the adapter owns the setting.
+  bool gps_time_available = false;
+  bool gps_time_enabled = false;
 };
 
 enum class ActionKind : uint8_t {
@@ -191,6 +194,7 @@ enum class ActionKind : uint8_t {
   ,orientation_angle_changed // value is degrees; adapter owns validation/persistence
   ,orientation_auto_changed  // value is 0/1; adapter owns sensor policy
   ,c6_rom_begin,c6_rom_release_install,c6_rom_release_resume,c6_rom_cancel
+  ,gps_time_changed          // value is 0/1; adapter owns persistence
 };
 
 struct Action {

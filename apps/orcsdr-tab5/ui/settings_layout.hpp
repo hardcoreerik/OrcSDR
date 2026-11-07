@@ -81,6 +81,9 @@ inline ConnectivityLayout make_connectivity_layout(Rect c) {
 
 struct SystemLayout {
   Rect title, set_clock, run_setup, note;
+  // Optional GPS TIME toggle, only on profiles that ask for it (State::gps_time_available). Empty otherwise.
+  Rect gps_time;
+  bool has_gps_time = false;
   SectionValueRow power[4], status[7];
   Rect power_bounds;
   bool shallow = false;
@@ -273,7 +276,7 @@ inline CompanionLayout make_companion_layout(Rect content, bool dial_page = fals
   return layout;
 }
 
-inline SystemLayout make_system_layout(Rect content, std::size_t page = 0) {
+inline SystemLayout make_system_layout(Rect content, std::size_t page = 0, bool with_gps_time = false) {
   SystemLayout layout{};
   layout.shallow = content.h < 320;
   layout.page = page;
@@ -296,7 +299,10 @@ inline SystemLayout make_system_layout(Rect content, std::size_t page = 0) {
                           {x + 4, y + 24, width - 8, 22}, {}};
     }
     layout.power_bounds = {x, content.y + 88, width, 4 * 52 - 4};
-    layout.note = {x, content.y + 88 + 11 * 52, width, 48};
+    // The toggle takes the row after SD; the note moves down by one row only when it is present.
+    layout.has_gps_time = with_gps_time;
+    if (with_gps_time) layout.gps_time = {x, content.y + 88 + 11 * 52, width, 48};
+    layout.note = {x, content.y + 88 + (with_gps_time ? 12 : 11) * 52, width, 48};
     return layout;
   }
 
@@ -318,6 +324,10 @@ inline SystemLayout make_system_layout(Rect content, std::size_t page = 0) {
                           {row_x, y, column_width / 2, row_height},
                           {row_x + column_width / 2 + 4, y,
                            column_width - column_width / 2 - 4, row_height}, {}};
+    }
+    if (with_gps_time) {   // the free eighth slot: right column, fourth row
+      layout.has_gps_time = true;
+      layout.gps_time = {x + column_width + gap, content.y + 82 + 3 * row_step, column_width, row_height};
     }
   } else {
     constexpr int row_height = 28, row_step = 32;

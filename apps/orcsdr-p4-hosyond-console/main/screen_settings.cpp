@@ -140,6 +140,8 @@ const st::State& build() {
     orcsdr::clock_settings::format_local(g_state.rtc_local,sizeof(g_state.rtc_local),g_state.rtc_epoch,g_state.utc_offset_minutes);
   }
   g_state.ntp_state=clock.syncing?1:clock.failed?3:clock.last_success_utc?2:0;
+  g_state.gps_time_available=orcsdr_board_profile()->has_gnss;
+  g_state.gps_time_enabled=clock.gps_time_enabled;
   std::snprintf(g_state.build_identity, sizeof(g_state.build_identity), "P4 console %s", __DATE__);
   {
     const wifi_app::Status w = wifi_app::status();
@@ -284,6 +286,11 @@ void tap(int x, int y) {
       break;
     case st::ActionKind::location_changed: save_location(st::state()); break;
     case st::ActionKind::clock_ntp_sync: (void)network_clock::request_sync(); break;
+    case st::ActionKind::gps_time_changed:
+      // Adopt the saved value: if saving failed the setting did not change and the button shows that on its next draw.
+      (void)network_clock::set_gps_time_enabled(a.value!=0);
+      g_state.gps_time_enabled=network_clock::gps_time_enabled();
+      break;
     case st::ActionKind::clock_set_utc:
       if(!network_clock::request_set_utc(a.utc))break;
       [[fallthrough]];

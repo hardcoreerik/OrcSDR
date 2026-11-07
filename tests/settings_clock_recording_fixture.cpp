@@ -151,6 +151,48 @@ extern "C" __declspec(dllexport) int test_invalid_dirty_clock_cannot_save() {
   return action.kind == ActionKind::none && g_clock_edit && geometry_locked() ? 0 : 2;
 }
 
+// The optional GPS TIME toggle on the System page, in a tall and a shallow viewport.
+extern "C" __declspec(dllexport) int test_gps_time_toggle() {
+  using namespace orcsdr::settings;
+  const auto drawn = [](const char* label) {
+    for (const auto& t : M5.Display.texts) if (t.text == label) return true;
+    return false;
+  };
+  for (const Rect view : {Rect{72,72,424,1088}, Rect{72,72,1088,424}}) {
+    g_layout = make_settings_layout(view);
+    // Without the profile flag: nothing drawn and the spot is inert.
+    State off{};
+    M5.Display.clear_records();
+    enter(off, Section::system);
+    if (drawn("GPS TIME: OFF") || drawn("GPS TIME: ON")) return 1;
+    const auto plain = make_system_layout(g_layout.content, page_index(), true);
+    Action none{};
+    tap(plain.gps_time, &none);
+    if (none.kind != ActionKind::none) return 2;
+    leave();
+
+    State on{};
+    on.gps_time_available = true;
+    M5.Display.clear_records();
+    enter(on, Section::system);
+    if (!drawn("GPS TIME: OFF")) return 3;
+    const auto layout = make_system_layout(g_layout.content, page_index(), true);
+    if (!layout.has_gps_time) return 4;
+    Action action{};
+    M5.Display.clear_records();
+    tap(layout.gps_time, &action);
+    if (action.kind != ActionKind::gps_time_changed || action.value != 1 || !g_state.gps_time_enabled) return 5;
+    if (!drawn("GPS TIME: ON") || M5.Display.fill_screen_calls != 0) return 6;
+    tap(layout.gps_time, &action);
+    if (action.kind != ActionKind::gps_time_changed || action.value != 0 || g_state.gps_time_enabled) return 7;
+    // Well outside the control: no action.
+    tap({layout.gps_time.x, layout.gps_time.y - 12, layout.gps_time.w, 4}, &action);
+    if (action.kind == ActionKind::gps_time_changed) return 8;
+    leave();
+  }
+  return 0;
+}
+
 extern "C" __declspec(dllexport) int test_titles_stay_below_navigation() {
   using namespace orcsdr::settings;
   for(const Rect view: {Rect{72,72,424,1088},Rect{72,72,1088,424}}) {

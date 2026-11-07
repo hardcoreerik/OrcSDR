@@ -1092,9 +1092,19 @@ void draw_compact_system_row(const SectionValueRow& row, const char* label,
   text(clipped, row.value.x, row.value.y + row.value.h / 2, color, 2);
 }
 
+// The System page layout for the current profile: the GPS TIME toggle exists only where the adapter offers it.
+SystemLayout system_layout() {
+  return make_system_layout(g_layout.content, page_index(), g_state.gps_time_available);
+}
+
+void draw_gps_time_button(Rect r) {
+  button(g_state.gps_time_enabled ? "GPS TIME: ON" : "GPS TIME: OFF", r,
+         g_state.gps_time_enabled ? TFT_DARKGREEN : TFT_DARKGREY);
+}
+
 void draw_system_power() {
   if (!g_layout.legacy) {
-    const auto layout = make_system_layout(g_layout.content, page_index());
+    const auto layout = system_layout();
     if (layout.shallow && layout.page != 1) return;
     M5.Display.fillRect(layout.power_bounds.x, layout.power_bounds.y,
                         layout.power_bounds.w, layout.power_bounds.h, kBg);
@@ -1146,7 +1156,7 @@ const char* clock_storage_note() {
 
 void draw_compact_system() {
   page_index() = std::min(page_index(), page_count() - 1);
-  const auto layout = make_system_layout(g_layout.content, page_index());
+  const auto layout = system_layout();
   text("SYSTEM", layout.title.x, layout.title.y+layout.title.h/2, kBlue, 3);
   button("SET CLOCK", layout.set_clock, TFT_DARKCYAN);
   button("RUN SETUP", layout.run_setup, TFT_NAVY);
@@ -1168,6 +1178,7 @@ void draw_compact_system() {
         draw_compact_system_row(layout.status[i], labels[i], values[i],
                                 (i == 0 && !local_known) || (i == 1 && !g_state.rtc_valid)
                                     ? TFT_ORANGE : TFT_WHITE);
+      if (layout.has_gps_time) draw_gps_time_button(layout.gps_time);
     } else {
       draw_system_power();
       wrapped_text(g_state.rtc_valid ? clock_storage_note()
@@ -1204,6 +1215,7 @@ void draw_compact_system() {
     draw_compact_system_row(layout.status[i], status_labels[i], status_values[i],
                             (i == 0 && !local_known) || (i == 1 && !g_state.rtc_valid)
                                 ? TFT_ORANGE : TFT_WHITE);
+  if (layout.has_gps_time) draw_gps_time_button(layout.gps_time);
   wrapped_text(g_state.rtc_valid ? clock_storage_note()
                                  : (g_state.clock_hardware_backed ? "Tap SET CLOCK, or USB: python tools/sync_tab5_rtc.py COMx"
                                       : "Tap SET CLOCK; sync over Wi-Fi or set system UTC."),
@@ -1211,7 +1223,7 @@ void draw_compact_system() {
 }
 
 void draw_compact_system_clock_values() {
-  const auto layout = make_system_layout(g_layout.content, page_index());
+  const auto layout = system_layout();
   if (layout.shallow && layout.page == 1) {
     M5.Display.fillRect(layout.note.x,layout.note.y,layout.note.w,layout.note.h,kBg);
     wrapped_text(g_state.rtc_valid ? clock_storage_note()
@@ -2098,12 +2110,20 @@ Action handle_touch(int32_t x, int32_t y) {
     else return handle_clock_editor(x, y);
   }
   if (g_section == Section::system && !g_layout.legacy) {
-    const auto system_layout = make_system_layout(g_layout.content, page_index());
-    if (hit(x, y, system_layout.set_clock)) {
+    const auto layout = system_layout();
+    if (hit(x, y, layout.set_clock)) {
       start_clock_edit();
       return {};
     }
-    if (hit(x, y, system_layout.run_setup)) return {ActionKind::run_setup, 0};
+    if (hit(x, y, layout.run_setup)) return {ActionKind::run_setup, 0};
+    // The shallow toggle is only 26 px tall; the rows are 30 px apart, so two pixels of slop each side stay in the gap.
+    const int slop = layout.shallow ? 2 : 0;
+    if (layout.has_gps_time &&
+        hit(x, y, layout.gps_time.x, layout.gps_time.y - slop, layout.gps_time.w, layout.gps_time.h + 2 * slop)) {
+      g_state.gps_time_enabled = !g_state.gps_time_enabled;
+      draw_gps_time_button(layout.gps_time);
+      return {ActionKind::gps_time_changed, g_state.gps_time_enabled ? 1 : 0};
+    }
     return {};
   }
   if (g_layout.legacy && hit(x, y, 720, 13, 126, 46)) {

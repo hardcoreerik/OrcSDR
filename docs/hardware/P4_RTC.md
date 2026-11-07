@@ -52,7 +52,10 @@ The clock can also be corrected from the on-board GNSS receiver. Network time st
 - **Accuracy:** without the PPS line, NMEA time is good to roughly half a second. That is fine for display and the RTC and is **not** FT8-grade.
   Whether PPS is wired to the P4 is unknown.
 - **Setting:** `gps_time` in NVS namespace `orcsdr_set`, default on. Serial: `RTL_GPSTIME STATUS`, `RTL_GPSTIME ON|OFF` (auth for ON/OFF).
-  There is no on-screen toggle yet; its placement on the Settings pages is the owner's decision.
+  On screen: a **GPS TIME: ON/OFF** button on Settings > System, shown only when the profile has a GNSS receiver (the Tab5 and other
+  boards keep the identical page). In a tall viewport it is a full-width row after SD, and the note moves down one row; in a shallow viewport it
+  takes the free eighth slot on the first page (26 px tall, with 2 px of touch slop each side). Layout contracts:
+  `python tests/test_settings_system_clock_layout.py`; draw and tap behaviour: `python tests/test_settings_clock_recording.py`.
 - **No new task:** the sample is a small struct in the existing GNSS reader, polled from the network clock's existing service call.
 
 Evidence: host tests (conversion cross-checked against `timegm`, every decision branch, boundaries). On the board the receiver streams NMEA but has no
