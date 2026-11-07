@@ -45,6 +45,7 @@ if(BUILD_TESTING)
   target_compile_options(orc_linux_iq_test PRIVATE -Wall -Wextra -Wpedantic)
   add_test(NAME iq_metrics COMMAND orc_linux_iq_test)
   add_test(NAME simulated_receiver COMMAND orcsdr_cardputer_zero --demo)
+  add_test(NAME native_acars_cli_demo COMMAND orcsdr_cardputer_zero --acars-demo)
 
   add_executable(orc_native_decoder_test tests/native_decoder_test.cpp)
   target_link_libraries(orc_native_decoder_test PRIVATE orc_native_decoders)

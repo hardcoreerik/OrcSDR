@@ -1,5 +1,9 @@
 #include "iq_metrics.hpp"
 #include "rtl_receiver.hpp"
+#include "acars_core.hpp"
+#include "acars_selftest.hpp"
+#include "adsb_decoder.hpp"
+#include <array>
 
 #include <cstdint>
 #include <exception>
@@ -18,6 +22,9 @@ void usage() {
               << "  --demo                        synthetic IQ smoke test\n"
               << "  --iq-file PATH [--samples N]  analyze unsigned 8-bit interleaved IQ\n"
               << "  --list                        enumerate system librtlsdr devices\n"
+              << "  --acars-demo                  decode original OrcSDR ACARS synthetic fixture\n"
+              << "  --decode-acars PATH [--freq HZ]   CU8 file: 240kS/s, carrier=center+60kHz\n"
+              << "  --decode-adsb PATH            CU8 file: 2.048MS/s, centered 1090MHz\n"
               << "  --capture [--device N] [--freq HZ] [--rate SPS] [--samples N]\n"
               << "Defaults: device 0, 100100000 Hz, 1024000 sps, 32768 samples.\n"
               << "This experimental bring-up is receive-only; no GUI or audio yet.\n";
@@ -64,6 +71,90 @@ std::vector<std::uint8_t> capture(std::uint32_t index, std::uint32_t freq,
              <<" short_read="<<(got/2!=samples?1:0)<<'\n';
     return iq;
 }
+
+struct AcarsChain {
+    orcsdr::acars::Frontend240k frontend;
+    orcsdr::acars::Decoder decoder;
+    unsigned messages=0;
+    explicit AcarsChain(std::uint32_t center) {
+        if(center>UINT32_MAX-60000u)throw std::invalid_argument("ACARS RF center overflow");
+        decoder.set_frequency(center+60000u);
+        decoder.set_callback(on_message,this);
+    }
+    static void on_message(void* ptr,const orcsdr::acars::Message& m) {
+        auto& self=*static_cast<AcarsChain*>(ptr);
+        ++self.messages;
+        std::cout<<"ACARS frequency_hz="<<m.frequency_hz<<" tail="<<m.tail
+                 <<" label="<<m.label<<" corrected_bits="<<unsigned(m.corrected_bits)
+                 <<" text=";
+        for(unsigned i=0;i<m.text_length;++i) {
+            const unsigned char c=static_cast<unsigned char>(m.text[i]);
+            std::cout<<((c>=32 && c<=126)?char(c):'.');
+        }
+        std::cout<<'\n';
+    }
+    static void on_channel(void* ptr,float i,float q) {
+        static_cast<AcarsChain*>(ptr)->decoder.process_channel_iq(i,q);
+    }
+    void feed(const std::uint8_t* data,std::size_t bytes) {
+        frontend.process_cu8(data,bytes/2,on_channel,this);
+    }
+    void summary() const {
+        const auto& stats=decoder.stats();
+        std::cout<<"ACARS messages="<<messages<<" crc_ok="<<stats.crc_ok
+                 <<" corrected="<<stats.corrected<<" crc_rejected="<<stats.crc_rejected<<'\n';
+    }
+};
+struct AdsbChain {
+    orcsdr::adsb_rx::Decoder decoder;
+    unsigned messages=0;
+    static void on_frame(const orcsdr::adsb_rx::Frame& f,void* ptr) {
+        auto& self=*static_cast<AdsbChain*>(ptr);
+        ++self.messages;
+        std::cout<<"ADS-B icao="<<std::hex<<std::setw(6)<<std::setfill('0')<<f.icao
+                 <<std::dec<<std::setfill(' ')<<" bits="<<unsigned(f.bit_length);
+        if(f.has_callsign)std::cout<<" callsign="<<f.callsign;
+        if(f.has_altitude)std::cout<<" altitude_ft="<<f.altitude_ft;
+        std::cout<<'\n';
+    }
+    void feed(const std::uint8_t* data,std::size_t bytes) {
+        decoder.process_cu8(data,bytes,on_frame,this);
+    }
+};
+int acars_demo() {
+    AcarsChain chain(131490000u);
+    orcsdr::acars_selftest::Signal fixture(3023,0.0,0x1234);
+    std::array<std::uint8_t,4096> buf{};
+    for(;;) {
+        const auto n=fixture.next(buf.data(),buf.size());
+        if(!n)break;
+        chain.feed(buf.data(),n);
+    }
+    chain.summary();
+    return chain.messages==1 && chain.decoder.stats().crc_ok==1?0:2;
+}
+int decode_file(const std::string& path,bool acars,std::uint32_t center_hz) {
+    std::ifstream in(path,std::ios::binary);
+    if(!in)throw std::runtime_error("could not open CU8 IQ file");
+    AcarsChain acars_chain(center_hz);
+    AdsbChain adsb_chain;
+    std::array<std::uint8_t,8192> buf{};
+    std::uint64_t samples=0;
+    for(;;) {
+        in.read(reinterpret_cast<char*>(buf.data()),static_cast<std::streamsize>(buf.size()));
+        const auto got=in.gcount();
+        if(!got)break;
+        if(got<0||(got&1))throw std::runtime_error("incomplete CU8 sample in input file");
+        if(acars)acars_chain.feed(buf.data(),static_cast<std::size_t>(got));
+        else adsb_chain.feed(buf.data(),static_cast<std::size_t>(got));
+        samples+=static_cast<std::uint64_t>(got/2);
+    }
+    std::cout<<"input_complex_samples="<<samples<<'\n';
+    if(acars) {acars_chain.summary();return acars_chain.messages?0:2;}
+    std::cout<<"ADS-B frames="<<adsb_chain.messages
+             <<" crc_ok="<<adsb_chain.decoder.stats().crc_ok<<'\n';
+    return adsb_chain.messages?0:2;
+}
 }  // namespace
 
 int main(int argc, char** argv) {
@@ -74,13 +165,13 @@ int main(int argc, char** argv) {
         for (int i=1;i<argc;++i) {
             const std::string arg=argv[i];
             if (arg=="--help") { usage(); return 0; }
-            if (arg=="--demo" || arg=="--list" || arg=="--capture") {
+            if (arg=="--demo" || arg=="--acars-demo" || arg=="--list" || arg=="--capture") {
                 if(!mode.empty())throw std::invalid_argument("select exactly one mode");
                 mode=arg;
-            } else if (arg=="--iq-file") {
+            } else if (arg=="--iq-file" || arg=="--decode-acars" || arg=="--decode-adsb") {
                 if(!mode.empty())throw std::invalid_argument("select exactly one mode");
                 mode=arg;
-                if(++i>=argc)throw std::invalid_argument("--iq-file needs path");
+                if(++i>=argc)throw std::invalid_argument(arg+" needs path");
                 path=argv[i];
             } else {
                 if(++i>=argc)throw std::invalid_argument("missing option value");
@@ -93,6 +184,9 @@ int main(int argc, char** argv) {
             }
         }
         if(mode=="--demo")print_metrics(orc::synthetic_u8_tone(4096));
+        else if(mode=="--acars-demo")return acars_demo();
+        else if(mode=="--decode-acars")return decode_file(path,true,freq);
+        else if(mode=="--decode-adsb")return decode_file(path,false,freq);
         else if(mode=="--iq-file") {
             std::ifstream in(path,std::ios::binary);
             if(!in)throw std::runtime_error("failed to open IQ file");
