@@ -59,14 +59,9 @@ No claim here that rtl_tcp alone authenticates sessions or that OrcStream is alr
 - Timestamps and drops differ between source systems; preserve units and nullable unknown values. JS integer precision for 64-bit byte counters requires care.
 - The new JSON schema is **strict**. This is a designed validation boundary, not a command to make production clients immediately consume this envelope.
 
-## Required downstream interfaces — Agents 3, 4, 5
+## Implementation entrypoints
 
-These are **responsibility contracts**, not assertions about those agents' independently assigned work:
-
-- **Agent 3 / any remote-control and security owner:** implement authenticated principal+scope negotiation, per-receiver lease checks, command idempotency and audit, and explicit restrictions on `observe`/`tune`/`stream`/`record`/`admin`/`tx`. Do not trust confirmation headers. Produce denied/expired/replayed request tests.
-- **Agent 4 / any streaming transport owner:** adapt native IQ block and actual existing rtl_tcp/OIQ1/OrcStream-compatible data paths to v1 `iq_block`/`spectrum_frame`/`audio_frame` metadata, with generation fencing, bounded backpressure, explicit format and measured drop units. Do not invent a new incompatible stream or send 2.4 MSPS through Dart MethodChannel.
-- **Agent 5 / any UI/client parity owner:** consume `capabilities`/`receiver_state`/`command_result`/`decoder_event`, keep requested and applied settings separate, reject stale frames, preserve event integrity/provenance, and exercise local disconnected/no-display/no-network states.
-- **All agents:** share the exact schema/fixture set, extend by negotiated minor version only, run `python -m unittest discover -s tests/radio_service_v1 -v` from repo root with `jsonschema>=4.21,<5`, and document implemented versus measured evidence. **Do not modify the other repositories from this branch.**
+The runtime-independent entrypoints for downstream platform integrations are the canonical JSON schema, portable C ABI candidate, the 14 example envelopes, and the host contract test suite. Each platform adapter is responsible for providing real session identities, proven capabilities, measured timestamps and drops, hardware-backed command acknowledgments, and correctly scoped event delivery. See the staged migration gates above. Platform-specific work must preserve the existing public APIs until a separately reviewed integration has been verified.
 
 ## Tests and evidence
 
