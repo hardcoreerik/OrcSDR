@@ -3,8 +3,8 @@
 > **Branch:** [`chatgpt/ais-dashboard-20261106`](https://github.com/hardcoreerik/OrcSDR/tree/chatgpt/ais-dashboard-20261106)  
 > **Community request:** [OrcSDR Issue #234 — AIS vessel decoding](https://github.com/hardcoreerik/OrcSDR/issues/234)  
 > **Scope:** original receive-only C/C++ AIS decoder and seven-panel native M5GFX interface  
-> **Updated:** 2026-11-06  
-> **Status:** **Seven UI rendering surfaces implemented; decoder and application plumbing not implemented.**  
+> **Updated:** 2026-11-07  
+> **Status:** **Seven UI rendering surfaces implemented; portable partial AIS message parser and bounded station store host-tested. RF receiver, full 28-type field decoding, and application plumbing not implemented.**  
 > **Research separation:** RSA/REA standards/competitor findings stay exclusively in the separate private `REA-Results` workflow, **not in this development branch**.
 
 ## Design commitment
@@ -26,6 +26,9 @@ The UI must accurately represent observed facts. A missing antenna, incomplete p
 | Component CMake registration | `apps/orcsdr-tab5/main/CMakeLists.txt` | **Implemented** |
 | Host M5GFX render/bounds/selection/empty-state tests | `tests/ais_dashboard_render_tests.cpp` | **Implemented; GitHub Actions host test passing** |
 | Dedicated host CI workflow | `.github/workflows/ais-dashboard-host-tests.yml` | **Implemented** |
+| Portable original AIS protocol parser (header coverage 1–28, mapped position/AtoN fields) | `apps/orcsdr-tab5/ui/ais_protocol.{hpp,cpp}` | **Host-tested synthetic fixtures; not full 28-type field decoding** |
+| Bounded identity-safe AIS station store | `apps/orcsdr-tab5/ui/ais_station_store.{hpp,cpp}` | **Host-tested; not connected to receiver or UI** |
+| Portable AIS parser/store sanitizer test + CI | `tests/ais_protocol_tests.cpp`, `.github/workflows/ais-protocol-host-tests.yml` | **Sandbox ASan/UBSan passed; CI pending** |
 | Actual home/menu/runtime navigation into AIS | `ais_app` / top-level UI dispatcher | **Not implemented** |
 | Actual RF IQ-to-AIS decoder and receiver callbacks | Native DSP and parser modules | **Not implemented** |
 | Real Tab5 flash and touch verification | Hardware test | **Not performed** |
@@ -128,3 +131,28 @@ This document is the state tracker for implementation, panel review feedback, fo
 4. Implement/test original AIS RF and message decoders and connect their validated events to the view.
 5. Benchmark in the real Tab5 display environment (UI update cost, touch latency, RF overrun, memory).
 6. Use the independent RSA/REA results (kept in REA-Results) as reference test evidence, never as research text committed into this branch.
+
+## 2026-11-07 — native protocol/state foundation (host-only)
+
+- Added a portable, original C++17 bitfield parser with preliminary message-length guards for IDs 1–28; the general case is deliberately reported as `Coverage::header_only`. **Header coverage is not full 28-type decode coverage**.
+- Field extraction implemented for Class A position reports (1/2/3), Class B positions (18/19), Type 21 AtoN name/extension and virtual flag, Type 27 long-range location/motion, and **Type 28's 168-bit field map**. Type 28 Source ID and geometry-dependent dimension fields are preserved, not reinterpreted as Type 21 or as invented polygons.
+- Added a fixed-capacity (64 entries) station store with separate MMSI vs Type 28 Source-ID namespaces, distinct last-heard / last-valid-position / last-static timestamps, eight actual fixes per station, bounded overflow rejection and deterministic pruning.
+- Added specification-derived **synthetic** fixture tests for every type's header/length, selected full field maps, unavailable/sentinel positions, malformed input, out-of-order timestamps, history bounds, station overflow, and source-ID collision. Local host build with `-Wall -Wextra -Wpedantic -Werror -fsanitize=address,undefined` **passed**. This tests our implementation against its fixtures, not independent field-level or real-RF parity.
+- Sources are registered in ESP-IDF CMake, but **no ESP32-P4 full firmware build, flash or timing measurements were performed**. The existing seven M5GFX panels and OrcMaps library were not modified by this milestone.
+- **Critical integration work still pending:** AIS GMSK/IQ/HDLC/CRC receiver, full per-field parsing for the remaining message types, binary DAC/FI registry, static message 5/24 merging, UI `Snapshot` adapter and identity-kind-aware selection (Type 28 Source IDs must **never** be labeled MMSIs), OrcMaps consumer overlay adapter after the independent OrcMaps feature API is ready, and live Tab5 acceptance.
+- **Separate radio modes:** Type 27 long-range reports need 156.775 / 156.825 MHz tuning, not reception from a 162 MHz dual-channel IQ window.
+
+Host reproduction from the OrcSDR repository root:
+
+```bash
+g++ -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+  -fsanitize=address,undefined -fno-omit-frame-pointer \
+  -Iapps/orcsdr-tab5/ui \
+  tests/ais_protocol_tests.cpp \
+  apps/orcsdr-tab5/ui/ais_protocol.cpp \
+  apps/orcsdr-tab5/ui/ais_station_store.cpp \
+  -o /tmp/ais-protocol-tests
+/tmp/ais-protocol-tests
+```
+
+Expected: `AIS portable protocol and bounded station tests passed (synthetic fixtures only)`.

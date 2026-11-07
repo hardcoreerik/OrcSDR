@@ -1,0 +1,32 @@
+name: AIS portable protocol and station state
+on:
+  push:
+    branches:
+      - chatgpt/ais-dashboard-20261106
+    paths:
+      - "apps/orcsdr-tab5/ui/ais_protocol.*"
+      - "apps/orcsdr-tab5/ui/ais_station_store.*"
+      - "tests/ais_protocol_tests.cpp"
+      - ".github/workflows/ais-protocol-host-tests.yml"
+  pull_request:
+    paths:
+      - "apps/orcsdr-tab5/ui/ais_protocol.*"
+      - "apps/orcsdr-tab5/ui/ais_station_store.*"
+      - "tests/ais_protocol_tests.cpp"
+  workflow_dispatch:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and test AIS portable C++ with sanitizers
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Iapps/orcsdr-tab5/ui \
+            tests/ais_protocol_tests.cpp \
+            apps/orcsdr-tab5/ui/ais_protocol.cpp \
+            apps/orcsdr-tab5/ui/ais_station_store.cpp \
+            -o /tmp/ais-protocol-tests
+          /tmp/ais-protocol-tests
