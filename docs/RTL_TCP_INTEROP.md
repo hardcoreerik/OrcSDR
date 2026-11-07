@@ -554,3 +554,11 @@ yet investigated; unknown whether USB mode shows the same).
 Status bar: a remote stream now shows "RTL-TCP" in the Home header and footer, the header state is LIVE, BEHIND nn% or
 CONNECTING, and the footer shows the stream's live rate (for example 1.440 MSPS) instead of "-- MSPS". Other dashboards' own
 headers are unchanged. Screenshot verified on COM17 (M5Stack Tab5).
+
+### Ladder fixed to valid dongle rates (2026-11-07)
+
+The 480 kS/s middle rung was not a rate an RTL2832 can run (valid: 225,001-300,000 and 900,001-3,200,000 S/s), so a real
+dongle delivered about half the bytes there. The ladder is now 1.44 -> 0.96 -> 0.24 MS/s; every rung is a valid dongle rate and a
+whole multiple of 240 kS/s. Host tests cover it. Checked on the Tab5 (COM17) against the real V4 `rtl_tcp` behind a 1.2 MB/s
+throttle: `RTL_TCP_RATE_DOWN link=42%` to 0.96 MS/s, then `link=62%` to 0.24 MS/s, then 99-100% with 0 dropped bytes.
+Control and status surface for OrcSDR Web: `docs/RTL_TCP_CONTROL_SURFACE.md`.

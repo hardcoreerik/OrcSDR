@@ -247,28 +247,27 @@ static void test_rate_adapter() {
   CHECK(none(a.note(90, 960000, 240000)));            // recovered: count restarts
   for (int i = 0; i < 3; ++i) CHECK(none(a.note(50, 960000, 240000)));
   CHECK(a.note(50, 960000, 240000) == C::down);       // four behind samples in a row
-  CHECK(a.rate(960000) == 480000);
-  for (int i = 0; i < 3; ++i) CHECK(none(a.note(40, 960000, 240000)));
-  CHECK(a.note(40, 960000, 240000) == C::down);
-  CHECK(a.rate(960000) == 240000);
+  CHECK(a.rate(960000) == 240000);                    // 480 kS/s is not a rate an RTL2832 can run
   for (int i = 0; i < 50; ++i) CHECK(none(a.note(10, 960000, 240000)));  // ladder ends at 240k
   CHECK(a.rate(960000) == 240000);
   a.reset();
   CHECK(a.rate(960000) == 960000);
   // The consumer's floor stops the descent early.
   RateAdapter b;
-  for (int i = 0; i < 4; ++i) CHECK(none(b.note(30, 960000, 500000)));  // 480k is below the floor
+  for (int i = 0; i < 4; ++i) CHECK(none(b.note(30, 960000, 500000)));  // 240k is below the floor
   CHECK(b.rate(960000) == 960000);
-  // The 1.44 MS/s ladder keeps whole multiples of 240 kS/s.
+  // The 1.44 MS/s ladder only uses rates a real dongle supports and whole multiples of 240 kS/s.
   RateAdapter c;
   CHECK(c.rate(1440000) == 1440000);
-  const uint32_t expect[] = {960000, 480000, 240000};
+  const uint32_t expect[] = {960000, 240000};
   for (uint32_t want : expect) {
     for (int i = 0; i < 3; ++i) CHECK(none(c.note(40, 1440000, 240000)));
     CHECK(c.note(40, 1440000, 240000) == C::down);
     CHECK(c.rate(1440000) == want);
+    CHECK(want % 240000 == 0);
+    CHECK((want >= 225001 && want <= 300000) || (want >= 900001 && want <= 3200000));
   }
-  CHECK(c.rate(1440000) % 240000 == 0);
+  for (int i = 0; i < 20; ++i) CHECK(none(c.note(40, 1440000, 240000)));  // nothing below the bottom rung
   // A wanted rate off the ladder (ADS-B, lab override) is left alone until it steps.
   RateAdapter d;
   CHECK(d.rate(2048000) == 2048000);
@@ -283,17 +282,17 @@ static void test_rate_adapter() {
   // Between 85% and 95% neither steps down nor counts toward stepping up.
   RateAdapter f;
   for (int i = 0; i < 3; ++i) f.note(40, 960000, 240000);
-  f.note(40, 960000, 240000);                           // 480k
+  f.note(40, 960000, 240000);                           // 240k
   for (int i = 0; i < 200; ++i) CHECK(none(f.note(90, 960000, 240000)));
-  CHECK(f.rate(960000) == 480000);
+  CHECK(f.rate(960000) == 240000);
   // A probe that fails doubles the wait before the next one, then settles.
   RateAdapter g;
   for (int i = 0; i < 3; ++i) g.note(40, 960000, 240000);
-  g.note(40, 960000, 240000);                           // 480k
+  g.note(40, 960000, 240000);                           // 240k
   for (int i = 0; i < 29; ++i) g.note(100, 960000, 240000);
   CHECK(g.note(100, 960000, 240000) == C::up);          // probe 960k
   for (int i = 0; i < 3; ++i) g.note(40, 960000, 240000);
-  CHECK(g.note(40, 960000, 240000) == C::down);         // probe failed, back to 480k
+  CHECK(g.note(40, 960000, 240000) == C::down);         // probe failed, back to 240k
   for (int i = 0; i < 59; ++i) CHECK(none(g.note(100, 960000, 240000)));  // wait is now 60
   CHECK(g.note(100, 960000, 240000) == C::up);
 }

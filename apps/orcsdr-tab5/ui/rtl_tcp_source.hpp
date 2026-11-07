@@ -40,7 +40,7 @@ struct Status {
 uint32_t link_ratio_pct();
 
 // Remote sample rate for a stream that wants `wanted_sps`. It starts at the wanted rate and
-// steps down a ladder (1.44 -> 0.96 -> 0.48 -> 0.24 MS/s) when the link cannot keep up, so audio
+// steps down a ladder (1.44 -> 0.96 -> 0.24 MS/s) when the link cannot keep up, so audio
 // keeps real time instead of stuttering, and probes back up after a healthy minute. The step is
 // forgotten when the mode or server changes.
 uint32_t adapted_rate(uint32_t wanted_sps);

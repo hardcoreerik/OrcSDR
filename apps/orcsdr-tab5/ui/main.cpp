@@ -10177,7 +10177,7 @@ static void rtl_driver_app_task(void *) {
               const uint32_t link_pct = orcsdr::rtl_tcp_source::link_ratio_pct();
               const bool behind = remote_state == orcsdr::rtl_tcp::State::streaming &&
                                   link_pct > 0 && link_pct < 85;
-              // A link that stays behind gets a lower rate (960 -> 480 -> 240 kS/s): slower
+              // A link that stays behind gets a lower rate (1.44 -> 0.96 -> 0.24 MS/s): slower
               // spectrum span, but live audio instead of stutter.
               // After a healthy minute it probes one rung back up, and backs off if that fails.
               const auto rate_change =

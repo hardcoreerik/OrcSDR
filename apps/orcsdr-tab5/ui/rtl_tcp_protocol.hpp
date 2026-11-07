@@ -130,7 +130,8 @@ bool reconnect_delay_ms(const BackoffPolicy& policy, uint32_t attempt, uint32_t*
 // Wi-Fi link gives slower but live audio instead of fast-forwarded stutter. One call per
 // link-ratio sample (about every 2 s). Pure, so it is host-tested.
 // The rates are an explicit ladder because every rung must be a whole multiple of the 240 kS/s
-// demodulation rate (halving 1.44 MS/s would give 720 and 360 kS/s). The adapter also climbs
+// demodulation rate AND a rate the RTL2832 can run (225001-300000 and 900001-3200000 S/s only, so
+// 480 kS/s is not possible on a real dongle). The adapter also climbs
 // back: after kUpTicks healthy samples at a reduced rate it probes one rung up; a probe that
 // falls behind again steps back down and doubles the wait (up to kUpTicksMax), so a link that
 // cannot carry the higher rate settles instead of flapping.
@@ -140,8 +141,8 @@ struct RateAdapter {
   static constexpr uint32_t kBehindTicks = 4;     // consecutive samples before stepping down
   static constexpr uint32_t kUpTicks = 30;        // about 60 s healthy before the first probe
   static constexpr uint32_t kUpTicksMax = 480;    // about 16 min between probes after failures
-  static constexpr uint32_t kLadder[] = {1440000, 960000, 480000, 240000};
-  static constexpr uint8_t kLadderSize = 4;
+  static constexpr uint32_t kLadder[] = {1440000, 960000, 240000};
+  static constexpr uint8_t kLadderSize = 3;
   enum class Change : uint8_t { none, down, up };
 
   uint8_t step = 0;                 // rungs below the wanted rate
