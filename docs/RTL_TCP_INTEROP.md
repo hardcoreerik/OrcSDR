@@ -538,3 +538,19 @@ Measured with a real V4 `rtl_tcp` FM stream (96.1 MHz) from the PC:
 Host tests cover the ladder, the floor, off-ladder wanted rates, recovery, the 85-95% dead band and the probe backoff
 (`tools/test-rtl-tcp.sh`, all pass). Not verified: audio by ear at 1.44 MS/s, the scope look at the wider span, other
 bands' decoders on a remote stream, and a stream longer than about 5 min. Needs the owner's check of the wider scope span.
+
+### Soak and status bar (2026-11-07)
+
+Corrections first. Three earlier soak attempts were invalid and are not evidence about the Tab5: the PC `rtl_tcp` restarts
+its reader on every reconnect and its V4 throws USB `-9` errors, so its delivered rate drifted (and 480 kS/s is not a valid
+RTL2832 rate, the chip supports 225,001-300,000 and 900,001-3,200,000 S/s); a numpy FM generator and a constant-rate sender
+either could not pace 2.88 MB/s or ignored the rate command. The valid test used `rate_server.py` (pre-made noise IQ, paced to
+2 x the requested rate, honours the rate command).
+
+Result on the Home screen, 1.44 MS/s, fresh adapter: 2.88 MB/s steady for about 24 min (1500 s test server limit), link 99-100%,
+0 new dropped bytes, no rate change, no reconnect. About 12 `RTL_MAIN_STALL loop_gap` of 0.5 s per 3 min were logged (not
+yet investigated; unknown whether USB mode shows the same).
+
+Status bar: a remote stream now shows "RTL-TCP" in the Home header and footer, the header state is LIVE, BEHIND nn% or
+CONNECTING, and the footer shows the stream's live rate (for example 1.440 MSPS) instead of "-- MSPS". Other dashboards' own
+headers are unchanged. Screenshot verified on COM17 (M5Stack Tab5).

@@ -49,6 +49,9 @@ struct Snapshot {
   int16_t gain_steps_tenth_db[32]{};
   char wifi_ip[16]{};
   char receiver[12] = "RTL-SDR";
+  // Header state line for a network receiver ("LIVE", "BEHIND 62%", "CONNECTING"); empty means the USB
+  // receiver, which shows READY / NOT READY from driver_ready.
+  char link_state[12]{};
   char mode[12]{};
   // Mode popup: the pinned choice (0 = AUTO), the mode in use, the band's usual mode (all 0 AUTO, 1 NFM, 2 AM,
   // 3 WFM, 4 USB, 5 LSB), whether Home may pick the mode here, and the band's name.

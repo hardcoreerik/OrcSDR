@@ -13350,6 +13350,19 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
   if (!demo && g_rtl != nullptr && esp_rtl_sdr_get_metrics(g_rtl, &metrics) == ESP_OK)
     snapshot.effective_sps = metrics.effective_sps;
 #endif
+  if (!demo && g_rtl_remote_narrow.load(std::memory_order_acquire)) {
+    // A network receiver: say so, show the rate the stream really runs at (it steps with the link), and
+    // turn the header state into the link's health. "Ready" now means the stream is flowing, not USB.
+    const bool live = orcsdr::rtl_tcp_source::state() == orcsdr::rtl_tcp::State::streaming;
+    const uint32_t link = orcsdr::rtl_tcp_source::link_ratio_pct();
+    strlcpy(snapshot.receiver, "RTL-TCP", sizeof(snapshot.receiver));
+    snapshot.effective_sps = live ? rtl_active_sample_rate_sps.load(std::memory_order_relaxed) : 0;
+    snapshot.driver_ready = live;
+    if (!live) strlcpy(snapshot.link_state, "CONNECTING", sizeof(snapshot.link_state));
+    else if (link > 0 && link < orcsdr::rtl_tcp::RateAdapter::kBehindPct)
+      snprintf(snapshot.link_state, sizeof(snapshot.link_state), "BEHIND %u%%", static_cast<unsigned>(link));
+    else strlcpy(snapshot.link_state, "LIVE", sizeof(snapshot.link_state));
+  }
   if (demo) snapshot.effective_sps = 959800;
   // FM and AM use OrcSDR SMART gain as their automatic mode; every other band
   // uses the tuner's hardware AGC.
@@ -13407,6 +13420,7 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
       snapshot.wifi_connected != previous.wifi_connected ||
       strcmp(snapshot.wifi_ip, previous.wifi_ip) != 0 ||
       strcmp(snapshot.receiver, previous.receiver) != 0 ||
+      strcmp(snapshot.link_state, previous.link_state) != 0 ||
       snapshot.driver_ready != previous.driver_ready ||
       snapshot.receiving != previous.receiving ||
       snapshot.effective_sps != previous.effective_sps ||
