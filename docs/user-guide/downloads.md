@@ -3,8 +3,10 @@
 For ordinary installation, open the
 [OrcSDR web flasher](https://theorc.dev/sdr/flash/) in **Chrome or Edge**,
 connect the Tab5 by USB, and follow the page's instructions. This installer
-preserves saved settings by leaving NVS unerased. Check the version shown
-before flashing. See [Getting started](getting-started.md) for the steps.
+preserves saved settings by leaving NVS unerased **unless you select Erase
+device**. Leave that checkbox unticked to keep your settings. Compare the
+version shown with [GitHub Releases](https://github.com/hardcoreerik/OrcSDR/releases/latest)
+before flashing; the browser installer can lag a newly published release. See [Getting started](getting-started.md) for the steps.
 
 The [M5Burner web flasher](https://burner.m5stack.com/share/firmware/JXFU4H)
 and M5Burner desktop application are alternative methods. **M5Burner

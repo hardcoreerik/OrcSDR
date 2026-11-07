@@ -10,7 +10,7 @@
 
 OrcSDR is made by Oregon Radio Company LLC, Oregon. Its home is [theorc.dev](https://theorc.dev), and the project has its own [OrcSDR page](https://theorc.dev/sdr/). There's also a [gear guide](https://theorc.dev/guides/) if you're picking out a receiver and antenna.
 
-- **Web flasher:** [theorc.dev/sdr/flash](https://theorc.dev/sdr/flash/) installs the latest release onto an M5Stack Tab5 straight from Chrome or Edge over USB (Web Serial). No tools to install, and your saved settings stay put because NVS isn't erased.
+- **Web flasher:** [theorc.dev/sdr/flash](https://theorc.dev/sdr/flash/) installs the latest release onto an M5Stack Tab5 straight from Chrome or Edge over USB (Web Serial). No tools to install. Leave **Erase device** unticked to preserve saved settings; selecting it wipes them. Compare the offered version with GitHub Releases, since the browser installer can lag a new release.
 - **Releases:** stable and beta builds are on [GitHub Releases](https://github.com/hardcoreerik/OrcSDR/releases).
 - **Nightly builds:** automatic builds of `main` that haven't been tagged yet. [Flash the current nightly in your browser](https://theorc.dev/sdr/nightly/) or view the [rolling GitHub prerelease](https://github.com/hardcoreerik/OrcSDR/releases/tag/nightly). Check the build commit before testing; nightlies are development firmware, not fully accepted releases.
 - **Build from source:** [Tab5 build and flash quickstart](docs/user-guide/build-from-source.md). The standard build embeds an optional C6 update image but never automatically installs it.

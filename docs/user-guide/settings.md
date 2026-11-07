@@ -22,25 +22,45 @@ of remote downloads depends on the catalog configured in that firmware.
 
 ## Set the clock
 
-Open **Settings → System → SET CLOCK**. Set your local date and time with
-its field controls, choose the **UTC OFFSET (TIME ZONE)** for your location,
-and tap **SAVE**. No computer or network connection is required. The hardware
-clock stores UTC; the offset converts the local time you enter into UTC.
-Adjust the offset when your local daylight-saving time changes.
+Open **Settings → System → SET CLOCK**. Choose the **UTC OFFSET (TIME ZONE)**
+for your location first, then check and adjust the local date and time fields,
+and tap **SAVE**. Changing the offset can recalculate untouched time fields,
+so check the displayed local time after selecting it. No computer or network
+connection is required. The hardware clock stores UTC; the offset converts
+the local time you enter into UTC. Adjust the offset when your local
+daylight-saving time changes.
 
-For optional network synchronization, connect to Wi-Fi under **Connectivity**,
-then open **SET CLOCK** and tap **SYNC NTP**. Wait for the sync result; having
-Wi-Fi connected alone does not confirm that the clock was set. Tap **SAVE**
-to keep any UTC offset change.
+For optional network synchronization:
+
+1. Connect to Wi-Fi under **Connectivity**, open **SET CLOCK**, and tap **SYNC NTP**.
+2. Wait for a successful sync result. Wi-Fi connectivity alone does not confirm
+   that the clock was set.
+3. Tap **CANCEL** to discard any date/time edits made before the sync, then
+   reopen **SET CLOCK**. Choose your UTC offset again and tap **SAVE** without
+   editing the synchronized date/time fields. This avoids overwriting the
+   synchronized clock with earlier manual edits.
+
+If synchronization fails and the clock is unset, enter the correct local date
+and time manually before saving; do not save the editor's default fields as
+though synchronization succeeded.
 
 System shows a green UTC value once the hardware clock is established.
 Otherwise it shows **TIME NOT SET** in orange. Home also shows UTC once set;
 until then its uptime clock is labeled **TIME NOT SET**.
 
-For an alternative USB method, connect the Tab5 to a computer with Python
-and the repository available, then run `python tools/sync_tab5_rtc.py COM17`
-(replace `COM17` with its actual port). This authenticates locally and copies
-the computer's UTC time without a network connection.
+For an alternative USB method, connect the Tab5 to a computer with the
+repository available. In the Python environment you will use for the sync
+command, install `pyserial` with `python -m pip install pyserial`, then run
+`python tools/sync_tab5_rtc.py COM17` from the repository root (replace `COM17`
+with its actual port). This authenticates locally and copies the computer's
+UTC time without a network connection during synchronization.
+
+If the Tab5 is already paired, use its existing local key file:
+`python tools/sync_tab5_rtc.py COM17 --pairing-key "path/to/existing.key"`.
+The default key path is `.orclink/ui-doc.key`; a new checkout's generated key
+cannot authenticate an already-paired device. On an unpaired device, the tool
+creates the key file and enrolls it. Keep that file private and retain it for
+future access.
 
 ## Companion web console
 

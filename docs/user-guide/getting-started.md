@@ -14,9 +14,11 @@
 
 1. Open the [OrcSDR web flasher](https://theorc.dev/sdr/flash/)
    in **Chrome or Edge** on your computer. It uses Web Serial and preserves
-   saved settings by leaving NVS unerased.
+   saved settings by leaving NVS unerased **unless you select Erase device**.
+   Leave that checkbox unticked to keep your settings.
 2. Connect the **M5Stack Tab5** by USB. Close any serial monitor using its port.
-3. Check the version shown on the page and follow its installation instructions.
+3. Compare the version shown with [GitHub Releases](https://github.com/hardcoreerik/OrcSDR/releases/latest);
+   the browser installer can lag a new release. Follow its installation instructions.
    Select the Tab5 serial port when the browser asks for access.
 4. Keep the USB cable connected until flashing completes. Restart the Tab5 afterward.
 
