@@ -39,6 +39,10 @@ typedef enum {
     ORCSDR_BATTERY_GAUGE_BQ27220 = 1,
 } orcsdr_battery_gauge_type_t;
 typedef enum {
+    ORCSDR_RTC_NONE = 0,
+    ORCSDR_RTC_PCF8563 = 1,
+} orcsdr_rtc_type_t;
+typedef enum {
     ORCSDR_RADIO_ANT_UNKNOWN=0,
     ORCSDR_RADIO_ANT_EXTERNAL_LOW,
     ORCSDR_RADIO_ANT_EXTERNAL_HIGH,
@@ -133,6 +137,10 @@ typedef struct {
     orcsdr_battery_gauge_type_t battery_gauge_type;
     int battery_gauge_i2c_port;
     unsigned char battery_gauge_i2c_address;
+    /* Optional battery-backed clock on an existing owned bus; NONE is the safe default. */
+    orcsdr_rtc_type_t rtc_type;
+    int rtc_i2c_port;
+    unsigned char rtc_i2c_address;
     /* Optional passive NMEA receiver. Startup is a documented latch level,
      * not a claim about wake/sleep polarity; absent profiles remain untouched. */
     bool has_gnss;

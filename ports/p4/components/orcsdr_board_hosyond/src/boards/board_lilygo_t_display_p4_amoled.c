@@ -47,7 +47,8 @@
  * console_supported stays false until the shared interactive console is accepted.
  *
  * Also on the board and unused here: L76K GNSS P4 UART TX 23 / RX 22 (wake XL9535 IO11),
- * PCF8563 RTC, BQ27220 gauge, AW86224 haptic, camera, BOOT key GPIO35. */
+ * AW86224 haptic, camera, BOOT key GPIO35. The PCF8563 RTC (I2C1, 0x51) is used: it restores the
+ * system clock at boot and is written after each network or manual clock set (orcsdr_rtc.c). */
 const orcsdr_board_profile_t g_board_lilygo_t_display_p4_amoled = {
     .name = "lilygo-t-display-p4-amoled",
     .vendor = "LilyGO",
@@ -55,7 +56,7 @@ const orcsdr_board_profile_t g_board_lilygo_t_display_p4_amoled = {
     .unsupported = "Experimental RM69A10/GT9895 backend; full console not accepted. Other expander outputs are not "
                    "driven: C6 enable, USB PHY power, speaker power, SD power, screen/touch reset and the "
                    "SX1262 reset all sit on the XL9535. Onboard SX1262 is described, not used. Ethernet, "
-                   "GNSS, RTC, haptic, camera and the battery gauge are unused. IMU telemetry is optional; "
+                   "GNSS, haptic and the camera are unused. IMU telemetry is optional; "
                    "auto-rotation is unavailable until its mounted axes are physically calibrated. RTL-SDR host power "
                    "is unverified. Do not flash until the silkscreen says AMOLED and the silicon revision is read.",
     .status = ORCSDR_PROFILE_DOCUMENTED,
@@ -85,6 +86,9 @@ const orcsdr_board_profile_t g_board_lilygo_t_display_p4_amoled = {
     /* LilyGO device-driver config a47cf73e: BQ27220 on I2C1, 7-bit 0x55. */
     .battery_gauge_type = ORCSDR_BATTERY_GAUGE_BQ27220,
     .battery_gauge_i2c_port = 1, .battery_gauge_i2c_address = 0x55,
+    /* PCF8563 on I2C1 (the panel bus) at 0x51, per the same config header (pins/address are facts only).
+     * Its interrupt output is on XL9535 IO12 and is not used: the clock is read and written, never alarmed. */
+    .rtc_type = ORCSDR_RTC_PCF8563, .rtc_i2c_port = 1, .rtc_i2c_address = 0x51,
     /* Vendor L76k::Init calls Sleep(false): WAKE_UP high is awake.
      * cpp_bus_driver v2.2.0 src/chip/uart/l76k.cpp; pin facts only.
      * HardwareUart(tx,rx) receives (kRx23,kTx22): P4 RX is GPIO22.

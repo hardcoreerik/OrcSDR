@@ -17,6 +17,7 @@ extern "C" int network_clock_test_set_wallclock(time_t utc);
 #ifndef ORC_NETWORK_CLOCK_TEST
 #include <esp_sntp.h>
 #include <esp_timer.h>
+#include "orcsdr_rtc.h"
 #endif
 
 namespace network_clock {
@@ -109,6 +110,14 @@ bool set_wallclock(time_t value) {
 #endif
 }
 
+// Boards with a battery-backed clock (LilyGO T-Display-P4) copy the corrected system clock into it, on the next whole
+// second and off this thread. Boards without one report ESP_ERR_INVALID_STATE, which is ignored.
+void follow_with_rtc() {
+#ifndef ORC_NETWORK_CLOCK_TEST
+  (void)orcsdr_rtc_request_write_from_system();
+#endif
+}
+
 void fail(Error error) {
   g_error.store(error, std::memory_order_relaxed);
   g_failed.store(true, std::memory_order_relaxed);
@@ -183,6 +192,7 @@ void service(bool wifi_connected) {
       g_ever_attempted.store(true, std::memory_order_relaxed);
       g_last_attempt_ms.store(now_ms, std::memory_order_relaxed);
       g_step_revision.fetch_add(1, std::memory_order_acq_rel);
+      follow_with_rtc();
     } else {
       g_failed.store(true, std::memory_order_relaxed);
       g_error.store(Error::set_time, std::memory_order_relaxed);
@@ -213,6 +223,7 @@ void service(bool wifi_connected) {
         g_failed.store(false, std::memory_order_relaxed);
         g_error.store(Error::none, std::memory_order_relaxed);
         g_engine.store(Engine::idle, std::memory_order_release);
+        follow_with_rtc();
       } else {
         fail(Error::invalid_time);
       }

@@ -13,6 +13,7 @@
  */
 #include <string.h>
 #include "orcsdr_battery.h"
+#include "orcsdr_rtc.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "esp_log.h"
@@ -223,6 +224,18 @@ static void start_optional_battery(void)
     if(err!=ESP_OK)ESP_LOGW(TAG,"battery service unavailable: %s",esp_err_to_name(err));
 }
 
+static void start_optional_rtc(void)
+{
+    const orcsdr_board_profile_t *profile=orcsdr_board_profile();
+    if(profile->rtc_type==ORCSDR_RTC_NONE)return;
+    if(profile->rtc_type!=ORCSDR_RTC_PCF8563 || profile->rtc_i2c_port!=profile->i2c_port) {
+        ESP_LOGW(TAG,"rtc bus/type is not supported by this board adapter");
+        return;
+    }
+    const esp_err_t err=orcsdr_rtc_start(s_i2c,profile->rtc_i2c_address);
+    if(err!=ESP_OK)ESP_LOGW(TAG,"rtc service unavailable: %s",esp_err_to_name(err));
+}
+
 /* ---------------- Public interface ---------------- */
 
 esp_err_t hosyond_board_start(hosyond_display_t *out)
@@ -251,7 +264,7 @@ esp_err_t hosyond_board_start(hosyond_display_t *out)
     if (err!=ESP_OK) return err;
 #ifdef CONFIG_ORCSDR_BOARD_LILYGO_T_DISPLAY_P4_AMOLED
     err=lilygo_amoled_start(s_i2c,out);
-    if(err==ESP_OK)start_optional_battery();
+    if(err==ESP_OK){start_optional_battery();start_optional_rtc();}
     return err;
 #endif
     {
@@ -371,6 +384,7 @@ esp_err_t hosyond_board_start(hosyond_display_t *out)
     ESP_LOGI(TAG, "display up: %dx%d, %d frame buffer(s) of %u bytes in PSRAM, byte order [B][G][R]",
              out->width, out->height, out->fb_count, (unsigned)out->fb_bytes);
     start_optional_battery();
+    start_optional_rtc();
     return ESP_OK;
 }
 

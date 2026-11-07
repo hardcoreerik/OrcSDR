@@ -27,19 +27,38 @@ replaced. No LVGL renderer was imported.
 
 ## Third-party touch protocol
 
-GT9895 runtime discovery and packet handling in `gt9895_touch.c` and
-`gt9895_protocol.h` are adapted from LakeShark v2.19.2, commit
-`08578075c83c0d8da87c791e197cbd58a0aa4826`,
-`components/lakeshark/board/ls_touch.c` and the touch-reset sequence in
-`ls_board_hw.c`, by SAMS0N1TE/LakeShark. Its source credits LILYGO_L
-`cpp_bus_driver/gt9895.cpp`. These files retain GPL-3.0-or-later SPDX notices;
-the supplied GPL text is in `ports/p4/licenses/LakeShark-GPL-3.0.txt`. Preserve
-these notices/source when distributing a derivative. The surrounding OrcSDR
-repository retains its existing license.
+GT9895 touch (`gt9895_touch.c`, `gt9895_protocol.h`) follows the register map,
+packet layout and checksum rules of SensorLib's `TouchDrvGT9895`, by Lewis He,
+MIT License, repository commit `60868589ef1fddfc49560002131737b893e847b6`
+(`src/touch/TouchDrvGT9895.cpp` and `.hpp`, both carrying the MIT notice). The
+code is OrcSDR's own C, the files carry `SPDX-License-Identifier: MIT` and a
+credit, and the license text is in `ports/p4/licenses/SensorLib-MIT.txt`. Pins
+and the I2C address come from the board profile; the touch reset is a plain
+active-low pulse on the profile's `ioexp_touch_rst` line.
+
+An earlier checkpoint (commit `bb9348c6`) had adapted this driver from
+LakeShark v2.19.2 (`ls_touch.c`, GPL-3.0-or-later). That was not the intent:
+OrcSDR is AGPL-3.0-only plus a commercial license, so GPL-derived code cannot
+be included. It was replaced on 2026-11-06 and the GPL text removed. Commit
+history on `codex/p4-display-integration` still contains it, so do not merge
+that history into `main`; land the work from a squashed or re-created branch.
+LILYGO's `cpp_bus_driver` (the original GT9895 source LakeShark credits) is also
+GPL-3.0 and is not used. See the licensing section of `AGENTS.md`.
+
+Differences from the old code that need physical acceptance: the report address
+is the fixed `0x010308` (the old code read it from the controller's info block),
+raw 1060x2400 is scaled linearly to 568x1232 with clamping, and the reset timing
+(20 ms low, 100 ms settle) is unmeasured. Host checks cover only the packet rules.
 
 The original Claude AMOLED source retains its existing provenance commentary.
 It was not relabelled as a newly written panel driver. New geometry and its
 touch mapping are separate from the controller protocol adaptation.
+
+## PCF8563 clock (LilyGO profile)
+
+Written from the NXP PCF8563 datasheet. Bus (I2C1), address (0x51) and the interrupt line (XL9535 IO12) are hardware facts read from
+the LILYGO `t_display_p4_config.h` @ a47cf73e; no LILYGO or other third-party driver code was copied, adapted or translated.
+Details and open acceptance items: `docs/hardware/P4_RTC.md`.
 
 ## Implemented in this milestone
 

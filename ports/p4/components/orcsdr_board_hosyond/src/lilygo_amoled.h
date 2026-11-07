@@ -12,6 +12,9 @@ extern "C" {
 /* Power the panel (expander), run the init sequence, start DSI video. `bus` is the panel I2C bus. */
 esp_err_t lilygo_amoled_start(i2c_master_bus_handle_t bus, hosyond_display_t *out);
 
+/* Pulse the touch controller reset line from the board profile (port-0 pin on the XL9535). */
+esp_err_t lilygo_amoled_touch_reset(i2c_master_bus_handle_t bus);
+
 /* DCS brightness 0-255. */
 esp_err_t lilygo_amoled_set_brightness(uint8_t level);
 

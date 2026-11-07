@@ -150,6 +150,36 @@ static esp_err_t expander_power_and_reset(i2c_master_bus_handle_t bus)
     return err == ESP_OK ? ESP_OK : ESP_FAIL;
 }
 
+/* Pulse the touch controller's reset line (board profile: ioexp_touch_rst). Active low. The
+ * 20 ms low pulse and 100 ms settle are conservative values chosen here, not measured. */
+esp_err_t lilygo_amoled_touch_reset(i2c_master_bus_handle_t bus)
+{
+    const orcsdr_board_profile_t *profile = orcsdr_board_profile();
+    if (!bus || !profile || profile->ioexp_touch_rst.dev < 0 || profile->ioexp_touch_rst.pin < 0 ||
+        profile->ioexp_touch_rst.pin > 7) {
+        return ESP_ERR_NOT_SUPPORTED;
+    }
+    i2c_master_dev_handle_t dev;
+    const i2c_device_config_t cfg = {
+        .dev_addr_length = I2C_ADDR_BIT_LEN_7,
+        .device_address = (uint16_t)profile->ioexp_addr[profile->ioexp_touch_rst.dev],
+        .scl_speed_hz = 100000,
+    };
+    esp_err_t err = i2c_master_bus_add_device(bus, &cfg, &dev);
+    if (err != ESP_OK) {
+        return err;
+    }
+    const int pin = profile->ioexp_touch_rst.pin;
+    err = xl_drive(dev, pin, 1);
+    vTaskDelay(pdMS_TO_TICKS(5));
+    err |= xl_drive(dev, pin, 0);
+    vTaskDelay(pdMS_TO_TICKS(20));
+    err |= xl_drive(dev, pin, 1);
+    vTaskDelay(pdMS_TO_TICKS(100));
+    i2c_master_bus_rm_device(dev);
+    return err == ESP_OK ? ESP_OK : ESP_FAIL;
+}
+
 /* ---- panel ---- */
 
 static volatile uint32_t s_refresh_count;
