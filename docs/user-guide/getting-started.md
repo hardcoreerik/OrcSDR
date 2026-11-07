@@ -12,21 +12,24 @@
 
 ## Install in your browser
 
-1. Open the [OrcSDR M5Burner web flasher](https://burner.m5stack.com/share/firmware/JXFU4H)
-   in **Chrome or Edge** on your computer. The page uses WebSerial.
+1. Open the [OrcSDR web flasher](https://theorc.dev/sdr/flash/)
+   in **Chrome or Edge** on your computer. It uses Web Serial and preserves
+   saved settings by leaving NVS unerased.
 2. Connect the **M5Stack Tab5** by USB. Close any serial monitor using its port.
-3. Check the version shown on the page, click **Burn to device**, and select the
-   Tab5 serial port when the browser asks for access.
-4. Follow the flasher instructions and keep the USB cable connected until flashing
-   completes. Restart the Tab5 afterward.
-
-**An M5Burner install resets saved settings** (Wi-Fi profiles, location, screen
-rotation), so write them down first and expect to re-enter them.
+3. Check the version shown on the page and follow its installation instructions.
+   Select the Tab5 serial port when the browser asks for access.
+4. Keep the USB cable connected until flashing completes. Restart the Tab5 afterward.
 
 ## Other installation methods
 
-You can also use the **M5Burner desktop application**: search for OrcSDR, select
-the Tab5 package, and burn it. The same settings-reset notice applies.
+The [M5Burner web flasher](https://burner.m5stack.com/share/firmware/JXFU4H)
+is a separate installation option. In Chrome or Edge, check the version shown,
+click **Burn to device**, and select the Tab5 port. You can also use the
+**M5Burner desktop application**: search for OrcSDR, select the Tab5 package,
+and burn it.
+
+**An M5Burner install resets saved settings** (Wi-Fi profiles, location, screen
+rotation), so write them down first and expect to re-enter them.
 
 To keep your settings, use the Windows settings-preserving installer zip from
 [the latest release page](https://github.com/hardcoreerik/OrcSDR/releases/latest):
