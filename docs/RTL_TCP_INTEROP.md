@@ -487,10 +487,30 @@ Plateau check (same 3.0.6 configuration, 3 x 120 s each): a 128 KB bench buffer 
 64 KB); pinning the bench task to core 1, where lwIP runs, gave 24.9 / 25.5 / 25.9 (worse). The sustained ceiling on this
 configuration is about 32 Mbit/s; 35 Mbit/s was not reached.
 
-### Higher remote sample rates (checked 2026-11-07)
+### Higher remote sample rates: scope (2026-11-07)
 
-The remote path has no mode above 960 kS/s: `kRtlSampleRateSps` is fixed at 960000 and the rate adapter only steps down
-(960 -> 480 -> 240 kS/s). The FM/RDS DSP chain is built around integer decimation of 960 kS/s, so 1.8 MS/s (decimation 7.5)
-is not a drop-in. Link budget for reference: 960 kS/s needs 15.4 Mbit/s against 28-32 Mbit/s measured (about 2x margin);
-1.8 MS/s would need 28.8 Mbit/s (no margin) and 2.4 MS/s 38.4 Mbit/s (above the measured ceiling). Wider remote spans for
-the scope or waterfall would be a new feature with its own decimation path; not started, owner's call.
+Correction to the earlier note here: the DSP is not limited to 960 kS/s. Locally, the wide bands (FM, AM, shortwave, WX,
+CB, browse, airband) already run at 2.4 MS/s and ADS-B at 2.048 MS/s. The remote path is held at 960 kS/s on purpose by
+one switch, `g_rtl_remote_narrow` in `rtl_default_sample_rate()`, written when the Wi-Fi link measured about 2 MB/s. The
+link now sustains about 4 MB/s (28-32 Mbit/s), so that limit can move.
+
+| Remote rate | Needs | Share of 32 Mbit/s | Span vs now | FM decimation |
+|---|---|---|---|---|
+| 960 kS/s (now) | 1.92 MB/s, 15.4 Mbit/s | 48% | 1.0x | 4 |
+| 1.2 MS/s | 2.40 MB/s, 19.2 Mbit/s | 60% | 1.25x | 5 |
+| 1.44 MS/s | 2.88 MB/s, 23.0 Mbit/s | 72% | 1.5x | 6 |
+| 1.92 MS/s | 3.84 MB/s, 30.7 Mbit/s | 96% | 2.0x | 8 |
+| 2.4 MS/s (local default) | 4.80 MB/s, 38.4 Mbit/s | 120% | 2.5x | 10 |
+
+Recommendation: 1.44 MS/s is the practical ceiling (1.5x the span, 28% headroom for Wi-Fi dips). 1.92 MS/s has no
+margin and 2.4 MS/s cannot be carried. Gain is modest, so this is optional.
+
+Work items if approved (nothing started):
+1. Make the remote wide-band default a value (1.44 MS/s) instead of the fixed 960 kS/s; keep ADS-B (2.048 MS/s, 32.8 Mbit/s)
+   remote-excluded or narrowed.
+2. Extend the `RateAdapter` ladder (1.44 -> 0.96 -> 0.48 -> 0.24 MS/s) and check the remote session accepts each rate.
+3. Confirm the tuner and driver accept 1.44 MS/s (`esp_rtl_sdr_is_rate_supported`) and that the rtl_tcp server honours it.
+4. Check the IQ ring (3 x 33280 B slots) and the FM/RDS decimation are correct at decimation 6, and the scope span cap.
+5. Test: `RTL_TCP BENCH` at the new rate, a real V4 `rtl_tcp` FM run for 10 min (link %, drops, audio), then the
+   dashboards. It is a visible dashboard behaviour change (wider span), so it needs the owner's go-ahead before it lands.
+Risk: Wi-Fi and the DSP share core time, so higher rates can starve audio; the adapter step-down is the safety net.
