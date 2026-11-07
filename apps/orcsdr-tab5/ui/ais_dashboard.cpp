@@ -63,6 +63,10 @@ uint8_t g_selected_message=0,g_protocol=1;
 uint16_t g_range_nm=25;
 uint8_t g_target_offset=0,g_message_offset=0,g_event_offset=0,g_protocol_offset=0;
 uint32_t g_last_revision=0;
+#if defined(ESP_PLATFORM)
+maps::RegionalView g_last_map{};
+int g_last_map_screen_offset=0;
+#endif
 
 bool hit(Rect r,int x,int y) { return r.contains(x,y); }
 void card(Rect r,uint16_t border=kEdge) { d.fillround(r.x,r.y,r.w,r.h,9,kPanel); d.round(r.x,r.y,r.w,r.h,9,border); }
@@ -138,6 +142,8 @@ void map_page() {
     d.fill(40,212,768,394,kBg);
     d.text("SET RECEIVER LOCATION TO POSITION AIS TARGETS",70,356,kAmber,2);
   }
+  g_last_map=mv;
+  g_last_map_screen_offset=d.offset;
   if(mv.valid) for(size_t i=0;i<bounded_targets();++i) {
     const Target& t=s.targets[i];if(!t.has_position||t.position_stale)continue;
     int x=0,y=0;
@@ -495,6 +501,23 @@ Action handle_touch(int32_t x,int32_t y){
       g_range_nm=values[i];paint(true);
       return {ActionKind::set_range_nm,g_range_nm};
     }
+#if defined(ESP_PLATFORM)
+    if(g_last_map.valid&&g_data->coordinates_valid&&hit({40,212,768,394},x,y)) {
+      for(size_t i=0;i<bounded_targets();++i) {
+        const Target& t=g_data->targets[i];
+        if(!t.has_position||t.position_stale)continue;
+        int px=0,py=0;
+        if(!maps::project(g_last_map,t.lat_e7,t.lon_e7,&px,&py))continue;
+        py+=g_last_map_screen_offset;
+        const int dx=x-px,dy=y-py;
+        if(dx*dx+dy*dy<=26*26) {
+          g_selected_mmsi=t.mmsi;
+          paint();
+          return {ActionKind::target_selected,t.mmsi};
+        }
+      }
+    }
+#endif
   } else if(g_view==View::targets){
     for(size_t j=0;j<8;++j){
       const size_t i=g_target_offset+j;
