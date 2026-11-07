@@ -171,3 +171,38 @@ OrcSDR now contains an **original** portable `ais_rx::Receiver` processing CU8 I
 **Not done/blocked:** Device-radio owner selection and IQ callback wiring; full M5GFX snapshot bridge; actual marine traffic, real captured IQ or external AIS-catcher parity; ESP32-P4 firmware compile/flash; PLL/adaptive timing and interference/weak-signal sensitivity evaluation; full protocol field coverage (only selected message types are parsed beyond their header). Type 27 requires separate 156.775/156.825 MHz tuning. AIS RF FCS failures must not be conflated with NMEA transport checksums.
 
 No OrcMaps, RSA, REA or unrelated SDR features were modified by this milestone. No claims about being the fastest, most sensitive or best receiver are justified before controlled A/B measurements.
+
+## 2026-11-07 — AIS dashboard identity, map fallback and station snapshot seam
+
+**Scope:** OrcSDR dashboard/model improvement only, still before device deployment. No radio ownership changes, OrcMaps source changes, or full Tab5 firmware acceptance.
+
+- **Correct identity:** `ais_ui::Target`, `Message` and `Event` now carry an explicit `IdentityKind`. Type 28's 30-bit Source ID is stored separately from a conventional MMSI; list and inspector labels say **SOURCE ID**, not MMSI. Tap selection and `ActionKind::target_selected` return both identifier number and kind so numerical collisions cannot silently select a different maritime entity. Older MMSI-only snapshot callers remain compatible through default fields.
+- **AtoN classification:** The 2026 AtoN report has a separate presentation class; no virtual/physical claim is inferred from raw Type 28 dimensional fields.
+- **Location-independent map:** The dashboard uses a valid configured receiver fix when available, otherwise an explicitly selected valid AIS target, otherwise its previous stable target anchor, otherwise the first non-stale valid AIS position. Unknown or invalid receiver coordinates no longer suppress geographic display. The policy lives in portable `ais_map_policy.hpp`, independently tested without hardware. Selection and map touch now work even if the receiver location is unknown.
+- **Bounded station-to-UI adapter:** `ais_snapshot_adapter` translates actually observed `ais::StationStore` entries into the existing bounded `ais_ui::Snapshot`. It prioritizes the newest 32 of up to 64 stations, preserves source identity, station class, fix and update ages, unavailable fields, and up to eight *recorded* positions per station. It does not invent course, heading, names or movement. No dynamic allocation is performed by this adapter.
+- **Clear missing/stale data:** The Targets details show missing positions as missing, and explicitly mark stale position ages.
+- **Verification:** The updated production M5GFX seven-panel rendering fixture tests Type 28/MMSI numeric collisions and selection. Dedicated pure C++ tests cover stable anchor preference, absent receiver coordinates, stale/invalid positions, independent MMSI/Source-ID selection, station age, chronological history, missing fixes, and dense-store snapshot prioritization. See GitHub Actions **AIS dashboard host rendering** for the actual executed results.
+
+**Not done:** The independent OrcMaps generic overlay API is not yet consumed or pinned in OrcSDR. The compact map continues using its existing map projection plus simple circles, and an offscreen body canvas may still require expensive basemap recomposition on an ordinary snapshot revision. No physical device draw, touch, memory, CPU or IQ-continuity acceptance was performed; this change does not prove real RF reception. Do not treat Type 28 raw dimension fields as geometry without interpretation verified against the 2026 specification.
+
+**Host reproduction** (from OrcSDR repo root; no device required):
+
+```bash
+mkdir -p ais-test-runs
+g++ -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+  -fsanitize=address,undefined -fno-omit-frame-pointer \
+  -Iapps/orcsdr-tab5/ui \
+  tests/ais_map_policy_tests.cpp -o ais-test-runs/ais-map-policy-tests
+./ais-test-runs/ais-map-policy-tests 2>&1 | tee ais-test-runs/ais-map-policy-tests.log
+
+g++ -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+  -fsanitize=address,undefined -fno-omit-frame-pointer \
+  -Iapps/orcsdr-tab5/ui \
+  tests/ais_snapshot_adapter_tests.cpp \
+  apps/orcsdr-tab5/ui/ais_snapshot_adapter.cpp \
+  apps/orcsdr-tab5/ui/ais_station_store.cpp \
+  -o ais-test-runs/ais-snapshot-adapter-tests
+./ais-test-runs/ais-snapshot-adapter-tests 2>&1 | tee ais-test-runs/ais-snapshot-adapter-tests.log
+```
+
+M5GFX recording-host render tests use `.github/workflows/ais-dashboard-host-tests.yml`. **These tests validate synthetic presentation fixtures, not live maritime observations.**

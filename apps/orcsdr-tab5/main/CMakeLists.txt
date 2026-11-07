@@ -162,6 +162,7 @@ idf_component_register(
         "../ui/ais_station_store.cpp"
         "../ui/ais_receiver.cpp"
         "../ui/ais_receive_pipeline.cpp"
+        "../ui/ais_snapshot_adapter.cpp"
         "../ui/acars_dashboard_layout.cpp"
         "../ui/acars_dirty_rects.cpp"
         "../ui/acars_dashboard_model.cpp"

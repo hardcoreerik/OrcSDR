@@ -5,20 +5,29 @@
 #include <cstddef>
 #include <cstdint>
 namespace orcsdr::ais_ui {
-enum class Station : uint8_t { vessel_a, vessel_b, base_station, aid_physical, aid_virtual, sar_aircraft, other };
+enum class Station : uint8_t { vessel_a, vessel_b, base_station, aid_physical, aid_virtual, sar_aircraft, other, aid_2026 };
+enum class IdentityKind : uint8_t { mmsi, source_id28 };
+// Type 28 uses a Source ID, never silently label it as an MMSI.
 enum class ReceiveState : uint8_t { disconnected, ready, recording, unavailable };
 struct Target {
-  uint32_t mmsi=0; Station station=Station::other;
+  uint32_t mmsi=0, source_id28=0;
+  IdentityKind identity_kind=IdentityKind::mmsi;
+  Station station=Station::other;
   char name[32]{}, callsign[12]{}, destination[32]{};
   char description[24]{}, nav_status[20]{};
   bool has_position=false,has_speed=false,has_course=false,has_heading=false,position_stale=false;
   int32_t lat_e7=0,lon_e7=0;
   uint16_t speed_tenths_kn=0, course_tenths_deg=0,heading_deg=0;
   uint32_t position_age_s=0,heard_age_s=0;
+  // Actual received fixes only; never extrapolate missing vessel movement.
+  struct TrackFix { int32_t lat_e7=0,lon_e7=0; uint32_t age_s=0; };
+  TrackFix history[8]{};
+  uint8_t history_count=0;
   uint8_t last_type=0;
 };
 struct Message {
-  uint32_t mmsi=0, age_ms=0;
+  uint32_t mmsi=0, source_id28=0, age_ms=0;
+  IdentityKind identity_kind=IdentityKind::mmsi;
   uint8_t type=0,channel=0; // channel 1 / 2, zero = not known
   bool crc_ok=false;
   char summary[72]{};
@@ -26,7 +35,8 @@ struct Message {
   bool raw_truncated=false;
 };
 struct Event {
-  uint32_t mmsi=0,age_s=0;
+  uint32_t mmsi=0,source_id28=0,age_s=0;
+  IdentityKind identity_kind=IdentityKind::mmsi;
   uint8_t type=0;
   bool safety_related=false;
   char title[64]{}, detail[104]{};
@@ -55,7 +65,9 @@ enum class ActionKind : uint8_t {
   set_message_type, toggle_ais1, toggle_ais2, toggle_long_range, toggle_nmea, toggle_logging,
   set_receiver, open_full_map
 };
-struct Action { ActionKind kind=ActionKind::none; uint32_t value=0; };
+struct Action { ActionKind kind=ActionKind::none; uint32_t value=0;
+  IdentityKind identity_kind=IdentityKind::mmsi; // target_selected only
+};
 // Only call enter() after screen_controller has granted screens::Id::ais.
 // All rendering/touches occur on the UI task, never from the receiver callback.
 void enter(const Snapshot& snapshot);

@@ -2,6 +2,7 @@
 // Receiver integration is intentionally separate: a valid app snapshot is the only source of displayed AIS facts.
 // This renderer is UI-task-owned and requires screen_controller to grant screens::Id::ais.
 #include "ais_dashboard.hpp"
+#include "ais_map_policy.hpp"
 #include "dashboard_audio_control.hpp"
 #include "screen_controller.hpp"
 #include "focus_nav.hpp"
@@ -59,7 +60,12 @@ Snapshot* g_data=nullptr; // PSRAM-capable heap (never allocate these large arra
 M5Canvas *g_canvas=nullptr,*g_front=nullptr;
 bool g_front_valid=false,g_active=false;
 View g_view=View::map;
-uint32_t g_selected_mmsi=0;
+uint32_t g_selected_id=0;
+IdentityKind g_selected_kind=IdentityKind::mmsi;
+bool g_selected_valid=false;
+uint32_t g_anchor_id=0;
+IdentityKind g_anchor_kind=IdentityKind::mmsi;
+bool g_anchor_valid=false;
 uint8_t g_selected_message=0,g_protocol=1;
 uint16_t g_range_nm=25;
 uint8_t g_target_offset=0,g_message_offset=0,g_event_offset=0,g_protocol_offset=0;
@@ -87,12 +93,14 @@ const char* station_name(Station s) {
     case Station::aid_physical: return "PHYSICAL AtoN";
     case Station::aid_virtual: return "VIRTUAL AtoN";
     case Station::sar_aircraft: return "SAR AIRCRAFT";
+    case Station::aid_2026: return "2026 AtoN";
     default: return "OTHER STATION";
   }
 }
 uint16_t station_color(Station s) {
   return s==Station::aid_virtual?kAmber:s==Station::aid_physical?kCyan:
-         s==Station::sar_aircraft?kRed:s==Station::base_station?kBlue:kGreen;
+         s==Station::sar_aircraft?kRed:s==Station::base_station?kBlue:
+         s==Station::aid_2026?kAmber:kGreen;
 }
 const char* receiver_label() {
   if(!g_data) return "NO RECEIVER";
@@ -100,12 +108,30 @@ const char* receiver_label() {
   if(g_data->receiver==ReceiveState::unavailable)return "RECEIVER UNAVAILABLE";
   return g_data->receiver_settled?"RECEIVING":"TUNING / SETTLING";
 }
+uint32_t target_id(const Target& t) {
+  return t.identity_kind==IdentityKind::source_id28?t.source_id28:t.mmsi;
+}
+uint32_t message_id(const Message& m) {
+  return m.identity_kind==IdentityKind::source_id28?m.source_id28:m.mmsi;
+}
+const char* id_label(IdentityKind kind) {
+  return kind==IdentityKind::source_id28?"SOURCE ID":"MMSI";
+}
+void format_identity(char* dst,size_t cap,IdentityKind kind,uint32_t id) {
+  if(kind==IdentityKind::source_id28)
+    std::snprintf(dst,cap,"SOURCE ID %lu",static_cast<unsigned long>(id));
+  else
+    std::snprintf(dst,cap,"MMSI %09lu",static_cast<unsigned long>(id));
+}
+bool selected(const Target& t) {
+  return g_selected_valid&&g_selected_kind==t.identity_kind&&g_selected_id==target_id(t);
+}
 uint8_t bounded_targets(){return g_data?std::min<size_t>(g_data->target_count,kTargets):0;}
 uint8_t bounded_messages(){return g_data?std::min<size_t>(g_data->message_count,kMessages):0;}
 uint8_t bounded_events(){return g_data?std::min<size_t>(g_data->event_count,kEvents):0;}
 const Target* selected_target() {
   if(!g_data)return nullptr;
-  for(size_t i=0;i<bounded_targets();++i)if(g_data->targets[i].mmsi==g_selected_mmsi)return &g_data->targets[i];
+  for(size_t i=0;i<bounded_targets();++i)if(selected(g_data->targets[i]))return &g_data->targets[i];
   return nullptr; // NEVER substitute another vessel's fields after old target disappears
 }
 const Message* selected_message() {
@@ -136,12 +162,19 @@ void map_page() {
   // Preserve genuine OrcMaps tiles and their attribution when a valid receiver location exists.
 #if defined(ESP_PLATFORM)
   maps::RegionalView mv{};
-  if(s.coordinates_valid) {
-    mv=maps::draw_region(*d.screen,s.receiver_lat_e7,s.receiver_lon_e7,
+  const MapCenter center=choose_map_center(s,g_selected_kind,g_selected_id,g_selected_valid,
+                                             g_anchor_kind,g_anchor_id,g_anchor_valid);
+  if(center.origin==CenterOrigin::ais_target) {
+    g_anchor_kind=center.identity_kind;g_anchor_id=center.identity;g_anchor_valid=true;
+  }
+  if(center.valid()) {
+    mv=maps::draw_region(*d.screen,center.lat_e7,center.lon_e7,
        g_range_nm,40,212-d.offset,768,394,kPanel,kEdge,kMuted,nullptr,true);
+    if(center.origin==CenterOrigin::ais_target)
+      d.text("AIS TARGET CENTER / RECEIVER POSITION UNKNOWN",58,231,kAmber,1);
   } else {
     d.fill(40,212,768,394,kBg);
-    d.text("SET RECEIVER LOCATION TO POSITION AIS TARGETS",70,356,kAmber,2);
+    d.text("NO VALID RECEIVER OR AIS TARGET POSITION",70,356,kAmber,2);
   }
   g_last_map=mv;
   g_last_map_screen_offset=d.offset;
@@ -151,8 +184,8 @@ void map_page() {
     if(!maps::project(mv,t.lat_e7,t.lon_e7,&x,&y))continue;
     if(x<40||x>=808||y<212-d.offset||y>=606-d.offset)continue;
     y+=d.offset; // map projection is local to the current canvas
-    d.fillcircle(x,y,t.mmsi==g_selected_mmsi?10:7,station_color(t.station));
-    if(t.mmsi==g_selected_mmsi)d.circle(x,y,15,kWhite);
+    d.fillcircle(x,y,selected(t)?10:7,station_color(t.station));
+    if(selected(t))d.circle(x,y,15,kWhite);
   }
 #else
   d.fill(40,212,768,394,kBg);
@@ -167,7 +200,7 @@ void map_page() {
   const Target* t=selected_target();
   if(t) {
     d.text(t->name[0]?t->name:"NAME NOT TRANSMITTED",858,452,kWhite,2);
-    char buf[90];std::snprintf(buf,sizeof(buf),"MMSI %09lu",(unsigned long)t->mmsi);
+    char buf[90];format_identity(buf,sizeof(buf),t->identity_kind,target_id(*t));
     label(buf,858,488);
     detailrow("TYPE",station_name(t->station),858,520,962);
     if(t->has_speed){std::snprintf(buf,sizeof(buf),"%u.%u kn",t->speed_tenths_kn/10,t->speed_tenths_kn%10);detailrow("SOG",buf,858,551,962);}
@@ -183,15 +216,15 @@ void targets_page() {
   card(targetsTable);card(targetsDetail);
   title("AIS STATIONS",38,186);
   countlabel("VISIBLE",bounded_targets(),500,186);
-  label("NAME / MMSI",38,221); label("TYPE",400,221);label("AGE",650,221);
+  label("NAME / ID",38,221); label("TYPE",400,221);label("AGE",650,221);
   d.hline(32,241,693,kEdge);
   for(size_t j=0;j<8;++j) {
     const size_t i=g_target_offset+j;if(i>=bounded_targets())break;
     const Target& t=g_data->targets[i];
     const int y=265+static_cast<int>(j)*43;
-    if(t.mmsi==g_selected_mmsi)d.fillround(32,y-18,692,38,4,0x1062);
+    if(selected(t))d.fillround(32,y-18,692,38,4,0x1062);
     d.text(t.name[0]?t.name:"UNNAMED AIS STATION",44,y,station_color(t.station),2);
-    char buf[40];std::snprintf(buf,sizeof(buf),"%09lu",(unsigned long)t.mmsi);label(buf,276,y);
+    char buf[40];std::snprintf(buf,sizeof(buf),"%09lu",static_cast<unsigned long>(target_id(t)));label(buf,276,y);
     label(station_name(t.station),405,y);
     std::snprintf(buf,sizeof(buf),"%lus",(unsigned long)t.heard_age_s);label(buf,660,y);
     d.hline(36,y+22,680,kEdge);
@@ -202,8 +235,9 @@ void targets_page() {
   const Target* t=selected_target();
   if(!t) {label("TAP A ROW TO INSPECT",770,263);return;}
   char buf[88];d.text(t->name[0]?t->name:"UNNAMED AIS STATION",770,231,kWhite,2);
-  std::snprintf(buf,sizeof(buf),"%09lu",(unsigned long)t->mmsi);
-  detailrow("MMSI",buf,770,272,970); detailrow("CLASS",station_name(t->station),770,310,970);
+  std::snprintf(buf,sizeof(buf),t->identity_kind==IdentityKind::source_id28?"%lu":"%09lu",
+                static_cast<unsigned long>(target_id(*t)));
+  detailrow(id_label(t->identity_kind),buf,770,272,970); detailrow("CLASS",station_name(t->station),770,310,970);
   detailrow("CALLSIGN",t->callsign[0]?t->callsign:"--",770,349,970);
   detailrow("NAV",t->nav_status[0]?t->nav_status:"--",770,388,970);
   if(t->has_position) {
@@ -213,14 +247,18 @@ void targets_page() {
   if(t->has_course)std::snprintf(buf,sizeof(buf),"%u.%u deg",t->course_tenths_deg/10,t->course_tenths_deg%10);
   detailrow("COURSE",t->has_course?buf:"--",770,471,970);
   detailrow("DEST",t->destination[0]?t->destination:"--",770,512,970);
-  std::snprintf(buf,sizeof(buf),"%lus (POSITION: %lus)",(unsigned long)t->heard_age_s,(unsigned long)t->position_age_s);
+  if(!t->has_position)
+    std::snprintf(buf,sizeof(buf),"%lus (NO POSITION)",static_cast<unsigned long>(t->heard_age_s));
+  else
+    std::snprintf(buf,sizeof(buf),"%lus (POSITION: %lus%s)",static_cast<unsigned long>(t->heard_age_s),
+                  static_cast<unsigned long>(t->position_age_s),t->position_stale?" STALE":"");
   detailrow("LAST RX",buf,770,553,890);
   if(t->position_stale)label("POSITION IS STALE",770,590,kAmber);
 }
 void messages_page() {
   card(messagesTable);card(messagesDetail);
   title("LIVE AIS MESSAGE JOURNAL",38,186);
-  label("AGE",38,220);label("CH",140,220);label("TYPE",214,220);label("MMSI",346,220);
+  label("AGE",38,220);label("CH",140,220);label("TYPE",214,220);label("ID",346,220);
   label("DECODED SUMMARY",502,220);d.hline(32,241,798,kEdge);
   for(size_t j=0;j<9;++j) {
     size_t i=g_message_offset+j;if(i>=bounded_messages())break;
@@ -229,7 +267,7 @@ void messages_page() {
     char v[36];std::snprintf(v,sizeof(v),"%lus",(unsigned long)(m.age_ms/1000));label(v,38,y);
     std::snprintf(v,sizeof(v),"%u",(unsigned)m.channel);d.text(v,149,y,kCyan,2);
     std::snprintf(v,sizeof(v),"%u",(unsigned)m.type);d.text(v,225,y,kWhite,2);
-    std::snprintf(v,sizeof(v),"%09lu",(unsigned long)m.mmsi);label(v,330,y);
+    std::snprintf(v,sizeof(v),"%09lu",static_cast<unsigned long>(message_id(m)));label(v,330,y);
     char summary[26]{};std::snprintf(summary,sizeof(summary),"%.25s",m.summary);
     d.text(summary,508,y,m.crc_ok?kGreen:kAmber,2);
     d.hline(36,y+19,790,kEdge);
@@ -241,7 +279,7 @@ void messages_page() {
   if(!m){label("SELECT A MESSAGE",875,280);return;}
   char v[70];std::snprintf(v,sizeof(v),"TYPE %u / AIS %u",(unsigned)m->type,(unsigned)m->channel);
   d.text(v,874,231,kWhite,2);
-  std::snprintf(v,sizeof(v),"MMSI %09lu",(unsigned long)m->mmsi);label(v,874,268);
+  format_identity(v,sizeof(v),m->identity_kind,message_id(*m));label(v,874,268);
   label(m->crc_ok?"RF CRC PASS":"RF CRC NOT VALIDATED",874,307,m->crc_ok?kGreen:kAmber);
   label("RAW PACKET HEX (BOUNDED)",874,344);
   const size_t len=std::strlen(m->raw_hex);
@@ -286,7 +324,8 @@ void protocol_page() {
   for(size_t i=0;i<bounded_messages();++i)
     if(g_data->messages[i].type==g_protocol&&g_data->messages[i].crc_ok){recent=&g_data->messages[i];break;}
   if(recent) {
-    std::snprintf(v,sizeof(v),"MMSI %09lu  /  CHANNEL %u",(unsigned long)recent->mmsi,(unsigned)recent->channel);
+    std::snprintf(v,sizeof(v),"%s %09lu  /  CHANNEL %u",id_label(recent->identity_kind),
+                  static_cast<unsigned long>(message_id(*recent)),(unsigned)recent->channel);
     d.text(v,542,454,kWhite,2);
     char description[57]{};std::snprintf(description,sizeof(description),"%.56s",recent->summary);
     d.text(description,542,491,kGreen,2);
@@ -473,7 +512,9 @@ void enter(const Snapshot& snapshot){
 #endif
   }
   if(!g_data)return;
-  *g_data=snapshot;g_active=true;g_view=View::map;g_selected_mmsi=0;
+  *g_data=snapshot;g_active=true;g_view=View::map;g_selected_id=0;
+  g_selected_kind=IdentityKind::mmsi;g_selected_valid=false;
+  g_anchor_id=0;g_anchor_kind=IdentityKind::mmsi;g_anchor_valid=false;
   g_selected_message=0;g_protocol=1;g_target_offset=g_message_offset=g_event_offset=g_protocol_offset=0;
   g_last_revision=snapshot.revision;g_range_nm=25;
   chrome();paint(true);
@@ -518,7 +559,7 @@ Action handle_touch(int32_t x,int32_t y){
       return {ActionKind::set_range_nm,g_range_nm};
     }
 #if defined(ESP_PLATFORM)
-    if(g_last_map.valid&&g_data->coordinates_valid&&hit({40,212,768,394},x,y)) {
+    if(g_last_map.valid&&hit({40,212,768,394},x,y)) {
       for(size_t i=0;i<bounded_targets();++i) {
         const Target& t=g_data->targets[i];
         if(!t.has_position||t.position_stale)continue;
@@ -527,9 +568,9 @@ Action handle_touch(int32_t x,int32_t y){
         py+=g_last_map_screen_offset;
         const int dx=x-px,dy=y-py;
         if(dx*dx+dy*dy<=26*26) {
-          g_selected_mmsi=t.mmsi;
+          g_selected_id=target_id(t);g_selected_kind=t.identity_kind;g_selected_valid=true;
           paint();
-          return {ActionKind::target_selected,t.mmsi};
+          return {ActionKind::target_selected,g_selected_id,g_selected_kind};
         }
       }
     }
@@ -538,7 +579,9 @@ Action handle_touch(int32_t x,int32_t y){
     for(size_t j=0;j<8;++j){
       const size_t i=g_target_offset+j;
       if(i<bounded_targets()&&hit({32,247+static_cast<int>(j)*43,690,42},x,y)){
-        g_selected_mmsi=g_data->targets[i].mmsi;paint();return {ActionKind::target_selected,g_selected_mmsi};
+        const Target& t=g_data->targets[i];
+        g_selected_id=target_id(t);g_selected_kind=t.identity_kind;g_selected_valid=true;
+        paint();return {ActionKind::target_selected,g_selected_id,g_selected_kind};
       }
     }
     if(hit({34,574,126,44},x,y)&&g_target_offset>0)--g_target_offset;

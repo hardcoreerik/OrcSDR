@@ -105,12 +105,40 @@ int main(){
   switch_to(ais::View::targets,"AIS STATIONS");
   a=ais::handle_touch(55,265);assert(a.kind==ais::ActionKind::target_selected&&a.value==123456789);
   assert(has_text("VIRTUAL AtoN"));
+  assert(a.identity_kind==ais::IdentityKind::mmsi);
+  // Collision case: the 2026 Type 28 Source ID has the same numeric
+  // value as an unrelated station MMSI; selection and label must stay distinct.
+  fixture.revision=3;fixture.target_count=2;
+  auto& type28=fixture.targets[1];
+  type28.identity_kind=ais::IdentityKind::source_id28;
+  type28.source_id28=123456789;
+  type28.mmsi=0;
+  type28.station=ais::Station::aid_2026;
+  type28.has_position=true;
+  type28.lat_e7=474000000;type28.lon_e7=-1223000000;
+  std::strcpy(type28.name,"TYPE 28 REEF");
+  fixture.message_count=2;
+  auto& type28_message=fixture.messages[1];
+  type28_message.type=28;type28_message.channel=1;
+  type28_message.identity_kind=ais::IdentityKind::source_id28;
+  type28_message.source_id28=123456789;
+  type28_message.crc_ok=true;
+  std::strcpy(type28_message.summary,"2026 AtoN TEST FIXTURE");
+  ais::update(fixture);
+  a=ais::handle_touch(55,308);
+  assert(a.kind==ais::ActionKind::target_selected);
+  assert(a.value==123456789&&a.identity_kind==ais::IdentityKind::source_id28);
+  assert(has_text("SOURCE ID"));
+  assert(has_text("2026 AtoN"));
   switch_to(ais::View::messages,"LIVE AIS MESSAGE JOURNAL");
+  a=ais::handle_touch(56,300);
+  assert(a.kind==ais::ActionKind::message_selected&&a.value==1);
+  assert(has_text("SOURCE ID 123456789"));
   assert(has_text("TEST AtoN MESSAGE"));
   switch_to(ais::View::events,"MARITIME ACTIVITY");
   assert(has_text("TEST SAFETY BROADCAST"));
   // No leakage when a selected target disappears.
-  fixture.revision=3;fixture.target_count=0;
+  fixture.revision=4;fixture.target_count=0;
   ais::update(fixture);
   switch_to(ais::View::targets,"AIS STATIONS");
   assert(has_text("TAP A ROW TO INSPECT"));
@@ -118,7 +146,7 @@ int main(){
   screens::begin_transition(screens::Id::home,600);
   screens::finish_transition();
   host_display::reset();
-  fixture.revision=4;
+  fixture.revision=5;
   ais::update(fixture);
   assert(host_display::prims.empty());
   ais::leave();
