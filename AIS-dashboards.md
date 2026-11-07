@@ -4,7 +4,7 @@
 > **Community request:** [OrcSDR Issue #234 — AIS vessel decoding](https://github.com/hardcoreerik/OrcSDR/issues/234)  
 > **Scope:** original receive-only C/C++ AIS decoder and seven-panel native M5GFX interface  
 > **Updated:** 2026-11-07  
-> **Status:** **Seven UI rendering surfaces implemented; portable partial AIS message parser and bounded station store host-tested. RF receiver, full 28-type field decoding, and application plumbing not implemented.**  
+> **Status:** **Seven UI surfaces implemented; portable dual-channel GMSK/HDLC/FCS receiver, partial AIS parser and bounded station store pass synthetic-IQ host tests. Receiver is NOT yet connected to live radio, UI, or Tab5 hardware.**  
 > **Research separation:** RSA/REA standards/competitor findings stay exclusively in the separate private `REA-Results` workflow, **not in this development branch**.
 
 ## Design commitment
@@ -29,6 +29,9 @@ The UI must accurately represent observed facts. A missing antenna, incomplete p
 | Portable original AIS protocol parser (header coverage 1–28, mapped position/AtoN fields) | `apps/orcsdr-tab5/ui/ais_protocol.{hpp,cpp}` | **Host-tested synthetic fixtures; not full 28-type field decoding** |
 | Bounded identity-safe AIS station store | `apps/orcsdr-tab5/ui/ais_station_store.{hpp,cpp}` | **Host-tested; not connected to receiver or UI** |
 | Portable AIS parser/store sanitizer test + CI | `tests/ais_protocol_tests.cpp`, `.github/workflows/ais-protocol-host-tests.yml` | **Sandbox ASan/UBSan passed; CI pending** |
+| Original dual-channel AIS 240 kS/s CU8 GMSK/HDLC/FCS receiver | `apps/orcsdr-tab5/ui/ais_receiver.{hpp,cpp}` | **Synthetic IQ-to-CRC packet tests passed; no live IQ** |
+| Radio-session-generation-checked packet/parser/station pipeline | `apps/orcsdr-tab5/ui/ais_receive_pipeline.{hpp,cpp}` | **Host integrated synthetic-IQ test passed; not wired to DSP task** |
+| IQ receiver sanitizer tests, host benchmark and CI | `tests/ais_receiver_tests.cpp`, `tests/ais_receiver_bench.cpp` | **Host tests passed; physical P4 performance unknown** |
 | Actual home/menu/runtime navigation into AIS | `ais_app` / top-level UI dispatcher | **Not implemented** |
 | Actual RF IQ-to-AIS decoder and receiver callbacks | Native DSP and parser modules | **Not implemented** |
 | Real Tab5 flash and touch verification | Hardware test | **Not performed** |
@@ -107,8 +110,8 @@ The tab UI does not own USB receiver state. Do not introduce a second RTL-SDR pi
 - [x] Host CI workflow created and first run passed
 - [ ] Entire on-device ESP-IDF build and Tab5 / XTR V5 flash performed
 - [ ] Actual AIS navigation/home menu route implemented; screen ownership handoff and return path tested
-- [ ] Native original AIS decoder/parser for 1–28 and extensible DAC/FI implemented
-- [ ] Live receiver source and dual-channel IQ snapshots connected to UI
+- [ ] Native original AIS decoder/parser for 1–28 and extensible DAC/FI implemented (partial field core implemented; full field coverage pending)
+- [ ] Live receiver source and dual-channel IQ snapshots connected to UI (standalone dual-channel 240k IQ receiver host-tested, not yet wired to device/runtime)
 - [ ] Event/AtoN/position/track semantics validated with known-good message fixtures
 - [ ] Real IQ packet parity, per-channel rate, CRC and memory/CPU tests completed
 - [ ] Map UX: marker collision, pan/zoom, tile attribution, coast/no-tile fallback, target sorting/filters verified
@@ -156,3 +159,15 @@ g++ -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -Werror \
 ```
 
 Expected: `AIS portable protocol and bounded station tests passed (synthetic fixtures only)`.
+
+## 2026-11-07 — dual-channel synthetic-IQ AIS receiver foundation
+
+OrcSDR now contains an **original** portable `ais_rx::Receiver` processing CU8 IQ centered at **162.000 MHz / 240,000 complex samples per second**. It splits AIS1 (161.975 MHz) and AIS2 (162.025 MHz) into two independently mixed, 63-tap FIR-filtered, decimated (48 kS/s) receive paths. Each channel uses a complex phase discriminator, slow DC/CFO rejection, 5 fixed 9600-symbol/s timing hypotheses, NRZI bit reconstruction (hold=1), HDLC flag detection, bit destuffing, and reflected X.25/HDLC CRC-16 residue validation (0xF0B8). The first CRC-valid packet from concurrent hypotheses wins; time-local identical hypothesis duplicates are suppressed.
+
+`ais_rx::Pipeline` joins validated RF packets to the existing portable AIS parser and bounded station store. Its input contract requires center frequency, rate, nonzero radio-session generation and monotonic time. It rejects mismatched source configurations, resets the DSP after generation changes or input gaps, and never takes ownership of USB hardware. A single owning DSP task must call it; the UI must read a separately published immutable snapshot, **not** a mutable station store. See `docs/AIS_RECEIVER_ACCEPTANCE.md`.
+
+**Actual tested:** Native C++17 ASan/UBSan host build, specification-derived reflected CRC check (123456789 → 0x906E), 168-bit Type 1 synthetic GMSK payloads recovered on each channel, simultaneous two-channel signals, source chunk boundaries, polarity inversions, +/-800 Hz carrier offset in synthetic data, corrupted FCS rejection, maximum 1008-bit HDLC payload, random IQ noise rejection, discontinuity and wrong-rate handling, and an IQ→packet→parser→station end-to-end fixture. An independent no-signal host optimization benchmark is provided; **host processing speed is not Tab5 performance evidence**.
+
+**Not done/blocked:** Device-radio owner selection and IQ callback wiring; full M5GFX snapshot bridge; actual marine traffic, real captured IQ or external AIS-catcher parity; ESP32-P4 firmware compile/flash; PLL/adaptive timing and interference/weak-signal sensitivity evaluation; full protocol field coverage (only selected message types are parsed beyond their header). Type 27 requires separate 156.775/156.825 MHz tuning. AIS RF FCS failures must not be conflated with NMEA transport checksums.
+
+No OrcMaps, RSA, REA or unrelated SDR features were modified by this milestone. No claims about being the fastest, most sensitive or best receiver are justified before controlled A/B measurements.
