@@ -111,7 +111,11 @@ void countlabel(const char* name,uint32_t n,int x,int y,uint16_t c=kGreen) {
   label(buf,x,y,c);
 }
 void detailrow(const char* key,const char* value,int x,int y,int xval) {
-  label(key,x,y,kMuted);d.text(value?value:"--",xval,y,kWhite,2);
+  label(key,x,y,kMuted);
+  char clipped[64]{}; const char* source=value?value:"--";
+  const int columns=std::max(1,std::min(62,(1242-xval)/12));
+  std::snprintf(clipped,sizeof(clipped),"%.*s",columns,source);
+  d.text(clipped,xval,y,kWhite,2);
 }
 void titlebar(const char* name,const char* sub) {
   d.fillround(20,114,1240,34,6,kPanel);
@@ -138,8 +142,8 @@ void map_page() {
     const Target& t=s.targets[i];if(!t.has_position||t.position_stale)continue;
     int x=0,y=0;
     if(!maps::project(mv,t.lat_e7,t.lon_e7,&x,&y))continue;
-    if(x<40||x>=808||y<0||y>=394)continue;
-    y+=212; // map render coordinates are canvas-relative
+    if(x<40||x>=808||y<212-d.offset||y>=606-d.offset)continue;
+    y+=d.offset; // map projection is local to the current canvas
     d.fillcircle(x,y,t.mmsi==g_selected_mmsi?10:7,station_color(t.station));
     if(t.mmsi==g_selected_mmsi)d.circle(x,y,15,kWhite);
   }
@@ -277,7 +281,8 @@ void protocol_page() {
   if(recent) {
     std::snprintf(v,sizeof(v),"MMSI %09lu  /  CHANNEL %u",(unsigned long)recent->mmsi,(unsigned)recent->channel);
     d.text(v,542,454,kWhite,2);
-    d.text(recent->summary,542,491,kGreen,2);
+    char description[57]{};std::snprintf(description,sizeof(description),"%.56s",recent->summary);
+    d.text(description,542,491,kGreen,2);
     label("OPEN MESSAGES FOR RAW PACKET",542,543,kMuted);
   } else {
     label("NO VALIDATED PACKET OF THIS TYPE",542,463,kAmber);
@@ -334,7 +339,8 @@ void events_page() {
     if(e.safety_related)d.fillround(35,y-17,718,38,5,0x3020);
     char v[76];std::snprintf(v,sizeof(v),"%lus", (unsigned long)e.age_s);
     label(v,45,y);
-    d.text(e.title,133,y,e.safety_related?kAmber:kWhite,2);
+    char short_title[46]{};std::snprintf(short_title,sizeof(short_title),"%.45s",e.title);
+    d.text(short_title,133,y,e.safety_related?kAmber:kWhite,2);
     d.hline(38,y+20,710,kEdge);
   }
   if(!bounded_events())label("NO EVENTS OBSERVED",45,279);
