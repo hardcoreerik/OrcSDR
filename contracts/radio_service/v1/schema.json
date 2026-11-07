@@ -284,6 +284,44 @@
           }
         }
       }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "iq_block",
+              "spectrum_frame",
+              "audio_frame",
+              "decoder_event",
+              "receiver_health"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "receiver_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "attachment_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
     }
   ],
   "$defs": {
@@ -653,7 +691,7 @@
           "type": "array",
           "minItems": 1,
           "items": {
-            "$ref": "#/$defs/version"
+            "$ref": "#/$defs/supported_version"
           }
         },
         "supported_data_transports": {
@@ -695,7 +733,14 @@
       ],
       "properties": {
         "selected_version": {
-          "$ref": "#/$defs/version"
+          "oneOf": [
+            {
+              "$ref": "#/$defs/version"
+            },
+            {
+              "type": "null"
+            }
+          ]
         },
         "granted_scopes": {
           "$ref": "#/$defs/scopes"
@@ -717,7 +762,47 @@
             "unauthorized"
           ]
         }
-      }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "compatible"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "selected_version": {
+                "$ref": "#/$defs/version"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "incompatible",
+                  "unauthorized"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "selected_version": {
+                "type": "null"
+              },
+              "granted_scopes": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
     },
     "capabilities": {
       "type": "object",
@@ -1476,6 +1561,24 @@
             "integer",
             "null"
           ],
+          "minimum": 0
+        }
+      }
+    },
+    "supported_version": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "major",
+        "minor"
+      ],
+      "properties": {
+        "major": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "minor": {
+          "type": "integer",
           "minimum": 0
         }
       }

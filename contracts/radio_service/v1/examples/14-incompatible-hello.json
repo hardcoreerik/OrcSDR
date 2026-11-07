@@ -1,0 +1,31 @@
+{
+  "contract": "orcsdr.radio-service",
+  "version": {
+    "major": 1,
+    "minor": 0
+  },
+  "kind": "hello_result",
+  "host_id": "host-example-01",
+  "boot_id": "boot-example-07",
+  "receiver_id": null,
+  "attachment_id": null,
+  "session_id": null,
+  "generation": 0,
+  "sequence": 2,
+  "time": {
+    "monotonic_ns": 4000000000,
+    "utc_valid": false,
+    "utc_unix_ms": null,
+    "clock_source": "unavailable",
+    "utc_uncertainty_ms": null
+  },
+  "payload": {
+    "selected_version": null,
+    "granted_scopes": [],
+    "supported_data_transports": [
+      "in_process"
+    ],
+    "authenticated": false,
+    "status": "incompatible"
+  }
+}

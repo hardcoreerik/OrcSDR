@@ -32,11 +32,31 @@ class RadioServiceContractTest(unittest.TestCase):
         self.assertFalse(self.validator.is_valid(obj), f"incorrectly accepted: {obj!r}")
 
     def test_schema_is_valid_and_all_golden_examples_pass(self):
-        self.assertEqual(13, len(self.examples))
+        self.assertEqual(14, len(self.examples))
         for filename, obj in self.examples.items():
             with self.subTest(filename=filename):
                 self.validator.validate(obj)
                 check_semantics(obj)
+
+    def test_incompatible_hello_has_no_selected_version_or_scopes(self):
+        hello = self.example("01-hello.json")
+        hello["payload"]["supported_versions"] = [{"major": 2, "minor": 0}]
+        self.validator.validate(hello)  # negotiation can reject a v2-only offer
+        result = self.example("14-incompatible-hello.json")
+        self.validator.validate(result)
+        result["payload"]["selected_version"] = {"major": 1, "minor": 0}
+        self.assert_invalid(result)
+        result = self.example("14-incompatible-hello.json")
+        result["payload"]["granted_scopes"] = ["tune"]
+        self.assert_invalid(result)
+
+    def test_iq_requires_attachment_and_live_session_fence(self):
+        obj = self.example("09-iq-block.json")
+        obj["attachment_id"] = None
+        self.assert_invalid(obj)
+        obj = self.example("09-iq-block.json")
+        obj["generation"] = 0
+        self.assert_invalid(obj)
 
     def test_unknown_top_level_field_rejected(self):
         obj = self.example("09-iq-block.json")

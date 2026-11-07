@@ -20,8 +20,10 @@ static int describe(void *context, const char *id, orc_radio_v1_snapshot_t *out)
 }
 
 int main(void) {
-    orc_radio_v1_provider_t provider = {0};
-    orc_radio_v1_snapshot_t snapshot = {0};
+    orc_radio_v1_provider_t provider;
+    orc_radio_v1_snapshot_t snapshot;
+    memset(&provider, 0, sizeof(provider));
+    memset(&snapshot, 0, sizeof(snapshot));
     provider.struct_size = sizeof(provider);
     provider.abi_major = ORC_RADIO_V1_ABI_MAJOR;
     provider.snapshot = describe;

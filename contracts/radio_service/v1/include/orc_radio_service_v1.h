@@ -170,7 +170,7 @@ typedef struct orc_radio_v1_command {
     orc_radio_v1_identity_t identity; /* mandatory boot/attachment/session */
     char command_id[ORC_RADIO_V1_ID_LENGTH];
     uint32_t operation; /* orc_radio_v1_command_op_t */
-    uint32_t scope_flags_granted; /* authenticated authority checked by host */
+    uint32_t reserved_zero; /* MUST be 0; provider validates identity/rights from trusted context */
     uint64_t expected_generation;
     uint64_t requested_frequency_hz;    /* 0 = not specified */
     uint32_t requested_sample_rate_sps; /* 0 = not specified */
