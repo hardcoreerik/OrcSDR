@@ -40,15 +40,33 @@ jobs:
           sudo apt-get install -y pkg-config librtlsdr-dev
           pkg-config --modversion librtlsdr
       - name: Record runner architecture
-        run: uname -m
+        run: uname -m | tee cardputer-zero-architecture.log
       - name: Configure
-        run: cmake -S apps/orcsdr-cardputer-zero -B build/cardputer-zero-ci -DCMAKE_BUILD_TYPE=Release -DORC_ENABLE_RTLSDR=${{ matrix.rtl }}
+        run: |
+          set -o pipefail
+          cmake -S apps/orcsdr-cardputer-zero -B build/cardputer-zero-ci -DCMAKE_BUILD_TYPE=Release -DORC_ENABLE_RTLSDR=${{ matrix.rtl }} 2>&1 | tee cardputer-zero-configure.log
       - name: Build
-        run: cmake --build build/cardputer-zero-ci --parallel
+        run: |
+          set -o pipefail
+          cmake --build build/cardputer-zero-ci --parallel 2>&1 | tee cardputer-zero-build.log
       - name: Run deterministic decoder / IQ tests
-        run: ctest --test-dir build/cardputer-zero-ci --output-on-failure --verbose
+        run: |
+          set -o pipefail
+          ctest --test-dir build/cardputer-zero-ci --output-on-failure --verbose 2>&1 | tee cardputer-zero-ctest.log
       - name: Check application CLI
-        run: ./build/cardputer-zero-ci/orcsdr_cardputer_zero --demo
+        run: |
+          set -o pipefail
+          ./build/cardputer-zero-ci/orcsdr_cardputer_zero --demo 2>&1 | tee cardputer-zero-demo.log
       - name: Check library-enabled device enumeration (no RF hardware in CI)
         if: matrix.rtl == 'ON'
-        run: ./build/cardputer-zero-ci/orcsdr_cardputer_zero --list
+        run: |
+          set -o pipefail
+          ./build/cardputer-zero-ci/orcsdr_cardputer_zero --list 2>&1 | tee cardputer-zero-list.log
+      - name: Preserve per-run logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cardputer-zero-${{ matrix.os }}-rtl-${{ matrix.rtl }}
+          path: cardputer-zero-*.log
+          if-no-files-found: warn
+          retention-days: 14
