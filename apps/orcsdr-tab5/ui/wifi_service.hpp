@@ -46,6 +46,9 @@ bool connect_failed();
 const char* ssid();
 const char* ip();
 int16_t rssi();
+// Live radio link facts for diagnostics (one RPC to the C6). Returns false if the query failed.
+struct LinkDetails { int8_t rssi; uint8_t channel; uint8_t second_channel; bool b, g, n, ax; int ps_mode; int bandwidth; };
+bool link_details(LinkDetails* out);
 bool hosted_versions_match();  // C6 firmware is on the tested list (2.12.6 or 3.0.6)
 const char* hosted_c6_version();
 bool hosted_transport_ready();

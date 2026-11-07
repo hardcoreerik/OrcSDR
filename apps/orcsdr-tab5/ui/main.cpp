@@ -20917,14 +20917,20 @@ void process_command(char* command) {
   if (strcmp(command, "RTL_WIFI_STATUS") == 0) {
     Serial.printf("RTL_WIFI_STATUS station=%d hosted_match=%d scanning=%d connecting=%d "
                   "connected=%d saved_profiles=%u power=%d auto_connect=%d antenna=%s "
-                  "ap_count=%u\n",
+                  "ap_count=%u rssi=%d\n",
                   wifi_station_ready ? 1 : 0, wifi_hosted_versions_match ? 1 : 0,
                   wifi_scan_running ? 1 : 0, wifi_connecting ? 1 : 0,
                   wifi_connected ? 1 : 0, wifi_profile_count,
                   settings_wifi_power_enabled ? 1 : 0,
                   settings_wifi_start_at_boot ? 1 : 0,
                   settings_wifi_external_antenna ? "external" : "internal",
-                  static_cast<unsigned>(wifi_scan_result_count));
+                  static_cast<unsigned>(wifi_scan_result_count),
+                  static_cast<int>(orcsdr::wifi::rssi()));
+    orcsdr::wifi::LinkDetails link{};
+    if (orcsdr::wifi::link_details(&link))
+      Serial.printf("RTL_WIFI_LINK rssi=%d channel=%u second=%u b=%d g=%d n=%d ax=%d ps=%d bandwidth=%d\n",
+                    link.rssi, link.channel, link.second_channel, link.b, link.g, link.n, link.ax,
+                    link.ps_mode, link.bandwidth);
     return;
   }
   if (strcmp(command, "RTL_WIFI_CHANNEL") == 0) {

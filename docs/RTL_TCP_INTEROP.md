@@ -382,3 +382,21 @@ Espressif's reference for P4 + C6 (4-bit SDIO, 40 MHz) is 30-32 Mbit/s TCP; the 
 clock and the host RX queue are therefore not the limit. Untested next levers: the C6 firmware's Wi-Fi buffer profile
 (RX/TX buffer counts, block-ack windows, AMPDU), the Wi-Fi link itself (RSSI, AP, 802.11ax vs 11n), and ESP-Hosted 3.1.0.
 The 20 MHz clock is not committed: the earlier failure was sustained HTTPS download, which still needs a soak.
+
+### Throughput campaign, round 2 (2026-11-07)
+
+Raw receive (`RTL_TCP BENCH 20`, unthrottled sender on a wired PC), one change at a time, ESP-Hosted 3.0.6 on both chips:
+
+| Change | MB/s | Mbit/s |
+|---|---|---|
+| SDIO 20 MHz, stock C6 image | 2.22 | 17.8 |
+| + C6 Wi-Fi profile (static RX 16, dynamic RX/TX 64, AMPDU on, block-ack windows 32) in `orcdial/c6/sdkconfig.defaults` | 2.68 | 21.4 |
+| + SDIO 40 MHz | 2.55 | 20.4 |
+| + Wi-Fi power save off (`esp_wifi_set_ps(NONE)`, confirmed `ps=0`) | 2.41 | 19.3 |
+
+Radio link as reported by the C6 (`RTL_WIFI_LINK`): 2.4 GHz channel 11, 20 MHz wide, internal antenna; RSSI and the
+11b/g/n/ax flags come back as 0 (the Hosted reply does not fill them). A PC scan shows a busy 2.4 GHz neighbourhood.
+Neither the SDIO clock, the host RX queue, the C6 buffer profile nor power save moves the ceiling beyond about
+2.7 MB/s, so the limit is probably the 2.4 GHz HT20 radio path. Remaining ideas: ESP-Hosted 3.1.0 on both chips, HT40,
+the external antenna, another AP channel. Updating the C6: `RTL_ORCDIAL_C6_UPDATE CONFIRM` re-flashes the embedded
+image even at the same version (`RTL_WIFI_C6_UPDATE CONFIRM` refuses when the version matches).
