@@ -1,5 +1,6 @@
 #include "iq_metrics.hpp"
 #include "rtl_receiver.hpp"
+#include "live_capture.hpp"
 #include "acars_core.hpp"
 #include "acars_selftest.hpp"
 #include "adsb_decoder.hpp"
@@ -27,6 +28,8 @@ void usage() {
               << "  --decode-adsb PATH            CU8 file: 2.048MS/s, centered 1090MHz\n"
               << "  --make-acars-fixture PATH     generate reproducible 240kS/s CU8 file\n"
               << "  --capture ... --save PATH     save the actual receiver CU8 samples\n"
+              << "  --live-acars [--device N] [--freq HZ] [--blocks N]  capture/decode 240k CU8\n"
+              << "  --live-adsb  [--device N] [--freq HZ] [--blocks N]  capture/decode 2.048M CU8\n"
               << "  --capture [--device N] [--freq HZ] [--rate SPS] [--samples N]\n"
               << "Defaults: device 0, 100100000 Hz, 1024000 sps, 32768 samples.\n"
               << "This experimental bring-up is receive-only; no GUI or audio yet.\n";
@@ -189,11 +192,13 @@ int main(int argc, char** argv) {
     try {
         if (argc == 1) { usage(); return 0; }
         std::string mode,path,save_path;
-        std::uint32_t device=0,freq=100100000,rate=1024000,samples=32768;
+        std::uint32_t device=0,freq=100100000,rate=1024000,samples=32768,blocks=32;
+        bool freq_explicit=false,rate_explicit=false;
         for (int i=1;i<argc;++i) {
             const std::string arg=argv[i];
             if (arg=="--help") { usage(); return 0; }
-            if (arg=="--demo" || arg=="--acars-demo" || arg=="--list" || arg=="--capture") {
+            if (arg=="--demo" || arg=="--acars-demo" || arg=="--list" || arg=="--capture" ||
+                arg=="--live-acars" || arg=="--live-adsb") {
                 if(!mode.empty())throw std::invalid_argument("select exactly one mode");
                 mode=arg;
             } else if (arg=="--iq-file" || arg=="--decode-acars" || arg=="--decode-adsb" || arg=="--make-acars-fixture") {
@@ -205,8 +210,9 @@ int main(int argc, char** argv) {
                 if(++i>=argc)throw std::invalid_argument("missing option value");
                 const std::string value=argv[i];
                 if(arg=="--device")device=parse_number(value,0,1024);
-                else if(arg=="--freq")freq=parse_number(value,100000,3000000000U);
-                else if(arg=="--rate")rate=parse_number(value,225000,3200000);
+                else if(arg=="--freq"){freq=parse_number(value,100000,3000000000U);freq_explicit=true;}
+                else if(arg=="--rate"){rate=parse_number(value,225000,3200000);rate_explicit=true;}
+                else if(arg=="--blocks")blocks=parse_number(value,1,4096);
                 else if(arg=="--samples")samples=parse_number(value,64,262144);
                 else if(arg=="--save")save_path=value;
                 else throw std::invalid_argument("unknown option: "+arg);
@@ -218,6 +224,16 @@ int main(int argc, char** argv) {
         else if(mode=="--acars-demo")return acars_demo();
         else if(mode=="--decode-acars")return decode_file(path,true,freq);
         else if(mode=="--decode-adsb")return decode_file(path,false,freq);
+        else if(mode=="--live-acars" || mode=="--live-adsb") {
+            orc::linux_sdr::LiveCaptureOptions options{};
+            options.decoder=(mode=="--live-acars")?orc::linux_sdr::LiveDecoder::acars:
+                                                    orc::linux_sdr::LiveDecoder::adsb;
+            options.device_index=device;
+            options.center_hz=freq_explicit?freq:(mode=="--live-acars"?131490000u:1090000000u);
+            options.sample_rate_sps=rate_explicit?rate:(mode=="--live-acars"?240000u:2048000u);
+            options.max_blocks=blocks;
+            (void)orc::linux_sdr::run_librtlsdr_blocks(options,std::cout);
+        }
         else if(mode=="--iq-file") {
             std::ifstream in(path,std::ios::binary);
             if(!in)throw std::runtime_error("failed to open IQ file");

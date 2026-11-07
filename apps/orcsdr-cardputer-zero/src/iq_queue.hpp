@@ -13,6 +13,7 @@ struct IqMetadata {
   std::uint32_t frequency_hz=0;
   std::uint32_t sample_rate_sps=0;
   std::uint64_t receiver_generation=0;
+  std::uint64_t first_sample_index=0; // source-relative complex index, not RF-hardware sample time
   std::uint64_t monotonic_ns=0;
   std::uint64_t dropped_samples_before=0; // exact known application queue drops
   bool discontinuity=false;              // retune, overrun or unknown transport gap
