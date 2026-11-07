@@ -4,12 +4,19 @@ on:
   push:
     branches:
       - codex/cardputer-zero-linux-bringup-20261102
+      - agents/cardputer-zero-orcdec-20261106
     paths:
       - 'apps/orcsdr-cardputer-zero/**'
+      - 'apps/orcsdr-tab5/ui/acars_core.*'
+      - 'apps/orcsdr-tab5/ui/acars_selftest.*'
+      - 'apps/orcsdr-tab5/ui/adsb_decoder.*'
       - '.github/workflows/cardputer-zero-host.yml'
   pull_request:
     paths:
       - 'apps/orcsdr-cardputer-zero/**'
+      - 'apps/orcsdr-tab5/ui/acars_core.*'
+      - 'apps/orcsdr-tab5/ui/acars_selftest.*'
+      - 'apps/orcsdr-tab5/ui/adsb_decoder.*'
       - '.github/workflows/cardputer-zero-host.yml'
   workflow_dispatch:
 
@@ -35,8 +42,8 @@ jobs:
         run: cmake -S apps/orcsdr-cardputer-zero -B build/cardputer-zero-ci -DCMAKE_BUILD_TYPE=Release -DORC_ENABLE_RTLSDR=${{ matrix.rtl }}
       - name: Build
         run: cmake --build build/cardputer-zero-ci --parallel
-      - name: Run synthetic regression tests
-        run: ctest --test-dir build/cardputer-zero-ci --output-on-failure
+      - name: Run deterministic decoder / IQ tests
+        run: ctest --test-dir build/cardputer-zero-ci --output-on-failure --verbose
       - name: Check application CLI
         run: ./build/cardputer-zero-ci/orcsdr_cardputer_zero --demo
       - name: Check library-enabled device enumeration (no RF hardware in CI)
