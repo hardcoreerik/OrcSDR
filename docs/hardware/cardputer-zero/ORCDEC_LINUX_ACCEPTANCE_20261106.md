@@ -1,6 +1,6 @@
 # Cardputer Zero / OrcSDR native decoder and Linux acceptance
 
-Status: host-integrated, CI under test; **not physically tested on Cardputer Zero**. Base: `196c5405db6a907a6d995ba103e811763cb95878`. Development branch: `agents/cardputer-zero-orcdec-20261106`.
+Status: host-integrated, Linux CI passed x86-64 and ARM64 (7/7 tests in each of four configurations); **not physically tested on Cardputer Zero**. Base: `196c5405db6a907a6d995ba103e811763cb95878`. Development branch: `agents/cardputer-zero-orcdec-20261106`.
 
 ## What is already implemented
 
@@ -74,3 +74,25 @@ Official specification: M5Stack CardputerZero CM0 (A53 ARM64, 512 MiB), 320 x 17
 - CardputerZero/AppBuilder: https://github.com/CardputerZero/AppBuilder — package and store flow; inspected revision `18996b694ae305306fc5d457d982cfba0b0e7cc5` (2026-10-26).
 
 Pin verified SDK revision, toolchain/sysroot checksum, ABI, kernel and license. Build LVGL application separately from radio service. The LCD is an optional compact controller, not a 320 x 170 reimplementation of OrcSDR Web.
+
+
+## GitHub Actions host build evidence — 2026-11-06 PST
+
+**Source commit:** `b4cc977a876da0ca33444f1dea3fb206636727e8`.
+**Workflow run:** https://github.com/hardcoreerik/OrcSDR/actions/runs/42322632254
+**Result:** all four isolated Linux CI jobs succeeded. Each ran CMake configure/build, the native application demo and CTest.
+
+| Runner | System librtlsdr | CTest |
+| --- | --- | --- |
+| Ubuntu 24.04 x86-64 | OFF | 7/7 pass |
+| Ubuntu 24.04 x86-64 | ON; `librtlsdr-dev` installed and detected | 7/7 pass |
+| Ubuntu 24.04 ARM64/AArch64 | OFF | 7/7 pass |
+| Ubuntu 24.04 ARM64/AArch64 | ON; `librtlsdr-dev` installed and detected | 7/7 pass |
+
+Tests: `iq_metrics`, `simulated_receiver`, `native_acars_cli_demo`, `make_acars_fixture`, `decode_acars_fixture`, `native_acars_adsb_regression`, `bounded_iq_queue`.
+
+For each job, CTest directly reported `ACARS fixture cases=10 passed=10 missed=0 duplicates=0`, ADS-B deterministic known frames and CU8 self-check PASS, and bounded IQ queue tests PASS. The fixture generator wrote exactly **121246 bytes / 60623 complex CU8 samples**, and the CLI file-replay decoded **one ACARS message with crc_ok=1**, `corrected=0`, and `crc_rejected=0`.
+
+Logs are saved to the workflow execution directory as `cardputer-zero-{architecture,configure,build,ctest,demo,list}.log` (applicable files only), and uploaded as GitHub Actions artifacts for 14 days. Individual artifact IDs from the successful run: ARM64/OFF `13553322646`, ARM64/ON `13552744818`, x86-64/OFF `13553053157`, x86-64/ON `13552824562`.
+
+**Limits:** This was Linux CI on hosted runners, not the local execution container and not a vendor Cardputer Zero BSP sysroot build. The `--list` command on CI has no attached radio; a successful empty enumeration proves only library linkage, not physical tuner support, RF reception, capture integrity, USB throughput, or accurate on-air decoding. No sustained IQ producer/consumer process, public HTTP server, hardware UI or radio RF validation is claimed.
