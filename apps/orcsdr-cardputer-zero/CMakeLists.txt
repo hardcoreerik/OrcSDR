@@ -63,6 +63,13 @@ if(BUILD_TESTING)
   target_compile_options(orc_native_decoder_test PRIVATE -Wall -Wextra -Wpedantic)
   add_test(NAME native_acars_adsb_regression COMMAND orc_native_decoder_test)
 
+  find_package(Python3 COMPONENTS Interpreter QUIET)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME linux_web_assets_loopback
+      COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/web_server_test.py"
+              "$<TARGET_FILE:orcsdr_cardputer_zero>")
+  endif()
+
   add_executable(orc_linux_v1_frame_test tests/v1_frame_adapter_test.cpp)
   target_link_libraries(orc_linux_v1_frame_test PRIVATE orc_linux_runtime)
   target_compile_options(orc_linux_v1_frame_test PRIVATE -Wall -Wextra -Wpedantic)

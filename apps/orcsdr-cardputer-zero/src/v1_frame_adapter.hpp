@@ -33,3 +33,4 @@ inline orc_radio_v1_frame_t describe_iq_v1(
   f.byte_count=block.cu8.size();
   return f;
 }
+} // namespace orc::linux_sdr
