@@ -1,10 +1,10 @@
-# OrcSDR SSTV — native progressive receiver (EXPERIMENTAL)
+# OrcSDR SSTV — native progressive receiver
 
-**Branch:** `codex/sstv-native-dashboard` (development continues on `claude/sstv-auto-dashboard`)  
+**Availability:** Integrated, **fully functioning 14-mode receiver** per maintainer acceptance (2026-11-04); earlier development branches and dated validation records are retained for provenance. That acceptance is separate from documented per-mode/per-dongle hardware test coverage.  
 **Target:** M5Stack Tab5, ESP32-P4, RTL-SDR (Blog V3C/V4/V4L, Nooelec NESDR SMArt V5)  
 **Audio path:** receiver PCM → bounded audio tap → VIS/sync decoder → RGB565 PSRAM image → native M5GFX UI → background SD archive.
 
-The receiver decodes **full colour** in all 14 modes: Robot 36/72 (Y with R-Y/B-Y chroma, interlaced in Robot 36), Martin and Scottie (G/B/R) and PD (Y, R-Y, B-Y, Y with chroma shared by a line pair). Host regressions send the colour ORC test pattern through an independent encoder in every mode (correlation 0.89-1.00, flat colours exact). **Hardware status:** a real over-the-air Robot 36 colour frame (Pluto, cabled, 145.500 MHz, RTL-SDR Blog V4L) was decoded on a Tab5 and saved to the SD card (correlation with the source R 0.90 / G 0.92 / B 0.87, at roughly 10 dB over the noise). A second frame, with the chroma cleanup below, reached R 0.915 / G 0.919 / B 0.905. Every other mode is verified on the host only; see *Not yet validated*.
+The receiver decodes **full colour** in all 14 modes: Robot 36/72 (Y with R-Y/B-Y chroma, interlaced in Robot 36), Martin and Scottie (G/B/R) and PD (Y, R-Y, B-Y, Y with chroma shared by a line pair). Host regressions send the colour ORC test pattern through an independent encoder in every mode (correlation 0.89-1.00, flat colours exact). **Hardware status:** Robot 36, PD120 and Scottie S1 now have conducted Tab5 IQ-to-image-to-SD readback passes on **all four** accepted receivers (Blog V3c, V4, V4L and Nooelec V5), documented on 2026-10-26. These are source-qualified conducted RF tests, not general OTA sensitivity or long-soak guarantees. Other supported modes remain host-validated without the same conducted per-dongle acceptance. See the dated [V3c](../evidence/maps/2026-10-26-v3c-sstv-conducted.md), [V4](../evidence/maps/2026-10-26-v4-sstv-conducted.md), [V4L](../evidence/maps/2026-10-26-v4l-sstv-conducted.md) and [V5](../evidence/maps/2026-10-26-v5-sstv-conducted.md) records.
 
 ## What the user sees
 
@@ -174,8 +174,8 @@ The 36.91 s Pluto Robot 36 recording (`received-filtered-aligned.wav`, SHA-256 `
 
 - **Observed on a Tab5 (2026-10-12):** dashboard rendering and touch, the Robot 36 and PD120 self-tests through the real decoder, display and SD archive, BMP saves of full-size pictures (after the 16 KiB block-write fix), and live reception of two over-the-air colour Robot 36 frames saved to the card.
 - **Not yet observed:** long unattended runs and soaks beyond a handful of images, SD behaviour across many card types or a card pulled mid-write on real hardware (the failure cases are covered on the host only), coexistence with FM and USB reception, and P4 CPU/heap/PSRAM and latency figures beyond the spot readings in `SSTV STATUS`.
-- Cabled or over-the-air reception of every mode except Robot 36; Martin, Scottie and PD are validated with synthetic audio only.
-- Colour over the air for every mode except Robot 36; chroma smoothing for weak signals (colour speckle is visible at about 10 dB over the noise); Goertzel-based tone validation.
+- All 14 supported modes are operational per maintainer. Conducted RF reception was specifically documented for Robot 36, PD120 and Scottie S1 across V3c, V4, V4L and Nooelec V5; the other 11 modes do not yet have that **same documented per-mode, per-dongle acceptance matrix**.
+- Broad over-the-air weak-signal sensitivity and long-soak behavior across all modes remain unqualified; chroma noise and sync-only mode inference remain practical limits.
 - Sync-only identification under fading is heuristic; see the Robot 36 / Robot 72 alias above. Martin's 4.9 ms sync pulse reads shorter than the classifier's floor, so Martin pictures are identified by VIS only.
 - `session_id` restarts every boot; a paginated SD browser does not exist (the gallery shows the newest four).
 

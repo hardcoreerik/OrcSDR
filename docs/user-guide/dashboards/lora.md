@@ -1,6 +1,6 @@
 # LoRa
 
-The LoRa dashboard is an experimental receive and analysis surface.
+The LoRa dashboard is an implemented live packet decoder, not just a spectrum monitor: the maintainer has received unencrypted real Meshtastic messages, node info, telemetry and GPS. Encrypted packets are identified as **ENCRYPTED FRAME** without showing invented plaintext. It is receive-only, not a Meshtastic transmitter. The **Channels** picker supports the 24 listed regional LongFast plans (SF11/BW250); 2.4 GHz, EU Lite/Narrow and licensed amateur profiles are not offered. Antenna placement, regional channel choice and signal strength affect reception and packet loss.
 
 - **Overview** shows a LoRa-focused 500 kHz spectrum, the selected 250 kHz channel
   edges, a stable noise-relative waterfall, signal strength in dBFS, capture

@@ -1,0 +1,35 @@
+{
+  "contract": "orcsdr.radio-service",
+  "version": {
+    "major": 1,
+    "minor": 0
+  },
+  "kind": "iq_block",
+  "host_id": "host-example-01",
+  "boot_id": "boot-example-07",
+  "receiver_id": "receiver-usb-port-1",
+  "attachment_id": "attach-042",
+  "session_id": "session-0009",
+  "generation": 7,
+  "sequence": 21,
+  "time": {
+    "monotonic_ns": 4000000000,
+    "utc_valid": false,
+    "utc_unix_ms": null,
+    "clock_source": "unavailable",
+    "utc_uncertainty_ms": null
+  },
+  "payload": {
+    "format": "cu8",
+    "sample_rate_sps": 2400000,
+    "center_frequency_hz": 101700000,
+    "first_sample_index": 122880,
+    "complex_sample_count": 16384,
+    "payload_bytes": 32768,
+    "dropped_complex_samples_since_previous": 0,
+    "data_ref": {
+      "transport": "in_process",
+      "stream_id": "stream-iq-1"
+    }
+  }
+}
