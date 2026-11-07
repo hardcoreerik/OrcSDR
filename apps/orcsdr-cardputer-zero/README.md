@@ -44,3 +44,19 @@ Use [CardputerZero/Template](https://github.com/CardputerZero/Template) for LVGL
 Proposed 320x170 screen: tuned frequency, receiver connection status, one S-meter row and a focused spectrum/waterfall, with keyboard actions for tune, gain, band, save and exit. No attempt to squeeze the Tab5 1280x720 touchscreen UI directly onto this device.
 
 Details: [research and bring-up](../../../docs/hardware/cardputer-zero/RESEARCH_AND_BRINGUP.md) and [portability architecture](../../../docs/hardware/cardputer-zero/PORTABILITY_ARCHITECTURE.md).
+
+## Native OrcSDR decoder integration (2026-11-06)
+
+The Cardputer Linux target now compiles **the original OrcSDR source files** `acars_core.cpp`, `acars_selftest.cpp` and `adsb_decoder.cpp` from `apps/orcsdr-tab5/ui` directly. No copied decoder fork and no ESP-IDF firmware modifications. The host CTest suite covers ten ACARS simulated RF blocks, CRC/repairs, chunked replay, stream reset, ADS-B known frames/CRC and bounded CU8 queue/drop accounting. Actual Cardputer hardware is **not yet tested**.
+
+Additional CLI modes:
+
+```sh
+./build/cardputer-zero-native/orcsdr_cardputer_zero --acars-demo
+./build/cardputer-zero-native/orcsdr_cardputer_zero --decode-acars /path/to/acars-240k.cu8 --freq 131490000
+./build/cardputer-zero-native/orcsdr_cardputer_zero --decode-adsb /path/to/adsb-2048k.cu8
+```
+
+The ACARS replay file must contain CU8 at 240 kS/s, wanted carrier at +60 kHz (example actual channel 131.550 MHz). ADS-B replay requires CU8 at 2.048 MS/s tuned near 1090 MHz. These are genuine decoders, not synthetic text injectors, but still offline file modes; live streaming into a decoder and Web server remain future gates.
+
+See [decoder/Linux acceptance and reproducible log commands](../../../docs/hardware/cardputer-zero/ORCDEC_LINUX_ACCEPTANCE_20261106.md) and the [actual OrcSDR Web interoperability plan](../../../docs/hardware/cardputer-zero/LINUX_WEB_INTEROPERABILITY_PLAN.md).
