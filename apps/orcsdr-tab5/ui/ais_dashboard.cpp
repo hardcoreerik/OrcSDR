@@ -8,6 +8,7 @@
 #include "acars_dirty_rects.hpp"
 #if defined(ESP_PLATFORM)
 #include "map_view.hpp"
+#include <esp_heap_caps.h>
 #endif
 #include <M5Unified.h>
 #include <algorithm>
@@ -463,7 +464,14 @@ void select_page(View v) {if(g_view==v)return;g_view=v;focus_nav::clear();nav();
 } // namespace
 void enter(const Snapshot& snapshot){
   if(!screens::is_active(screens::Id::ais))return;
-  if(!g_data)g_data=new(std::nothrow) Snapshot();
+  if(!g_data) {
+#if defined(ESP_PLATFORM)
+    void* memory=heap_caps_malloc(sizeof(Snapshot), MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+    if(memory)g_data=new(memory) Snapshot();
+#else
+    g_data=new(std::nothrow) Snapshot();
+#endif
+  }
   if(!g_data)return;
   *g_data=snapshot;g_active=true;g_view=View::map;g_selected_mmsi=0;
   g_selected_message=0;g_protocol=1;g_target_offset=g_message_offset=g_event_offset=g_protocol_offset=0;
@@ -478,7 +486,15 @@ void update(const Snapshot& snapshot){
   if(battery!=snapshot.battery_percent)audio_header::draw_battery(snapshot.battery_percent);
   paint(false);
 }
-void leave(){g_active=false;destroy_canvas();delete g_data;g_data=nullptr;}
+void leave(){
+  g_active=false;destroy_canvas();
+#if defined(ESP_PLATFORM)
+  if(g_data){g_data->~Snapshot();heap_caps_free(g_data);}
+#else
+  delete g_data;
+#endif
+  g_data=nullptr;
+}
 bool active(){return g_active;}
 View view(){return g_view;}
 uint8_t protocol_type(){return g_protocol;}
