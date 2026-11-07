@@ -364,3 +364,21 @@ The adaptive rate used to stop at 480 kS/s because stepping to 240 kS/s (RF deci
   floor is now 240 kS/s.
 - **Verified:** a real V4 stream throttled to force 960 -> 480 -> 240 kS/s stayed up at 240 kS/s (link 101%, no reset).
   Audio quality at 240 kS/s on a clean link was not judged by ear.
+
+## Wi-Fi / SDIO throughput investigation (2026-11-06)
+
+`RTL_TCP BENCH <seconds>` (serial, no active stream) connects to the configured server and only counts received
+bytes, so the link is measured without the demodulator or the IQ ring. Measured against an unthrottled sender
+(the sender is a plain 16 KiB `sendall` loop, so the cap is TCP backpressure from the Tab5 side, not the PC):
+
+| Change (one at a time) | Receive |
+|---|---|
+| SDIO 10 MHz (committed default) | about 1.8 MB/s (rtl_tcp path) |
+| SDIO 20 MHz | 2.6-2.7 MB/s rtl_tcp path for 3 min, 0 drops; 2.2 MB/s raw bench |
+| SDIO 40 MHz | 2.0-2.5 MB/s rtl_tcp path, stable, no gain over 20 MHz |
+| SDIO RX queue 2 -> 8 (20 MHz) | 2.10 MB/s raw bench, no gain; reverted |
+
+Espressif's reference for P4 + C6 (4-bit SDIO, 40 MHz) is 30-32 Mbit/s TCP; the raw bench gives 17-18 Mbit/s. The bus
+clock and the host RX queue are therefore not the limit. Untested next levers: the C6 firmware's Wi-Fi buffer profile
+(RX/TX buffer counts, block-ack windows, AMPDU), the Wi-Fi link itself (RSSI, AP, 802.11ax vs 11n), and ESP-Hosted 3.1.0.
+The 20 MHz clock is not committed: the earlier failure was sustained HTTPS download, which still needs a soak.

@@ -6,6 +6,8 @@
 #include <cstring>
 
 #include <esp_heap_caps.h>
+#include <lwip/netdb.h>
+#include <lwip/sockets.h>
 #include <esp_log.h>
 #include <esp_timer.h>
 #include <freertos/FreeRTOS.h>
@@ -89,6 +91,59 @@ class AppEnv final : public rtl_tcp::Env {
 };
 
 AppEnv g_env;
+
+// Receive-only network benchmark: connects to the configured server and just counts bytes, so the
+// link (Wi-Fi + SDIO) is measured without the demodulator or the IQ ring in the path.
+std::atomic<bool> g_bench_running{false};
+
+void bench_task(void* arg) {
+  const uint32_t seconds = reinterpret_cast<uintptr_t>(arg);
+  uint8_t* buffer = static_cast<uint8_t*>(heap_caps_malloc(16384, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  addrinfo hints{};
+  hints.ai_family = AF_INET;
+  hints.ai_socktype = SOCK_STREAM;
+  addrinfo* found = nullptr;
+  char port_text[8];
+  std::snprintf(port_text, sizeof(port_text), "%u", static_cast<unsigned>(g_config.port));
+  int fd = -1;
+  if (buffer != nullptr && getaddrinfo(g_config.host, port_text, &hints, &found) == 0 && found != nullptr) {
+    fd = socket(found->ai_family, found->ai_socktype, 0);
+    if (fd >= 0 && connect(fd, found->ai_addr, found->ai_addrlen) != 0) {
+      close(fd);
+      fd = -1;
+    }
+  }
+  if (found != nullptr) freeaddrinfo(found);
+  if (fd < 0) {
+    ESP_LOGW("rtl_tcp", "RTL_TCP_BENCH error=connect_failed");
+  } else {
+    timeval timeout{1, 0};
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+    const int64_t start = esp_timer_get_time();
+    int64_t mark = start;
+    uint64_t total = 0, marked = 0;
+    while (esp_timer_get_time() - start < static_cast<int64_t>(seconds) * 1000000) {
+      const int n = recv(fd, buffer, 16384, 0);
+      if (n > 0) total += static_cast<uint64_t>(n);
+      const int64_t now = esp_timer_get_time();
+      if (now - mark >= 2000000) {
+        ESP_LOGI("rtl_tcp", "RTL_TCP_BENCH t=%us MB/s=%.2f", static_cast<unsigned>((now - start) / 1000000),
+                 static_cast<double>(total - marked) / (static_cast<double>(now - mark) / 1e6) / 1e6);
+        mark = now;
+        marked = total;
+      }
+    }
+    const double elapsed = static_cast<double>(esp_timer_get_time() - start) / 1e6;
+    ESP_LOGI("rtl_tcp", "RTL_TCP_BENCH done bytes=%llu seconds=%.1f MB/s=%.2f Mbit/s=%.1f",
+             static_cast<unsigned long long>(total), elapsed, static_cast<double>(total) / elapsed / 1e6,
+             static_cast<double>(total) * 8.0 / elapsed / 1e6);
+    close(fd);
+  }
+  heap_caps_free(buffer);
+  g_bench_running.store(false, std::memory_order_release);
+  vTaskDelete(nullptr);
+}
+
 
 void worker(void*) {
   for (;;) {
@@ -306,6 +361,17 @@ bool handle_command(const char* line, char* reply, size_t reply_size) {
       set_mode(requested);
       std::snprintf(reply, reply_size, "RTL_TCP SOURCE mode=%s saved=1 (takes effect on the next start)",
                     source::mode_name(requested));
+    }
+  } else if (!std::strcmp(verb, "BENCH")) {
+    const unsigned long seconds = arg1[0] ? std::strtoul(arg1, nullptr, 10) : 10;
+    if (g_running.load(std::memory_order_acquire) || seconds == 0 || seconds > 120 || !configured()) {
+      std::snprintf(reply, reply_size, "RTL_TCP BENCH error=needs a configured server, 1-120 s and no active stream");
+    } else if (g_bench_running.exchange(true)) {
+      std::snprintf(reply, reply_size, "RTL_TCP BENCH error=already running");
+    } else {
+      xTaskCreatePinnedToCoreWithCaps(bench_task, "rtl_bench", 6144, reinterpret_cast<void*>(seconds), 3, nullptr, 0,
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+      std::snprintf(reply, reply_size, "RTL_TCP BENCH started seconds=%lu (watch RTL_TCP_BENCH lines)", seconds);
     }
   } else if (!std::strcmp(verb, "HOST")) {
     unsigned long port_number = arg2[0] ? std::strtoul(arg2, nullptr, 10) : rtl_tcp::kDefaultPort;
