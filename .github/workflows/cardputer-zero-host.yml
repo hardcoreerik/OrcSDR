@@ -7,6 +7,10 @@ on:
       - agents/cardputer-zero-orcdec-20261106
     paths:
       - 'apps/orcsdr-cardputer-zero/**'
+      - 'core/portable/**'
+      - 'contracts/radio_service/**'
+      - 'tests/radio_service_v1/**'
+      - 'tests/acars_core_smoke.cpp'
       - 'apps/orcsdr-tab5/ui/acars_core.*'
       - 'apps/orcsdr-tab5/ui/acars_selftest.*'
       - 'apps/orcsdr-tab5/ui/adsb_decoder.*'
@@ -14,6 +18,10 @@ on:
   pull_request:
     paths:
       - 'apps/orcsdr-cardputer-zero/**'
+      - 'core/portable/**'
+      - 'contracts/radio_service/**'
+      - 'tests/radio_service_v1/**'
+      - 'tests/acars_core_smoke.cpp'
       - 'apps/orcsdr-tab5/ui/acars_core.*'
       - 'apps/orcsdr-tab5/ui/acars_selftest.*'
       - 'apps/orcsdr-tab5/ui/adsb_decoder.*'
@@ -67,6 +75,43 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: cardputer-zero-${{ matrix.os }}-rtl-${{ matrix.rtl }}
+          path: cardputer-zero-*.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  integrated-core-contract:
+    name: Shared core + Radio Service v1 integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify canonical source snapshots
+        run: |
+          set -o pipefail
+          python3 core/portable/check_source_inventory.py 2>&1 | tee cardputer-zero-source-provenance.log
+      - name: Compile canonical ACARS and ADS-B
+        run: |
+          set -o pipefail
+          cmake -S core/portable -B build/cardputer-portable -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON 2>&1 | tee cardputer-zero-portable-config.log
+          cmake --build build/cardputer-portable --parallel 2>&1 | tee cardputer-zero-portable-build.log
+          ctest --test-dir build/cardputer-portable --output-on-failure 2>&1 | tee cardputer-zero-portable-test.log
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate shared Radio Service schema and negative contracts
+        run: |
+          set -o pipefail
+          python -m pip install 'jsonschema>=4.21,<5'
+          python -m unittest discover -s tests/radio_service_v1 -v 2>&1 | tee cardputer-zero-radio-contract.log
+          cc -std=c11 -Wall -Wextra -Werror -pedantic tests/radio_service_v1/abi_probe.c -o /tmp/orc-radio-abi-c
+          /tmp/orc-radio-abi-c
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic tests/radio_service_v1/abi_probe.c -o /tmp/orc-radio-abi-cpp
+          /tmp/orc-radio-abi-cpp
+      - name: Preserve integrated CI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cardputer-zero-shared-core-contract
           path: cardputer-zero-*.log
           if-no-files-found: warn
           retention-days: 14

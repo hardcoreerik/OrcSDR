@@ -73,3 +73,26 @@ The CLI can now save a receiver capture as raw CU8 for later decoding or indepen
 ```
 
 Driver support for 240 kS/s **must be verified on actual hardware**; a capture taken at another rate must not be mislabeled as 240 kS/s. The automated CTest fixture/replay pair proves the generator writes a real CU8 fixture which the same original OrcSDR ACARS decoder independently reads back and decodes. No device or Web server is needed for these offline tests.
+
+
+## Cross-platform integration checkpoint — November 2026
+
+The existing Cardputer Linux project now compiles the actual OrcSDR ACARS and ADS-B implementations, includes the canonical-core source audit and Radio Service v1 specification, and has a bounded CU8 receiver-to-decoder pipeline. Original Web/WASM files can be served unchanged from a caller-supplied build directory on localhost only. See [the integration checkpoint](../../../docs/hardware/cardputer-zero/INTEGRATION_CHECKPOINT_20261106.md).
+
+From the repo root, configure/build/test and keep logs next to the command invocation:
+
+    cmake -S apps/orcsdr-cardputer-zero -B build/cardputer-zero -DCMAKE_BUILD_TYPE=Release 2>&1 | tee cardputer-zero-config.log
+    cmake --build build/cardputer-zero --parallel 2>&1 | tee cardputer-zero-build.log
+    ctest --test-dir build/cardputer-zero --output-on-failure 2>&1 | tee cardputer-zero-tests.log
+
+Hardware-dependent examples (NOT physically verified on Cardputer):
+
+    ./build/cardputer-zero/orcsdr_cardputer_zero --live-acars --blocks 64 2>&1 | tee cardputer-zero-acars-live.log
+    ./build/cardputer-zero/orcsdr_cardputer_zero --live-adsb --blocks 128 2>&1 | tee cardputer-zero-adsb-live.log
+
+To serve original gzipped Web assets for LOCAL preview (radio APIs currently return 501, all mutations are refused):
+
+    ./build/cardputer-zero/orcsdr_cardputer_zero --serve-web ../OrcSDR-Headless/main/m5 --port 8780 2>&1 | tee cardputer-zero-web.log
+    curl -i http://127.0.0.1:8780/api/v1/health
+
+The asset preview is NOT the full web radio service. It is always bound to 127.0.0.1 and must not be reconfigured for remote use without authenticated, encrypted access. No private Headless artifacts are included in this public repo.
