@@ -92,3 +92,10 @@ This branch changed shared network settings; the web server uses the same Wi-Fi 
 - Five local ESP-Hosted patches are applied by `tools/apply-esp-hosted-trampoline-fix.ps1` (3.0.6).
 
 Open: memory right-sizing of these buffers is planned (see `docs/RTL_TCP_INTEROP.md`); nothing here is web-specific.
+
+## Ownership decision (2026-11-07, owner)
+
+The rtl_tcp code on `claude/orcsdr-rtl-tcp-interop-f12b5d` is canonical. The copy of `components/esp_rtl_tcp` (6 files) and
+`rtltcp_app` on `claude/web-in-orcsdr` is to be dropped from the web landing; web routes should mirror the surface above and
+call the modules on this branch. Today those modules are app-local (`apps/orcsdr-tab5/ui/rtl_tcp_*`); extracting them into a
+shared ESP-IDF component for the P4 firmware is a separate step that has not been started and needs its own go-ahead.
