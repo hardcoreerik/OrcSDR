@@ -478,3 +478,7 @@ version: `detached-task-handle` is dropped (fixed upstream in 3.1.0), `trampolin
 apply unchanged, and the credit-deadline and aligned-buffer patches were re-based on the 3.1.0 SDIO source. To try 3.1.0, set
 `espressif/esp_hosted` to `3.1.0` in `main/idf_component.yml`, rebuild the C6 from the registry package (an
 `EXTRA_COMPONENT_DIRS` junction to `managed_components/espressif__esp_hosted`) and pass it with `-C6Firmware`.
+
+Plateau check (same 3.0.6 configuration, 3 x 120 s each): a 128 KB bench buffer gave 31.3 / 31.5 / 31.4 Mbit/s (no gain over
+64 KB); pinning the bench task to core 1, where lwIP runs, gave 24.9 / 25.5 / 25.9 (worse). The sustained ceiling on this
+configuration is about 32 Mbit/s; 35 Mbit/s was not reached.
