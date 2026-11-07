@@ -486,3 +486,11 @@ apply unchanged, and the credit-deadline and aligned-buffer patches were re-base
 Plateau check (same 3.0.6 configuration, 3 x 120 s each): a 128 KB bench buffer gave 31.3 / 31.5 / 31.4 Mbit/s (no gain over
 64 KB); pinning the bench task to core 1, where lwIP runs, gave 24.9 / 25.5 / 25.9 (worse). The sustained ceiling on this
 configuration is about 32 Mbit/s; 35 Mbit/s was not reached.
+
+### Higher remote sample rates (checked 2026-11-07)
+
+The remote path has no mode above 960 kS/s: `kRtlSampleRateSps` is fixed at 960000 and the rate adapter only steps down
+(960 -> 480 -> 240 kS/s). The FM/RDS DSP chain is built around integer decimation of 960 kS/s, so 1.8 MS/s (decimation 7.5)
+is not a drop-in. Link budget for reference: 960 kS/s needs 15.4 Mbit/s against 28-32 Mbit/s measured (about 2x margin);
+1.8 MS/s would need 28.8 Mbit/s (no margin) and 2.4 MS/s 38.4 Mbit/s (above the measured ceiling). Wider remote spans for
+the scope or waterfall would be a new feature with its own decimation path; not started, owner's call.
