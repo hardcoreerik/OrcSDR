@@ -1,6 +1,7 @@
 #include "iq_metrics.hpp"
 #include "rtl_receiver.hpp"
 #include "live_capture.hpp"
+#include "web_server.hpp"
 #include "acars_core.hpp"
 #include "acars_selftest.hpp"
 #include "adsb_decoder.hpp"
@@ -28,6 +29,7 @@ void usage() {
               << "  --decode-adsb PATH            CU8 file: 2.048MS/s, centered 1090MHz\n"
               << "  --make-acars-fixture PATH     generate reproducible 240kS/s CU8 file\n"
               << "  --capture ... --save PATH     save the actual receiver CU8 samples\n"
+              << "  --serve-web PATH [--port N] [--max-requests N] loopback-only assets\n"
               << "  --live-acars [--device N] [--freq HZ] [--blocks N]  capture/decode 240k CU8\n"
               << "  --live-adsb  [--device N] [--freq HZ] [--blocks N]  capture/decode 2.048M CU8\n"
               << "  --capture [--device N] [--freq HZ] [--rate SPS] [--samples N]\n"
@@ -193,6 +195,7 @@ int main(int argc, char** argv) {
         if (argc == 1) { usage(); return 0; }
         std::string mode,path,save_path;
         std::uint32_t device=0,freq=100100000,rate=1024000,samples=32768,blocks=32;
+        std::uint32_t port=8780,max_requests=0;
         bool freq_explicit=false,rate_explicit=false;
         for (int i=1;i<argc;++i) {
             const std::string arg=argv[i];
@@ -201,7 +204,7 @@ int main(int argc, char** argv) {
                 arg=="--live-acars" || arg=="--live-adsb") {
                 if(!mode.empty())throw std::invalid_argument("select exactly one mode");
                 mode=arg;
-            } else if (arg=="--iq-file" || arg=="--decode-acars" || arg=="--decode-adsb" || arg=="--make-acars-fixture") {
+            } else if (arg=="--iq-file" || arg=="--decode-acars" || arg=="--decode-adsb" || arg=="--make-acars-fixture" || arg=="--serve-web") {
                 if(!mode.empty())throw std::invalid_argument("select exactly one mode");
                 mode=arg;
                 if(++i>=argc)throw std::invalid_argument(arg+" needs path");
@@ -213,6 +216,8 @@ int main(int argc, char** argv) {
                 else if(arg=="--freq"){freq=parse_number(value,100000,3000000000U);freq_explicit=true;}
                 else if(arg=="--rate"){rate=parse_number(value,225000,3200000);rate_explicit=true;}
                 else if(arg=="--blocks")blocks=parse_number(value,1,4096);
+                else if(arg=="--port")port=parse_number(value,0,65535);
+                else if(arg=="--max-requests")max_requests=parse_number(value,1,10000);
                 else if(arg=="--samples")samples=parse_number(value,64,262144);
                 else if(arg=="--save")save_path=value;
                 else throw std::invalid_argument("unknown option: "+arg);
@@ -220,6 +225,7 @@ int main(int argc, char** argv) {
         }
         if(!save_path.empty() && mode!="--capture")throw std::invalid_argument("--save requires --capture");
         if(mode=="--demo")print_metrics(orc::synthetic_u8_tone(4096));
+        else if(mode=="--serve-web")return orc::linux_sdr::run_loopback_web(path,static_cast<std::uint16_t>(port),max_requests);
         else if(mode=="--make-acars-fixture")return make_acars_fixture(path);
         else if(mode=="--acars-demo")return acars_demo();
         else if(mode=="--decode-acars")return decode_file(path,true,freq);
