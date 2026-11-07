@@ -349,3 +349,18 @@ Known display gaps seen in these screenshots, not changed: the header and footer
 remote stream "RTL-SDR" with gain "N/A" and "-- MSPS", and in the FM Broadcast screen's
 Relative Level box the "GAIN" label is overprinted by the red "AMP 85.47%" text (not checked
 on a local USB stream).
+
+## 240 kS/s crash: root cause and fix (2026-11-06)
+
+The adaptive rate used to stop at 480 kS/s because stepping to 240 kS/s (RF decimation 1) crashed the receiver
+(Guru Meditation, instruction access fault, `rtl_tcp` task, frame pointer on `g_env`).
+
+- **Cause:** the demodulators emit one audio sample per `kFmAudioDecim x rf_decimation` IQ pairs into a
+  `kRtlAudioBufferSamples` (2048) buffer. A full 32 KiB remote read at 240 kS/s makes about 3277 samples, so the audio
+  buffer overran into neighbouring globals. Decimation 2 and 4 never exceed the buffer, which is why only 240 kS/s failed.
+- **Why it hid:** a synthetic server sending 8 KiB blocks never overran the buffer. A real `rtl_tcp` (V4 on the PC) sends
+  full reads and crashed the Tab5 twice at 240 kS/s; the saved core dump named the `rtl_tcp` task.
+- **Fix:** `rtl_tcp_sink_acquire` caps the read size to what the audio buffer holds at the active rate. The adaptive
+  floor is now 240 kS/s.
+- **Verified:** a real V4 stream throttled to force 960 -> 480 -> 240 kS/s stayed up at 240 kS/s (link 101%, no reset).
+  Audio quality at 240 kS/s on a clean link was not judged by ear.

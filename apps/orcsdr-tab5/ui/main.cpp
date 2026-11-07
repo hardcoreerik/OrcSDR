@@ -9445,7 +9445,12 @@ static bool rtl_tcp_sink_acquire(uint8_t **slot, size_t *capacity) {
   uint8_t index = 0;
   if (!rtl_free_q || !rtl_filled_q || xQueueReceive(rtl_free_q, &index, 0) != pdTRUE) return false;
   *slot = rtl_ring_slots[index];
-  *capacity = sizeof(rtl_iq_processing);
+  // The demodulators write one audio sample per kFmAudioDecim x rf_decimation IQ pairs into a
+  // kRtlAudioBufferSamples buffer. A full 32 KiB read at 240 kS/s (decimation 1) makes 3277
+  // samples and overran that buffer (crash 2026-11-06). Cap the read so it always fits.
+  const size_t audio_safe_bytes = 2u * (kRtlAudioBufferSamples - 16) * kFmAudioDecim *
+                                  std::max<size_t>(1, rtl_active_sample_rate_sps.load(std::memory_order_relaxed) / kRtlDemodRateSps);
+  *capacity = std::min(sizeof(rtl_iq_processing), audio_safe_bytes);
   return true;
 }
 
@@ -10172,7 +10177,7 @@ static void rtl_driver_app_task(void *) {
               if (remote_state == orcsdr::rtl_tcp::State::streaming &&
                   g_stream_band != RtlBand::adsb &&  // ADS-B keeps its own rate
                   orcsdr::rtl_tcp_source::note_link_and_maybe_downshift(
-                      link_pct, ESP_RTL_SDR_RATE_960K, 2 * kRtlDemodRateSps)) {  // 240 kS/s (decimation 1) crashed the DSP: untested path
+                      link_pct, ESP_RTL_SDR_RATE_960K, kRtlDemodRateSps)) {  // 240 kS/s needs the capped read size in rtl_tcp_sink_acquire
                 Serial.printf("RTL_TCP_RATE_DOWN link=%u%% new_rate=%u\n", link_pct,
                               orcsdr::rtl_tcp_source::adapted_rate(ESP_RTL_SDR_RATE_960K));
                 rtl_restart_requested.store(true, std::memory_order_release);
