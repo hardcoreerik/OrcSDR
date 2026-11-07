@@ -460,3 +460,21 @@ DMA headroom fell from about 28.1 KB to 25.4 KB (`RTL_DRAM_BUDGET`). The 20 MHz 
 download soak (the earlier failure mode) before it can be called qualified; this is a trial default on this branch.
 The 3.1.0 variant is not committed (it skips the local patches); its manifest and lock changes are kept as a patch in the
 session scratchpad, and its C6 builds from the registry package with an `EXTRA_COMPONENT_DIRS` junction.
+
+### Throughput campaign, round 5: 30+ Mbit/s sustained (2026-11-07)
+
+The TCP bench's receive buffer grew from 16 KB to 64 KB (`rtl_tcp_source.cpp`): fewer reads per second removed per-call
+overhead and was worth about +2 Mbit/s on its own. Three 120 s runs each, fresh unthrottled sender, no errors or drops:
+
+| Host | Run 1 | Run 2 | Run 3 |
+|---|---|---|---|
+| ESP-Hosted 3.1.0 both chips, local patches re-based on 3.1.0, 16 KB buffer | 29.1 | 29.6 | 29.6 |
+| same, 64 KB buffer | 31.3 | 31.6 | 32.2 |
+| ESP-Hosted 3.0.6 with the five local patches, C6 3.0.6 Wi-Fi profile (committed), 64 KB buffer | 31.5 | 31.8 | 32.1 |
+
+Conclusion: ESP-Hosted 3.1.0 is not needed to reach the 30-35 Mbit/s band, so the pinned 3.0.6 stays. The 3.1.0 port is kept
+ready in `tools/patches/esp-hosted-3.1.0-*.patch` and `apply-esp-hosted-trampoline-fix.ps1` selects the patch set by installed
+version: `detached-task-handle` is dropped (fixed upstream in 3.1.0), `trampoline-null-delete` and `sdio-unresponsive-failure`
+apply unchanged, and the credit-deadline and aligned-buffer patches were re-based on the 3.1.0 SDIO source. To try 3.1.0, set
+`espressif/esp_hosted` to `3.1.0` in `main/idf_component.yml`, rebuild the C6 from the registry package (an
+`EXTRA_COMPONENT_DIRS` junction to `managed_components/espressif__esp_hosted`) and pass it with `-C6Firmware`.

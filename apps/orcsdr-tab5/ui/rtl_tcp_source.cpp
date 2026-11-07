@@ -98,7 +98,7 @@ std::atomic<bool> g_bench_running{false};
 
 void bench_task(void* arg) {
   const uint32_t seconds = reinterpret_cast<uintptr_t>(arg);
-  uint8_t* buffer = static_cast<uint8_t*>(heap_caps_malloc(16384, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  uint8_t* buffer = static_cast<uint8_t*>(heap_caps_malloc(65536, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   addrinfo hints{};
   hints.ai_family = AF_INET;
   hints.ai_socktype = SOCK_STREAM;
@@ -123,7 +123,7 @@ void bench_task(void* arg) {
     int64_t mark = start;
     uint64_t total = 0, marked = 0;
     while (esp_timer_get_time() - start < static_cast<int64_t>(seconds) * 1000000) {
-      const int n = recv(fd, buffer, 16384, 0);
+      const int n = recv(fd, buffer, 65536, 0);
       if (n > 0) total += static_cast<uint64_t>(n);
       const int64_t now = esp_timer_get_time();
       if (now - mark >= 2000000) {
