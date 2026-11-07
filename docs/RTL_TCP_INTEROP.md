@@ -400,3 +400,36 @@ Neither the SDIO clock, the host RX queue, the C6 buffer profile nor power save 
 2.7 MB/s, so the limit is probably the 2.4 GHz HT20 radio path. Remaining ideas: ESP-Hosted 3.1.0 on both chips, HT40,
 the external antenna, another AP channel. Updating the C6: `RTL_ORCDIAL_C6_UPDATE CONFIRM` re-flashes the embedded
 image even at the same version (`RTL_WIFI_C6_UPDATE CONFIRM` refuses when the version matches).
+
+### Throughput campaign, round 3: ESP-Hosted 3.1.0 and TCP/IP tuning (2026-11-07)
+
+New diagnostics: `RTL_TCP BENCHUDP <seconds> [port]` receives UDP datagrams (32-bit sequence in the first four bytes) and
+reports loss; `RTL_WIFI_LINK` now reports real RSSI, channel, width, PHY flags and power-save once the host is on 3.1.0
+(on 3.0.6 the reply came back as zeros). The link is strong: RSSI -40 dBm, 2.4 GHz channel 11, 20 MHz wide, b/g/n/ax.
+
+Raw receive, TCP unless noted, fresh unthrottled sender per run, Mbit/s:
+
+| Configuration (cumulative unless noted) | Result |
+|---|---|
+| 3.0.6 both chips, C6 Wi-Fi profile, SDIO 20 MHz | 21.4 |
+| P4 on 3.1.0 (local 3.0.6 patches skipped), C6 still 3.0.6 | 19.5 |
+| P4 and C6 both 3.1.0 | 21.6 |
+| + TCP/IP profile (TCP/UDP/tcpip mailboxes 64, TCP send buffer 65534, SACK) | 22.6 (about 23 on repeat) |
+| UDP at 30 / 45 Mbit/s offered, UDP mailbox 6 (default) | 8.8 / 0.7 (drops inside the Tab5) |
+| UDP at 30 / 45 Mbit/s offered, with the profile | 29.8 (0.5% loss) / 41.9 (7% loss) |
+| + SDIO TX queue 16 | 22.7-23.1 (no gain) |
+| + SDIO RX queue 8 | 23.5; UDP 29.6 / 42.5 (no gain) |
+| + 11b/g/n only (no 11ax) | 22.0; UDP 29.8 / 42.9 (no gain, reverted) |
+| + TCP window scaling, 128 KB window | 25.2-25.9 |
+| + 256 KB window | 25.7-26.2 |
+| + SDIO RX staging slots 4 | 25.6-25.9 (no gain) |
+
+Findings: the radio and the SDIO bus carry at least 42 Mbit/s of UDP, so the earlier ceiling was the Tab5's own network
+stack (the default 6-datagram UDP mailbox, a 64 KB TCP window). TCP is now about 26 Mbit/s and bounded by round-trip time
+and residual loss (UDP shows 0.5% loss at 30 Mbit/s offered). The sender buffer size, SDIO clock (20 vs 40 MHz), SDIO queues
+and staging slots no longer move the result. These configuration changes are not committed: the 3.1.0 trial skips the five local
+3.0.6 Hosted patches (SDIO credit deadline, unresponsive-link failure event, aligned packet buffers, detached-task handle,
+trampoline null-delete), which must be re-evaluated before 3.1.0 can ship; the 256 KB window and the 64 mailboxes need a
+memory and soak check. 3.1.0 builds for the C6 with `orcdial/c6` against the registry package via an
+`EXTRA_COMPONENT_DIRS` junction (see the trial commands in the session notes) and flashes with
+`RTL_ORCDIAL_C6_UPDATE CONFIRM`.

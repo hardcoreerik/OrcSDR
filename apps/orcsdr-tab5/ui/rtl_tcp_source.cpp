@@ -144,6 +144,62 @@ void bench_task(void* arg) {
   vTaskDelete(nullptr);
 }
 
+// UDP variant: binds the given port and counts datagrams and sequence gaps from a sender that puts a
+// 32-bit counter in the first four payload bytes. Separates radio+bus capacity from TCP behaviour.
+void bench_udp_task(void* arg) {
+  const uint32_t packed = reinterpret_cast<uintptr_t>(arg);
+  const uint32_t seconds = packed & 0xFFFF;
+  const uint16_t port = static_cast<uint16_t>(packed >> 16);
+  uint8_t* buffer = static_cast<uint8_t*>(heap_caps_malloc(2048, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  const int fd = socket(AF_INET, SOCK_DGRAM, 0);
+  bool ok = buffer != nullptr && fd >= 0;
+  if (ok) {
+    int big = 262144;
+    setsockopt(fd, SOL_SOCKET, SO_RCVBUF, &big, sizeof(big));
+    sockaddr_in address{};
+    address.sin_family = AF_INET;
+    address.sin_port = htons(port);
+    address.sin_addr.s_addr = htonl(INADDR_ANY);
+    ok = bind(fd, reinterpret_cast<sockaddr*>(&address), sizeof(address)) == 0;
+    timeval timeout{1, 0};
+    setsockopt(fd, SOL_SOCKET, SO_RCVTIMEO, &timeout, sizeof(timeout));
+  }
+  if (!ok) {
+    ESP_LOGW("rtl_tcp", "RTL_UDP_BENCH error=bind_failed");
+  } else {
+    const int64_t start = esp_timer_get_time();
+    uint64_t bytes = 0, packets = 0, lost = 0;
+    int64_t first_seen = 0;
+    uint32_t expected = 0;
+    bool have_expected = false;
+    while (esp_timer_get_time() - start < static_cast<int64_t>(seconds) * 1000000 + 2000000) {
+      const int n = recv(fd, buffer, 2048, 0);
+      if (n >= 4) {
+        if (first_seen == 0) first_seen = esp_timer_get_time();
+        uint32_t seq;
+        std::memcpy(&seq, buffer, 4);
+        if (have_expected && seq > expected) lost += seq - expected;
+        expected = seq + 1;
+        have_expected = true;
+        bytes += static_cast<uint64_t>(n);
+        ++packets;
+        if (esp_timer_get_time() - first_seen >= static_cast<int64_t>(seconds) * 1000000) break;
+      }
+    }
+    const double elapsed = first_seen ? static_cast<double>(esp_timer_get_time() - first_seen) / 1e6 : 0.0;
+    ESP_LOGI("rtl_tcp", "RTL_UDP_BENCH done packets=%llu lost=%llu bytes=%llu seconds=%.1f MB/s=%.2f Mbit/s=%.1f",
+             static_cast<unsigned long long>(packets), static_cast<unsigned long long>(lost),
+             static_cast<unsigned long long>(bytes), elapsed,
+             elapsed > 0 ? static_cast<double>(bytes) / elapsed / 1e6 : 0.0,
+             elapsed > 0 ? static_cast<double>(bytes) * 8.0 / elapsed / 1e6 : 0.0);
+  }
+  if (fd >= 0) close(fd);
+  heap_caps_free(buffer);
+  g_bench_running.store(false, std::memory_order_release);
+  vTaskDelete(nullptr);
+}
+
+
 
 void worker(void*) {
   for (;;) {
@@ -362,6 +418,20 @@ bool handle_command(const char* line, char* reply, size_t reply_size) {
       std::snprintf(reply, reply_size, "RTL_TCP SOURCE mode=%s saved=1 (takes effect on the next start)",
                     source::mode_name(requested));
     }
+  } else if (!std::strcmp(verb, "BENCHUDP")) {
+    const unsigned long seconds = arg1[0] ? std::strtoul(arg1, nullptr, 10) : 10;
+    const unsigned long port_number = arg2[0] ? std::strtoul(arg2, nullptr, 10) : 1236;
+    if (g_running.load(std::memory_order_acquire) || seconds == 0 || seconds > 120 || port_number == 0 ||
+        port_number > 65535) {
+      std::snprintf(reply, reply_size, "RTL_TCP BENCHUDP error=needs 1-120 s, a port and no active stream");
+    } else if (g_bench_running.exchange(true)) {
+      std::snprintf(reply, reply_size, "RTL_TCP BENCHUDP error=already running");
+    } else {
+      xTaskCreatePinnedToCoreWithCaps(bench_udp_task, "rtl_bench", 6144,
+                                      reinterpret_cast<void*>((port_number << 16) | seconds), 10, nullptr, 0,
+                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+      std::snprintf(reply, reply_size, "RTL_TCP BENCHUDP listening port=%lu seconds=%lu", port_number, seconds);
+    }
   } else if (!std::strcmp(verb, "BENCH")) {
     const unsigned long seconds = arg1[0] ? std::strtoul(arg1, nullptr, 10) : 10;
     if (g_running.load(std::memory_order_acquire) || seconds == 0 || seconds > 120 || !configured()) {
@@ -369,7 +439,7 @@ bool handle_command(const char* line, char* reply, size_t reply_size) {
     } else if (g_bench_running.exchange(true)) {
       std::snprintf(reply, reply_size, "RTL_TCP BENCH error=already running");
     } else {
-      xTaskCreatePinnedToCoreWithCaps(bench_task, "rtl_bench", 6144, reinterpret_cast<void*>(seconds), 3, nullptr, 0,
+      xTaskCreatePinnedToCoreWithCaps(bench_task, "rtl_bench", 6144, reinterpret_cast<void*>(seconds), 10, nullptr, 0,
                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
       std::snprintf(reply, reply_size, "RTL_TCP BENCH started seconds=%lu (watch RTL_TCP_BENCH lines)", seconds);
     }
