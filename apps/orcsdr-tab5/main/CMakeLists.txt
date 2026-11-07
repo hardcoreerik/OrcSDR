@@ -122,6 +122,7 @@ idf_component_register(
         "../ui/device_status_service.cpp"
         "../ui/screen_controller.cpp"
         "../ui/scan_engine.cpp"
+        "../ui/iot_sensor_discovery.cpp"
         "../ui/fm_dashboard.cpp"
         "../ui/fm_config.cpp"
         "../ui/home_dashboard.cpp"
