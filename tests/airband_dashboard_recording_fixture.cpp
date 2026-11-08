@@ -137,6 +137,11 @@ int main(){
     orcsdr::focus_nav::Rect focused{};const bool had_focus=orcsdr::focus_nav::focused(&focused);
     for(int i=0;i<4;++i){s.now_ms+=250;s.snr_db=float(i*3);dashboard_update(s);}
     assert(lgfx::screen_clears==clears);
+    // Short landscape Listen prints SNR as text inside a 72 px card. The live-meter update used to paint a meter area that
+    // starts above that card and covers its text; nothing may be filled across the card's top edge.
+    if(!g_layout.legacy&&g_layout.listen_now.h<120)
+      assert(std::none_of(lgfx::fills.begin(),lgfx::fills.end(),[](const auto&r){
+        return r.y<g_layout.listen_now.y&&r.y+r.h>g_layout.listen_now.y&&r.x<g_layout.listen_now.x+g_layout.listen_now.w&&r.x+r.w>g_layout.listen_now.x;}));
     if(had_focus){orcsdr::focus_nav::Rect after{};assert(orcsdr::focus_nav::focused(&after));assert(after.x==focused_before.x&&after.y==focused_before.y);}
     g_paint_phase="activity updates";dashboard_select_tab(Tab::activity);s.now_ms=6000;lgfx::fills.clear();dashboard_update(s);
     assert(lgfx::screen_clears==clears);

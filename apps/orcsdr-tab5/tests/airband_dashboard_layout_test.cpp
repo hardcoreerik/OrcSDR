@@ -23,6 +23,11 @@ static void check(Rect v) {
   assert(inside(l.content,l.detail_overlay)&&inside(l.detail_overlay,l.detail_close));
   if(l.setup_page_count>1)assert(inside(l.content,l.setup_previous)&&inside(l.content,l.setup_next));
   if(l.listen_status.w>0)assert(!overlap(l.listen_now,l.listen_controls)&&!overlap(l.listen_controls,l.listen_status)&&!overlap(l.listen_status,l.listen_gain));
+  // Short landscape views (LilyGO 1088 x 424): the gain buttons sat 4 px low and hung out of their card.
+  if(!l.legacy&&!l.portrait&&v.h<480){
+    for(Rect r:{l.gain_auto,l.gain_down,l.gain_value,l.gain_up,l.rtl_agc})assert(inside(l.listen_gain,r));
+    assert(l.listen_gain.y>=l.listen_controls.y+l.listen_controls.h);
+  }
   assert(!overlap(l.scope_plot,l.scope_waterfall));
   assert(l.scope_plot_width == l.scope_plot.w);
   assert(l.scope_plot_height == l.scope_plot.h);

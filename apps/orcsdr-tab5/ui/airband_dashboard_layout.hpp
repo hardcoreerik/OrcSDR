@@ -101,7 +101,7 @@ inline Layout make_layout(Rect v) {
       if(v.h<480){
         const int gh=44;
         l.listen_now={x,y,w,72};l.listen_controls={x,y+72+gap,w,3*gh+2*2};
-        l.listen_status={x,y,0,0};l.listen_gain={x,l.listen_controls.y+l.listen_controls.h+gap,w,48};
+        l.listen_status={x,y,0,0};l.listen_gain={x,l.listen_controls.y+l.listen_controls.h+gap,w,touch+8};  // 4 px above and below the 48 px buttons
         const int bw=(w-2*gap)/3;
         for(int r=0;r<3;++r)for(int c=0;c<3;++c)l.control[r*3+c]={x+c*(bw+gap),l.listen_controls.y+r*(gh+2),bw,gh};
         const int gw=(w-6*gap)/5;l.gain_auto={x+gap,l.listen_gain.y+4,gw,touch};l.gain_down={l.gain_auto.x+gw+gap,l.gain_auto.y,gw,touch};

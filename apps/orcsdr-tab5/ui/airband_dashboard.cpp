@@ -1053,7 +1053,15 @@ void dashboard_update(const Snapshot& snapshot) {
         draw_now_card();
         g_last_meter_ms = now;
       } else if (live_changed && now - g_last_meter_ms >= 150u) {
-        draw_signal_meter();
+        if (!g_layout.legacy && g_layout.listen_now.h < 120) {
+          // The short landscape card prints SNR as text. Its meter area would start above the card and cover that
+          // text, so repaint the card instead (draw_now_card draws no meter at this height).
+          g_meter_snr_db = g_snapshot.snr_db;
+          g_meter_open = g_snapshot.squelch_open;
+          draw_now_card();
+        } else {
+          draw_signal_meter();
+        }
         g_last_meter_ms = now;
       }
       if (frequency_changed || state_changed || settings_changed || data_changed)
