@@ -6,7 +6,6 @@
 #include "esp_rtl_sdr.h"
 #include "esp_timer.h"
 #include "home_app.hpp"
-#include "orcsdr_storage.hpp"
 #include "radio_service.hpp"
 #include "rf_analysis.hpp"
 #include "rf_lab.hpp"
@@ -16,7 +15,6 @@
 namespace {
 namespace lab = orcsdr::rf_lab;
 bool g_ready = false;
-orcsdr::storage::FileSystem* g_filesystem = nullptr;  // what lab::initialize() was last given
 int64_t g_last_runtime_us = 0;
 
 uint32_t now_ms() { return static_cast<uint32_t>(esp_timer_get_time() / 1000); }
@@ -55,7 +53,7 @@ lab::Runtime runtime() {
   r.source_available = rs.receiver_state == 2;
   r.sound_enabled = st.sound;
   r.volume = st.volume;
-  r.sd_writable = orcsdr::storage::mounted();
+  r.sd_writable = false;  // see enter(): SD saves are held back until RF Lab's DMA-RAM use is reduced
   std::snprintf(r.driver_version, sizeof(r.driver_version), "%s", inf.version);
   std::snprintf(r.device, sizeof(r.device), "%s", inf.device[0] ? inf.device : "No RTL-SDR");
   std::snprintf(r.health, sizeof(r.health), "%s", rs.receiver_state == 2 ? inf.health : "not streaming");
@@ -66,12 +64,11 @@ void iq_sink(const uint8_t* iq, size_t bytes) { orcsdr::rf_analysis::offer_iq(iq
 
 void enter() {
   if (!apply_viewport()) { home_app::request_home(); return; }
-  // The card mounts in the background a few seconds after boot. initialize() may run again when the filesystem
-  // becomes available (it creates its save task only once), so hand it the card as soon as it is mounted.
-  orcsdr::storage::FileSystem* fs = orcsdr::storage::mounted() ? &orcsdr::storage::filesystem() : nullptr;
-  if (!g_ready || fs != g_filesystem) {
-    g_ready = lab::initialize(fs);
-    g_filesystem = fs;
+  // No filesystem on purpose (see sd_writable below): opening RF Lab already takes about 1.3 KB of the scarce
+  // DMA-capable RAM (dma_free 3307 -> 2019, two extra tasks), and a snapshot save on top of that pushed the minimum to
+  // 191 bytes and stopped the ESP-Hosted link to the C6 (Wi-Fi dropped). Re-enable once RF Lab's footprint is reduced.
+  if (!g_ready) {
+    g_ready = lab::initialize(nullptr);
     if (!g_ready) return;
   }
   lab::set_runtime(runtime());
