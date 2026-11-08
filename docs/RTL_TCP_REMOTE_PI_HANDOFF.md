@@ -230,3 +230,68 @@ Effects on this plan:
    does not by itself bound the delay. A small `-n` does.
 5. The Pi in the lab is reachable by the PC over Tailscale (a 100.x address). The Tab5 is not known to be on that network. A Tab5
    test needs the Pi's LAN address and `rtl_tcp` bound to it (not 127.0.0.1); neither is configured yet.
+
+## 13. Tests run against the real Pi 4B (2026-11-07, by the OrcSDR session)
+
+Pi: Raspberry Pi 4 Model B on Debian 13, `rtl-sdr` 2.0.2-2, dongle "Blog V4L" reporting tuner 5 (R820T), service
+`rtl_tcp -a 192.168.1.218 -p 1234 -s 240000 -n 32 -b 4` as user `rtl`. Client: this Windows PC (Python), and the Tab5.
+Raw numbers are in the session scratchpad (`pi_raw/`), not in this repo. Everything below is measured unless marked.
+
+**Pi state during all runs.** `get_throttled=0x50005` throughout: under-voltage and throttling are *live* (not stale), and the
+kernel logged "Undervoltage detected" 13 s after boot, after the power supply was replaced. The Pi also runs other things
+(`indi-allsky` camera app, a Docker `ground-station`, `ollama`, `indiserver`; load average 3.4-4.2). None were stopped. Despite
+this, no run lost data over Ethernet or Wi-Fi. Long-run stability under the power fault is NOT shown (runs were 8-25 s).
+
+**Throughput, no impairment** (12-15 s per rate, bytes/s against 2 bytes per sample):
+
+| Rate | Ethernet | Wi-Fi (`wlan0`, policy-routed) |
+|---|---|---|
+| 240 kS/s | 100.7% | 100.0% |
+| 960 kS/s | 100.2% | 99.2% |
+| 1.024 MS/s | 100.1% | not run |
+| 1.44 MS/s | 100.0% | 100.0% |
+| 2.048 MS/s | 100.1% | 100.0% |
+| 2.4 MS/s | 100.1% (38.43 Mbit/s) | 100.0% (38.41 Mbit/s) |
+
+The Wi-Fi runs were confirmed to use `wlan0`: its transmit counter rose 7.4, 29.8, 44.7, 63.5 and 74.4 MB across the five runs.
+So the Pi, the dongle and `rtl_tcp` all deliver 1.024 MS/s; any limit on 1.024 MS/s is in OrcSDR's DSP.
+
+**Behaviour** (Ethernet):
+- Greeting `52544c30 00000005 0000001d` (R820T, 29 gains). The server needs about 1.65 s after a client closes before it
+  serves the next: header latency was 26 ms (first), 1148 ms (0.5 s gap), 624 ms (1.0 s), 138 ms (1.5 s), 25 ms (2.5 s).
+- Second client: the TCP connect completes, no header for 4 s, then a header 349 ms after the first client closed.
+- Gain persistence: manual 49.6 dB survived a reconnect with no commands sent (RMS 30.8 before, 31.67 after, against 0.5 at 0 dB).
+- An unknown opcode (`0x7f`) was ignored and the stream kept flowing (493 kB/s). A request for the invalid rate 480000 was silently
+  ignored: the stream stayed at about 485 kB/s, the 240 kS/s rate. There is no reply either way.
+- 25 s stall then resume: 20.09 s of backlog (`-n 32`); a reconnect after the stall delivered 0.00 s of stale data.
+
+**Simulated internet path.** The path was Tab5 or PC client to a PC-side forwarder, an SSH tunnel over Tailscale to the Pi, then
+`rtl_tcp`. Tailscale reported a *direct LAN* path, so this was not a real internet traversal; the internet-like conditions were
+imposed with `tc netem` on the Pi's `tailscale0` egress and removed afterwards. Receiver = PC client:
+
+| Profile (netem) | 240 kS/s | 960 kS/s | 1.44 MS/s |
+|---|---|---|---|
+| 40 +-10 ms, 0.3% loss, 30 Mbit/s (BBR) | 100.6% | 51.6% | 31.3% |
+| 80 +-20 ms, 1% loss, 10 Mbit/s (BBR) | 52.4% | 8.9% | 6.4% |
+| 60 +-15 ms, 0.5% loss, 3 Mbit/s (BBR) | 29.6% | 10.6% | 5.7% |
+| 40 +-10 ms, 0.3% loss, 30 Mbit/s (CUBIC) | 100.5% | 35.6% | not run |
+| 80 +-20 ms, 1% loss, 10 Mbit/s (CUBIC) | 52.8% | 10.7% | not run |
+
+The Pi was already using BBR; CUBIC was set temporarily and BBR restored. Packet loss, not the bandwidth cap, is what limits TCP here:
+with 0.3% loss and 40 ms the 30 Mbit/s profile still delivered only about 7 Mbit/s at the higher rates. BBR helped somewhat at
+0.3% loss and not at 1%.
+
+**Tab5 on the lossy path** (40 ms, 0.3% loss, 30 Mbit/s; FM at 96.1 MHz; 250 s): started at 1.44 MS/s; `RTL_TCP_RATE_DOWN link=79%`
+to 960 kS/s; `RTL_TCP_RATE_DOWN link=64%` to 240 kS/s, all within about 16 s of starting; it then ran at 240 kS/s with `link=89%` and
+`state=streaming`. The step-up probe did not fire because 89% is under the 95% healthy threshold. `dropped=3,851,392` bytes were
+counted locally during that run; I did not investigate whether they fell in the high-rate phase. Audio was not judged.
+
+**What this means.**
+1. A remote profile that starts at 240 kS/s is right: only that rate held up under 0.3% loss.
+2. At 1% loss and 80 ms even 240 kS/s (3.84 Mbit/s) fell to about half. The RTL2832 cannot go below 225,001 S/s, so on a link that
+   bad only server-side decimation (a different server) or a tunnel that avoids loss helps; this is outside v1.
+3. The ladder worked on real hardware against a real server: down in two steps within about 16 s.
+
+**Not done / limits.** Runs were seconds to 4 minutes, not the 1 hour planned; no real internet path (a real one needs a second
+site; Tailscale picked the direct LAN path); no antenna check; no sustained Wi-Fi run beyond 15 s per rate; direct sampling and
+bias tee were not touched; the under-voltage was not cleared, so a clean-power repeat is still owed.
