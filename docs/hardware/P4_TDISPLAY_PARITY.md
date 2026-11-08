@@ -13,7 +13,7 @@ Searched at 4362bd9b and not found: FLARM (no matches); HFDL (only a binary test
 
 | Item | Kind | Tab5 source file | P4 console file | Portrait | Landscape | Decoder | Touch/controls | Last screenshot | Notes |
 |---|---|---|---|---|---|---|---|---|---|
-| HOME | screen | `apps/orcsdr-tab5/ui/home_dashboard.cpp` | `apps/orcsdr-p4-hosyond-console/main/home_app.cpp` | opens? | opens? | n/a | opens? | - | Tab5 OPEN HOME at main.cpp:20362. P4 OPEN HOME calls request_home (home_app.cpp:847-849). home_vfo.cpp and home_dashboard.cpp are compiled into P4. |
+| HOME | screen | `apps/orcsdr-tab5/ui/home_dashboard.cpp` | `apps/orcsdr-p4-hosyond-console/main/home_app.cpp` | drawn-correct (minor defects) | drawn-correct (minor defects) | n/a | works-live (SPAN tap, both orientations) | 2026-11-07: home_portrait_40s, home_landscape90, home_landscape270, home_*_tap_span_* | Tick 2 review: content populated and unclipped in 424x1088 (portrait) and 1088x424 (landscape) safe rectangles inside the 72 px insets; the page list scrolls by design. Defects, none fixed yet: the CONTRAST arrows are about 26 px tall (below the 44 px contract minimum) in both orientations; the "OrcSDR" title crosses the top frame line; in landscape "LAST USED" sits tight under the HOME label; the 72 px insets are the conservative profile values (physical edge validation may shrink them, owner/physical item). Tab5 OPEN HOME at main.cpp:20362. P4 OPEN HOME calls request_home (home_app.cpp:847-849). home_vfo.cpp and home_dashboard.cpp are compiled into P4. |
 | CLOCK (clock settings) | screen | `apps/orcsdr-tab5/ui/clock_settings.cpp` | `apps/orcsdr-p4-hosyond-console/main/screen_settings.cpp` | opens? | opens? | n/a | opens? | - | Tab5 OPEN CLOCK at main.cpp:20363. P4 OPEN CLOCK is rejected as INVALID (serial_cli.cpp:698-700); clock_settings is reached inside Settings (screen_settings.cpp:30, 100). RTL_CLOCK STATUS/SYNC/SET at serial_cli.cpp:185. |
 | FM RADIO | screen | `apps/orcsdr-tab5/ui/fm_dashboard.cpp` | `apps/orcsdr-p4-hosyond-console/main/screen_fm.cpp` | opens? | opens? | n/a | opens? | - | Tab5 OPEN FM at main.cpp:20364. Spectrum hook at screen_fm.cpp:87, 100. Stereo/RDS path not audited. CSV records a spectrum PNG review from r12; not re-reviewed here. |
 | AM RADIO | screen | `apps/orcsdr-tab5/ui/am_dashboard.cpp` | `apps/orcsdr-p4-hosyond-console/main/screen_am.cpp` | opens? | opens? | n/a | opens? | - | Tab5 OPEN AM at main.cpp:20365. `apps/orcsdr-tab5/ui/am_finder.cpp` is not in the P4 CMakeLists.txt. |
@@ -80,7 +80,15 @@ What the Tab5 would need to adopt a shared rotation layer:
 
 - Tooling proven on COM32 (LilyGO T-Display-P4): PAIR/AUTH works with the repo pairing key; `SCREENSHOT` at 921600 baud returns a verified 568x1232 PNG; opening the port with DTR/RTS low does not reset the board.
 - Baseline health, 9.7 h uptime, build as flashed: `dma_free` 3531 (4015 about 30 s after boot), `dma_min` 1763, `internal_free` 40107, `internal_min` 36799, `psram_free` 29058932, 27 tasks.
-- HOME (first look, not yet judged): the Tab5 layout is scaled into a viewport about 424 px wide with black margins in the 568 px width; a large empty band sits between the spectrum and the waterfall; the bottom screen list is clipped at "FM RADIO". Next row: HOME portrait.
+- HOME (first look, superseded by tick 2): the first screenshot was taken 1.5 s after `RTL_UI OPEN HOME`, so the empty band between spectrum and waterfall was only a not-yet-filled waterfall, and the 424 px viewport inside 568 px is the documented LilyGO safe rectangle, not a defect.
+
+### Tick 2 (2026-11-07)
+
+- Row worked: HOME, portrait and landscape, plus touch. Screenshots reviewed by the main model, no code changed, nothing flashed.
+- Portrait (rotation 0), landscape 90 and landscape 270: all render populated and unclipped. `RTL_UI TAP` on SPAN `<` in landscape changed 2400 to 1200 kHz; SPAN `>` in portrait restored 2400 kHz. SPAN `>` at 2400 kHz did nothing, which is expected because 2400 kHz is the sample rate.
+- The unit was returned to its starting state: rotation 0 with AUTO ON, span 2400 kHz. Orientation commands used: `RTL_ORIENTATION MANUAL <deg>`, then `MANUAL 0` and `AUTO ON`.
+- The board is flat on the bench (sensor z about -0.96 g), so auto-rotation does not trigger by itself; rotation was verified through the manual command only.
+- Defects found are listed in the HOME row notes. Fixing them needs a shared-layout change (CONTRAST arrow height, title frame overlap), so under rule 3 it needs a before/after note and the Tab5 layout tests; proposed for a later tick.
 - Table reviewed. The rotation claim was spot-checked against `settings_app.cpp` at 4362bd9b (toggle between rotation 3 and 1). Items the table could not confirm are WEATHER, MARINE, SATELLITE, UTILITIES (no dedicated Tab5 dashboard file found), FM/AM/shortwave demod and RDS, and how M5 maps touch after `setRotation`.
 
 ## Owner questions
