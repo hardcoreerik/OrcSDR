@@ -61,7 +61,14 @@ inline Layout make_layout(Rect v, int content_top) {
   gains(0,controls.y-8);gains(2,inner.y+inner.h);gains(1,inner.y+inner.h);
   Rect listen={inner.x,inner.y,inner.w,l.gain[0].automatic.y-inner.y-8};
   const int summary_h=std::min(124,listen.h/2);
-  for(int i=0;i<3;++i) l.listen_values[i]={listen.x,listen.y+i*summary_h/3,listen.w,summary_h/3};
+  // A view at least twice as wide as tall (LilyGO landscape, 1088 x 424) has no height for three stacked rows:
+  // about 29 px each, so their text was cut off. Put the three summary cards side by side at the full summary
+  // height instead. 800 x 480 and every taller view keep the stacked rows, and the legacy layout is separate.
+  if(v.w>=2*v.h) {
+    for(int i=0;i<3;++i) l.listen_values[i]=cell({listen.x,listen.y,listen.w,summary_h},i,3,1);
+  } else {
+    for(int i=0;i<3;++i) l.listen_values[i]={listen.x,listen.y+i*summary_h/3,listen.w,summary_h/3};
+  }
   Rect metrics={listen.x,listen.y+summary_h+4,listen.w,listen.h-summary_h-4};
   for(int i=0;i<3;++i)l.listen_values[i+3]=cell(metrics,i,3,1);
   Rect setting_area={inner.x,inner.y,inner.w,l.gain[2].automatic.y-inner.y-8};
