@@ -175,3 +175,27 @@ decision on open question 2.
 
 I read the report and findings. I did not re-derive its arithmetic, run any server, or test the client against a stock
 `rtl_tcp` on a Pi. Repo statements above come from reading the files on this branch today.
+
+## 11. Prompt claims checked against the report (2026-11-07)
+
+The handoff prompt listed "non-negotiable protocol facts". Each was checked against the report at commit `b1e64b2d`. Status is
+what the report supports, not independent confirmation.
+
+| Prompt claim | Report support |
+|---|---|
+| 12-byte greeting `RTL0` + BE tuner + BE gain count | Confirmed, R §3.4 (source `rtl_tcp.c:79-83,618-639`) |
+| Client must loop to 12 bytes | Supported: the server does one `send()` and ignores short writes, so fragmentation is possible, R §3.4 |
+| Commands are 5 bytes, opcode + BE u32; no ACK, ID, sequence or timestamp | Confirmed, R §3.5 |
+| No tuner-bandwidth or decimation command | True for upstream, Blog and Debian. **Not true for the community fork**, which adds `0x40` tuner bandwidth (R §3.5). Irrelevant for a stock Pi, relevant if the Pi runs the fork. |
+| No midstream header after retune or rate change | Stated in R §9.5 and F as source-derived (C), not measured |
+| Server keeps state across reconnects | R §3.2 (`-f` not reset on reconnect). Rate, gain and bias persistence on the server is implied by the library, not tested |
+| One client at a time; no header means "busy" | One client: confirmed, R §3.3 (`listen(...,1)`). **"No header means busy" is not established**: R §3.3 says OS behaviour for a second client is unverified (**U**) and R §10 q15 lists it as open |
+| Slow client: queue growth, oldest-block drops, no loss metadata | Confirmed, R §3.3 (503-node derivation) |
+| 546 ms at 240 kS/s, 8.19 s for 15 buffers, `-l 32` = 16 KiB about 34 ms | Confirmed, R §3.3 table. The report notes the community source comment is off by a factor of two |
+| Valid rates 225,001-300,000 and 900,001-3,200,000; loss above 2.4 MS/s | Confirmed, R §7.1; the loss claim cites an external warning (S23), not a measurement |
+| Plaintext and unauthenticated; tunnel, never port-forward 1234 | Confirmed, R §8.1, §8.3 |
+| Do not use `0x0A` on R820T/R828D | Supported: it returns an error, and the Blog fork toggles bias as a side effect, R §3.6 |
+| 2.4 MS/s is 38.4 Mbit/s | Arithmetic, R §1 and §7 |
+
+Net: the prompt's facts hold, with two corrections to carry forward: the community fork does have a bandwidth command, and
+a missing header is only a hypothesis for "server busy".
