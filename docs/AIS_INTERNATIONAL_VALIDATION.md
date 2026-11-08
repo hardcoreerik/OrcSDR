@@ -29,7 +29,7 @@ The 2025 source contains legitimate non-AI NMEA talker identifiers (for example 
 
 ## Independent validation
 
-tools/ais/validate_nmea_corpus.py checks published NMEA sentence XOR checksums, six-bit armoring, payload padding, fragment completion, source identity, message type, and published DAC/FI metadata. It exports complete bit-precise AIS payloads as TSV, reporting missing fragments rather than guessing their contents. tests/ais_binary_corpus_runner.cpp exercises the *actual C++ decoder* against those independently sourced bytes. Host synthetic tests in tests/ais_binary_app_tests.cpp verify the three known IALA field layouts and bounds/sentinels.
+tools/ais/validate_nmea_corpus.py checks published NMEA sentence XOR checksums, six-bit armoring, payload padding, fragment completion, source identity, message type, and published DAC/FI metadata. It exports complete bit-precise AIS payloads as TSV, reporting missing fragments rather than guessing their contents. Type 12 safety messages split across separate CSV rows are reassembled only when talker, sequence ID, channel and fragment count match. Unmatched or ambiguous fragments are never invented. tests/ais_binary_corpus_runner.cpp exercises the *actual C++ decoder* against those independently sourced bytes. Host synthetic tests in tests/ais_binary_app_tests.cpp verify the three known IALA field layouts and bounds/sentinels.
 
 **NMEA checksum validation does not imply an RF CRC, live reception or verified decoding of every binary application field.**
 

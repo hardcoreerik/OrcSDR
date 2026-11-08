@@ -162,6 +162,42 @@ def world_rows(filename, content):
         yield index, parts, msg_type, mmsi, dac, fi
 
 
+
+def stitch_type12(records):
+    """Reassemble multipart Type 12 rows by NMEA talker, seq, channel, count.
+
+    The original source keeps 2/3-fragment sentences on separate CSV rows.
+    Do not join unkeyed or mismatched fragments. Every source fragment is
+    consumed once, with full checksum and fill validation.
+    """
+    pending = {}
+    for row, parts, msg_type, mmsi, dac, fi in records:
+        if len(parts) != 1:
+            raise AssertionError(f"unexpected Type 12 row at {row}")
+        sentence_text = parts[0]
+        total, number, seq, channel, _ = sentence(sentence_text)
+        if total == 1:
+            yield row, parts, msg_type, mmsi, dac, fi
+            continue
+        talker = sentence_text.split(",", 1)[0]
+        key = (talker, total, seq, channel)
+        group = pending.setdefault(key, {})
+        if number in group:
+            raise AssertionError(f"ambiguous repeated Type 12 fragment {key}")
+        group[number] = (row, sentence_text, msg_type, mmsi, dac, fi)
+        if len(group) == total:
+            if set(group) != set(range(1, total + 1)):
+                raise AssertionError(f"missing Type 12 fragments {key}")
+            final = group[total]
+            yield (final[0], [group[n][1] for n in range(1, total + 1)],
+                   final[2], final[3], final[4], final[5])
+            del pending[key]
+    for group in pending.values():
+        # Unknown/incomplete messages are reported but never fabricated.
+        last = max(group.values(), key=lambda part: part[0])
+        yield last[0], [part[1] for part in group.values()], last[2], last[3], last[4], last[5]
+
+
 def check_world(manifest, cache, out):
     summary = {}
     exported = 0
@@ -170,8 +206,11 @@ def check_world(manifest, cache, out):
         for name, details in manifest["worldwide_2025"]["files"].items():
             content = check_upstream_bytes(cache / name, details["git_blob_sha1"])
             records = complete = incomplete = checked = 0
-            for row, parts, ex_type, ex_mmsi, ex_dac, ex_fi in world_rows(name, content):
-                records += 1
+            records_stream = world_rows(name, content)
+            if name == "aishub_msg-12.csv":
+                records_stream = stitch_type12(records_stream)
+            for row, parts, ex_type, ex_mmsi, ex_dac, ex_fi in records_stream:
+                records += len(parts) if name == "aishub_msg-12.csv" else 1
                 try:
                     bits = combine(parts)  # Checksums validated even if incomplete.
                 except BadSentence as exc:
