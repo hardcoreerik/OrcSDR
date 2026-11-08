@@ -1,0 +1,92 @@
+# LilyGO T-Display-P4 parity checklist (Tab5 reference)
+
+Reference: origin/main 4362bd9b (2026-11-06)
+Target: LilyGO T-Display-P4 (COM32), 568x1232, portrait and landscape
+
+State legend: `missing` (no reachable screen or compiled code on the P4 console), `opens?` (route or code exists, not yet verified on hardware; this is the initial value for present items), `drawn-correct`, `works-live`, `blocked(reason)`. `n/a` means the cell does not apply to that kind of row.
+
+Method: Tab5 items come from `RTL_UI OPEN` (`apps/orcsdr-tab5/ui/main.cpp`, lines 20359-20383), the dashboard registry (`apps/orcsdr-tab5/ui/dashboard_registry.cpp`), the screen controller enum, and the Tab5 source tree at 4362bd9b. P4 items come from `apps/orcsdr-p4-hosyond-console/main/`, its `CMakeLists.txt` (which compiles several Tab5 sources unchanged from `apps/orcsdr-tab5/ui`), and `serial_cli.cpp` (`kValid` at lines 693-695). A P4 cell that names a Tab5 path with "(shared, compiled)" means the P4 build compiles that Tab5 source directly.
+
+Interpretation used for the initial state: Portrait and Landscape are `opens?` only when the P4 console can reach the screen (an accepted OPEN name or a path from another accepted screen). Decoder and Touch/controls are `opens?` when the P4 build compiles that code. Every row has Last screenshot `-`. Nothing here is screenshot-reviewed or live-tested.
+
+Searched at 4362bd9b and not found: FLARM (no matches); HFDL (only a binary test pattern matched).
+
+| Item | Kind | Tab5 source file | P4 console file | Portrait | Landscape | Decoder | Touch/controls | Last screenshot | Notes |
+|---|---|---|---|---|---|---|---|---|---|
+| HOME | screen | `apps/orcsdr-tab5/ui/home_dashboard.cpp` | `apps/orcsdr-p4-hosyond-console/main/home_app.cpp` | opens? | opens? | n/a | opens? | - | Tab5 OPEN HOME at main.cpp:20362. P4 OPEN HOME calls request_home (home_app.cpp:847-849). home_vfo.cpp and home_dashboard.cpp are compiled into P4. |
+| CLOCK (clock settings) | screen | `apps/orcsdr-tab5/ui/clock_settings.cpp` | `apps/orcsdr-p4-hosyond-console/main/screen_settings.cpp` | opens? | opens? | n/a | opens? | - | Tab5 OPEN CLOCK at main.cpp:20363. P4 OPEN CLOCK is rejected as INVALID (serial_cli.cpp:698-700); clock_settings is reached inside Settings (screen_settings.cpp:30, 100). RTL_CLOCK STATUS/SYNC/SET at serial_cli.cpp:185. |
+| FM RADIO | screen | `apps/orcsdr-tab5/ui/fm_dashboard.cpp` | `apps/orcsdr-p4-hosyond-console/main/screen_fm.cpp` | opens? | opens? | n/a | opens? | - | Tab5 OPEN FM at main.cpp:20364. Spectrum hook at screen_fm.cpp:87, 100. Stereo/RDS path not audited. CSV records a spectrum PNG review from r12; not re-reviewed here. |
+| AM RADIO | screen | `apps/orcsdr-tab5/ui/am_dashboard.cpp` | `apps/orcsdr-p4-hosyond-console/main/screen_am.cpp` | opens? | opens? | n/a | opens? | - | Tab5 OPEN AM at main.cpp:20365. `apps/orcsdr-tab5/ui/am_finder.cpp` is not in the P4 CMakeLists.txt. |
+| SHORTWAVE | screen | `apps/orcsdr-tab5/ui/shortwave_dashboard.cpp` | `apps/orcsdr-p4-hosyond-console/main/screen_shortwave.cpp` | opens? | opens? | n/a | opens? | - | Tab5 OPEN SHORTWAVE at main.cpp:20366. shortwave_hunt.cpp and shortwave_library*.cpp are compiled; shortwave_ssb.cpp is not (see SSB row). |
+| AIRBAND | screen | `apps/orcsdr-tab5/ui/airband_dashboard.cpp` | `apps/orcsdr-p4-hosyond-console/main/screen_airband.cpp` | opens? | opens? | n/a | opens? | - | Tab5 OPEN AIRBAND at main.cpp:20367. airband_runtime.cpp is used by screen_airband.cpp; airband_scanner.cpp is compiled. |
+| CB RADIO | screen | `apps/orcsdr-tab5/ui/cb_dashboard.cpp` | `apps/orcsdr-p4-hosyond-console/main/screen_cb.cpp` | opens? | opens? | n/a | opens? | - | Tab5 OPEN CB at main.cpp:20368. cb_scanner.cpp is compiled. CSV says the Hosyond CB follow-up is not yet in the r14 image. |
+| WEATHER | screen | `apps/orcsdr-tab5/ui/dashboard_registry.cpp` (line 15); no dashboard file found | none | missing | missing | n/a | missing | - | Tab5 OPEN WEATHER at main.cpp:20376. P4 kValid lists WEATHER (serial_cli.cpp:694), but OPEN returns not_available (serial_cli.cpp:703). |
+| P25 RADIO | screen | `apps/orcsdr-tab5/ui/p25_dashboard.cpp` | `apps/orcsdr-p4-hosyond-console/main/screen_p25.cpp` | opens? | opens? | n/a | opens? | - | Tab5 OPEN P25 at main.cpp:20369. P4 voice path is not present: `apps/orcsdr-tab5/ui/p25_voice.cpp` is not in the P4 CMakeLists.txt, and screen_p25.cpp:44 defaults to VOICE AUDIO UNAVAILABLE. |
+| ADS-B | screen | `apps/orcsdr-tab5/ui/adsb_dashboard.cpp` | `apps/orcsdr-p4-hosyond-console/main/screen_adsb.cpp` | opens? | opens? | n/a | opens? | - | Tab5 OPEN ADSB at main.cpp:20370. Decoder is in the ADS-B decoder row. |
+| LORA / MESH | screen | `apps/orcsdr-tab5/ui/lora_dashboard.cpp` | `apps/orcsdr-p4-hosyond-console/main/screen_lora.cpp` | opens? | opens? | n/a | opens? | - | Tab5 OPEN LORA at main.cpp:20371. lora_channel_control.cpp is used by screen_lora.cpp. |
+| RF LAB | screen | `apps/orcsdr-tab5/ui/rf_lab.cpp` | `apps/orcsdr-p4-hosyond-console/main/screen_rflab.cpp` | opens? | opens? | n/a | opens? | - | Tab5 OPEN RF_LAB at main.cpp:20372. rf_analysis.cpp is used by screen_rflab.cpp. |
+| 2.4 GHz WIFI (WIFI_ANALYSIS) | screen | `apps/orcsdr-tab5/ui/rf24_dashboard.cpp` (drawn via main.cpp:7113) | `apps/orcsdr-p4-hosyond-console/main/screen_wifi.cpp` | opens? | opens? | n/a | opens? | - | Tab5 OPEN WIFI_ANALYSIS at main.cpp:20373. The Tab5 RTL_RF24_PAGE command is not checked on P4. |
+| FT8 RX | screen | `apps/orcsdr-tab5/ui/ft8_dashboard.cpp` (drawn at main.cpp:14290) | none | missing | missing | n/a | missing | - | ft8_dashboard.cpp is compiled (CMakeLists.txt line 73) but no screen adapter exists. P4 OPEN FT8 returns not_available (serial_cli.cpp:703). Decoder is in the FT8 row. |
+| SETTINGS | screen | `apps/orcsdr-tab5/ui/settings_app.cpp` | `apps/orcsdr-p4-hosyond-console/main/screen_settings.cpp` | opens? | opens? | n/a | opens? | - | Tab5 OPEN SETTINGS at main.cpp:20375. Tab5 rotation toggle is at settings_app.cpp:1151-1153. P4 uses orientation_app (screen_settings.cpp:121-127). |
+| POCSAG | screen | `apps/orcsdr-tab5/ui/pocsag_dashboard.cpp` | `apps/orcsdr-p4-hosyond-console/main/screen_pocsag.cpp` | opens? | opens? | n/a | opens? | - | Tab5 OPEN POCSAG at main.cpp:20377. Uses pocsag_store.cpp. Decoder is in its own row. |
+| ACARS | screen | `apps/orcsdr-tab5/ui/acars_dashboard.cpp` | `apps/orcsdr-p4-hosyond-console/main/screen_acars.cpp` | opens? | opens? | n/a | opens? | - | Tab5 OPEN ACARS at main.cpp:20378. Shared acars_dashboard.cpp is compiled with the LovyanGFX define. VDL2 is in its own row. |
+| DEAD AIR | screen | `apps/orcsdr-tab5/ui/dead_air_dashboard.cpp` | none | missing | missing | n/a | missing | - | Tab5 OPEN DEAD_AIR at main.cpp:20379. dead_air_dashboard.cpp is compiled (CMakeLists.txt line 73) with no adapter. The other dead_air_*.cpp modules are not in the P4 CMakeLists.txt. OPEN DEAD_AIR returns not_available (serial_cli.cpp:703). |
+| MARINE | screen | `apps/orcsdr-tab5/ui/dashboard_registry.cpp` (line 22); band entry in `apps/orcsdr-tab5/ui/band_profile.cpp` (line 35) | none | missing | missing | n/a | missing | - | No dedicated Tab5 dashboard file found. Tab5 OPEN MARINE at main.cpp:20380. P4 kValid lists MARINE (serial_cli.cpp:695), returns not_available. |
+| SATELLITE | screen | `apps/orcsdr-tab5/ui/dashboard_registry.cpp` (line 23) | none | missing | missing | n/a | missing | - | No dedicated Tab5 dashboard file found. Tab5 OPEN SATELLITE at main.cpp:20381. P4 kValid lists SATELLITE (serial_cli.cpp:695), returns not_available. |
+| UTILITIES | screen | `apps/orcsdr-tab5/ui/dashboard_registry.hpp` (Id::utilities) | none | missing | missing | n/a | missing | - | No dedicated dashboard file found. Tab5 maps it to the browse band (main.cpp:14821) and OPEN at main.cpp:20382. P4 kValid lists UTILITIES (serial_cli.cpp:695), returns not_available. |
+| SSTV | screen | `apps/orcsdr-tab5/ui/sstv_dashboard.cpp` (registry line 24 in `apps/orcsdr-tab5/ui/dashboard_registry.cpp`) | none | missing | missing | n/a | missing | - | Tab5 RTL_UI OPEN has no SSTV branch (main.cpp:20359-20383). Tab5 opens SSTV with `SSTV OPEN` (`apps/orcsdr-tab5/ui/sstv_diag.hpp` line 5). No sstv_*.cpp is in the P4 CMakeLists.txt; no SSTV serial command on P4. |
+| MAPS (RTL_MAP) | screen | `apps/orcsdr-tab5/ui/map_screen.cpp`, `apps/orcsdr-tab5/ui/map_serial.cpp` | none | missing | missing | n/a | missing | - | map_view.cpp and map_downloads.cpp are compiled into P4 (CMakeLists.txt), but map_screen.cpp is not, and P4 has no RTL_MAP serial command. Tab5 entry at main.cpp:6751, 13289. CSV row maps_overlays is audit required. |
+| RF VISUALIZER | screen | `apps/orcsdr-tab5/ui/rf_visualizer.cpp` (Id::visualizer at main.cpp:7164) | none | missing | missing | n/a | missing | - | rf_visualizer.cpp is not in the P4 CMakeLists.txt. P4 spectrum panels exist inside its screens (screen_fm.cpp:87). Tab5 rotates its canvases here (rf_visualizer.cpp:393-394). |
+| DOCUMENTATION views | screen | `apps/orcsdr-tab5/ui/fm_dashboard.cpp` (show_documentation_view, line 973); `apps/orcsdr-tab5/ui/adsb_dashboard.cpp` (line 1134) | `apps/orcsdr-tab5/ui/fm_dashboard.cpp` (shared, compiled) | opens? | opens? | n/a | opens? | - | Documentation views live inside the shared FM and ADS-B code. Whether P4 FM or ADS-B reaches them is not verified. |
+| P25 decoder | decoder | `apps/orcsdr-tab5/ui/p25_decoder.cpp`, `apps/orcsdr-tab5/ui/p25_decoder_core.cpp` | `apps/orcsdr-tab5/ui/p25_decoder.cpp` (shared, compiled) | n/a | n/a | opens? | n/a | - | Both compiled in P4 CMakeLists.txt. p25_voice.cpp is not compiled. |
+| ADS-B decoder | decoder | `apps/orcsdr-tab5/ui/adsb_decoder.cpp` | `apps/orcsdr-tab5/ui/adsb_decoder.cpp` (shared, compiled) | n/a | n/a | opens? | n/a | - | screen_adsb.cpp:241 logs decoder counters. |
+| POCSAG decoder | decoder | `apps/orcsdr-tab5/ui/pocsag_decoder_core.cpp`, `apps/orcsdr-tab5/ui/pocsag_store.cpp` | `apps/orcsdr-tab5/ui/pocsag_decoder_core.cpp` (shared, compiled) | n/a | n/a | opens? | n/a | - | pocsag_store.cpp is used by screen_pocsag.cpp. |
+| ACARS core and receiver | decoder | `apps/orcsdr-tab5/ui/acars_core.cpp`, `apps/orcsdr-tab5/ui/acars_receiver.cpp`, `apps/orcsdr-tab5/ui/acars_interpret.cpp` | `apps/orcsdr-tab5/ui/acars_receiver.cpp` (shared, compiled) | n/a | n/a | opens? | n/a | - | All three compiled in P4 CMakeLists.txt. |
+| VDL2 | decoder | `apps/orcsdr-tab5/ui/vdl2_receiver.cpp`, `apps/orcsdr-tab5/ui/vdl2_burst.cpp`, `apps/orcsdr-tab5/ui/vdl2_channel.cpp`, `apps/orcsdr-tab5/ui/vdl2_frames.cpp`, `apps/orcsdr-tab5/ui/vdl2_rs.cpp` | `apps/orcsdr-tab5/ui/vdl2_receiver.cpp` (shared, compiled) | n/a | n/a | opens? | n/a | - | Compiled in P4 CMakeLists.txt lines 49-53. No P4 screen reaches it directly. |
+| LoRa native decoder | decoder | `apps/orcsdr-tab5/ui/lora_native_decoder.cpp`, `apps/orcsdr-tab5/ui/lora_preamble_detector.cpp` | `apps/orcsdr-tab5/ui/lora_native_decoder.cpp` (shared, compiled) | n/a | n/a | opens? | n/a | - | Both compiled in P4 CMakeLists.txt. |
+| FT8/FT4 native decoder | decoder | `apps/orcsdr-tab5/ui/ft8_runtime_sources.cmake` (lists ft8_*.cpp) | `apps/orcsdr-tab5/ui/ft8_runtime_sources.cmake` (shared, compiled) | n/a | n/a | opens? | n/a | - | Pulled into P4 via CMakeLists.txt lines 5 and 22. The list file was added in cab4bce0, after 4362bd9b, so the reference commit has no equivalent file. No P4 FT8 screen (see FT8 RX row). |
+| JS8 native decoder | decoder | `apps/orcsdr-tab5/ui/ft8_runtime_sources.cmake` (lists js8_*.cpp) | `apps/orcsdr-tab5/ui/ft8_runtime_sources.cmake` (shared, compiled) | n/a | n/a | opens? | n/a | - | Same source list as FT8. No P4 JS8 screen. |
+| WWV tick | decoder | `apps/orcsdr-tab5/ui/wwv_tick.cpp` | `apps/orcsdr-tab5/ui/ft8_runtime_sources.cmake` (shared, compiled) | n/a | n/a | opens? | n/a | - | Listed in the same FT8 runtime source list. |
+| Shortwave SSB demod | decoder | `apps/orcsdr-tab5/ui/shortwave_ssb.cpp` | none | n/a | n/a | missing | n/a | - | shortwave_ssb.cpp is not in the P4 CMakeLists.txt. screen_shortwave.cpp:34 only holds the USB/LSB mode label. |
+| SSTV decoder | decoder | `apps/orcsdr-tab5/ui/sstv_receiver.cpp`, `apps/orcsdr-tab5/ui/sstv_modes.cpp`, `apps/orcsdr-tab5/ui/sstv_capture.cpp` | none | n/a | n/a | missing | n/a | - | No sstv_*.cpp in the P4 CMakeLists.txt. |
+| Frequency keypad | control | `apps/orcsdr-tab5/ui/freq_keypad.cpp` | `apps/orcsdr-tab5/ui/freq_keypad.cpp` (shared, compiled) | opens? | opens? | n/a | opens? | - | Compiled in P4 CMakeLists.txt. CSV records owner acceptance of the sampled layout and touch; not re-reviewed here. |
+| Text entry (keyboard) | control | `apps/orcsdr-tab5/ui/text_editor.cpp`, `apps/orcsdr-tab5/ui/tab5_keyboard.cpp`, `apps/orcsdr-tab5/ui/keyboard_input.cpp` | `apps/orcsdr-tab5/ui/text_editor.cpp` (shared, compiled) | opens? | opens? | n/a | opens? | - | tab5_keyboard.cpp and keyboard_input.cpp are not in the P4 CMakeLists.txt. CSV row keyboard_text_entry is audit required. |
+| Volume / audio overlay | control | `apps/orcsdr-tab5/ui/dashboard_audio_control.cpp` | `apps/orcsdr-tab5/ui/dashboard_audio_control.cpp` (shared, compiled) | opens? | opens? | n/a | opens? | - | Referenced from P4 `ui_support.cpp`. CSV row volume_overlay is audit required. |
+| Setup wizard | control | `apps/orcsdr-tab5/ui/setup_ui.cpp`, `apps/orcsdr-tab5/ui/setup_flow.hpp` | none | missing | missing | n/a | missing | - | setup_ui.cpp is not in the P4 CMakeLists.txt and no P4 file references the wizard. CSV row setup_wizard is audit required. |
+| Firmware updates | control | `apps/orcsdr-tab5/ui/settings_app.hpp` (firmware_updates, line 13) | `apps/orcsdr-p4-hosyond-console/main/c6_recovery_app.cpp` | opens? | opens? | n/a | opens? | - | P4 provides a Firmware & Updates page in screen_settings.cpp and the C6 recovery worker (`docs/hardware/P4_C6_UPDATE_FLOW.md`). The Tab5 firmware-update code was not located beyond the enum entry. |
+| Receiver location | control | `apps/orcsdr-tab5/ui/receiver_location.cpp` | `apps/orcsdr-tab5/ui/receiver_location.cpp` (shared, compiled) | opens? | opens? | n/a | opens? | - | Referenced by P4 screen_settings.cpp and screen_adsb.cpp. |
+| Clock sync status | control | `apps/orcsdr-tab5/ui/clock_sync_status.cpp` | `apps/orcsdr-p4-hosyond-console/main/network_clock.cpp` | opens? | opens? | n/a | opens? | - | clock_sync_status.cpp is compiled in P4 CMakeLists.txt. network_clock.cpp is the P4 clock source. |
+| Waterfall style | control | `apps/orcsdr-tab5/ui/waterfall_style.cpp` | `apps/orcsdr-tab5/ui/waterfall_style.cpp` (shared, compiled) | opens? | opens? | n/a | opens? | - | Referenced by P4 home_app.cpp. |
+| Web console | control | `apps/orcsdr-tab5/ui/web_console.cpp`, `apps/orcsdr-tab5/ui/web_console.html`, `apps/orcsdr-tab5/ui/web_audio.js` | `apps/orcsdr-p4-hosyond-console/main/web_control.cpp` | n/a | n/a | n/a | opens? | - | Tab5 web_console.cpp is not in the P4 CMakeLists.txt. P4 has its own web_server.cpp, web_control.cpp and web_auth.cpp. Portrait and Landscape are n/a for a browser surface. |
+
+Rows: 45. Rows with P4 console file = none: 12 (WEATHER, FT8 RX, DEAD AIR, MARINE, SATELLITE, UTILITIES, SSTV, MAPS, RF VISUALIZER, Shortwave SSB demod, SSTV decoder, Setup wizard).
+
+## Rotation
+
+Does the Tab5 already rotate? Yes, but only between two landscape orientations, setRotation(1) "LANDSCAPE" and setRotation(3) "LANDSCAPE 180", toggled from Settings and saved to NVS key set_rotation; no portrait mode was found (settings_app.cpp:1151-1153, main.cpp:15236-15239, main.cpp:15774-15775).
+
+What the Tab5 would need to adopt a shared rotation layer:
+
+- Fixed 1280x720 layout: `apps/orcsdr-tab5/ui/acars_dashboard_layout.hpp` (lines 26-27, kScreenW = 1280, kScreenH = 720); `apps/orcsdr-tab5/ui/adsb_dashboard.cpp` (line 324 and 359-360 fill and rule at 1280; kHeaderH = 100 at line 27, kTabsY = 646 at line 28); `apps/orcsdr-tab5/ui/am_dashboard.cpp` (line 34, kTabW from 1280; kTabsY = 630 at line 33); `apps/orcsdr-tab5/ui/airband_dashboard.cpp` (line 31, kTabW from 1280; kTabsY = 630 at line 29).
+- Sprites sized to the full 1280 width: `apps/orcsdr-tab5/ui/acars_dashboard.cpp` line 124 (createSprite(layout::kScreenW, kRegionH)).
+- No relayout hook: the only rotation calls are `apps/orcsdr-tab5/ui/main.cpp` lines 15238 and 23102 and `apps/orcsdr-tab5/ui/orcsdr_splash.cpp` line 123, each calling setRotation with no dashboard callback. Tab5 has no viewport-transition API (the target contract in `docs/hardware/P4_DASHBOARD_CONTRACT.md` requires one).
+- Only rotation-aware drawing is `apps/orcsdr-tab5/ui/rf_visualizer.cpp` lines 393-394 and 1944-1945 (getRotation copied to its canvases).
+- Persisted value accepts only 1 or 3 (`apps/orcsdr-tab5/ui/main.cpp` line 15775), so a portrait value needs a new setting, layout and default.
+- Touch: no coordinate transform was found in `apps/orcsdr-tab5/ui`; touch is read through M5.Touch.getCount and getDetail (`apps/orcsdr-tab5/ui/main.cpp` lines 17082-17085). How M5 maps touch after setRotation was not verified here.
+
+## Tick log
+
+### Tick 1 (2026-11-07)
+
+- Tooling proven on COM32 (LilyGO T-Display-P4): PAIR/AUTH works with the repo pairing key; `SCREENSHOT` at 921600 baud returns a verified 568x1232 PNG; opening the port with DTR/RTS low does not reset the board.
+- Baseline health, 9.7 h uptime, build as flashed: `dma_free` 3531 (4015 about 30 s after boot), `dma_min` 1763, `internal_free` 40107, `internal_min` 36799, `psram_free` 29058932, 27 tasks.
+- HOME (first look, not yet judged): the Tab5 layout is scaled into a viewport about 424 px wide with black margins in the 568 px width; a large empty band sits between the spectrum and the waterfall; the bottom screen list is clipped at "FM RADIO". Next row: HOME portrait.
+- Table reviewed. The rotation claim was spot-checked against `settings_app.cpp` at 4362bd9b (toggle between rotation 3 and 1). Items the table could not confirm are WEATHER, MARINE, SATELLITE, UTILITIES (no dedicated Tab5 dashboard file found), FM/AM/shortwave demod and RDS, and how M5 maps touch after `setRotation`.
+
+## Owner questions
+
+- Anything that changes how an existing dashboard behaves
+- The clock interface shape and whether browser time overrides fresh NTP
+- Multi-touch (the shared touch interface is single-point; pinch needs an interface change)
+- Which hardware can be attached for live decoder checks (dongle, antenna)
+- Tab5 rotation as a separate later session
