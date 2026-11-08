@@ -6,6 +6,7 @@
 #include "audio_service.hpp"
 #include "esp_timer.h"
 #include "home_app.hpp"
+#include "orcsdr_storage.hpp"
 #include "radio_service.hpp"
 #include "receiver_location.hpp"
 #include "screens.hpp"
@@ -71,7 +72,9 @@ const ab::LiveState& live() {
   s.controls.gain_tenth_db = static_cast<int16_t>(g.tenth_db);
   s.gain_step_count = g.step_count;
   for (int i = 0; i < g.step_count; ++i) s.gain_steps_tenth_db[i] = static_cast<int16_t>(g.steps[i]);
-  s.filesystem = nullptr;  // no card on this target yet: the airport catalog stays empty
+  // The catalog (/orcsdr/data/aviation.idx) is only read. The card mounts in the background a few seconds after
+  // boot, so offer the filesystem once it is mounted.
+  s.filesystem = orcsdr::storage::mounted() ? &orcsdr::storage::filesystem() : nullptr;
   return s;
 }
 
