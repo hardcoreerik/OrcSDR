@@ -7,3 +7,7 @@ CONFIG_ESP_CONSOLE_UART_RX_GPIO=38
 CONFIG_ESP_CONSOLE_UART_BAUDRATE=921600
 CONFIG_ESP_BROWNOUT_DET=y
 CONFIG_ESP_HOSTED_HOST_RESET_GPIO=-1
+# Long file names for the microSD (the Shortwave library folder and file, renames): without these only 8.3 names can be
+# created. Same values as the Tab5 build.
+CONFIG_FATFS_LFN_HEAP=y
+CONFIG_FATFS_MAX_LFN=255

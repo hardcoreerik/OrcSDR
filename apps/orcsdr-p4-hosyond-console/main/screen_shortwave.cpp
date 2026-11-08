@@ -1,21 +1,24 @@
 // SHORTWAVE dashboard (apps/orcsdr-tab5/ui/shortwave_dashboard.cpp and its model, unchanged) on the P4 console.
-// AM, USB and LSB are demodulated; the audio clean-up chain, band hunt and the SD library (memories and logbook)
-// are not available on this target yet.
+// AM, USB and LSB are demodulated and the memories and logbook use the SD card (same model and CSV files as the
+// Tab5); the audio clean-up chain and band hunt are not available on this target yet.
 #include <algorithm>
 #include "M5Unified.h"
 #include <cstring>
 #include <ctime>
 #include <new>
 #include "esp_heap_caps.h"
+#include "esp_log.h"
 #include "audio_service.hpp"
 #include "home_app.hpp"
 #include "network_clock.hpp"
+#include "orcsdr_storage.hpp"
 #include "radio_service.hpp"
 #include "screens.hpp"
 #include "present.hpp"
 
 namespace screens { bool shortwave_resize_viewport(); }
 #include "shortwave_dashboard.hpp"
+#include "shortwave_library.hpp"
 
 namespace {
 namespace sw = orcsdr::shortwave;
@@ -30,8 +33,30 @@ T& psram_table() {
   static T* t = new (heap_caps_calloc(1, sizeof(T), MALLOC_CAP_SPIRAM)) T();
   return *t;
 }
-sw::MemoryTable& memories() { return psram_table<sw::MemoryTable>(); }
-sw::LogTable& logs() { return psram_table<sw::LogTable>(); }
+const char* const kTag = "SW_LIB";
+// Memories and logbook (CSV on the SD card, shared model and reader/writer with the Tab5).
+sw::LibraryState& library() { return psram_table<sw::LibraryState>(); }
+bool g_library_loaded = false;
+void ensure_library() {
+  if (g_library_loaded) return;
+  if (!orcsdr::storage::mounted()) {  // the card mounts in the background a few seconds after boot
+    library().status = sw::StorageStatus::unavailable;
+    return;
+  }
+  char error[96]{};
+  g_library_loaded = true;
+  if (!sw::load_library(orcsdr::storage::filesystem(), &library(), error, sizeof(error)))
+    ESP_LOGW(kTag, "load_failed error=%s", error);
+  else
+    ESP_LOGI(kTag, "ready memories=%u logs=%u invalid=%u", unsigned(library().memories.size()),
+             unsigned(library().logs.size()), unsigned(library().invalid_rows));
+}
+bool persist_memories(char* error, size_t capacity) {
+  return orcsdr::storage::mounted() && sw::save_memories(orcsdr::storage::filesystem(), library().memories, error, capacity);
+}
+bool persist_logs(char* error, size_t capacity) {
+  return orcsdr::storage::mounted() && sw::save_logs(orcsdr::storage::filesystem(), library().logs, error, capacity);
+}
 
 const char* mode_text() { return g_mode == 2 ? "USB" : g_mode == 3 ? "LSB" : "AM"; }
 
@@ -64,11 +89,12 @@ sw::Snapshot& build() {
   s.controls.gain_tenth_db = static_cast<int16_t>(g.tenth_db);
   s.gain_step_count = g.step_count;
   for (int i = 0; i < g.step_count; ++i) s.gain_steps_tenth_db[i] = g.steps[i];
-  s.memories = &memories();
-  s.logs = &logs();
-  s.memory_count = 0;
-  s.log_count = 0;
-  s.storage_status = orcsdr::shortwave::StorageStatus::unavailable;
+  ensure_library();
+  s.memories = &library().memories;
+  s.logs = &library().logs;
+  s.memory_count = static_cast<uint16_t>(library().memories.size());
+  s.log_count = static_cast<uint16_t>(library().logs.size());
+  s.storage_status = library().status;
   // ON AIR needs the UTC minute and weekday. The P4 clock is network_clock (NTP, GPS, battery-backed RTC); this was
   // hard-coded invalid, so ON AIR always said "SET UTC" even with a synced clock.
   s.utc_valid = network_clock::status().wallclock_valid;
@@ -87,7 +113,7 @@ sw::Snapshot& build() {
   s.clarifier_hz = g_clarifier;
   s.audio_dsp_available = false;
   s.hunt_available = false;
-  s.storage_available = false;
+  s.storage_available = orcsdr::storage::mounted();
   return s;
 }
 
@@ -102,6 +128,140 @@ void leave() { sw::leave(); }
 void tick() {
   apply_mode();
   sw::update(build());
+}
+
+// Memory and logbook actions. Same record rules as the Tab5: a change is kept only if the card write succeeds,
+// otherwise it is rolled back and the status shows a write failure.
+void library_action(const sw::Action& a) {
+  ensure_library();
+  sw::LibraryState& lib = library();
+  const home_app::Status st = home_app::status();
+  char error[96]{};
+  const size_t index = a.value < 0 ? SIZE_MAX : static_cast<size_t>(a.value);
+  switch (a.kind) {
+    case sw::ActionKind::save_memory: {
+      sw::Memory memory{};
+      memory.frequency_hz = st.frequency_hz;
+      memory.bandwidth_hz = g_mode >= 2 ? 2400 : g_filter_hz;
+      memory.saved_utc = network_clock::status().wallclock_valid ? static_cast<uint64_t>(time(nullptr)) : 0;
+      std::snprintf(memory.mode, sizeof(memory.mode), "%s", mode_text());
+      std::snprintf(memory.station, sizeof(memory.station), "%s", sw::pending_memory_label());
+      std::snprintf(memory.notes, sizeof(memory.notes), "%s", sw::pending_memory_notes());
+      const auto result = lib.memories.upsert(memory);
+      if (result == sw::RecordResult::ok && persist_memories(error, sizeof(error))) {
+        lib.status = sw::StorageStatus::ready;
+        ESP_LOGI(kTag, "memory saved frequency_hz=%lu", static_cast<unsigned long>(memory.frequency_hz));
+      } else if (result != sw::RecordResult::duplicate) {
+        if (result == sw::RecordResult::ok) lib.memories.discard_last();
+        lib.status = sw::StorageStatus::write_failed;
+        ESP_LOGW(kTag, "memory save_failed result=%u error=%s", unsigned(result), error);
+      }
+      break;
+    }
+    case sw::ActionKind::update_memory:
+    case sw::ActionKind::favorite_memory:
+    case sw::ActionKind::delete_memory: {
+      sw::Memory before{};
+      const sw::Memory* existing = lib.memories.at(index);
+      const bool had_record = existing != nullptr;
+      if (existing) before = *existing;
+      auto result = sw::RecordResult::missing;
+      if (a.kind == sw::ActionKind::update_memory) {
+        if (existing) {
+          sw::Memory edited = *existing;
+          std::snprintf(edited.station, sizeof(edited.station), "%s", sw::pending_memory_label());
+          std::snprintf(edited.notes, sizeof(edited.notes), "%s", sw::pending_memory_notes());
+          result = lib.memories.replace(index, edited);
+        }
+      } else if (a.kind == sw::ActionKind::favorite_memory) {
+        result = lib.memories.toggle_favorite(index);
+      } else {
+        result = lib.memories.erase(index);
+      }
+      if (result == sw::RecordResult::ok && persist_memories(error, sizeof(error))) {
+        lib.status = sw::StorageStatus::ready;
+        ESP_LOGI(kTag, "memory changed action=%u index=%u", unsigned(a.kind), unsigned(index));
+      } else {
+        if (result == sw::RecordResult::ok && had_record) {
+          if (a.kind == sw::ActionKind::delete_memory) lib.memories.insert(index, before);
+          else lib.memories.replace(index, before);
+        }
+        lib.status = sw::StorageStatus::write_failed;
+        ESP_LOGW(kTag, "memory change_failed action=%u index=%u error=%s", unsigned(a.kind), unsigned(index), error);
+      }
+      break;
+    }
+    case sw::ActionKind::save_log: {
+      if (!network_clock::status().wallclock_valid) {
+        ESP_LOGW(kTag, "log save_failed error=utc_clock_not_set");
+        break;
+      }
+      sw::LogEntry entry{};
+      entry.timestamp_utc = static_cast<uint64_t>(time(nullptr));
+      entry.frequency_hz = st.frequency_hz;
+      entry.bandwidth_hz = g_mode >= 2 ? 2400 : g_filter_hz;
+      entry.signal_dbfs = orcsdr::radio::level_dbfs();
+      std::snprintf(entry.mode, sizeof(entry.mode), "%s", mode_text());
+      std::snprintf(entry.device, sizeof(entry.device), "RTL-SDR");
+      std::snprintf(entry.antenna, sizeof(entry.antenna), "%s",
+                    sw::pending_log_antenna()[0] ? sw::pending_log_antenna() : "Not recorded");
+      std::snprintf(entry.notes, sizeof(entry.notes), "%s", sw::pending_log_notes());
+      for (size_t i = 0; i < lib.memories.size(); ++i) {
+        const sw::Memory* memory = lib.memories.at(i);
+        if (memory && memory->frequency_hz == entry.frequency_hz) {
+          std::snprintf(entry.station, sizeof(entry.station), "%s", memory->station);
+          break;
+        }
+      }
+      const auto result = lib.logs.append(entry);
+      if (result == sw::RecordResult::ok && persist_logs(error, sizeof(error))) {
+        lib.status = sw::StorageStatus::ready;
+        ESP_LOGI(kTag, "log saved frequency_hz=%lu", static_cast<unsigned long>(entry.frequency_hz));
+      } else {
+        if (result == sw::RecordResult::ok) lib.logs.discard_last();
+        lib.status = sw::StorageStatus::write_failed;
+        ESP_LOGW(kTag, "log save_failed result=%u error=%s", unsigned(result), error);
+      }
+      break;
+    }
+    case sw::ActionKind::update_log:
+    case sw::ActionKind::delete_log: {
+      sw::LogEntry before{};
+      const sw::LogEntry* existing = lib.logs.at(index);
+      const bool had_record = existing != nullptr;
+      if (existing) before = *existing;
+      auto result = sw::RecordResult::missing;
+      if (a.kind == sw::ActionKind::update_log) {
+        if (existing) {
+          sw::LogEntry edited = *existing;
+          std::snprintf(edited.antenna, sizeof(edited.antenna), "%s", sw::pending_log_antenna());
+          std::snprintf(edited.notes, sizeof(edited.notes), "%s", sw::pending_log_notes());
+          result = lib.logs.replace(index, edited);
+        }
+      } else {
+        result = lib.logs.erase(index);
+      }
+      if (result == sw::RecordResult::ok && persist_logs(error, sizeof(error))) {
+        lib.status = sw::StorageStatus::ready;
+        ESP_LOGI(kTag, "log changed action=%u index=%u", unsigned(a.kind), unsigned(index));
+      } else {
+        if (result == sw::RecordResult::ok && had_record) {
+          if (a.kind == sw::ActionKind::delete_log) lib.logs.insert(index, before);
+          else lib.logs.replace(index, before);
+        }
+        lib.status = sw::StorageStatus::write_failed;
+        ESP_LOGW(kTag, "log change_failed action=%u index=%u error=%s", unsigned(a.kind), unsigned(index), error);
+      }
+      break;
+    }
+    case sw::ActionKind::export_log:
+      if (orcsdr::storage::mounted() && sw::export_logs(orcsdr::storage::filesystem(), lib.logs, error, sizeof(error)))
+        ESP_LOGI(kTag, "export ok logs=%u formats=csv,adif", unsigned(lib.logs.size()));
+      else
+        ESP_LOGW(kTag, "export failed error=%s", error);
+      break;
+    default: break;
+  }
 }
 
 void act(const sw::Action& a) {
@@ -140,7 +300,15 @@ void act(const sw::Action& a) {
     case sw::ActionKind::clarifier_up: g_clarifier = static_cast<int16_t>(std::min(1000, int(g_clarifier) + 50)); break;
     case sw::ActionKind::open_settings: home_app::request_open(orcsdr::dashboards::Id::settings); break;
     case sw::ActionKind::exit_home: home_app::request_home(); break;
-    default: break;  // memories, logbook, hunt, audio clean-up: not available on this target yet
+    case sw::ActionKind::save_memory:
+    case sw::ActionKind::update_memory:
+    case sw::ActionKind::favorite_memory:
+    case sw::ActionKind::delete_memory:
+    case sw::ActionKind::save_log:
+    case sw::ActionKind::update_log:
+    case sw::ActionKind::delete_log:
+    case sw::ActionKind::export_log: library_action(a); break;
+    default: break;  // hunt and audio clean-up: not available on this target yet
   }
 }
 

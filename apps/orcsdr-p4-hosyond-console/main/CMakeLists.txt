@@ -28,7 +28,7 @@ idf_component_register(
          "${TAB5_UI}/airband_dashboard.cpp" "${TAB5_UI}/airband_runtime.cpp" "${TAB5_UI}/airband_scanner.cpp"
          "${TAB5_UI}/airband_catalog.cpp" "${TAB5_UI}/receiver_tuning_controls.cpp"
          "${TAB5_UI}/shortwave_dashboard.cpp" "${TAB5_UI}/shortwave_dashboard_state.cpp" "${TAB5_UI}/shortwave_model.cpp"
-         "${TAB5_UI}/shortwave_audio_dsp.cpp" "${TAB5_UI}/shortwave_hunt.cpp" "${TAB5_UI}/shortwave_library.cpp"
+         "${TAB5_UI}/shortwave_audio_dsp.cpp" "${TAB5_UI}/shortwave_hunt.cpp" "${TAB5_UI}/shortwave_library.cpp" "${TAB5_UI}/shortwave_library_io.cpp"
          "${TAB5_UI}/orcsdr_storage.cpp" "${TAB5_UI}/wifi_service.cpp" "${TAB5_UI}/orcsdr_restart.cpp"
          "${TAB5_UI}/map_pipeline.cpp"
          "${TAB5_UI}/map_inventory.cpp"

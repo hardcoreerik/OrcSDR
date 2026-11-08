@@ -461,12 +461,14 @@ void draw_storage_status() {
 
 void draw_empty_state(const char* title,const char* subtitle,Rect legacy_card,
                       int legacy_title_y,int legacy_subtitle_y,uint16_t title_color=TFT_WHITE,
-                      uint16_t subtitle_color=kMuted) {
+                      uint16_t subtitle_color=kMuted,bool below_controls=false) {
   if(g_layout.legacy){card(legacy_card.x,legacy_card.y,legacy_card.w,legacy_card.h);
     text(title,legacy_card.x+legacy_card.w/2,legacy_title_y,title_color,3);
     text(subtitle,legacy_card.x+legacy_card.w/2,legacy_subtitle_y,subtitle_color,2);return;}
   const Rect content=local(g_layout.content);const int pad=8;
-  Rect box{content.x+pad,content.y+96,content.w-2*pad,std::max(100,content.h-212)};
+  // MEMORY and LOGBOOK have a control strip (page, save/log, export) that the default card position covers.
+  Rect box=below_controls?local(orcsdr::shortwave::layout::empty_state_box(g_layout))
+                         :Rect{content.x+pad,content.y+96,content.w-2*pad,std::max(100,content.h-212)};
   card(box.x,box.y,box.w,box.h);
   text(title,box.x+box.w/2,box.y+box.h/2-18,title_color,g_layout.portrait?2:2);
   text(subtitle,box.x+box.w/2,box.y+box.h/2+18,subtitle_color,1);
@@ -583,7 +585,7 @@ void draw_memory() {
        g_layout.legacy?199:g_layout.page_controls[1].y+g_layout.page_controls[1].h/2,kMuted, g_layout.portrait?1:2);
   button(next, ">", false, g_memory_page + 1 < pages);
   if (!count) {
-    draw_empty_state("NO SHORTWAVE MEMORIES","Tune a signal in LIVE, then save the current frequency here.",{36,260,1208,270},355,410);
+    draw_empty_state("NO SHORTWAVE MEMORIES","Tune a signal in LIVE, then save the current frequency here.",{36,260,1208,270},355,410,TFT_WHITE,kMuted,true);
     return;
   }
   const size_t first = g_memory_page * per_page;
@@ -627,7 +629,7 @@ void draw_logbook() {
        g_layout.legacy?199:g_layout.page_controls[1].y+g_layout.page_controls[1].h/2,kMuted, g_layout.portrait?1:2);
   button(next, ">", false, g_log_page + 1 < pages);
   if (!count) {
-    draw_empty_state("NO RECEPTION LOGS","Log what you actually heard; station identity may remain unknown.",{36,260,1208,270},355,410);
+    draw_empty_state("NO RECEPTION LOGS","Log what you actually heard; station identity may remain unknown.",{36,260,1208,270},355,410,TFT_WHITE,kMuted,true);
     return;
   }
   const size_t first = g_log_page * per_page;

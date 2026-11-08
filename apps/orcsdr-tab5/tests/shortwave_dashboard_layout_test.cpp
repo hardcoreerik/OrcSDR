@@ -16,6 +16,16 @@ int main() {
     assert(l.row_count>=1&&l.row_count<=12);
     for(int i=0;i<l.row_count;++i)assert(orcsdr::audio_header::header_inside(l.content,l.rows[i]));
   }
+  // The empty-state card of MEMORY and LOGBOOK must not cover the page controls (page, save, log, export): it used to,
+  // so the first memory could not be saved by sight on the LilyGO views.
+  for(const auto v:views){
+    const auto l=make_layout(v);
+    if(l.legacy)continue;
+    const Rect box=empty_state_box(l);
+    assert(orcsdr::audio_header::header_inside(l.content,box)&&box.h>=72);
+    for(const Rect c:l.page_controls)
+      assert(!(box.x<c.x+c.w&&c.x<box.x+box.w&&box.y<c.y+c.h&&c.y<box.y+box.h));
+  }
   const auto legacy=make_layout(views[0]);
   assert(legacy.tab[0].x==4&&legacy.tab[4].x==1028);
   assert(legacy.frequency.x==24&&legacy.frequency.y==104&&legacy.spectrum.x==24&&legacy.spectrum.y==276);

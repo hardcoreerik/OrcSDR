@@ -116,4 +116,14 @@ inline Layout make_layout(Rect v) {
     l.valid=l.valid&&r.w>=touch&&r.h>=touch&&audio_header::header_inside(l.content,r);
   return l;
 }
+
+// Where the "nothing here yet" card of the MEMORY and LOGBOOK pages goes in the non-legacy layouts (legacy draws its own).
+// It starts below the control strip (page, save, log and export buttons), which the old card at content + 96 covered.
+inline Rect empty_state_box(const Layout& l) {
+  const int pad = 8;
+  int top = l.content.y + 96;
+  for (const Rect& c : l.page_controls) top = std::max(top, c.y + c.h + pad);
+  const int bottom = l.content.y + l.content.h - pad;
+  return {l.content.x + pad, top, l.content.w - 2 * pad, std::max(0, bottom - top)};
+}
 } // namespace orcsdr::shortwave::layout
