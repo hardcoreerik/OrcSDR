@@ -25,6 +25,8 @@ Russian-associated DAC 1 FI 29/30 entries and every other unimplemented regional
 
 The existing ais_rx::Pipeline calls the application parser for CRC-valid binary messages and optionally invokes a nonblocking BinaryObserver. It never changes or takes ownership of the radio or M5GFX. The other AIS message types still have partial field coverage.
 
+The 2025 source contains legitimate non-AI NMEA talker identifiers (for example BSVDM, ABVDM, ANVDO) alongside AIVDM. Validation accepts two-character NMEA talkers with VDM/VDO sentence format while enforcing the actual checksum; do not discard these as a different AIS RF protocol.
+
 ## Independent validation
 
 tools/ais/validate_nmea_corpus.py checks published NMEA sentence XOR checksums, six-bit armoring, payload padding, fragment completion, source identity, message type, and published DAC/FI metadata. It exports complete bit-precise AIS payloads as TSV, reporting missing fragments rather than guessing their contents. tests/ais_binary_corpus_runner.cpp exercises the *actual C++ decoder* against those independently sourced bytes. Host synthetic tests in tests/ais_binary_app_tests.cpp verify the three known IALA field layouts and bounds/sentinels.

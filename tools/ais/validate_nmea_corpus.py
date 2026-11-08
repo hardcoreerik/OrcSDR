@@ -11,6 +11,7 @@ import collections
 import hashlib
 import json
 import pathlib
+import re
 import urllib.request
 
 _ROOT = pathlib.Path(__file__).resolve().parents[2]
@@ -25,8 +26,10 @@ class BadSentence(ValueError):
 def sentence(line):
     """Return NMEA fragment metadata and its MSB-first payload bits."""
     line = line.strip()
-    if not (line.startswith("!AIVDM,") or line.startswith("!AIVDO,")):
-        raise BadSentence("not an AIS NMEA sentence")
+    # AIS Hub includes non-AI two-letter NMEA talker identifiers (BS/AB/AN).
+    # VDM/VDO is the payload sentence formatter; talker must not be hardcoded.
+    if not re.match(r"^![A-Z0-9]{2}VD[MO],", line):
+        raise BadSentence("not a VDM/VDO NMEA sentence")
     if line.count("*") != 1:
         raise BadSentence("missing or repeated checksum delimiter")
     text, expected_hex = line.split("*", 1)
