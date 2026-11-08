@@ -2772,7 +2772,12 @@ bool rtl_tuner_gain_available(uint32_t frequency_hz) {
   return rtl_tuner_gain_available_for_caps(frequency_hz, rtl_device_capabilities());
 }
 
+static bool rtl_remote_tuning_selected();   // defined with the remote source, below
+
 bool rtl_frequency_supported(uint32_t frequency_hz) {
+  // The capability bits describe a dongle on the Tab5's own USB port. With a remote rtl_tcp source there
+  // may be none, and the server's dongle sets the range: do not refuse here (the server's tuner decides).
+  if (rtl_remote_tuning_selected()) return true;
   return rtl_frequency_supported_for_caps(frequency_hz, rtl_device_capabilities());
 }
 
@@ -9448,6 +9453,12 @@ static bool rtl_remote_active() {
          static_cast<uint8_t>(orcsdr::source::Active::remote_tcp);
 }
 
+static std::atomic<bool> g_tag_in_documentation{false};   // RTL_TAG_DOC: show the RTL-TCP tag on documentation screens
+
+static bool rtl_remote_tuning_selected() {
+  return rtl_remote_active() || rtl_remote_source_ready();
+}
+
 static int rtl_ring_slot_index(const uint8_t *slot) {
   for (uint8_t i = 0; i < kRtlRingDepth; ++i)
     if (rtl_ring_slots[i] == slot) return i;
@@ -9991,6 +10002,18 @@ static void rtl_driver_app_task(void *) {
       Serial.printf("RTL_START %s rate=%u display_hz=%u lo_hz=%u\n",
                     esp_rtl_sdr_err_to_name(err), st.sample_rate_sps, frequency_hz,
                     st.frequency_hz);
+      if (remote && err == ESP_OK && frequency_hz < kRtlNoHfMinHz) {
+        // HF over rtl_tcp: only a server whose dongle handles HF itself (an RTL-SDR Blog V4 reports tuner 6)
+        // or that was told to use direct sampling will deliver anything below 24 MHz. The greeting does not
+        // say which, so say what we can see and let the user judge. Nothing is sent to change the server.
+        const auto remote_status = orcsdr::rtl_tcp_source::status();
+        const bool likely_hf = remote_status.tuner_type_raw == 6;
+        Serial.printf("RTL_REMOTE_HF frequency_hz=%u tuner=%u hf_capable=%s\n",
+                      static_cast<unsigned>(frequency_hz),
+                      static_cast<unsigned>(remote_status.tuner_type_raw),
+                      likely_hf ? "likely" : "unknown");
+        if (!likely_hf) set_rtl_sdr_status("remote HF needs a Blog V4 or direct sampling");
+      }
       log_dram_budget("rtl_after_start");
       begin_power_monitor("rtl_start");
       if (err == ESP_ERR_NO_MEM) {
@@ -21002,6 +21025,12 @@ void process_command(char* command) {
     print_wifi_coexistence_status();
     return;
   }
+  if (strcmp(command, "RTL_TAG_DOC ON") == 0 || strcmp(command, "RTL_TAG_DOC OFF") == 0) {
+    g_tag_in_documentation.store(strcmp(command, "RTL_TAG_DOC ON") == 0, std::memory_order_relaxed);
+    Serial.printf("RTL_TAG_DOC %s (not saved; a reset turns it off)\n",
+                  g_tag_in_documentation.load(std::memory_order_relaxed) ? "ON" : "OFF");
+    return;
+  }
   if (strcmp(command, "RTL_SCREEN_STATUS") == 0) {
     const auto& state = orcsdr::screens::status();
     Serial.printf("RTL_SCREEN_STATUS active=%s return=%s transitions=%u rejected_draws=%u visible_updates=%u last_transition_ms=%u\n",
@@ -23635,6 +23664,41 @@ void setup() {
   rtl_boot_complete.store(true, std::memory_order_release);
 }
 
+// Every RTL-fed dashboard says when its receiver is an rtl_tcp server (Home draws its own).
+static void service_rtl_tcp_header_tag(uint32_t now) {
+  orcsdr::rtl_tcp_header_tag::State tag{};
+  // Shown whenever the source is remote, not only while streaming, so a stopped or failed stream is
+  // still labelled instead of the tag vanishing.
+  tag.remote = g_rtl_remote_narrow.load(std::memory_order_acquire) ||
+               orcsdr::rtl_tcp_source::mode() == orcsdr::source::Mode::remote_tcp;
+  if (tag.remote) {
+    tag.state = orcsdr::rtl_tcp_source::state();
+    tag.link_pct = orcsdr::rtl_tcp_source::link_ratio_pct();
+    tag.sps = tag.state == orcsdr::rtl_tcp::State::streaming
+                  ? rtl_active_sample_rate_sps.load(std::memory_order_relaxed) : 0;
+    snprintf(tag.host, sizeof(tag.host), "%s:%u", orcsdr::rtl_tcp_source::host(),
+             static_cast<unsigned>(orcsdr::rtl_tcp_source::port()));
+  }
+  // Documentation screens (UI_DOC_SHOW) draw the real dashboards under the "documentation" screen id and
+  // the main loop returns early for them. Normally the tag stays off them so help captures are clean;
+  // RTL_TAG_DOC ON lets it through so each dashboard header can be checked from the serial port.
+  auto tag_screen = orcsdr::screens::status().active;
+  bool tag_blocked = map_download_notice_blocked();
+  if (g_tag_in_documentation.load(std::memory_order_relaxed) && ui_doc.active) {
+    const char* doc = ui_doc.current_screen;
+    using I = orcsdr::screens::Id;
+    // Some documentation screens run under their own screen id, others under "documentation".
+    if (tag_screen == I::documentation || tag_screen == I::none)
+      tag_screen = strncmp(doc, "fm.", 3) == 0 ? I::fm : strncmp(doc, "p25.", 4) == 0 ? I::p25
+                 : strncmp(doc, "adsb.", 5) == 0 ? I::adsb : strncmp(doc, "lora.", 5) == 0 ? I::lora
+                 : strncmp(doc, "am.", 3) == 0 ? I::am : strncmp(doc, "cb.", 3) == 0 ? I::cb
+                 : strncmp(doc, "pocsag.", 7) == 0 ? I::pocsag : I::documentation;
+    tag_blocked = g_suppress_home_paint || orcsdr::text_editor::active() ||
+                  rtl_header_audio_control.expanded || shared_keypad_open() || orcsdr::home::popup_open();
+  }
+  orcsdr::rtl_tcp_header_tag::update(tag, tag_screen, now, tag_blocked);
+}
+
 void loop() {
   static uint32_t previous_loop_ms = 0;
   const uint32_t loop_started_ms = millis();
@@ -23784,6 +23848,7 @@ void loop() {
     return;
   }
   if (ui_documentation_mode) {
+    if (g_tag_in_documentation.load(std::memory_order_relaxed)) service_rtl_tcp_header_tag(millis());
     delay(10);
     return;
   }
@@ -24132,22 +24197,7 @@ void loop() {
       const bool blocked=map_download_notice_blocked();
       orcsdr::map_download_notice::update(notice,orcsdr::screens::status().active,blocked);
     }
-    // Every RTL-fed dashboard says when its receiver is an rtl_tcp server (Home draws its own).
-    orcsdr::rtl_tcp_header_tag::State tag{};
-    // Shown whenever the source is remote, not only while streaming, so a stopped or failed stream is
-    // still labelled instead of the tag vanishing.
-    tag.remote = g_rtl_remote_narrow.load(std::memory_order_acquire) ||
-                 orcsdr::rtl_tcp_source::mode() == orcsdr::source::Mode::remote_tcp;
-    if (tag.remote) {
-      tag.state = orcsdr::rtl_tcp_source::state();
-      tag.link_pct = orcsdr::rtl_tcp_source::link_ratio_pct();
-      tag.sps = tag.state == orcsdr::rtl_tcp::State::streaming
-                    ? rtl_active_sample_rate_sps.load(std::memory_order_relaxed) : 0;
-      snprintf(tag.host, sizeof(tag.host), "%s:%u", orcsdr::rtl_tcp_source::host(),
-               static_cast<unsigned>(orcsdr::rtl_tcp_source::port()));
-    }
-    orcsdr::rtl_tcp_header_tag::update(tag, orcsdr::screens::status().active, now,
-                                       map_download_notice_blocked());
+    service_rtl_tcp_header_tag(now);
   }
   if (!rtl_ui_active.load(std::memory_order_acquire) &&
       now - last_power_draw_ms >= 10000) {
