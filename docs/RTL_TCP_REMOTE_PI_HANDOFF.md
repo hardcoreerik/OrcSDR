@@ -199,3 +199,34 @@ what the report supports, not independent confirmation.
 
 Net: the prompt's facts hold, with two corrections to carry forward: the community fork does have a bandwidth command, and
 a missing header is only a hypothesis for "server busy".
+
+## 12. First measurements from the Pi session (2026-11-07, loopback only)
+
+Reported by the Pi provisioning session before the Pi had a dongle or SSH access. A real RTL-SDR Blog V4 (R828D) on the Windows
+PC served a real `rtl_tcp` on 127.0.0.1 with the planned flags. These are server behaviour numbers, **not link measurements**:
+no Ethernet, no Pi, no WAN. Raw files are with that session, not in this repo. Status of each is as that session reported it.
+
+| Check | Result | Answers |
+|---|---|---|
+| Greeting | `52544c30 00000006 0000001d`: tuner 6 (R828D), 29 gains, byte-for-byte the R §3.4 prediction | confirms R §3.4 |
+| Throughput | 240 k, 960 k, 1.024 M, 1.44 M and 2.4 MS/s all 99.9-100.5% of expected; 2.4 MS/s was 4,799,868 B/s (38.40 Mbit/s), no USB overruns | the dongle and server deliver 1.024 MS/s fine, so any 1.024 limit is in our DSP |
+| Backlog after a 30 s stall | `-n 32 -b 4`: 20.07 s of backlog; stock defaults: 29.49 s | R §10 q1 (queue depth, loopback) |
+| Reconnect after the stall | 0.00 s of stale data delivered, in both configurations | **R §10 q15 and our question 6: a reconnect flushes** |
+| Second client | TCP connect completes, no header, waits; gets a correct header as soon as the first client leaves | "busy, not refused": a missing header does mean busy on this server |
+| Persistence | manual 40.2 dB survived a reconnect (RMS 27.13 to 28.22); the 0 dB run was inconclusive at the quantisation floor | R §3.2 partly confirmed for gain |
+
+Effects on this plan:
+
+1. Reconnect-on-step-down flushes the server backlog (measured on this server build; a different build is untested). The
+   Tab5's step-down by reconnect is therefore sound, and open question 6 is answered for this server.
+2. A connected socket with no header is a reliable "server busy" signal here, so task T3 (a "busy" end reason) is justified.
+   The greeting timeout (10 s) should not be shortened below the time a waiting client may legitimately wait.
+3. **`-n` and `-b` are easy to read backwards.** From the binary's own usage text: `-b` is the number of USB transfer buffers
+   (default 15), `-n` is the maximum network queue (default 500). With `-n 32 -b 4` the network queue is about 19-20 s and the USB
+   buffering about 2.18 s. The queue drops at `-n` plus 3 nodes (R §3.3), so `-n 32` is 35 nodes, 19.1 s by arithmetic, against
+   17.5 s in R §9.4; the measured backlog was 20.07 s. This belongs in the T6 setup page: to reduce latency, lower `-n`
+   (for example `-n 8`), not only `-b`.
+4. Any stream the Tab5 can see is at most the queue depth behind real time after a stall, so the ladder's 8 s detection window
+   does not by itself bound the delay. A small `-n` does.
+5. The Pi in the lab is reachable by the PC over Tailscale (a 100.x address). The Tab5 is not known to be on that network. A Tab5
+   test needs the Pi's LAN address and `rtl_tcp` bound to it (not 127.0.0.1); neither is configured yet.
