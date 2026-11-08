@@ -315,3 +315,38 @@ windows, none under 95%; no 3 s read stall; `wlan0` transmitted 1795 MB and `eth
 `get_throttled=0x0` in all 130 samples; 0 kernel under-voltage events; Pi temperature 53.0-63.3 C. Together with the Ethernet run this
 completes the clean-power repeat over the PC-to-Pi LAN. Still not done: a 1-hour soak, a real internet path, and Tab5 audio by ear
 from the Pi.
+
+## 14. FM would not come in from the Pi: the stock Debian driver does not work with this dongle (2026-11-08)
+
+Symptom: with an antenna attached, strong local stations (96.1 and 99.1 MHz) were not heard through the Pi. Captured IQ
+(`tools/rtl_tcp_probe.py capture`, 5 s at 960 kS/s, manual 25 dB gain) with the Pi's service running the distro `rtl_tcp`
+(`rtl-sdr` 2.0.2-2+b1 on Debian 13), compared with the RTL-SDR Blog fork `V1.4.0` (commit `aed0ea19`) built from source into
+`/opt/rtlsdr-blog` and run with the same flags, same dongle ("Blog V4L", greeting tuner 5), same antenna, same gain command:
+
+| Frequency | Stock: power at tuned frequency minus neighbours | Stock average level | Blog: same measure | Blog average level |
+|---|---|---|---|---|
+| 96.1 MHz | -0.6 dB (noise) | 3.3 | +25.7 dB | 142 |
+| 99.1 MHz | -0.1 dB (noise) | 3.0 | +31.0 dB | 144 |
+| 97.9 MHz | +1.7 dB | 3.4 | -4.5 dB (a neighbour dominates) | 27 |
+| 100.1 MHz | +0.3 dB | 2.8 | -1.1 dB | 22 |
+| 95.9 MHz | -1.0 dB | 3.3 | -21.7 dB (96.1 dominates) | 149 |
+
+(97.9, 100.1 and 95.9 are not clean single-station checks; 96.1 and 99.1 are the decisive rows.) With the stock driver the same
+gain command produced a level of about 3 against about 145 with the Blog fork, so the stock driver's tuner path for this
+dongle is effectively deaf: the server accepts the commands but the front end is not set up. Cause is not isolated beyond that; the
+Blog fork handles the V4-family input switching and filtering and the stock 2.0.2 does not. The Pi's service now runs
+`/opt/rtlsdr-blog/bin/rtl_tcp` (old unit saved as `/etc/systemd/system/rtl-tcp.service.stock-backup`). On the Tab5, FM at 99.1 MHz
+through the Pi then showed a full wide-FM spectrum and waterfall at -1 dBFS, link 91%, RTL-TCP LIVE.
+
+Consequences:
+1. The Pi setup guide (T6) must say: for a Blog V4 or V4L dongle use the RTL-SDR Blog fork (or a build that supports the dongle),
+   not the distro package on Debian 13 (2.0.2).
+2. Probing a server can tell this apart: a greeting and full-rate stream prove the network path, not the radio. Check the signal
+   (`rtl_tcp_probe.py scan` / `capture`) before blaming the link.
+3. Found while here, not fixed: Home shows "GAIN N/A" while the source is remote, because gain availability comes from the local
+   dongle's capabilities (the same local-capability gating that kept Shortwave from starting). A remote user cannot set gain from Home.
+4. My own earlier gain test left the server at manual 49.6 dB (a restart clears it), which is the replay gap in task T2.
+5. The dongle was found unplugged once (kernel "USB disconnect" at 21:50); the cause was not established.
+
+Not tested: audio by ear (the Tab5 played, but listening was not judged by me), a long run with the Blog driver, and whether
+Osmocom `v2.0.3` (which the research lists as having V4L support) also works.
