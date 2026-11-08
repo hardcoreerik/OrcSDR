@@ -75,6 +75,9 @@ void install_geometry(const layout::Layout& l) {
 Snapshot g_snapshot{};
 bool g_active = false;
 bool g_static_dirty = true;
+// In the responsive layouts the text editor covers the whole safe view, header and tab bar included. It is drawn
+// directly, not through draw(), so closing it must repaint that chrome (the legacy editor covers the content only).
+bool g_editor_covered_chrome = false;
 Tab g_drawn_tab=Tab::live;
 Modal g_drawn_modal=Modal::none;
 bool g_drawn_drawer=false;
@@ -657,8 +660,10 @@ void draw_keypad() {
 }
 
 void draw_text_editor() {
-  if(!g_layout.legacy)
+  if(!g_layout.legacy) {
     (void)text_editor::set_viewport({g_viewport.x,g_viewport.y,g_viewport.w,g_viewport.h});
+    g_editor_covered_chrome = true;
+  }
   text_editor::draw();
 }
 
@@ -747,6 +752,10 @@ void leave() {
 
 void draw() {
   if (!g_active || g_self_check_running) return;
+  if (g_editor_covered_chrome && g_state.modal() == Modal::none) {  // the editor was closed: repaint what it covered
+    g_static_dirty = true;
+    g_editor_covered_chrome = false;
+  }
   if(g_drawn_tab!=g_state.tab()||g_drawn_modal!=g_state.modal()||g_drawn_drawer!=g_tuner_drawer_open)
     g_static_dirty=true;
   if (g_static_dirty) { draw_static(); g_static_dirty = false; }
