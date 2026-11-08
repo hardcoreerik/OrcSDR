@@ -74,6 +74,18 @@ What the Tab5 would need to adopt a shared rotation layer:
 - Persisted value accepts only 1 or 3 (`apps/orcsdr-tab5/ui/main.cpp` line 15775), so a portrait value needs a new setting, layout and default.
 - Touch: no coordinate transform was found in `apps/orcsdr-tab5/ui`; touch is read through M5.Touch.getCount and getDetail (`apps/orcsdr-tab5/ui/main.cpp` lines 17082-17085). How M5 maps touch after setRotation was not verified here.
 
+## Status when the loop stopped (2026-11-08, tick 24)
+
+Reference: Tab5 on origin/main `4362bd9b`. Target: LilyGO T-Display-P4 (COM32), portrait and landscape, branch `claude/p4-remove-gpl-touch` (not pushed, not merged).
+
+- Reviewed by screenshot in both orientations, touch tested: HOME, FM, AM, SHORTWAVE, AIRBAND, CB, P25, LORA (RTL-SDR path), RF LAB, 2.4 GHz WIFI, POCSAG, ACARS, SETTINGS (all sections), and WEATHER, MARINE, SATELLITE, UTILITIES (these four are Home presets, as on the Tab5). ADS-B was not reviewed.
+- Decoders with live evidence on the board: ACARS (real CRC-verified message), CB scanner (real activity), Wi-Fi analyser (real scans). Decoders not exercised: P25 (no system profile), POCSAG (no traffic), ADS-B (not reviewed), LORA (no traffic; the onboard SX1262 is detected=0 and untouched), FM, AM and shortwave audio (no dongle for several ticks).
+- SD card: Airband catalog and the Shortwave memories work; RF Lab records are held back (RAM); LORA log not done; FAT long file names are enabled only for the LilyGO profile.
+- Missing: FT8 RX, DEAD AIR, SSTV, MAPS, RF VISUALIZER, the shortwave SSB demod, the SSTV decoder, the setup wizard.
+- Open defects: RF Lab costs about 1.3 to 1.7 KB of DMA-capable RAM and two tasks per boot once visited, and a snapshot save on top of it dropped the C6 link; HOME CONTRAST arrows are about 26 px tall; several few-pixel text overlaps (CB, Airband landscape SCAN and AIRPORTS, Wi-Fi analyser); the web password is still the factory one; no RTL-SDR has been detected on USB since tick 19.
+- Needs the owner: (1) RF Lab task change in shared code, (2) is the RTL-SDR plugged in, (3) long-file-name setting for the other P4 profiles, (4) the P25 system profile, (5) the onboard SX1262 probe, (6) the clock-set interface and browser-time rule, (7) AM kHz label, portrait band use, HOME contrast arrows.
+- The scheduled 30-minute loop was cancelled at tick 24 because everything left depends on the above or on a receiver.
+
 ## Tick log
 
 ### Tick 1 (2026-11-07)
