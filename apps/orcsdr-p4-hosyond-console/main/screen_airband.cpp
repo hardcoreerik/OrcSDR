@@ -7,6 +7,7 @@
 #include "esp_timer.h"
 #include "home_app.hpp"
 #include "radio_service.hpp"
+#include "receiver_location.hpp"
 #include "screens.hpp"
 #include "present.hpp"
 
@@ -54,7 +55,12 @@ const ab::LiveState& live() {
   s.receiver_running = rs.receiver_state == 2;
   s.sound_enabled = st.sound;
   s.battery_percent = M5.Power.getBatteryLevel();
-  s.location_configured = false;
+  // The receiver location is set once in Settings and shared with ADS-B and OrcMaps; this was hard-coded to
+  // "not configured", so the Airband screen asked for a location that had already been set.
+  const auto location = orcsdr::receiver_location::snapshot();
+  s.location_configured = location.configured;
+  s.latitude_e7 = location.latitude_e7;
+  s.longitude_e7 = location.longitude_e7;
   s.controls.route = orcsdr::shortwave::ReceiverRoute::tuner;
   s.controls.capabilities.rf_gain = g.available;
   s.controls.capabilities.tuner_agc = g.auto_available;
