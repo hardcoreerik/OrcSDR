@@ -12,6 +12,21 @@ void Pipeline::accept(const Packet& packet) {
     return;
   }
   ++counters_.messages_decoded;
+  if (message.type==6||message.type==8||message.type==25||message.type==26) {
+    ais::app::Result app{};
+    const auto status=ais::app::decode(packet.bytes,packet.bit_count,&app);
+    switch(status) {
+      case ais::app::Status::decoded: ++counters_.binary_known;break;
+      case ais::app::Status::preserved_unknown: ++counters_.binary_preserved_unknown;break;
+      case ais::app::Status::unstructured: ++counters_.binary_unstructured;break;
+      case ais::app::Status::truncated: ++counters_.binary_truncated;break;
+      default: break;
+    }
+    if(binary_observer_ && (status==ais::app::Status::decoded ||
+                           status==ais::app::Status::preserved_unknown ||
+                           status==ais::app::Status::unstructured))
+      binary_observer_(app,binary_observer_ctx_);
+  }
   if (message.coverage == ais::Coverage::header_only) ++counters_.messages_header_only;
   if (message.coverage != ais::Coverage::header_only) {
     if (stations_.ingest(message,block_time_ms_)) ++counters_.station_updates;
@@ -52,6 +67,7 @@ void Pipeline::clear() {
   have_last_input_ = false;
   last_input_ms_ = block_time_ms_ = 0;
   counters_ = {};
+  binary_observer_=nullptr;binary_observer_ctx_=nullptr;
 }
 PipelineStats Pipeline::stats() const {
   PipelineStats s = counters_;

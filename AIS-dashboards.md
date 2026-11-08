@@ -206,3 +206,16 @@ g++ -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -Werror \
 ```
 
 M5GFX recording-host render tests use `.github/workflows/ais-dashboard-host-tests.yml`. **These tests validate synthetic presentation fixtures, not live maritime observations.**
+
+## 2026-11-07 — international NMEA + DAC/FI validation milestone
+
+- Added original portable bounded binary application envelope parser for AIS Type 6, 8, 25 and 26, including structured/unstructured flags, 10-bit DAC and 6-bit FI, bit-precise opaque payload retention and distinct Type 26 radio communication-state handling. No new IQ receiver or SDR ownership was introduced.
+- Field decoding is implemented **only** for three official IALA registered variants: IMO 6/1/16 persons aboard, EU inland 6/200/55 persons, and EU inland 8/200/10 static/voyage data. All other application bodies are **preserved unknown** until field-level independent reference validation exists.
+- Added optional nonblocking binary-application callback and counters at the existing CRC-valid packet seam; unchanged RF demodulation, receiver tuning and UI rendering.
+- Added checksum-checked Japanese NMEA excerpt fixtures drawn from 2013 maritime research. Text-extraction examples with invalid checksums are explicitly rejected; neither source is IQ.
+- Added a version-pinned independent worldwide 2025 AIS Hub NMEA corpus manifest and an on-demand checksum/armoring/multipart/identity/DAC/FI validator. Tests download to a local temporary cache; original third-party data is **not vendored** without verified redistribution rights.
+- Recorded Global Fishing Watch hourly global AIS vessel presence as a potential **map-density research source only**, subject to noncommercial license and API constraints. It cannot validate raw RF or individual AIS messages.
+- Added CI for synthetic field/sentinel tests plus independent real NMEA host regression. Exact results must be taken from GitHub Actions after this change, not inferred from implementation.
+- Detailed provenance, source links, security/accuracy boundaries and host reproduction commands: `docs/AIS_INTERNATIONAL_VALIDATION.md`.
+
+**Unverified:** physical Tab5 / ESP32-P4 compilation and reception, Japanese/Russian IQ recordings, full 28-type semantic coverage, complete IALA DAC/FI implementations, unknown binary data presentation in M5GFX, and full field-by-field independent oracles.
