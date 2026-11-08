@@ -854,6 +854,17 @@ bool open_screen(const char* name) {
     request_home();
     return true;
   }
+  // WEATHER, MARINE, SATELLITE and UTILITIES have no screen of their own on the Tab5 either: they tune a preset and show
+  // the generic receiver screen, which is Home here. The Home dashboard list does the same (open_dashboard above).
+  struct Preset { const char* name; uint32_t hz; };
+  static constexpr Preset kPresets[] = {{"WEATHER", 162400000}, {"MARINE", 156800000}, {"SATELLITE", 137500000},
+                                        {"UTILITIES", 0}};
+  for (const Preset& p : kPresets) {
+    if (std::strcmp(name, p.name) != 0) continue;
+    if (p.hz) request_frequency(p.hz);
+    request_home();
+    return true;
+  }
   const ::screens::Screen* s = ::screens::find_name(name);
   if (!s) return false;
   request_open(s->id);
