@@ -9,6 +9,7 @@
 #include "radio_service.hpp"
 #include "screens.hpp"
 #include "present.hpp"
+#include "wifi_app.hpp"
 
 namespace {
 namespace fm = orcsdr::fm;
@@ -36,6 +37,7 @@ fm::Snapshot build() {
   const audio_service::Status a = audio_service::status();
   s.audio_underruns = a.underruns;
   s.consumer_drops = a.dropped_blocks;
+  s.wifi_connected = wifi_app::status().connected;  // the RF tab showed "Offline" while Home showed connected
   return s;
 }
 
