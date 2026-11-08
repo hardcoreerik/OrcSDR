@@ -295,3 +295,9 @@ counted locally during that run; I did not investigate whether they fell in the 
 **Not done / limits.** Runs were seconds to 4 minutes, not the 1 hour planned; no real internet path (a real one needs a second
 site; Tailscale picked the direct LAN path); no antenna check; no sustained Wi-Fi run beyond 15 s per rate; direct sampling and
 bias tee were not touched; the under-voltage was not cleared, so a clean-power repeat is still owed.
+
+**Power fixed (later the same day).** After a power supply swap the Pi still flagged under-voltage (live bits set in 8 of 32
+idle samples, 5 kernel events in 64 s, not caused by streaming). After a new USB-C cable: `get_throttled=0x0`, 0 live samples in 32
+idle readings, 0 kernel under-voltage events, and the same over 32 readings while streaming 2.4 MS/s for 60 s (100.0%, 38.4 Mbit/s).
+The measurements above that were taken under the fault are unchanged in character (no data loss either way), but a clean-power
+repeat of the long runs is still owed.
