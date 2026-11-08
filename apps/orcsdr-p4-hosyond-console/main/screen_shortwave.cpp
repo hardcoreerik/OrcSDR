@@ -4,10 +4,12 @@
 #include <algorithm>
 #include "M5Unified.h"
 #include <cstring>
+#include <ctime>
 #include <new>
 #include "esp_heap_caps.h"
 #include "audio_service.hpp"
 #include "home_app.hpp"
+#include "network_clock.hpp"
 #include "radio_service.hpp"
 #include "screens.hpp"
 #include "present.hpp"
@@ -67,7 +69,19 @@ sw::Snapshot& build() {
   s.memory_count = 0;
   s.log_count = 0;
   s.storage_status = orcsdr::shortwave::StorageStatus::unavailable;
-  s.utc_valid = false;
+  // ON AIR needs the UTC minute and weekday. The P4 clock is network_clock (NTP, GPS, battery-backed RTC); this was
+  // hard-coded invalid, so ON AIR always said "SET UTC" even with a synced clock.
+  s.utc_valid = network_clock::status().wallclock_valid;
+  if (s.utc_valid) {
+    const time_t utc = time(nullptr);
+    struct tm broken_down{};
+    if (gmtime_r(&utc, &broken_down) != nullptr) {
+      s.utc_minute = static_cast<uint16_t>(broken_down.tm_hour * 60 + broken_down.tm_min);
+      s.utc_weekday = static_cast<uint8_t>(broken_down.tm_wday);
+    } else {
+      s.utc_valid = false;
+    }
+  }
   std::snprintf(s.mode, sizeof(s.mode), "%s", mode_text());
   s.mode_auto = g_mode == 0;
   s.clarifier_hz = g_clarifier;
