@@ -59,10 +59,11 @@ Place place_for(screens::Id screen) {
     case I::fm: case I::am: case I::p25:
       return {Style::bar, 372, 26, 486, 22};
     // The title is at the left; the right of the title area (x640..866) is free.
-    case I::cb: case I::airband:
+    // Shortwave's title ("SHORTWAVE", x390..605) leaves the same space free.
+    case I::cb: case I::airband: case I::shortwave:
       return {Style::bar, 640, 24, 226, 24};
     // Title and status text fill the header; only the thin top band is free.
-    case I::ft8: case I::sstv: case I::lora: case I::pocsag: case I::dead_air: case I::shortwave:
+    case I::ft8: case I::sstv: case I::lora: case I::pocsag: case I::dead_air:
       return {Style::strip, 420, 2, 438, 12};
     default:
       return {};
