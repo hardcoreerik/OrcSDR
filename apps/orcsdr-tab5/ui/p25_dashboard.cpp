@@ -332,7 +332,7 @@ void draw_spectrum_static() {
   }
   M5.Display.drawRect(w.x, w.y, w.w, w.h, kCyan);
   M5.Display.setScrollRect(w.x + 1, w.y + 1, w.w - 2, w.h - 2);
-  button(g_layout.span_down.x, g_layout.span_down.y, g_layout.span_down.w, g_layout.span_down.h, "−");
+  button(g_layout.span_down.x, g_layout.span_down.y, g_layout.span_down.w, g_layout.span_down.h, "-");  // ASCII: the display font has no U+2212 glyph, so "−" drew a blank button
   button(g_layout.span_up.x, g_layout.span_up.y, g_layout.span_up.w, g_layout.span_up.h, "+");
   if (g_layout.legacy) text_block(g_layout.spectrum_hint, "TAP SPECTRUM TO TUNE", kCyan, 2);
   else text_block(g_layout.spectrum_hint, "TAP PLOT TO TUNE", kCyan, 2);

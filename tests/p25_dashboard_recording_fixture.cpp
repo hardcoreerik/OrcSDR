@@ -230,6 +230,20 @@ int main() {
       for (const auto& r : g_focus) focus_below_tab5 |= r.y >= 720;
       assert(focus_below_tab5);
     }
+    {
+      // The display font has no glyph for U+2212: the span-down button used it and drew as a blank button.
+      // (Separator bullets and dashes in sentences also lack glyphs but only leave a gap.)
+      const size_t first = lgfx::paints.size();
+      tap(l.tab[1]);  // SPECTRUM
+      assert(lgfx::paints.size() > first);
+      bool minus = false, plus = false;
+      for (size_t i = first; i < lgfx::paints.size(); ++i) {
+        minus |= lgfx::paints[i].text == "-";
+        plus |= lgfx::paints[i].text == "+";
+      }
+      assert(minus && plus);
+      tap(l.tab[0]);  // MONITOR again
+    }
     std::vector<float> levels(256, -42.0f);
     const ActionKind monitor_actions[] = {ActionKind::previous_candidate, ActionKind::next_candidate,
         ActionKind::survey_toggle, ActionKind::hold_toggle, ActionKind::skip_talkgroup};
