@@ -301,3 +301,10 @@ idle samples, 5 kernel events in 64 s, not caused by streaming). After a new USB
 idle readings, 0 kernel under-voltage events, and the same over 32 readings while streaming 2.4 MS/s for 60 s (100.0%, 38.4 Mbit/s).
 The measurements above that were taken under the fault are unchanged in character (no data loss either way), but a clean-power
 repeat of the long runs is still owed.
+
+**Clean-power 10-minute run, Ethernet** (PC client to the Pi at 192.168.1.218, 1.44 MS/s, 600 s, 1.73 GB): average 99.99% of the
+required byte rate; worst 10-second window 99.4%, best 100.2%; 59 windows, none under 95%; no 3 s read stall; `get_throttled=0x0`
+in all 122 samples taken every 5 s; 0 kernel under-voltage events; Pi temperature 50.1-56.4 C; Pi load stayed under 0.6.
+The matching Wi-Fi run was NOT done: after the last reboot the Pi's saved Wi-Fi profile was gone and `wlan0` was down
+("Not connected"), and joining a network needs the Wi-Fi password, which this session does not enter. The earlier 12-15 s Wi-Fi
+runs (100% at every rate, under the power fault) stand; a 10-minute Wi-Fi run is still owed.
