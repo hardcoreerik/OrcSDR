@@ -212,6 +212,14 @@ What the Tab5 would need to adopt a shared rotation layer:
 - SD card state: one RF Lab session folder (`/orcsdr/rf_lab/<session>/`, CSV, BMP, JSON) from the snapshot test and the shortwave library file from tick 18 are on the card.
 - Unit state: rotation 0, AUTO ON, HOME open, Wi-Fi connected, SD mounted, no RTL-SDR detected.
 
+### Tick 20 (2026-11-08)
+
+- Row worked: RF LAB RAM footprint, analysis only (no code changed, nothing built or flashed this tick; the unit still runs the tick 19 build `a625c3c07...`). Device state at the start: Wi-Fi connected after 15 min of uptime; still no RTL-SDR on USB (`raw_devices=0`, `accepted_sdr=0`), cause unknown; `dma_free` 8863, 28 tasks (26 at boot plus the two RF Lab tasks).
+- Reproduced without a dongle: a boot with no dongle read `dma_free` 10579 and 26 tasks, and after visiting RF LAB 8863 and 28 tasks, so the cost is RF LAB's own and not the receiver's (with the dongle the same visit cost 1288 bytes; 1716 bytes without it, so about 650 to 860 bytes per task).
+- Code reading (`rf_analysis.cpp`, `rf_lab.cpp`): every large buffer already goes to PSRAM (IQ ring, audio, snapshot, FFT work buffers, save job buffers). What is left in internal RAM is the two tasks that `lab::initialize()` starts once and never deletes: `rf_analysis` (8 KB stack) and `rf_lab_save` (12 KB stack), both created with `xTaskCreatePinnedToCoreWithCaps(... MALLOC_CAP_SPIRAM)`, so the stacks are in PSRAM but each task's control block and per-task library state stay in internal RAM. Also three mutexes (`rf_analysis`). The save task is only needed while a snapshot or run is being written.
+- Options, both touch shared Tab5 code (`rf_analysis.cpp`, `rf_lab.cpp`) and need the Tab5 RF Lab self-check and a measurement on the P4: (1) start `rf_lab_save` only when the first save is requested and delete both tasks when RF Lab is left, so the cost exists only while the screen is open; (2) leave the tasks alone and keep SD saves off on the P4 (current state). Recommended: (1). It frees about 1.3 to 1.7 KB after leaving and keeps the Wi-Fi margin at the baseline for every other screen; it needs task deletion with `vTaskDeleteWithCaps` and a guard so the buffers and mutexes are created once.
+- Unit state: rotation 0, AUTO ON, HOME open, Wi-Fi connected, SD mounted, no RTL-SDR detected.
+
 ## Owner questions
 
 - Anything that changes how an existing dashboard behaves
@@ -220,6 +228,8 @@ What the Tab5 would need to adopt a shared rotation layer:
 - Which hardware can be attached for live decoder checks (dongle, antenna)
 - Tab5 rotation as a separate later session
 - AM RADIO: add a "kHz" unit next to the frequency in the non-legacy views (the legacy view has one), and whether to use the empty band at the bottom of portrait Listen
+- RF LAB RAM: may I change the shared `rf_analysis.cpp` and `rf_lab.cpp` so RF Lab's two tasks exist only while the screen is open (deleted on leave, save task created on first save)? It changes Tab5 behaviour slightly (the save task starts at the first save instead of at init), which the Tab5 RF Lab self-check would cover.
+- RTL-SDR dongle: none is detected on COM32 (LilyGO T-Display-P4) since the last boot of tick 19; is it still plugged in?
 - SD long file names: the other P4 board profiles (Waveshare ESP32-P4-ETH, ESP32-P4-Module-DEV-KIT, Hosyond) still have `CONFIG_FATFS_LFN_NONE`; should the same two lines (`CONFIG_FATFS_LFN_HEAP=y`, `CONFIG_FATFS_MAX_LFN=255`) go into the shared `sdkconfig.defaults`? It changes those boards' builds, so I left it to you and the web session.
 - LORA: may I run the RF-less `RTL_PACKET PROBE` and `CLOCK_CHECK` on the onboard SX1262, and later `RX <Hz> INTERNAL`? (TX stays locked.)
 - P25: can you supply or import a P25 system profile so the decoder can be exercised?
