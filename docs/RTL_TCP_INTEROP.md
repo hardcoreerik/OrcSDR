@@ -562,3 +562,9 @@ dongle delivered about half the bytes there. The ladder is now 1.44 -> 0.96 -> 0
 whole multiple of 240 kS/s. Host tests cover it. Checked on the Tab5 (COM17) against the real V4 `rtl_tcp` behind a 1.2 MB/s
 throttle: `RTL_TCP_RATE_DOWN link=42%` to 0.96 MS/s, then `link=62%` to 0.24 MS/s, then 99-100% with 0 dropped bytes.
 Control and status surface for OrcSDR Web: `docs/RTL_TCP_CONTROL_SURFACE.md`.
+
+## Remote Raspberry Pi research (2026-11-07)
+
+REA research for a remote Pi running `rtl_tcp` is recorded in the private repo `hardcoreerik/REA-Results`, branch
+`research/remote-rtl-tcp-20261107`, commit `b1e64b2d231495114ee8025c04aac347b17b4f8c`. The plan and gap analysis are in
+`docs/RTL_TCP_REMOTE_PI_HANDOFF.md`. Nothing from it is implemented yet.
