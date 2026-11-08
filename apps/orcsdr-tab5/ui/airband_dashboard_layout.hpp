@@ -117,7 +117,8 @@ inline Layout make_layout(Rect v) {
       const int gw=(w-6*gap)/5;l.gain_auto={x+gap,l.listen_gain.y+gap,gw,touch};l.gain_down={l.gain_auto.x+gw+gap,l.gain_auto.y,gw,touch};
       l.gain_value={l.gain_down.x+gw+gap,l.gain_auto.y,gw,touch};l.gain_up={l.gain_value.x+gw+gap,l.gain_auto.y,gw,touch};l.rtl_agc={l.gain_up.x+gw+gap,l.gain_auto.y,gw,touch};
     }
-    const int scan_y=y; l.scan_status={x,scan_y,w,std::min(108,hh/3)};l.scan_toggle={x+w-touch,scan_y+gap,w?touch:0,touch};
+    const int scan_y=y; l.scan_status={x,scan_y,w,std::min(108,hh/3)};
+    {const int toggle_w=std::min(148,w/2);l.scan_toggle={x+w-toggle_w-gap,scan_y+gap,w?toggle_w:0,touch};}  // room for "START SCAN"
     const int rows_y=scan_y+l.scan_status.h+gap, rows_h=hh-l.scan_status.h-gap-touch-gap;
     l.scan_row_count=std::clamp((rows_h+gap)/(touch+gap),1,8);const int sh=(rows_h-gap*(l.scan_row_count-1))/l.scan_row_count;
     for(int i=0;i<l.scan_row_count;++i)l.scan_rows[i]={x,rows_y+i*(sh+gap),w,sh};

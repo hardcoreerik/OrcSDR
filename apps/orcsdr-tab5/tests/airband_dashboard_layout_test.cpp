@@ -18,6 +18,9 @@ static void check(Rect v) {
   for(int i=0;i<l.setup_visible_count;++i){assert(inside(l.content,l.setup_row[i]));assert(inside(l.content,l.setup_value[i]));assert(l.setup_value[i].w>=44&&l.setup_value[i].h>=44);}
   for(int i=0;i<l.scope_control_count;++i){assert(inside(l.content,l.scope_control[i]));assert(l.scope_control[i].w>=44&&l.scope_control[i].h>=44);}
   assert(inside(l.content,l.scan_toggle)&&l.scan_toggle.w>=44&&l.scan_toggle.h>=44);
+  // The toggle is labelled "START SCAN" / "STOP SCAN" (10 characters at 12 px each plus margins): a 48 px square showed
+  // an empty button. It must be wide enough for the label and sit inside the status card.
+  if(!l.legacy)assert(l.scan_toggle.w>=136&&inside(l.scan_status,l.scan_toggle));
   for(Rect r:{l.scan_previous,l.scan_next,l.scan_page,l.airport_previous,l.airport_next,l.airport_page,l.activity_previous,l.activity_next,l.activity_page})
     assert(inside(l.content,r)&&r.w>=44&&r.h>=44);
   assert(inside(l.content,l.detail_overlay)&&inside(l.detail_overlay,l.detail_close));

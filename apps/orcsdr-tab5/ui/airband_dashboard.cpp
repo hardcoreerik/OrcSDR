@@ -517,7 +517,7 @@ void draw_scan_status() {
                 state_name(g_snapshot.scan_state),
                 mhz(g_snapshot.frequency_hz));
   const int text_x=g_layout.legacy?44:g_layout.scan_status.x+16;
-  const int text_width=g_layout.legacy?900:g_layout.scan_status.w-80;
+  const int text_width=g_layout.legacy?900:g_layout.scan_status.w-g_layout.scan_toggle.w-32;  // the text stops before the toggle
   if(g_layout.portrait)fitted_text(value,text_x,g_layout.scan_status.y+24,text_width,state_color(),2,middle_left);
   else fitted_text(value,text_x,g_layout.legacy?208:g_layout.scan_status.y+30,text_width,state_color(),g_layout.scan_status.h<80?2:3,middle_left);
   std::snprintf(value, sizeof(value), "%s   %s   SQL +%d dB",
