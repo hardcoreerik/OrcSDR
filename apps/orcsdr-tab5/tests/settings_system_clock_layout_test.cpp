@@ -68,7 +68,10 @@ static void check_gps_toggle(Rect content, bool shallow) {
     // Everything else is where it was without the toggle, except the tall note that moves down one row.
     assert(on.set_clock.y == off.set_clock.y && on.run_setup.y == off.run_setup.y);
     for (int i = 0; i < 7; ++i) assert(on.status[i].bounds.y == off.status[i].bounds.y);
-    if (!shallow) assert(on.note.y == off.note.y + 52 && on.gps_time.h >= 44);
+    // The tall note is the 71-character "System UTC; Wi-Fi sets time after boot..." sentence: three 24 px lines at
+    // this width, so with the toggle it gets 72 px (48 px cut the last words off on the LilyGO). Without the toggle
+    // the note keeps its original 48 px.
+    if (!shallow) assert(on.note.y == off.note.y + 52 && on.gps_time.h >= 44 && on.note.h >= 72 && off.note.h == 48);
     else assert(on.note.y == off.note.y);
   }
 }

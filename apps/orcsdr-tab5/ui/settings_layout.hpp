@@ -302,7 +302,8 @@ inline SystemLayout make_system_layout(Rect content, std::size_t page = 0, bool 
     // The toggle takes the row after SD; the note moves down by one row only when it is present.
     layout.has_gps_time = with_gps_time;
     if (with_gps_time) layout.gps_time = {x, content.y + 88 + 11 * 52, width, 48};
-    layout.note = {x, content.y + 88 + (with_gps_time ? 12 : 11) * 52, width, 48};
+    // 72 px with the toggle (three note lines); 48 px without it, as before.
+    layout.note = {x, content.y + 88 + (with_gps_time ? 12 : 11) * 52, width, with_gps_time ? 72 : 48};
     return layout;
   }
 
