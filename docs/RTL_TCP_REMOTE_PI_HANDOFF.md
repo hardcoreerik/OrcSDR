@@ -308,3 +308,10 @@ in all 122 samples taken every 5 s; 0 kernel under-voltage events; Pi temperatur
 The matching Wi-Fi run was NOT done: after the last reboot the Pi's saved Wi-Fi profile was gone and `wlan0` was down
 ("Not connected"), and joining a network needs the Wi-Fi password, which this session does not enter. The earlier 12-15 s Wi-Fi
 runs (100% at every rate, under the power fault) stand; a 10-minute Wi-Fi run is still owed.
+
+**Clean-power 10-minute run, Wi-Fi** (after the Pi's Wi-Fi was reconnected; PC client to the Pi's `wlan0` address 192.168.1.219 through a
+policy route so replies leave by Wi-Fi, 1.44 MS/s, 600 s, 1.73 GB): average 99.98%; worst 10-second window 99.0%, best 100.0%; 59
+windows, none under 95%; no 3 s read stall; `wlan0` transmitted 1795 MB and `eth0` 0 MB during the run, so the data really used Wi-Fi;
+`get_throttled=0x0` in all 130 samples; 0 kernel under-voltage events; Pi temperature 53.0-63.3 C. Together with the Ethernet run this
+completes the clean-power repeat over the PC-to-Pi LAN. Still not done: a 1-hour soak, a real internet path, and Tab5 audio by ear
+from the Pi.
