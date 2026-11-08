@@ -472,7 +472,10 @@ void ui_task(void*) {
   bool was_down = false, header_gesture = false;
   int last_x = 0, last_y = 0;  // design coordinates
   int64_t last_snapshot_us = 0, last_log_us = 0;
-  int tap_frames = 0, tap_x = 0, tap_y = 0;  // injected tap (design coordinates), held ~150 ms
+  // Injected tap (design coordinates), held 150 ms of real time. It used to be held for 15 UI frames, which is over
+  // 700 ms on a slow screen such as RF Lab (taps there must be under 700 ms) and made those taps count as long presses.
+  int64_t tap_until_us = 0;
+  int tap_x = 0, tap_y = 0;
   int last_state = -1, last_level = 0, last_gain_key = -1;
   bool last_wifi = false;
   uint32_t last_sps = 0, last_applied_hz = 0;
@@ -539,7 +542,7 @@ void ui_task(void*) {
       was_down = false;
       header_gesture = false;
       ui_support::header_reset();
-      tap_frames = 0;
+      tap_until_us = 0;
     }
     // 2.4 MS/s is only for Home's wide spans (the Tab5 does the same); dashboards run at 0.96.
     radio::set_sample_rate(!g_active && g_span_hz > 960000 ? 2400000u : 960000u);
@@ -563,16 +566,19 @@ void ui_task(void*) {
     } else if (touch!=ESP_ERR_NOT_FOUND) physical_down=false;
     bool down=physical_down;
     // Deliver a release frame before accepting the next injected press.
-    if (tap_frames == 0 && !was_down && g_tap_x.load() >= 0) {
+    if (tap_until_us == 0 && !was_down && g_tap_x.load() >= 0) {
       tap_x = g_tap_x.exchange(-1);
       tap_y = g_tap_y.exchange(-1);
-      tap_frames = 15;
+      tap_until_us = esp_timer_get_time() + 150000;
     }
-    if (tap_frames > 0) {
-      --tap_frames;
-      down = true;
-      last_x = tap_x;
-      last_y = tap_y;
+    if (tap_until_us != 0) {
+      if (esp_timer_get_time() < tap_until_us) {
+        down = true;
+        last_x = tap_x;
+        last_y = tap_y;
+      } else {
+        tap_until_us = 0;  // the next frame is the release
+      }
     }
     // The shared header (volume tray, home, mute, settings) gets every touch first, on every screen, exactly as the
     // Tab5's main loop does: a press on the speaker opens a volume slider you drag, and the tray stays live while open.
@@ -666,7 +672,7 @@ void ui_task(void*) {
           ESP_LOGE(TAG, "RTL_DISPLAY_ROTATION failed stage=present");
         }
         header_gesture = false;
-        tap_frames = 0;
+        tap_until_us = 0;
       }
     }
 
