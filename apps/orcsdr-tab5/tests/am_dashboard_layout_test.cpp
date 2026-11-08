@@ -96,6 +96,21 @@ static void check(HeaderRect viewport) {
   }
   assert(l.spectrum_gain_auto.y >= l.waterfall.y + l.waterfall.h);
   assert(l.spectrum_gain_slider.y + l.spectrum_gain_slider.h <= l.span_down.y);
+  // The gain row clears only its own rectangle. Clearing 20 px above it erased the bottom of the static
+  // DIRECT TUNE button (portrait) and of the second row of AM settings controls (landscape). That is only
+  // safe because the "GAIN" label (text size 2, centred 15 px above the slider) and the knob (radius 11)
+  // are drawn inside the slider rectangle, and nothing static overlaps it.
+  for (const HeaderRect g : {l.gain_slider, l.settings_gain_slider, l.spectrum_gain_slider}) {
+    const int slider_y = g.y + g.h - 20;
+    assert(slider_y - 15 - 8 >= g.y);   // label top
+    assert(slider_y + 9 + 11 <= g.y + g.h);  // knob bottom
+  }
+  const HeaderRect listen_static[] = {l.tune_down, l.tune_up, l.step, l.direct, l.preset_save,
+      l.preset_previous, l.preset_next, l.frequency, l.signal};
+  for (const auto r : listen_static) assert(!overlaps(l.gain_slider, r) && !overlaps(l.gain_auto, r));
+  for (const auto r : l.preset) assert(!overlaps(l.gain_slider, r) && !overlaps(l.gain_auto, r));
+  for (const auto r : l.settings_control)
+    assert(!overlaps(l.settings_gain_slider, r) && !overlaps(l.settings_gain_auto, r));
 }
 
 int main() {

@@ -527,8 +527,9 @@ void draw_listen_dynamic() {
     text(value, g_layout.signal_text.x + g_layout.signal_text.w / 2,
          g_layout.signal_text.y + g_layout.signal_text.h / 2,
          g_snapshot.running ? kGreen : TFT_RED, 2);
-    M5.Display.fillRect(g_layout.gain_slider.x, g_layout.gain_slider.y - 20,
-                        g_layout.gain_slider.w, g_layout.gain_slider.h + 20, kBg);
+    // Only the gain row's own rectangle: starting 20 px higher erased the bottom of DIRECT TUNE in portrait.
+    M5.Display.fillRect(g_layout.gain_slider.x, g_layout.gain_slider.y,
+                        g_layout.gain_slider.w, g_layout.gain_slider.h, kBg);
     draw_gain_control(true);
     snprintf(value, sizeof(value), "STEP %lu kHz",
              static_cast<unsigned long>(g_snapshot.step_hz / 1000));
@@ -876,8 +877,9 @@ void draw_settings_dynamic() {
              i == 5 && g_snapshot.recording ? TFT_RED : kCyan,
              i == 0 && g_snapshot.sound_enabled);
     }
-    M5.Display.fillRect(g_layout.settings_gain_slider.x, g_layout.settings_gain_slider.y - 20,
-                        g_layout.settings_gain_slider.w, g_layout.settings_gain_slider.h + 20, kBg);
+    // Same rule as the listen view: the old -20 start erased the bottom of the second row of controls.
+    M5.Display.fillRect(g_layout.settings_gain_slider.x, g_layout.settings_gain_slider.y,
+                        g_layout.settings_gain_slider.w, g_layout.settings_gain_slider.h, kBg);
     draw_gain_control(true);
     M5.Display.fillRect(g_layout.settings_status.x, g_layout.settings_status.y,
                         g_layout.settings_status.w, g_layout.settings_status.h, kPanel);
