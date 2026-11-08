@@ -151,6 +151,7 @@ idf_component_register(
         "../ui/map_preferences.cpp"
         "../ui/map_screen.cpp"
         "../ui/map_download_notice.cpp"
+        "../ui/rtl_tcp_header_tag.cpp"
         "../ui/map_serial.cpp"
         "../ui/setup_ui.cpp"
         "../ui/navigation_service.cpp"

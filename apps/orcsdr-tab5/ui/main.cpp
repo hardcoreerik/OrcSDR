@@ -128,6 +128,7 @@
 #include "map_service.hpp"
 #include "map_screen.hpp"
 #include "map_download_notice.hpp"
+#include "rtl_tcp_header_tag.hpp"
 #include "map_serial.hpp"
 #include "location_store.hpp"
 #include "nvs_store.hpp"
@@ -1937,6 +1938,13 @@ std::atomic<bool> rtl_graphics_enabled{true};
 orcsdr::audio_header::Control rtl_header_audio_control{};
 enum class SdrPinchMode : uint8_t { Span, Filter };
 std::atomic<uint32_t> rtl_scope_span_hz{kRtlScopeSpanMaxHz};
+// Widest span the live stream can honestly show: a span never claims more bandwidth than the
+// stream carries (a remote 1.44 MS/s stream cannot show 2.4 MHz). Idle (rate 0) keeps the fixed
+// maximum. The stream start also snaps an over-wide span down, so a rate step stays consistent.
+inline uint32_t rtl_span_cap_hz() {
+  const uint32_t live = rtl_active_sample_rate_sps.load(std::memory_order_relaxed);
+  return (live != 0 && live < kRtlScopeSpanMaxHz) ? live : kRtlScopeSpanMaxHz;
+}
 std::atomic<uint32_t> rtl_filter_bandwidth_hz{kRtlFmFilterDefaultHz};
 SdrPinchMode rtl_pinch_mode = SdrPinchMode::Span;
 uint32_t rtl_fm_step_hz = kRtlFmStepHz;
@@ -6865,7 +6873,7 @@ void airband_scope_span_set_hook(uint32_t hz) {
     return;
   }
   if (saved_hz == 0) saved_hz = rtl_scope_span_hz.load(std::memory_order_relaxed);
-  rtl_scope_span_hz.store(std::min(hz, kRtlScopeSpanMaxHz), std::memory_order_relaxed);
+  rtl_scope_span_hz.store(std::min(hz, rtl_span_cap_hz()), std::memory_order_relaxed);
   reset_spectrum_renderer();
 }
 
@@ -6877,7 +6885,7 @@ void airband_scope_span_hook(int direction) {
   while (index + 1 < std::size(kSteps) && kSteps[index] < current) ++index;
   if (direction > 0 && index + 1 < std::size(kSteps) && kSteps[index] <= current) ++index;
   else if (direction < 0 && index > 0) --index;
-  rtl_scope_span_hz.store(std::min(kSteps[index], kRtlScopeSpanMaxHz), std::memory_order_relaxed);
+  rtl_scope_span_hz.store(std::min(kSteps[index], rtl_span_cap_hz()), std::memory_order_relaxed);
   reset_spectrum_renderer();
 }
 
@@ -11183,7 +11191,7 @@ void handle_fm_dashboard_action(const orcsdr::fm::Action& action) {
       const uint32_t current = rtl_scope_span_hz.load(std::memory_order_relaxed);
       const uint32_t next = action.kind == ActionKind::span_down
                                 ? std::max(kRtlScopeSpanMinHz, current / 2)
-                                : std::min(kRtlScopeSpanMaxHz, current * 2);
+                                : std::min(rtl_span_cap_hz(), current * 2);
       rtl_scope_span_hz.store(next, std::memory_order_relaxed);
       reset_spectrum_renderer();
       break;
@@ -11326,7 +11334,7 @@ void handle_am_dashboard_action(const orcsdr::am::Action& action) {
       const uint32_t current = rtl_scope_span_hz.load(std::memory_order_relaxed);
       rtl_scope_span_hz.store(action.kind == ActionKind::span_down
                                   ? std::max(kRtlScopeSpanMinHz, current / 2)
-                                  : std::min(kRtlScopeSpanMaxHz, current * 2),
+                                  : std::min(rtl_span_cap_hz(), current * 2),
                               std::memory_order_relaxed);
       reset_spectrum_renderer();
       break;
@@ -11569,7 +11577,7 @@ void handle_shortwave_dashboard_action(const orcsdr::shortwave::Action& action) 
       const uint32_t current = rtl_scope_span_hz.load(std::memory_order_relaxed);
       rtl_scope_span_hz.store(action.kind == ActionKind::span_down
                                   ? std::max(kRtlScopeSpanMinHz, current / 2)
-                                  : std::min(kRtlScopeSpanMaxHz, current * 2),
+                                  : std::min(rtl_span_cap_hz(), current * 2),
                               std::memory_order_relaxed);
       reset_spectrum_renderer();
       break;
@@ -11577,7 +11585,7 @@ void handle_shortwave_dashboard_action(const orcsdr::shortwave::Action& action) 
     case ActionKind::span_hz:
       rtl_scope_span_hz.store(
           std::clamp(static_cast<uint32_t>(action.value), kRtlScopeSpanMinHz,
-                     kRtlScopeSpanMaxHz),
+                     rtl_span_cap_hz()),
           std::memory_order_relaxed);
       reset_spectrum_renderer();
       break;
@@ -12274,7 +12282,7 @@ void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
       rtl_scope_span_hz.store(
           action.kind == ActionKind::span_down
               ? std::max(kRtlScopeSpanMinHz, current / 2)
-              : std::min(kRtlScopeSpanMaxHz, current * 2),
+              : std::min(rtl_span_cap_hz(), current * 2),
           std::memory_order_relaxed);
       reset_spectrum_renderer();
       break;
@@ -15155,8 +15163,9 @@ void handle_home_action(const orcsdr::home::Action& action) {
     case ActionKind::span_up: {
       const uint32_t current_span = rtl_scope_span_hz.load(std::memory_order_relaxed);
       rtl_scope_span_hz.store(
-          orcsdr::home::step_span(current_span,
-                                  action.kind == ActionKind::span_down ? -1 : 1),
+          std::min(orcsdr::home::step_span(current_span,
+                                           action.kind == ActionKind::span_down ? -1 : 1),
+                   rtl_span_cap_hz()),
           std::memory_order_relaxed);
       reset_spectrum_renderer();
       break;
@@ -17787,7 +17796,7 @@ void poll_sdr_touch(bool from_stream) {
               static_cast<uint64_t>(pinch_anchor_value) * pinch_anchor_distance /
               distance);
           next = std::clamp((next / 5000u) * 5000u, kRtlScopeSpanMinHz,
-                            kRtlScopeSpanMaxHz);
+                            rtl_span_cap_hz());
           if (next != rtl_scope_span_hz.load(std::memory_order_relaxed))
             handle_shortwave_dashboard_action(
                 {orcsdr::shortwave::ActionKind::span_hz,
@@ -17879,7 +17888,7 @@ void poll_sdr_touch(bool from_stream) {
         if (rtl_pinch_mode == SdrPinchMode::Span) {
           next = static_cast<uint32_t>(pinch_anchor_value * pinch_anchor_distance / distance);
           next = constrain((next / 5000u) * 5000u, kRtlScopeSpanMinHz,
-                           kRtlScopeSpanMaxHz);
+                           rtl_span_cap_hz());
           if (next != rtl_scope_span_hz.exchange(next, std::memory_order_relaxed)) {
             redraw_spectrum_panel();
             draw_spectrum_axis();
@@ -24123,6 +24132,22 @@ void loop() {
       const bool blocked=map_download_notice_blocked();
       orcsdr::map_download_notice::update(notice,orcsdr::screens::status().active,blocked);
     }
+    // Every RTL-fed dashboard says when its receiver is an rtl_tcp server (Home draws its own).
+    orcsdr::rtl_tcp_header_tag::State tag{};
+    // Shown whenever the source is remote, not only while streaming, so a stopped or failed stream is
+    // still labelled instead of the tag vanishing.
+    tag.remote = g_rtl_remote_narrow.load(std::memory_order_acquire) ||
+                 orcsdr::rtl_tcp_source::mode() == orcsdr::source::Mode::remote_tcp;
+    if (tag.remote) {
+      tag.state = orcsdr::rtl_tcp_source::state();
+      tag.link_pct = orcsdr::rtl_tcp_source::link_ratio_pct();
+      tag.sps = tag.state == orcsdr::rtl_tcp::State::streaming
+                    ? rtl_active_sample_rate_sps.load(std::memory_order_relaxed) : 0;
+      snprintf(tag.host, sizeof(tag.host), "%s:%u", orcsdr::rtl_tcp_source::host(),
+               static_cast<unsigned>(orcsdr::rtl_tcp_source::port()));
+    }
+    orcsdr::rtl_tcp_header_tag::update(tag, orcsdr::screens::status().active, now,
+                                       map_download_notice_blocked());
   }
   if (!rtl_ui_active.load(std::memory_order_acquire) &&
       now - last_power_draw_ms >= 10000) {
