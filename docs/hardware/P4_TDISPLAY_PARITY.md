@@ -86,6 +86,8 @@ Reference: Tab5 on origin/main `4362bd9b`. Target: LilyGO T-Display-P4 (COM32), 
 - Needs the owner: (1) RF Lab task change in shared code, (2) is the RTL-SDR plugged in, (3) long-file-name setting for the other P4 profiles, (4) the P25 system profile, (5) the onboard SX1262 probe, (6) the clock-set interface and browser-time rule, (7) AM kHz label, portrait band use, HOME contrast arrows.
 - The scheduled 30-minute loop was cancelled at tick 24 because everything left depends on the above or on a receiver.
 
+- Dongle follow-up (after the loop stopped): the owner re-seated the RTL-SDR and it is detected again and streaming (2.4 MS/s at 96.1 MHz, 0 drops, 27 tasks, `dma_free` 3451 at 9 min uptime with the dongle, rotation 0). The owner reports that after a board reboot the dongle was NOT detected until it was unplugged and plugged in again (`raw_devices=0` on every boot since tick 19). So a reset of the board alone does not make this dongle enumerate again on this build; the profile has no confirmed switch for the host port's 5 V (`USB PHY power` on XL9535 IO10 is not confirmed as VBUS and is not driven), so the firmware cannot power-cycle the dongle itself. Earlier boots in this session did re-detect it, so the failure is intermittent. This also means health baselines taken with the dongle need the dongle re-seated first.
+
 ## Tick log
 
 ### Tick 1 (2026-11-07)
