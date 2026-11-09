@@ -343,3 +343,9 @@ Status (link, speed, duplex, MAC, IP, gateway, which PHY driver, why it did not 
 | display | none attached (headless; the browser is the display) | none attached (headless) |
 
 Nothing here unlocks transmit: lora_tx is never inferred from detection.
+
+## Pending on the owner side (2026-11-09)
+
+- **COM29 web tests on the current image** (basemap delivery, `build-p4eth-net`): not run. The board boots and passes `p4_health.py`, but its Ethernet link does not come up with no cable, so the web server never listens. Re-run `tools/web_maps_test.js`, the four other web tests and `tools/p4_web_auth_test.py` once a cable is on it.
+- **Map render time (P4 map service) and real basemap delivery:** pending. No board has an SD card holding `/sd/orcmaps/basemap.pmtiles`. `tools/web_maps_test.js` reads and checks the file once one is present.
+- **Independent review:** the Grok usage balance was exhausted; the branch has only the author's own review.
