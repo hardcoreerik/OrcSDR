@@ -205,6 +205,12 @@ Corrections and confirmations to the gap list:
   (80-92%, one dip to 34% at minute 17 that recovered)**, and `bytes_sent` on the Pi was 4.51 GB over 1740 s = 2.59 MB/s against 2.88 MB/s needed, with 1.1% of the sent bytes retransmitted. Earlier tests with the PC
   on Ethernet and the Pi on Wi-Fi gave 100% at the same rate, so the double Wi-Fi hop is the likely limit (G16). The ladder never stepped down because 88% is above its 85% threshold.
 
+- 2026-11-09 iteration 12, **one-hour soak complete** (60 samples, 59 minutes; Tab5 on FM from the Pi at 1.44 MS/s, both on Wi-Fi, source `remote`): **no reconnects** (108 connections and 94 reconnects at both start and end), 0 dropped bytes
+  on the Tab5, Pi power flag 0x0 in every sample, Pi 55.0 to 63.7 C, service active throughout, 1 server error line in the hour. **Memory flat:** `dma_free` 16,063 B to 16,591 B (lowest 14,743 B), `dma_min` held at 13,835 B,
+  PSRAM 7.34 to 7.38 MB, `internal_free` 17.0 to 22.2 KB: the leak fix holds over an hour of streaming. **Link:** median 89%, mean 86.7%, range 34-92%, never 95% or above; 9 of 60 samples under 85%; two brief deep dips (minute 17: 34%, minute 58: 50%) that
+  recovered. The Pi sent 9.08 GB in 3540 s = 2.56 MB/s against the 2.88 MB/s needed (89%), 96.2 MB (1.06%) retransmitted. So the hour was stable but about 11% of the samples were dropped by the server (G16); the ladder never stepped down.
+  Sweeps at 0.96 MS/s on the same path read 95-99%, so the usable ceiling here is about 2.6 MB/s (21 Mbit/s). Not tested: the same soak with the Pi on Ethernet (needs the cable put back) to confirm the double Wi-Fi hop, and audio quality by ear.
+
 ## 6. Next iterations (in order)
 
 1. Fix the retune detector and repeat at all rates and at `-b 2`; add a Tab5-side check of what FM seek dwell is.
