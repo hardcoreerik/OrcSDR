@@ -26,6 +26,22 @@ string(LENGTH "${ORCSDR_BUILD_ID}" ORCSDR_BUILD_ID_LEN)
 if (ORCSDR_BUILD_ID_LEN GREATER 39)
     message(FATAL_ERROR "ORCSDR_BUILD_ID is longer than 39 characters: ${ORCSDR_BUILD_ID}")
 endif()
+# Materialize the reviewed SDK patch per build before IDF resolves components.
+if(NOT PYTHON)
+    find_package(Python3 REQUIRED COMPONENTS Interpreter)
+    set(PYTHON "${Python3_EXECUTABLE}")
+endif()
+execute_process(
+    COMMAND "${PYTHON}" "${CMAKE_CURRENT_LIST_DIR}/tools/prepare_usb_recovery.py"
+            --idf "$ENV{IDF_PATH}" --build "${CMAKE_BINARY_DIR}"
+    RESULT_VARIABLE usb_recovery_result
+    OUTPUT_VARIABLE usb_recovery_component
+    ERROR_VARIABLE usb_recovery_error
+    OUTPUT_STRIP_TRAILING_WHITESPACE)
+if(NOT usb_recovery_result EQUAL 0)
+    message(FATAL_ERROR "${usb_recovery_error}")
+endif()
+list(APPEND EXTRA_COMPONENT_DIRS "${usb_recovery_component}")
 include($ENV{IDF_PATH}/tools/cmake/project.cmake)
 project(orcsdr_tab5)
 
