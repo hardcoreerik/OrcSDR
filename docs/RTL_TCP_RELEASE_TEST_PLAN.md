@@ -328,6 +328,14 @@ Corrections and confirmations to the gap list:
 
 - 2026-11-09 iteration 29b (G15 second half, owner approved): `start_and_wait` (in `rtl_tcp_source.cpp`, no `main.cpp` change) now stretches its wait from 12 s to 120 s while the server accepts but sends no greeting, and still ends at once on a cancel; any other failure keeps the caller's timeout. Real link: a PC socket held the Pi's only slot, `RTL_LISTEN FM` waited, the holder was released at 25 s, `RTL_START ESP_OK` arrived 26 s after the request and the Tab5 streamed at 99% with the reason "server busy or silent" shown in the meantime. Not tested: a cancel during the long wait (code path unchanged and short).
 
+- 2026-11-09 iteration 30 (audit: reads of the local driver while the stream is remote, the class of bug behind the FT8 failure; read-only, no code change):
+  - Method: every `esp_rtl_sdr_get_*(g_rtl, ...)` call in `ui/` (about 70) checked for a remote guard.
+  - Already routed to the server by the iteration 21 macros (`main.cpp` lines 174-181): tuner gain, gain mode, gain steps, RTL AGC. These cover the gain popups on Home, FM/AM/CB/Airband, Shortwave, P25, FT8 and SSTV.
+  - Fixed in iteration 29: centre frequency for the FT8 tap and the Shortwave SSB carrier offset.
+  - **Still read from the local driver on a remote stream (gaps, not changed):** RF Lab runtime page (sample rate, PPM, bias tee, bandwidth, device info, health: lines 7271-7303; shows the local dongle's values or nothing), the status readout (`RTL_DRIVER STATUS`, lines 19118-19163, reports IDLE with the last local tune), the dashboards' bias-tee state (bias is never remote by design), and `esp_rtl_sdr_is_rate_supported` gates before FT8, ACARS and SSTV low-rate requests (answered by the local driver's rate table, which is the same table for any RTL2832, so correct while no dongle is present is unverified: see below).
+  - **Lesson for the matrix:** every earlier remote test ran with the owner's Blog V3c plugged into the Tab5, and the FT8 bug only existed in that configuration. The "remote only" column (no local dongle) was never run for G1 and G2 after iteration 8 and is still open: it needs the V3c unplugged by the owner. Until it is run, remote-only claims for gain, FT8, ACARS and SSTV stand on the iteration 5 cold tests only.
+  - Next test candidate that needs no hardware change: SSB tuning accuracy on a remote Shortwave stream against a known carrier (a WWV tone at 10 MHz), to confirm the +-6 kHz offset fix; not run (no signal confirmed at this hour).
+
 ## 6. Next iterations (in order)
 
 1. Fix the retune detector and repeat at all rates and at `-b 2`; add a Tab5-side check of what FM seek dwell is.
