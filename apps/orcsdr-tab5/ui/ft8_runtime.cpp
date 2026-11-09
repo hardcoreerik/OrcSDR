@@ -330,17 +330,28 @@ void decode_slot(uint64_t slot_start_ms, uint32_t slot_ms, uint64_t now_ms, uint
   const uint64_t cont_ms = g.cont_ms.load(std::memory_order_acquire);
   const uint64_t cont_total = g.cont_total.load(std::memory_order_acquire);
   bool incomplete = (continuity & 1u) != 0 || g.continuity_sequence.load(std::memory_order_acquire) != continuity;
+  const char* why = incomplete ? "continuity" : "";
+  double rate_seen = 0.0;
   if (start_total < static_cast<int64_t>(lead_samples) || slot_start_ms < cont_ms + 100u + lead_ms ||
       total_now - static_cast<uint64_t>(start_total) + lead_samples > kRingSamples - 12000u) {
     incomplete = true;
+    why = start_total < static_cast<int64_t>(lead_samples) ? "ring_start"
+          : (slot_start_ms < cont_ms + 100u + lead_ms ? "before_discontinuity" : "ring_span");
   } else if (now_ms - cont_ms > 5000u) {
     // The tap must have delivered samples at the real 12 kS/s since the last discontinuity, or a block was lost.
-    const double rate = static_cast<double>(total_now - cont_total) / static_cast<double>(now_ms - cont_ms);
-    if (rate < 11.82 || rate > 12.18) incomplete = true;
+    rate_seen = static_cast<double>(total_now - cont_total) / static_cast<double>(now_ms - cont_ms);
+    if (rate_seen < 11.82 || rate_seen > 12.18) {
+      incomplete = true;
+      why = "rate";
+    }
   }
   if (incomplete) {
     ++s.slots_skipped_incomplete;
-    std::printf("ORC_FT8_RT slot_skipped_incomplete start_ms=%llu\n", static_cast<unsigned long long>(slot_start_ms));
+    // The reason and the figures behind it: a skipped slot is otherwise indistinguishable from a quiet band.
+    std::printf("ORC_FT8_RT slot_skipped_incomplete start_ms=%llu why=%s since_cont_ms=%lld rate=%.3f samples_since_cont=%llu\n",
+                static_cast<unsigned long long>(slot_start_ms), why,
+                static_cast<long long>(static_cast<int64_t>(now_ms) - static_cast<int64_t>(cont_ms)), rate_seen,
+                static_cast<unsigned long long>(total_now - cont_total));
     return;
   }
 
@@ -935,11 +946,14 @@ void offer_iq(const uint8_t* iq, size_t bytes, uint32_t sample_rate_hz) {
       esp_timer_get_time() - g.last_touch_us.load(std::memory_order_acquire) > 6000000)
     return;   // screen is gone
   if (sample_rate_hz != g.input_rate) {
+    std::printf("ORC_FT8_RT tap_discontinuity cause=rate_change from=%lu to=%lu\n", static_cast<unsigned long>(g.input_rate),
+                static_cast<unsigned long>(sample_rate_hz));
     g.tap_ready = tap_ns::begin(&g.tap, sample_rate_hz);
     g.input_rate = sample_rate_hz;
     g.reset_pending.store(false, std::memory_order_release);
     mark_discontinuity();
   } else if (g.reset_pending.exchange(false, std::memory_order_acq_rel)) {
+    std::printf("ORC_FT8_RT tap_discontinuity cause=reset_pending\n");
     tap_ns::reset(&g.tap);
     mark_discontinuity();
   }
@@ -951,6 +965,7 @@ void offer_iq(const uint8_t* iq, size_t bytes, uint32_t sample_rate_hz) {
     if (wanted != have) {
       tap_ns::set_dial_offset(&g.tap, wanted);
       if (std::fabs(wanted - have) > 200.0f) {
+        std::printf("ORC_FT8_RT tap_discontinuity cause=dial_offset wanted=%.0f have=%.0f\n", static_cast<double>(wanted), static_cast<double>(have));
         tap_ns::reset(&g.tap);
         mark_discontinuity();
       }

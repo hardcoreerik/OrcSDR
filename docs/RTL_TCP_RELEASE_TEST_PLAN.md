@@ -318,6 +318,14 @@ Corrections and confirmations to the gap list:
   - Tooling: `go_home` cannot leave a frozen RF Lab; the sweep then reports WRONG_SCREEN for the next tiles (Wi-Fi, Settings). Correct behaviour for a frozen UI, but the sweep should also record `visible_updates` so a freeze is named as one.
   - Splash gate is ON again.
 
+- 2026-11-09 iteration 29 (owner report: FT8 shows no decodes and the waterfall is not working on the live page; **FIXED and verified on the Tab5**):
+  - **Root cause (found with new log lines, not by guessing):** `ft8_native_dial_offset_hz()` asked the LOCAL driver (`esp_rtl_sdr_get_center_freq(g_rtl)`) for the tuner's centre frequency even while the stream was remote. The idle local driver sat at its last FM tune (96.1 MHz), so the FT8 tap was told the dial was 82 MHz away from the centre, could not hold that offset, and reset itself on every block. Every 15 s slot was therefore skipped as incomplete: 0 slots decoded, waterfall noise. With no local dongle plugged in the helper returns 0 and the bug is hidden, which is why the earlier cold tests passed.
+  - **Same mistake in Shortwave SSB:** the SSB demodulator read the same local centre to place the carrier, clamped to +-6 kHz, so SSB on a remote stream was mistuned by up to 6 kHz when a local dongle was present. Fixed in the same way (not separately verified on the air).
+  - **Fix:** both places skip the local driver while `rtl_remote_active()`; a remote server tunes to the commanded frequency and offers no readback (offset 0).
+  - **Verified:** cold open of FT8 on the remote stream (240 kS/s): 4 slots in a row decoded 10, 11, 16 and 10 messages, last slot 12 decoded, 64 candidates, waterfall shows the FT8 tones, `FT8 STATUS` dial_offset_hz 0, one discontinuity at start and none after.
+  - **Diagnostics kept:** a skipped FT8 slot now logs why (`why=continuity|ring_start|before_discontinuity|ring_span|rate`, time since the last discontinuity, measured sample rate), and each tap discontinuity logs its cause (`rate_change`, `reset_pending`, `dial_offset`). A skipped slot was previously indistinguishable from a quiet band.
+  - The Pi's stock `rtl_tcp` again kept a dead connection after the Tab5 was reflashed and refused new clients until `systemctl restart rtl-tcp` (iteration 27 finding); with no client it never greets, and the Tab5 stays idle until a start is requested.
+
 ## 6. Next iterations (in order)
 
 1. Fix the retune detector and repeat at all rates and at `-b 2`; add a Tab5-side check of what FM seek dwell is.

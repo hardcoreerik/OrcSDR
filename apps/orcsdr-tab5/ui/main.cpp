@@ -1893,6 +1893,7 @@ static inline bool rtl_usb_device_ready() {
   return g_rtl_device_ready.load(std::memory_order_acquire) && g_rtl != nullptr;
 }
 static bool rtl_remote_source_ready();  // rtl_tcp client selected and usable (defined with the IQ sink)
+static bool rtl_remote_active();        // the running stream comes from an rtl_tcp server, not the USB dongle
 // "A receiver source is ready": the USB dongle or a remote rtl_tcp server.
 static inline bool rtl_device_ready() { return rtl_usb_device_ready() || rtl_remote_source_ready(); }
 #endif
@@ -8890,7 +8891,8 @@ __attribute__((noinline)) void demodulate_shortwave_ssb(RtlBand band, const uint
   // Hot retunes quantize the LO to 5 kHz while the dial moves in 100 Hz steps: pass the dial's offset from the IQ centre.
   uint32_t centre_hz = 0;
   int32_t carrier_offset = 0;
-  if (g_rtl != nullptr && esp_rtl_sdr_get_center_freq(g_rtl, &centre_hz) == ESP_OK && centre_hz != 0)
+  // A remote stream has no readback: the local driver (idle, often at its last FM tune) must not be asked for the centre.
+  if (!rtl_remote_active() && g_rtl != nullptr && esp_rtl_sdr_get_center_freq(g_rtl, &centre_hz) == ESP_OK && centre_hz != 0)
     carrier_offset = std::clamp<int32_t>(static_cast<int32_t>(tuned_hz) - static_cast<int32_t>(centre_hz), -6000, 6000);
   if (sideband != wanted) carrier_offset = -carrier_offset;  // a folded spectrum is mirrored about the centre
   audio_scale *= 3.0f;  // SSB has no carrier: the same station is about 10 dB below its AM level
@@ -13773,7 +13775,8 @@ uint32_t ft8_dial_hz(size_t band_index, orcsdr::ft8::DigitalMode mode) {
 float ft8_native_dial_offset_hz() {
   const uint32_t dial = orcsdr::ft8_runtime::requested_dial_hz();
   uint32_t centre = 0;
-  if (dial == 0 || g_rtl == nullptr || esp_rtl_sdr_get_center_freq(g_rtl, &centre) != ESP_OK || centre == 0) return 0.0f;
+  // A remote rtl_tcp server tunes to exactly what it is told and offers no readback; the idle local driver's centre is not the stream's.
+  if (dial == 0 || rtl_remote_active() || g_rtl == nullptr || esp_rtl_sdr_get_center_freq(g_rtl, &centre) != ESP_OK || centre == 0) return 0.0f;
   return static_cast<float>(static_cast<int32_t>(dial) - static_cast<int32_t>(centre));
 }
 
