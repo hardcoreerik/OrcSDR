@@ -350,3 +350,21 @@ Consequences:
 
 Not tested: audio by ear (the Tab5 played, but listening was not judged by me), a long run with the Blog driver, and whether
 Osmocom `v2.0.3` (which the research lists as having V4L support) also works.
+
+## 15. Opportunistic soak of the Tab5-from-Pi stream (noted 2026-11-08 18:27 PST, before a local-USB comparison)
+
+Setup: Tab5 on Wi-Fi streaming FM from the Pi 4B (Ethernet, 192.168.1.218:1234, Blog `rtl_tcp` V1.4.0, `-s 240000 -n 32 -b 4`), Tab5
+asking for 1.44 MS/s. The stream was not scripted; these are readings taken when asked.
+
+- **Current connection** (from the Pi's own TCP state for the Tab5's socket, 192.168.1.75): `bytes_sent` 9,113,707,300 (about 9.11 GB),
+  `bytes_retrans` 18,560,728 (0.20%), RTT 11.7 ms, still established. At 2.88 MB/s that is about 52.7 minutes, which matches the
+  Pi's uptime of 53 minutes, so this connection has run since just after the Pi booted. Tab5 `RTL_TCP STATUS`: `state=streaming`,
+  `link=100%`.
+- **Pi:** up 53 minutes (it rebooted about 17:34 PST; the cause was not established, and I was not watching), `get_throttled=0x0`,
+  0 under-voltage events since that boot, 60.3 C.
+- **Tab5 lifetime counters** (since its last flash, uptime 24.6 h; they include the earlier PC stand-in server and the lossy-path
+  tests, so they are not a clean soak): 70.36 GB received, 27 connections, 11 reconnects, `dropped=24,591,744` bytes (0.035% of bytes
+  received; it was 4,189,888 about 7 hours earlier, so about 20 MB were added in that gap, cause not investigated). `last="socket
+  error"` is the end reason of the previous connection (consistent with the Pi reboot).
+- **Not measured:** the Tab5's own continuous time on this connection (the Tab5 does not report it; the Pi's counter above is the
+  proxy), audio quality, and main-loop stalls over the whole run (none seen in a 60 s window at 1.44 MS/s).
