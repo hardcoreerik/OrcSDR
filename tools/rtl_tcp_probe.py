@@ -14,6 +14,7 @@ to leave the server in auto gain).
   python tools/rtl_tcp_probe.py HOST badcmd
   python tools/rtl_tcp_probe.py HOST scan --lo 88e6 --hi 108e6 --gain 250 --save-iq OUT_DIR
   python tools/rtl_tcp_probe.py HOST capture --freq 96.1e6 --rate 960000 --secs 5 --gain 250 --out x.cu8
+  python tools/rtl_tcp_probe.py HOST retune --from 99.1e6 --to 98.5e6 --rate 960000 --repeat 3
 Needs numpy for scan/capture analysis. Prints one JSON line per measurement.
 """
 import argparse, json, socket, struct, sys, time
@@ -200,6 +201,42 @@ def cmd_capture(srv, a):
         peak_offset_khz=round((pk - n // 2) * a.rate / n / 1e3, 1), rms=round(rms, 1), clip_pct=round(clip, 2))
 
 
+def cmd_retune(srv, a):
+    """Stale samples after a retune. rtl_tcp never acknowledges a command and the server buffers USB data, so samples
+    already in flight still carry the old frequency. Needs a strong station at --from (carrier at the centre) that
+    --to moves out of the passband. Reports how much sample time arrives after the command before the carrier vanishes."""
+    import numpy as np
+    rate = a.rate; n = 4096; w = np.hanning(n)
+    for _ in range(a.repeat):
+        s, h, ms = srv.open(rate=rate, freq=a.from_hz, gain=int(a.gain))
+        s.settimeout(3.0); total = 0; carry = b""; ref = []; sent_at = None; n_at_send = 0; changed = None; t_wall = None
+        t0 = time.time()
+        while time.time() - t0 < 12 and changed is None:
+            try: d = s.recv(262144)
+            except socket.timeout: continue
+            if not d: break
+            carry += d; usable = len(carry) - len(carry) % (2 * n)
+            for off in range(0, usable, 2 * n):
+                blk = np.frombuffer(carry[off:off + 2 * n], dtype=np.uint8).astype(np.float32) - 127.5
+                iq = (blk[0::2] + 1j * blk[1::2]) * w
+                sp = np.abs(np.fft.fftshift(np.fft.fft(iq))) ** 2
+                f = (np.arange(n) - n // 2) * rate / n; band = float(sp[np.abs(f) < 60e3].mean())
+                if sent_at is None:
+                    ref.append(band)
+                    if len(ref) == 40:   # carrier level established (about 0.17 s at 960 kS/s): retune now
+                        sent_at = time.time(); n_at_send = total + off // 2; s.sendall(cmd(0x01, int(a.to_hz)))
+                        refp = float(np.median(ref))
+                elif changed is None and band < refp / 10 ** 1.0:   # 10 dB below the carrier level
+                    changed = total + off // 2; t_wall = time.time() - sent_at
+            total += usable // 2; carry = carry[usable:]
+        s.close(); time.sleep(2.0)
+        if changed is None:
+            out(test="retune", rate=rate, result="carrier did not vanish (no strong station at --from, or retune ignored)")
+        else:
+            out(test="retune", rate=rate, from_mhz=a.from_hz / 1e6, to_mhz=a.to_hz / 1e6,
+                stale_sample_seconds=round((changed - n_at_send) / rate, 3), wall_seconds_to_change=round(t_wall, 3))
+
+
 def cmd_scan(srv, a):
     import numpy as np, os
     rate = 2400000; step = 2000000; res = {}
@@ -237,13 +274,16 @@ def main():
     st = sub.add_parser("stall"); st.add_argument("--secs", type=float, default=25)
     c = sub.add_parser("capture"); c.add_argument("--freq", type=float, required=True); c.add_argument("--rate", type=int, default=960000)
     c.add_argument("--secs", type=float, default=5); c.add_argument("--gain", default="250"); c.add_argument("--out")
+    rt = sub.add_parser("retune"); rt.add_argument("--from", dest="from_hz", type=float, required=True)
+    rt.add_argument("--to", dest="to_hz", type=float, required=True); rt.add_argument("--rate", type=int, default=960000)
+    rt.add_argument("--gain", default="150"); rt.add_argument("--repeat", type=int, default=3)
     sc = sub.add_parser("scan"); sc.add_argument("--lo", type=float, default=88e6); sc.add_argument("--hi", type=float, default=108e6)
     sc.add_argument("--gain", default="250"); sc.add_argument("--save-iq"); sc.add_argument("--want", nargs="*")
     a = p.parse_args()
     host, _, port = a.target.partition(":")
     srv = Server(host, int(port or DEFAULT_PORT))
     {"header": cmd_header, "rates": cmd_rates, "soak": cmd_soak, "stall": cmd_stall, "second": cmd_second,
-     "badcmd": cmd_badcmd, "capture": cmd_capture, "scan": cmd_scan}[a.test](srv, a)
+     "badcmd": cmd_badcmd, "capture": cmd_capture, "scan": cmd_scan, "retune": cmd_retune}[a.test](srv, a)
 
 
 if __name__ == "__main__":
