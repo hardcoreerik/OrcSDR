@@ -36,7 +36,7 @@ Severity: B = blocks release for remote users, M = clearly worse than a competit
 | G8 | No remote profile (LAN or Internet) or 240 kS/s default for narrow bands; 1.44 and 0.96 MS/s suit a LAN, not a WAN | `rtl_remote_wanted_rate`, Settings | M | lossy-link runs at each profile |
 | G9 | ADS-B needs 2.048 MS/s (about 4.1 MB/s), above the Tab5 Wi-Fi ceiling of about 3.8 MB/s measured on a Pi stream | `rtl_default_sample_rate` | M | ADS-B on remote: link % and decoded messages |
 | G10 | The server's USB buffers and queue are only partly visible: no "behind real time by N seconds" display, only a percentage | status bar, Home | L | slow-link run: displayed lag vs measured |
-| G12 | Internal RAM (`dma_free`) falls with use: 25,967 B (69 s uptime) to 16,903 B (15 min, about 30 dashboard transitions); the Tab5's internal pool is nearly full, so a leak would be a boot-loop or crash risk | `RTL_HEALTH` | M (unconfirmed) | repeat dashboard switches and stream restarts and plot `dma_free`/`internal_free`; check it recovers at Home |
+| G12 | **CONFIRMED 2026-11-08 (iteration 6): internal RAM ratchets down and does not recover at Home; see the run log.** Internal RAM (`dma_free`) falls with use: 25,967 B (69 s uptime) to 16,903 B (15 min, about 30 dashboard transitions); the Tab5's internal pool is nearly full, so a leak would be a boot-loop or crash risk | `RTL_HEALTH` | M (unconfirmed) | repeat dashboard switches and stream restarts and plot `dma_free`/`internal_free`; check it recovers at Home |
 | G11 | `UI_DOC_SHOW am.radio live` (and cb, adsb, pocsag) crashes the Tab5: `Guru Meditation Error: Core 0 panic'ed (Load access fault)`, reset reason 7. Reproduced on a remote stream AND on a local V3c, so not rtl_tcp. The stack pointer is below the main task's stack bottom (SP 0x4ff2d2f0, bounds 0x4ff2d328-0x4ff314a0, about 16.7 KB): a stack overflow. Fault address resolves to `OrcConsole::printf` (`ui/main.cpp:265`, a 2048-byte `char output[]` on the stack) called from `draw_sdr_screen` (`main.cpp:7538`, the AM dashboard branch), itself reached from the serial command handler | `ui/main.cpp` 265, 7538 | L: the normal tap path does NOT crash (AM RADIO opened by `UI_TAP` 2026-11-08 and ran), so this is a bug in the serial `UI_DOC_SHOW` path only | tap AM RADIO and CB RADIO on Home; `UI_DOC_SHOW am.radio live` again after a fix |
 
 ## 3. Dashboard matrix
@@ -144,6 +144,21 @@ Corrections and confirmations to the gap list:
   transitions and many stream restarts (`internal_free` 45.5 KB at boot, 17.4 KB later); not yet known whether it recovers or leaks (G12 to measure). (b) The serial pairing
   (`authenticate`) intermittently fails with "pairing failed (device response omitted)" when several processes open the port in quick succession; the driver tool needs a fresh
   session per step as a workaround.
+
+- 2026-11-08 iteration 6: **G12 confirmed.** Three loops over 13 dashboards (fm, am, ft8, acars, adsb, lora, p25, shortwave, airband, sstv, deadair, cb, pocsag) on the remote stream,
+  `RTL_HEALTH` after each open and at Home after each loop (43 samples, Tab5 up 23 to 32 min):
+
+  | Reading | `dma_free` | `dma_min` (lowest ever) | `internal_free` |
+  |---|---|---|---|
+  | start | 14,991 B | 11,275 B | 34,099 B |
+  | after loop 1, at Home | 5,251 B | 2,607 B | 20,647 B |
+  | after loop 2, at Home | 4,539 B | 1,895 B | 20,067 B |
+  | after loop 3, at Home | 3,827 B | 1,183 B | 19,091 B |
+
+  Two effects: a one-time step when SSTV and Dead Air are first opened (`dma_free` 13.5 KB to 5.0 KB at SSTV; `internal_free` 13.7 KB at Dead Air), and a steady loss of about 700 B of
+  `dma_free` (and 600-1000 B of `internal_free`) per loop of 13 dashboard switches that is not given back at Home. Extrapolating, `dma_free` reaches zero after about five more loops, the
+  kind of exhaustion that earlier boot-looped the Tab5 (+800 B of statics). `free_heap` (PSRAM) is flat at about 6.2 MB at Home, so the leak is internal RAM only.
+  Not yet known which action leaks: a differential test (stream restarts only on remote, the same on local USB, dashboard taps with no restart) is running; result in the next entry.
 
 ## 6. Next iterations (in order)
 
