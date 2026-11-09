@@ -77,6 +77,14 @@ IQ need = what the dashboard asks the stream for locally; "remote" = what a remo
   needs a steadier reference (the first blocks may still carry the previous tuning) before these numbers are trusted.
   Server was `-b 4 -n 32`.
 
+- 2026-11-08 (evening): Tab5 back on the Pi over Wi-Fi only (the Pi's Ethernet removed; server follows the default-route address, bound to
+  192.168.1.219:1234): FM 96.1 MHz at 1.44 MS/s, `link` above 100% at start, no new dropped bytes, Pi power flag 0x0. Home showed
+  `GAIN SMART 3` and `BIAS OFF` and a clean -21 dBFS signal (the unattended Pi had been at -1 dBFS with a fixed high gain), so gain
+  routing to a remote server does work **when a local dongle is also plugged in**: the capability bits then come from the local V3c.
+  That is the G1 mismatch seen from the other side: the controls (including the bias-tee switch) describe the local dongle, not the
+  server. With no local dongle the same controls read N/A. This supports a single "active source capabilities" provider
+  (see the design question of 2026-11-08).
+
 ## 6. Next iterations (in order)
 
 1. Fix the retune detector and repeat at all rates and at `-b 2`; add a Tab5-side check of what FM seek dwell is.
