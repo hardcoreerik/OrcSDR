@@ -39,6 +39,9 @@ Severity: B = blocks release for remote users, M = clearly worse than a competit
 | G12 | **FIXED 2026-11-09 (FT8 task leak; verified on the Tab5, see the run log).** Internal RAM ratcheted down and did not recover at Home. Internal RAM (`dma_free`) falls with use: 25,967 B (69 s uptime) to 16,903 B (15 min, about 30 dashboard transitions); the Tab5's internal pool is nearly full, so a leak would be a boot-loop or crash risk | `RTL_HEALTH` | M (unconfirmed) | repeat dashboard switches and stream restarts and plot `dma_free`/`internal_free`; check it recovers at Home |
 | G11 | `UI_DOC_SHOW am.radio live` (and cb, adsb, pocsag) crashes the Tab5: `Guru Meditation Error: Core 0 panic'ed (Load access fault)`, reset reason 7. Reproduced on a remote stream AND on a local V3c, so not rtl_tcp. The stack pointer is below the main task's stack bottom (SP 0x4ff2d2f0, bounds 0x4ff2d328-0x4ff314a0, about 16.7 KB): a stack overflow. Fault address resolves to `OrcConsole::printf` (`ui/main.cpp:265`, a 2048-byte `char output[]` on the stack) called from `draw_sdr_screen` (`main.cpp:7538`, the AM dashboard branch), itself reached from the serial command handler | `ui/main.cpp` 265, 7538 | L: the normal tap path does NOT crash (AM RADIO opened by `UI_TAP` 2026-11-08 and ran), so this is a bug in the serial `UI_DOC_SHOW` path only | tap AM RADIO and CB RADIO on Home; `UI_DOC_SHOW am.radio live` again after a fix |
 
+| G13 | After its reconnect budget (8 attempts, about 60 s) the client gives up (`failed`) and stays down until the dashboard is reopened: right for a server that is wrong, wrong for an unattended remote Pi that was only briefly offline. Opportunity: after the fast attempts, keep retrying slowly (for example every 30 s) while a dashboard wants the stream | `ui/rtl_tcp_session.cpp` `run()` | M | server down for 2 minutes, then up: does the Tab5 recover on its own? |
+| G14 | Server side (Pi): `rtl_tcp` ignores SIGTERM while a client is connected, so `systemctl stop` or `restart` waited the default 90 s. Fixed on the Pi with a drop-in `TimeoutStopSec=3`. Also unexplained: after a client leaves, the server sometimes does not return to "listening..." for minutes (see run log) | Pi unit, setup guide | M | stop and restart with a client attached; busy-server and quick-reconnect tests with a clean server |
+
 ## 3. Dashboard matrix
 
 IQ need = what the dashboard asks the stream for locally; "remote" = what a remote stream gives today (by reading).
@@ -175,6 +178,16 @@ Corrections and confirmations to the gap list:
   about 28.5 KB of PSRAM and 700 B of `dma_free` lost per loop before the fix, and `dma_min` stays at 13.8 KB (it reached 1.2 KB before). One-time first-use allocations that are kept, not
   leaks (they do not repeat in loop 2): SSTV takes about 8 KB of internal RAM (`dma_free` 25.1 KB to 16.9 KB), LoRa about 7 MB of PSRAM, Dead Air about 4 MB while open (returned on exit).
   Worth a look separately: LoRa holding 7 MB after its first visit, and SSTV holding 8 KB of the scarce internal pool.
+
+- 2026-11-09 iteration 8, failure injection (layer L3) on the Pi stream:
+  F1 **server stopped mid-stream and restored**: the Tab5 noticed at once (`no data`, `socket error`), retried at t = 2, 6, 14, 29 and 44 s (the back-off 2/4/8/15/15 s) while the Pi was down, and was
+  streaming again 12.6 s after the server returned. Good: no manual step, bounded by the 15 s retry interval. The back-off budget ends the retries after about 60 s (G13).
+  Found on the way: `systemctl stop rtl-tcp` with a client connected hung for the full 90 s (`stop-sigterm`, then SIGKILL): rtl_tcp catches SIGTERM but its sender thread does not exit. The Pi
+  unit now has `TimeoutStopSec=3` (drop-in `10-fast-stop.conf`); stop-to-active after a restart is now a few seconds. The udev rule and NetworkManager hook that restart the service depended on this.
+  F2 **busy server (another client holds the only slot)**: INCONCLUSIVE. With a PC client connected (confirmed with `ss` on the Pi), starting the Tab5 produced a repeating
+  `connecting`, `streaming`, `no data` cycle every 5 s, and the PC holder was reset by the server; the server log showed "Signal caught, exiting!" on every attempt and no "listening..." for 2 min 16 s
+  (00:46:46 to 00:49:02). Earlier loopback tests by the Pi session showed a second client waiting quietly, so this contradicts them and needs a clean rerun (fresh server, one client at a time,
+  server log and `ss` captured at each step) before it is called a Tab5 or a server issue. Not fixed.
 
 ## 6. Next iterations (in order)
 
