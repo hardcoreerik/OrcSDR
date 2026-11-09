@@ -340,7 +340,22 @@ static void test_rate_adapter() {
   CHECK(climb(60) == C::up);                           // the wait is now 60
 }
 
+static void test_nominal_gain_steps() {
+  int g[40]{};
+  CHECK(nominal_gain_steps(5, 29, g, 40) == 29);        // R820T
+  CHECK(g[0] == 0 && g[28] == 496);
+  for (int i = 1; i < 29; ++i) CHECK(g[i] > g[i - 1]);  // strictly increasing
+  CHECK(nominal_gain_steps(6, 29, nullptr, 0) == 29);   // R828D: size query
+  CHECK(nominal_gain_steps(1, 14, g, 40) == 14);        // E4000
+  CHECK(g[0] == -10 && g[13] == 420);
+  CHECK(nominal_gain_steps(5, 28, g, 40) == 0);         // a variant with a different count gets no guessed table
+  CHECK(nominal_gain_steps(3, 23, g, 40) == 0);         // FC0013: unknown
+  CHECK(nominal_gain_steps(0, 1, g, 40) == 0);
+  CHECK(nominal_gain_steps(5, 29, g, 4) == 4 && g[3] == 27);  // a short buffer is filled, not overrun
+}
+
 int main() {
+  test_nominal_gain_steps();
   test_rate_adapter();
   test_command_encoding();
   test_greeting_valid_all_splits();

@@ -139,6 +139,20 @@ bool valid_host(const char* host) {
   return length > 0 && host[0] != '-' && host[0] != '.';
 }
 
+size_t nominal_gain_steps(uint32_t tuner_type_raw, uint32_t reported_count, int* out, size_t max) {
+  static const int kR820t[] = {0, 9, 14, 27, 37, 77, 87, 125, 144, 157, 166, 197, 207, 229, 254, 280, 297, 328, 338, 364, 372, 386, 402, 421, 434, 439, 445, 480, 496};
+  static const int kE4000[] = {-10, 15, 40, 65, 90, 115, 140, 165, 190, 215, 240, 290, 340, 420};
+  const int* table = nullptr;
+  size_t count = 0;
+  if (tuner_type_raw == 5 || tuner_type_raw == 6) { table = kR820t; count = sizeof(kR820t) / sizeof(kR820t[0]); }
+  else if (tuner_type_raw == 1) { table = kE4000; count = sizeof(kE4000) / sizeof(kE4000[0]); }
+  if (table == nullptr || reported_count != count) return 0;
+  if (max == 0 || out == nullptr) return count;
+  const size_t n = count < max ? count : max;
+  for (size_t i = 0; i < n; ++i) out[i] = table[i];
+  return n;
+}
+
 bool reconnect_delay_ms(const BackoffPolicy& policy, uint32_t attempt, uint32_t* delay_ms) {
   if (attempt >= policy.max_attempts) return false;
   uint64_t delay = policy.initial_ms;

@@ -363,6 +363,22 @@ bool set_agc(bool on) {
   return queue_command(Command::set_agc_mode, on ? 1u : 0u);
 }
 
+RemoteGain remote_gain() {
+  RemoteGain r;
+  {
+    Lock lock;
+    r.mode_known = g_desired.gain_mode_set;
+    r.manual = g_desired.gain_manual;
+    r.gain_known = g_desired.gain_set;
+    r.gain_tenths_db = g_desired.gain_tenths_db;
+    r.agc_known = g_desired.agc_set;
+    r.agc_on = g_desired.agc_on;
+  }
+  r.tuner_type_raw = g_stats.tuner_type_raw.load(std::memory_order_relaxed);
+  r.gain_count = g_stats.gain_count.load(std::memory_order_relaxed);
+  return r;
+}
+
 uint64_t bytes_total() { return g_stats.bytes_received.load(std::memory_order_relaxed); }
 uint32_t link_ratio_pct() { return g_stats.link_ratio_pct.load(std::memory_order_relaxed); }
 

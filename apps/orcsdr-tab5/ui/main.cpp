@@ -174,6 +174,11 @@
 #define esp_rtl_sdr_set_tuner_gain_mode orcsdr::routing::set_tuner_gain_mode
 #define esp_rtl_sdr_set_tuner_gain orcsdr::routing::set_tuner_gain
 #define esp_rtl_sdr_set_rtl_agc orcsdr::routing::set_rtl_agc
+// The readbacks follow the same rule: while a remote stream runs the UI must read what was asked of the server, not the local dongle's shadow.
+#define esp_rtl_sdr_get_tuner_gain_mode orcsdr::routing::get_tuner_gain_mode
+#define esp_rtl_sdr_get_tuner_gain orcsdr::routing::get_tuner_gain
+#define esp_rtl_sdr_get_tuner_gains orcsdr::routing::get_tuner_gains
+#define esp_rtl_sdr_get_rtl_agc orcsdr::routing::get_rtl_agc
 
 enum class SerialVerbosity : uint8_t { quiet = 0, normal = 1, debug = 2, trace = 3 };
 

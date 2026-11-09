@@ -117,6 +117,12 @@ bool valid_host(const char* host);
 // part is invalid or the host does not fit `host_size`.
 bool parse_endpoint(const char* text, char* host, size_t host_size, uint16_t* port);
 
+// Nominal manual tuner gain steps, in tenths of a dB, for the tuner type an rtl_tcp greeting reports. The greeting carries only the type and a
+// COUNT of steps, never the values, so a client that wants to offer a gain control needs the table. Known: R820T and R828D (types 5 and 6, 29 steps)
+// and E4000 (type 1, 14 steps). Returns the number of steps written (0 when the type is unknown or the reported count does not match the table, so a
+// variant is not given a wrong table). With max == 0 it only reports the count.
+size_t nominal_gain_steps(uint32_t tuner_type_raw, uint32_t reported_count, int* out, size_t max);
+
 // Bounded exponential reconnect delay.
 struct BackoffPolicy {
   uint32_t initial_ms = 500;

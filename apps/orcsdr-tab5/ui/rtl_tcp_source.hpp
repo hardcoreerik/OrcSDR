@@ -78,6 +78,20 @@ bool set_gain_manual(bool manual);
 bool set_gain_tenths_db(int32_t tenths_db);
 bool set_agc(bool on);
 
+// What the UI last asked of the server (the protocol has no readback, so this is the only truth there is) and what the greeting said about the tuner.
+// `*_known` is false until the user has changed that setting: the server then keeps its own default (tuner AGC, gain 0).
+struct RemoteGain {
+  bool mode_known = false;
+  bool manual = false;
+  bool gain_known = false;
+  int32_t gain_tenths_db = 0;
+  bool agc_known = false;
+  bool agc_on = false;
+  uint32_t tuner_type_raw = 0;
+  uint32_t gain_count = 0;
+};
+RemoteGain remote_gain();
+
 Status status();
 uint64_t bytes_total();
 
