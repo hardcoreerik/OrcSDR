@@ -91,10 +91,46 @@ IQ need = what the dashboard asks the stream for locally; "remote" = what a remo
   stream and once on the local V3c. Core dump is saved in the Tab5's flash (partition `coredump`). The addresses were mapped with
   `riscv32-esp-elf-addr2line` against `build-native-hosted3/orcsdr_tab5.elf` (the same build as the flashed one). Update the same evening: a new authenticated serial command `UI_TAP x y` (firmware, built and flashed to COM17) injects a touch through the existing virtual-tap path; tapping AM RADIO from Home opened the AM dashboard with no crash (uptime kept counting, `RTL_SCREEN_STATUS active=am`). So G11 affects only `UI_DOC_SHOW`. Not fixed.
 
+## 5a. Sweep of all 19 dashboards on a remote stream (2026-11-08, iteration 3, hands-off)
+
+Method: `python tools/tab5_ui_drive.py --port COM17 sweep --out DIR --source remote --dwell 10` (taps through Home, ALL DASHBOARDS and each tile with
+`UI_TAP`, reads `RTL_SCREEN_STATUS` and `RTL_TCP STATUS`, takes a screenshot, flags a crash if uptime goes backwards). Source: Pi 4B on Wi-Fi
+(192.168.1.219:1234, Blog `rtl_tcp` V1.4.0, `-s 240000 -n 32 -b 4`), Tab5 on Wi-Fi. Link is the Tab5's received-over-needed byte ratio.
+
+| Dashboard | Opens | Stream rate shown | Link | Tag | Notes |
+|---|---|---|---|---|---|
+| FM | yes | 1.44 MS/s | 90% | bar | first sweep read idle only because the local V3c stream was still running; fixed in the tool |
+| P25 | yes | 0.96 | 95% | bar | |
+| ADS-B | yes | **2.048** | 99% | full | streams; 0 aircraft in view, so decode not proven (antenna and location unknown) |
+| Shortwave | yes | 1.44 | 95% | bar | starts on remote since the HF fix |
+| AM | yes | 1.44 | 89% | bar | |
+| CB | yes | 0.96/1.44 | 95% | bar | |
+| LoRa | yes | 0.96 | 99% | strip | |
+| POCSAG | yes | 0.96 | 98% | strip | |
+| FT8 | yes | **1.44** (should be 0.24) | **84%, BEHIND** | strip | "CLOCK SYNCING", "LISTENING", 0 decoded |
+| ACARS | yes | 0.96 | 92% | full | **"RECEIVER PAUSED", "TUNE REQUEST PENDING", "NO RECEIVER FEED: the native decoder is not attached to a receiver yet"** |
+| Airband | yes | 0.96/1.44 | 96% | bar | |
+| Weather, Marine, Satellite | yes (Home with that band) | 0.96 | 91-96% | Home status | |
+| SSTV | yes | **0.240** | 100% | strip | uses its own low rate correctly |
+| Dead Air | yes | 0.96 | 95% | strip | |
+| RF Lab | yes | n/a | 87-89% | none | LIVE tab works on remote: peak frequency, SNR, DC offset, IQ balance read correctly (peak 96.106 MHz, SNR 39.8 dB); CONTROLS tab not yet tried |
+| 2.4 GHz Wi-Fi | yes | n/a | 91% | none | |
+| Settings | yes | n/a | 85-88% | own | |
+
+Results: 19 of 19 open on a remote stream, **no crashes**, the RTL-TCP tag is correct and unobstructed on every screen that has one. The `UI_DOC_SHOW` crash (G11)
+is not reachable by tapping.
+
+Corrections and confirmations to the gap list:
+- **G2 confirmed with evidence.** FT8 runs at 1.44 MS/s and falls behind (84%) instead of 240 kS/s; ACARS never attaches a receiver. SSTV is fine.
+- **G9 corrected.** ADS-B at 2.048 MS/s (4.1 MB/s) ran at 99% link on the Tab5's Wi-Fi for the sampled windows, so it is not ruled out by bandwidth.
+  It still needs a long run and a real decode check.
+- **G7 narrowed.** RF Lab's LIVE measurements work on remote; only hardware controls are local.
+- **G1** is visible on every dashboard that shows gain; not yet individually checked.
+
 ## 6. Next iterations (in order)
 
 1. Fix the retune detector and repeat at all rates and at `-b 2`; add a Tab5-side check of what FM seek dwell is.
-2. Run `UI_DOC_SHOW` over every dashboard on a remote stream; find out why am, cb, adsb and pocsag do not open in remote mode.
+2. DONE (see 5a): all 19 open; the earlier failure was G11, the serial `UI_DOC_SHOW` crash.
 3. Prove G1 and G2 on the Tab5 (open FT8 and ACARS manually, read `RTL_START` and the Pi's `set sample rate` log).
 4. With the owner's go-ahead: fix G4 (back-off), then G1/G2/G3 behind the existing source routing, one dashboard family at a time.
 5. Failure injection (L3): kill the server, drop the dongle, Wi-Fi off and on, wrong host, busy server; record behaviour and recovery time.
