@@ -238,7 +238,7 @@ static SessionConfig fast_config(uint16_t port) {
   c.connect_timeout_ms = 1000;
   c.greeting_timeout_ms = 400;
   c.stall_timeout_ms = 1500;
-  c.backoff = BackoffPolicy{10, 40, 3};
+  c.backoff = BackoffPolicy{10, 40, 3, 0};   // slow_ms 0: give up, so the tests that expect a final state end
   return c;
 }
 
@@ -330,7 +330,8 @@ static void test_silent_and_truncated_servers() {
     Stats stats;
     const auto started = std::chrono::steady_clock::now();
     CHECK(run(fast_config(silent.port()), env, stats) == State::failed);
-    CHECK(env.saw_reason(EndReason::greeting_failed));
+    CHECK(env.saw_reason(EndReason::no_greeting));   // silence is reported as such, not as "not an rtl_tcp server"
+    CHECK(!env.saw_reason(EndReason::greeting_failed));
     CHECK(std::chrono::steady_clock::now() - started < std::chrono::seconds(10));
   }
   {
@@ -392,6 +393,27 @@ static void test_nothing_listening() {
   CHECK(env.saw_reason(EndReason::connect_failed));
   CHECK(stats.connections.load() == 0);
   CHECK(stats.reconnects.load() == 3);  // the back-off is bounded
+}
+
+// G13: with a slow interval the client keeps trying after the fast attempts, and connects as soon as the server is back.
+static void test_keeps_retrying_and_recovers() {
+  uint16_t port = 0;
+  {
+    FakeServer probe([](int, int, FakeServer&) {}, 0);
+    port = probe.port();
+  }  // closed: refuses connections
+  TestEnv env;
+  Stats stats;
+  auto cfg = fast_config(port);
+  cfg.backoff = BackoffPolicy{10, 20, 2, 30};   // two fast attempts, then one every 30 ms
+  State final_state = State::idle;
+  std::thread session([&] { final_state = run(cfg, env, stats); });
+  const bool past_fast = wait_for([&] { return stats.reconnects.load() >= 8; }, 8000);   // far more than max_attempts
+  CHECK(past_fast);
+  CHECK(!env.saw_state(State::failed));
+  env.stop = true;
+  session.join();
+  CHECK(final_state == State::idle);   // ended by stop, never by giving up
 }
 
 static void test_reconnect_has_no_stale_samples() {
@@ -527,6 +549,7 @@ int main() {
   test_wrong_service_is_refused();
   test_silent_and_truncated_servers();
   test_nothing_listening();
+  test_keeps_retrying_and_recovers();
   test_greeting_without_samples_keeps_backing_off();
   test_reconnect_has_no_stale_samples();
   test_full_ring_drops_are_counted_and_aligned();

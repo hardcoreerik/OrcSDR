@@ -128,8 +128,11 @@ struct BackoffPolicy {
   uint32_t initial_ms = 500;
   uint32_t max_ms = 15000;
   uint32_t max_attempts = 8;
+  // After the fast attempts are spent, keep trying at this slow interval instead of giving up (0 = give up, as before). A server that
+  // is restarted, moved or briefly off the network then reconnects by itself, as SDRangel and Gqrx do; one try every 30 s costs nothing.
+  uint32_t slow_ms = 30000;
 };
-// `attempt` counts from 0. Returns false once the attempts are spent.
+// `attempt` counts from 0. Returns false once the attempts are spent and there is no slow interval.
 bool reconnect_delay_ms(const BackoffPolicy& policy, uint32_t attempt, uint32_t* delay_ms);
 
 // Steps the sample rate down when the link cannot carry it, so a weak Wi-Fi link gives live audio

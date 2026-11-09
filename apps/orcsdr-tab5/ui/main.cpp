@@ -15488,6 +15488,10 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       break;
     case orcsdr::settings::ActionKind::receiver_source_changed:
     case orcsdr::settings::ActionKind::remote_server_changed:
+    case orcsdr::settings::ActionKind::rtl_rate_cap_changed:
+    case orcsdr::settings::ActionKind::rtl_ppm_changed:
+    case orcsdr::settings::ActionKind::rtl_direct_changed:
+    case orcsdr::settings::ActionKind::rtl_offset_changed:
       orcsdr::settings_remote::handle(action);
       break;
     case orcsdr::settings::ActionKind::clock_offset_changed:
@@ -18397,6 +18401,7 @@ constexpr UiDocScreen kUiDocScreens[] = {
     {"settings.data-maps", "demo"},
     {"settings.display-audio", "demo"},
     {"settings.radio-defaults", "demo"},
+    {"settings.rtl-tcp", "demo"},
     {"settings.storage", "demo"},
     {"settings.companion", "demo"},
     {"settings.system", "demo"},
@@ -18487,7 +18492,7 @@ size_t ui_doc_prefix_count(const char* prefix) {
 bool ui_doc_self_check() {
   if (static_cast<uint8_t>(orcsdr::fm::View::count) != 5 ||
       static_cast<uint8_t>(orcsdr::p25::View::count) != 5 ||
-      static_cast<uint8_t>(orcsdr::settings::Section::count) != 9 ||
+      static_cast<uint8_t>(orcsdr::settings::Section::count) != 10 ||
       ui_doc_prefix_count("fm.") != static_cast<uint8_t>(orcsdr::fm::View::count) ||
       ui_doc_prefix_count("p25.") != static_cast<uint8_t>(orcsdr::p25::View::count) ||
       ui_doc_prefix_count("settings.") !=
@@ -18676,7 +18681,7 @@ bool ui_doc_view_for_suffix(const char* suffix, orcsdr::p25::View* view) {
   ui_doc_leave_surfaces();
     // Same order as orcsdr::settings::Section.
     static constexpr const char* names[] = {"connectivity", "firmware-updates",
-        "location-adsb", "data-maps", "display-audio", "radio-defaults", "storage",
+        "location-adsb", "data-maps", "display-audio", "radio-defaults", "rtl-tcp", "storage",
         "companion", "system"};
     static_assert(std::size(names) ==
                   static_cast<size_t>(orcsdr::settings::Section::count));

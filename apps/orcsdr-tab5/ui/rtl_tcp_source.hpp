@@ -92,6 +92,25 @@ struct RemoteGain {
 };
 RemoteGain remote_gain();
 
+// User settings for the remote receiver (the Settings > RTL_TCP page). All are saved. The rate cap and the offset/direct/PPM values are
+// sent to the server on every (re)connect once the user has set them; until then the server keeps its own defaults.
+// Rate cap: 0 = adapt from the dashboard's own rate (up to 1.44 MS/s), 1 = never above 0.96 MS/s, 2 = 0.24 MS/s only.
+struct Tuning {
+  uint8_t rate_cap = 0;
+  bool ppm_set = false;
+  int32_t ppm = 0;
+  bool direct_set = false;
+  uint8_t direct_mode = 0;   // 0 off, 1 I branch, 2 Q branch
+  bool offset_set = false;
+  bool offset_on = false;
+};
+Tuning tuning();
+bool set_rate_cap(uint8_t cap);              // takes effect on the next start
+bool set_ppm(int32_t ppm);                   // -1000..1000; live when streaming
+bool set_direct_sampling(uint8_t mode);      // 0..2; live when streaming
+bool set_offset_tuning(bool on);             // live when streaming
+const char* rate_cap_name(uint8_t cap);
+
 Status status();
 uint64_t bytes_total();
 

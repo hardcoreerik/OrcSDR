@@ -79,7 +79,8 @@ class AppEnv final : public rtl_tcp::Env {
   bool stop_requested() override { return g_stop.load(std::memory_order_acquire); }
   void on_state(State state, EndReason reason) override {
     g_state.store(static_cast<uint8_t>(state), std::memory_order_release);
-    if (reason != EndReason::none) g_reason.store(static_cast<uint8_t>(reason), std::memory_order_release);
+    // A stop request is not a cause: when a start gives up after its wait, the reason worth showing is the one that made it fail (busy, refused, ...).
+    if (reason != EndReason::none && reason != EndReason::stopped) g_reason.store(static_cast<uint8_t>(reason), std::memory_order_release);
     // State changes are rare (connect, stream, reconnect), so this is cheap to keep.
     ESP_LOGI("rtl_tcp", "RTL_TCP_STATE state=%s reason=%s errno=%d bytes=%llu",
              rtl_tcp::state_name(state), rtl_tcp::end_reason_name(reason),
@@ -221,12 +222,27 @@ bool queue_command(Command command, uint32_t parameter) {
   return true;
 }
 
+uint8_t g_rate_cap = 0;   // see Tuning::rate_cap
+
+// The sample rate a stream may ask for under the user's cap. The adapter ladder works on whatever it is given, so the cap is applied first.
+uint32_t capped(uint32_t wanted_sps) {
+  const uint32_t limit = g_rate_cap == 1 ? 960000u : g_rate_cap == 2 ? 240000u : 0u;
+  return (limit != 0 && wanted_sps > limit) ? limit : wanted_sps;
+}
+
 void save_settings() {
   NvsStore store;
   if (!store.begin(kNvsNamespace)) return;
   store.put_u8("mode", static_cast<uint8_t>(g_mode));
   store.put_string("host", g_config.host);
   store.put_u16("port", g_config.port);
+  store.put_u8("cap", g_rate_cap);
+  store.put_u8("ppm_set", g_desired.ppm_set ? 1 : 0);
+  store.put_i32("ppm", g_desired.ppm);
+  store.put_u8("dir_set", g_desired.direct_set ? 1 : 0);
+  store.put_u8("dir", g_desired.direct_mode);
+  store.put_u8("off_set", g_desired.offset_set ? 1 : 0);
+  store.put_u8("off", g_desired.offset_on ? 1 : 0);
   store.end();
 }
 
@@ -246,6 +262,16 @@ void begin(const IqSink& sink) {
     if (rtl_tcp::valid_host(saved.c_str())) strlcpy(g_config.host, saved.c_str(), sizeof(g_config.host));
     g_config.port = store.get_u16("port", rtl_tcp::kDefaultPort);
     if (g_config.port == 0) g_config.port = rtl_tcp::kDefaultPort;
+    g_rate_cap = store.get_u8("cap", 0);
+    if (g_rate_cap > 2) g_rate_cap = 0;
+    g_desired.ppm_set = store.get_u8("ppm_set", 0) != 0;
+    g_desired.ppm = store.get_i32("ppm", 0);
+    if (g_desired.ppm < -1000 || g_desired.ppm > 1000) g_desired.ppm_set = false, g_desired.ppm = 0;
+    g_desired.direct_set = store.get_u8("dir_set", 0) != 0;
+    g_desired.direct_mode = store.get_u8("dir", 0);
+    if (g_desired.direct_mode > 2) g_desired.direct_set = false, g_desired.direct_mode = 0;
+    g_desired.offset_set = store.get_u8("off_set", 0) != 0;
+    g_desired.offset_on = store.get_u8("off", 0) != 0;
     store.end();
   }
   xTaskCreatePinnedToCoreWithCaps(worker, "rtl_tcp", kTaskStackBytes, nullptr, kTaskPriority,
@@ -261,10 +287,10 @@ bool set_mode(source::Mode value) {
   return true;
 }
 
-uint32_t adapted_rate(uint32_t wanted_sps) { return g_rate_adapter.rate(wanted_sps); }
+uint32_t adapted_rate(uint32_t wanted_sps) { return g_rate_adapter.rate(capped(wanted_sps)); }
 
 rtl_tcp::RateAdapter::Change note_link_and_adapt(uint32_t link_pct, uint32_t wanted_sps, uint32_t floor_sps) {
-  return g_rate_adapter.note(link_pct, wanted_sps, floor_sps);
+  return g_rate_adapter.note(link_pct, capped(wanted_sps), floor_sps);
 }
 
 bool configured() { return rtl_tcp::valid_host(g_config.host) && g_config.port != 0; }
@@ -361,6 +387,63 @@ bool set_agc(bool on) {
     g_desired.agc_on = on;
   }
   return queue_command(Command::set_agc_mode, on ? 1u : 0u);
+}
+
+Tuning tuning() {
+  Tuning t;
+  Lock lock;
+  t.rate_cap = g_rate_cap;
+  t.ppm_set = g_desired.ppm_set;
+  t.ppm = g_desired.ppm;
+  t.direct_set = g_desired.direct_set;
+  t.direct_mode = g_desired.direct_mode;
+  t.offset_set = g_desired.offset_set;
+  t.offset_on = g_desired.offset_on;
+  return t;
+}
+
+const char* rate_cap_name(uint8_t cap) {
+  return cap == 1 ? "MAX 0.96 MS/s" : cap == 2 ? "0.24 MS/s ONLY" : "AUTO (UP TO 1.44)";
+}
+
+bool set_rate_cap(uint8_t cap) {
+  if (cap > 2) return false;
+  g_rate_cap = cap;
+  g_rate_adapter.reset();
+  { Lock lock; save_settings(); }
+  return true;
+}
+
+bool set_ppm(int32_t ppm) {
+  if (ppm < -1000 || ppm > 1000) return false;
+  {
+    Lock lock;
+    g_desired.ppm_set = true;
+    g_desired.ppm = ppm;
+    save_settings();
+  }
+  return !running() || queue_command(Command::set_freq_correction, rtl_tcp::parameter_signed(ppm));
+}
+
+bool set_direct_sampling(uint8_t mode) {
+  if (mode > 2) return false;
+  {
+    Lock lock;
+    g_desired.direct_set = true;
+    g_desired.direct_mode = mode;
+    save_settings();
+  }
+  return !running() || queue_command(Command::set_direct_sampling, mode);
+}
+
+bool set_offset_tuning(bool on) {
+  {
+    Lock lock;
+    g_desired.offset_set = true;
+    g_desired.offset_on = on;
+    save_settings();
+  }
+  return !running() || queue_command(Command::set_offset_tuning, on ? 1u : 0u);
 }
 
 RemoteGain remote_gain() {
@@ -466,8 +549,24 @@ bool handle_command(const char* line, char* reply, size_t reply_size) {
                     "RTL_TCP HOST error=need an IPv4 address or host name, a port 1-65535, and no active stream");
     else
       std::snprintf(reply, reply_size, "RTL_TCP HOST server=%s:%u saved=1", host(), port());
+  } else if (!std::strcmp(verb, "RATECAP")) {
+    if (arg1[0] && set_rate_cap(static_cast<uint8_t>(std::strtoul(arg1, nullptr, 10))))
+      std::snprintf(reply, reply_size, "RTL_TCP RATECAP cap=%u (%s) saved=1", g_rate_cap, rate_cap_name(g_rate_cap));
+    else
+      std::snprintf(reply, reply_size, "RTL_TCP RATECAP error=use 0 (auto), 1 (max 0.96 MS/s) or 2 (0.24 MS/s)");
+  } else if (!std::strcmp(verb, "PPM")) {
+    const long value = std::strtol(arg1, nullptr, 10);
+    if (arg1[0] && set_ppm(static_cast<int32_t>(value))) std::snprintf(reply, reply_size, "RTL_TCP PPM ppm=%ld saved=1", value);
+    else std::snprintf(reply, reply_size, "RTL_TCP PPM error=use -1000..1000");
+  } else if (!std::strcmp(verb, "DIRECT")) {
+    const unsigned long value = std::strtoul(arg1, nullptr, 10);
+    if (arg1[0] && set_direct_sampling(static_cast<uint8_t>(value))) std::snprintf(reply, reply_size, "RTL_TCP DIRECT mode=%lu saved=1", value);
+    else std::snprintf(reply, reply_size, "RTL_TCP DIRECT error=use 0 (off), 1 (I) or 2 (Q)");
+  } else if (!std::strcmp(verb, "OFFSET")) {
+    if (arg1[0] && set_offset_tuning(std::strtoul(arg1, nullptr, 10) != 0)) std::snprintf(reply, reply_size, "RTL_TCP OFFSET on=%s saved=1", std::strtoul(arg1, nullptr, 10) ? "1" : "0");
+    else std::snprintf(reply, reply_size, "RTL_TCP OFFSET error=use 0 or 1");
   } else {
-    std::snprintf(reply, reply_size, "RTL_TCP error=commands are STATUS, SOURCE auto|usb|remote, HOST <ip|name> [port]");
+    std::snprintf(reply, reply_size, "RTL_TCP error=commands are STATUS, SOURCE auto|usb|remote, HOST <ip|name> [port], RATECAP 0-2, PPM n, DIRECT 0-2, OFFSET 0|1");
   }
   return true;
 }

@@ -142,6 +142,8 @@ bool send_desired(int fd, const Desired& d, Env& env) {
   if (d.offset_set &&
       !send_command(fd, Command::set_offset_tuning, d.offset_on ? 1u : 0u, env))
     return false;
+  if (d.direct_set && !send_command(fd, Command::set_direct_sampling, d.direct_mode, env))
+    return false;
   return true;
 }
 
@@ -165,6 +167,7 @@ const char* end_reason_name(EndReason reason) {
     case EndReason::closed_by_peer: return "closed by server";
     case EndReason::stalled: return "no data";
     case EndReason::socket_error: return "socket error";
+    case EndReason::no_greeting: return "server busy or silent";
     default: return "none";
   }
 }
@@ -181,6 +184,7 @@ EndReason run_connection(const SessionConfig& config, Env& env, Stats& stats) {
   GreetingParser parser;
   uint8_t lead[64];
   size_t lead_length = 0;
+  size_t greeting_bytes = 0;
   const uint32_t greeting_started = env.now_ms();
   while (parser.status() == GreetingStatus::need_more) {
     if (env.stop_requested()) {
@@ -189,11 +193,13 @@ EndReason run_connection(const SessionConfig& config, Env& env, Stats& stats) {
     }
     if (env.now_ms() - greeting_started >= config.greeting_timeout_ms) {
       close(fd);
-      return EndReason::greeting_failed;
+      // Nothing at all is not the same as something wrong: a second client of a one-client rtl_tcp waits in silence, and so does a wedged dongle.
+      return greeting_bytes == 0 ? EndReason::no_greeting : EndReason::greeting_failed;
     }
     uint8_t chunk[sizeof(lead)];
     const ssize_t n = recv(fd, chunk, sizeof(chunk), 0);
     if (n > 0) {
+      greeting_bytes += static_cast<size_t>(n);
       size_t used = 0;
       parser.feed(chunk, static_cast<size_t>(n), &used);
       if (parser.status() == GreetingStatus::ok) {

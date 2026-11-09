@@ -26,12 +26,14 @@ constexpr uint16_t kMuted = 0x9cf3;
 constexpr int kHeaderH = 100;
 constexpr int kRailW = 286;
 constexpr int kRailY = 106;
-constexpr int kRailRowH = 64;
+constexpr int kRailRowH = 62;
+constexpr int kRailVisible = 8;                       // page selector rows on screen; the rest scroll under the UP / DOWN buttons
+constexpr int kRailArrowY = kRailY + kRailVisible * kRailRowH + 6;
 constexpr uint8_t kSettingsMinTextSize = 2;
 constexpr uint16_t kTimeouts[] = {0, 30, 60, 120, 300};
 constexpr const char* kLabels[] = {
     "CONNECTIVITY", "FIRMWARE & UPDATES", "RECEIVER LOCATION", "DATA & MAPS", "DISPLAY & AUDIO",
-    "RADIO DEFAULTS", "STORAGE", "ACCESSORIES & COMPANION", "SYSTEM"};
+    "RADIO DEFAULTS", "RTL_TCP", "STORAGE", "ACCESSORIES & COMPANION", "SYSTEM"};
 
 static_assert(static_cast<uint8_t>(Section::count) == std::size(kLabels));
 
@@ -40,6 +42,7 @@ enum class WifiEdit : uint8_t { none, ssid, password };
 
 EXT_RAM_BSS_ATTR State g_state;
 Section g_section = Section::connectivity;
+int g_rail_top = 0;                                   // first page-selector row shown
 EditField g_edit = EditField::none;
 bool g_active = false;
 bool g_latitude_set = false;
@@ -118,10 +121,20 @@ void draw_header() {
   audio_header::draw_settings_button();
 }
 
+void ensure_rail_visible() {
+  const int selected = static_cast<int>(g_section);
+  const int count = static_cast<int>(Section::count);
+  if (selected < g_rail_top) g_rail_top = selected;
+  if (selected >= g_rail_top + kRailVisible) g_rail_top = selected - kRailVisible + 1;
+  if (g_rail_top > count - kRailVisible) g_rail_top = count - kRailVisible;
+  if (g_rail_top < 0) g_rail_top = 0;
+}
+
 void draw_rail() {
   M5.Display.fillRect(0, kHeaderH, kRailW, 720 - kHeaderH, TFT_BLACK);
-  for (uint8_t i = 0; i < static_cast<uint8_t>(Section::count); ++i) {
-    const int y = kRailY + i * kRailRowH;
+  for (uint8_t row = 0; row < kRailVisible && g_rail_top + row < static_cast<int>(Section::count); ++row) {
+    const uint8_t i = static_cast<uint8_t>(g_rail_top + row);
+    const int y = kRailY + row * kRailRowH;
     const bool selected = static_cast<uint8_t>(g_section) == i;
     const uint16_t fill = selected ? TFT_DARKCYAN : 0x1082;
     M5.Display.fillRoundRect(12, y, kRailW - 24, kRailRowH - 8, 7, fill);
@@ -129,6 +142,11 @@ void draw_rail() {
     M5.Display.setTextSize(2);
     M5.Display.setTextColor(selected ? TFT_WHITE : kMuted, fill);
     M5.Display.drawString(kLabels[i], 30, y + (kRailRowH - 8) / 2);
+  }
+  if (static_cast<int>(Section::count) > kRailVisible) {   // more pages than rows: scroll buttons
+    button("UP", 12, kRailArrowY, 124, 46, g_rail_top > 0 ? TFT_DARKCYAN : 0x1082);
+    button("DOWN", 148, kRailArrowY, 124, 46,
+           g_rail_top + kRailVisible < static_cast<int>(Section::count) ? TFT_DARKCYAN : 0x1082);
   }
 }
 
@@ -392,17 +410,78 @@ void draw_radio_defaults() {
     value_row("GAIN / BIAS-TEE", "HOME, AM, FM / RF LAB", 425, kMuted);
     button("TOGGLE AUTO-START", 330, 500, 260, 50, TFT_DARKCYAN);
     button("TOGGLE GRAPHICS", 620, 500, 240, 50, TFT_DARKCYAN);
-    // Receiver source: the local USB dongle, a remote rtl_tcp server, or automatic.
-    static const char* const kSourceNames[] = {"AUTOMATIC", "LOCAL USB", "REMOTE RTL_TCP"};
-    text("RECEIVER SOURCE", 330, 600, kMuted, 2);
-    text(kSourceNames[g_state.receiver_source < 3 ? g_state.receiver_source : 0], 900, 600,
-         TFT_WHITE, 2, middle_right);
-    button("CHANGE", 930, 575, 288, 50, TFT_DARKCYAN);
-    text("REMOTE SERVER", 330, 655, kMuted, 2);
-    text(g_state.remote_server[0] ? g_state.remote_server : "NOT SET", 900, 655,
-         g_state.remote_server[0] ? TFT_WHITE : kMuted, 2, middle_right);
-    button("EDIT", 930, 630, 288, 50, TFT_DARKCYAN);
-    if (g_state.remote_status[0]) text(g_state.remote_status, 330, 698, kGreen, 2);
+    text("RECEIVER SOURCE, REMOTE SERVER AND RATE ARE ON THE RTL_TCP PAGE", 330, 600, kMuted, 2);
+    button("OPEN RTL_TCP SETTINGS", 330, 625, 420, 50, TFT_DARKCYAN);
+    if (g_state.remote_status[0]) text(g_state.remote_status, 780, 650, kGreen, 2);
+  }
+}
+
+// ---- RTL_TCP page -------------------------------------------------------------------------------------------------
+// Everything a person sets for a remote rtl_tcp receiver, in one place. Rows at kRtRow0 + n * kRtRowH; the buttons share a column.
+constexpr int kRtRow0 = 180;
+constexpr int kRtRowH = 54;
+int rt_y(int row) { return kRtRow0 + row * kRtRowH; }
+
+void rt_row(const char* label, const char* value, int row, uint16_t color = TFT_WHITE) {
+  text(label, 330, rt_y(row), kMuted, 2);
+  text(value, 900, rt_y(row), color, 2, middle_right);
+}
+
+void draw_rtl_tcp() {
+  text("RTL_TCP", 330, 115, kBlue, 3);
+  static const char* const kSourceNames[] = {"AUTOMATIC", "LOCAL USB", "REMOTE RTL_TCP"};
+  static const char* const kCapNames[] = {"AUTO (UP TO 1.44 MS/s)", "MAX 0.96 MS/s", "0.24 MS/s ONLY"};
+  static const char* const kDirectNames[] = {"OFF", "I BRANCH", "Q BRANCH"};
+  char value[64];
+
+  rt_row("RECEIVER SOURCE", kSourceNames[g_state.receiver_source < 3 ? g_state.receiver_source : 0], 0);
+  button("CHANGE", 930, rt_y(0) - 23, 288, 46, TFT_DARKCYAN);
+
+  rt_row("SERVER", g_state.remote_server[0] ? g_state.remote_server : "NOT SET", 1,
+         g_state.remote_server[0] ? TFT_WHITE : kMuted);
+  button("EDIT", 930, rt_y(1) - 23, 288, 46, TFT_DARKCYAN);
+
+  rt_row("SAMPLE RATE", kCapNames[g_state.rt_rate_cap < 3 ? g_state.rt_rate_cap : 0], 2);
+  button("CHANGE", 930, rt_y(2) - 23, 288, 46, TFT_DARKCYAN);
+
+  if (g_state.rt_ppm_set) snprintf(value, sizeof(value), "%+d PPM", static_cast<int>(g_state.rt_ppm));
+  else snprintf(value, sizeof(value), "SERVER DEFAULT");
+  rt_row("FREQUENCY CORRECTION", value, 3, g_state.rt_ppm_set ? TFT_WHITE : kMuted);
+  button("-10", 930, rt_y(3) - 23, 69, 46, TFT_DARKCYAN);
+  button("-1", 1003, rt_y(3) - 23, 69, 46, TFT_DARKCYAN);
+  button("+1", 1076, rt_y(3) - 23, 69, 46, TFT_DARKCYAN);
+  button("+10", 1149, rt_y(3) - 23, 69, 46, TFT_DARKCYAN);
+
+  rt_row("DIRECT SAMPLING", g_state.rt_direct_set ? kDirectNames[g_state.rt_direct < 3 ? g_state.rt_direct : 0] : "SERVER DEFAULT", 4,
+         g_state.rt_direct_set ? TFT_WHITE : kMuted);
+  button("CHANGE", 930, rt_y(4) - 23, 288, 46, TFT_DARKCYAN);
+
+  rt_row("OFFSET TUNING", g_state.rt_offset_set ? (g_state.rt_offset_on ? "ON" : "OFF") : "SERVER DEFAULT", 5,
+         g_state.rt_offset_set ? TFT_WHITE : kMuted);
+  button("TOGGLE", 930, rt_y(5) - 23, 288, 46, TFT_DARKCYAN);
+
+  text("BIAS TEE", 330, rt_y(6), kMuted, 2);
+  text("NEVER SENT TO A REMOTE SERVER", 1218, rt_y(6), kMuted, 2, middle_right);   // powering an antenna at the far end is a decision made there
+
+  M5.Display.drawFastHLine(330, rt_y(6) + 28, 888, 0x2945);
+  const bool live = g_state.rt_state[0] != '\0';
+  if (live && g_state.rt_link_pct > 0) snprintf(value, sizeof(value), "%s, LINK %u%%", g_state.rt_state, static_cast<unsigned>(g_state.rt_link_pct));
+  else snprintf(value, sizeof(value), "%s", live ? g_state.rt_state : "NOT RUNNING");
+  text("CONNECTION", 330, 570, kMuted, 2);
+  text(value, 1218, 570, live && g_state.rt_link_pct >= 85 ? kGreen : TFT_WHITE, 2, middle_right);
+  if (g_state.rt_tuner[0])
+    snprintf(value, sizeof(value), "%s, %u GAIN STEPS, %.2f MS/s", g_state.rt_tuner,
+             static_cast<unsigned>(g_state.rt_gain_steps), g_state.rt_rate_sps / 1000000.0);
+  else snprintf(value, sizeof(value), "NO SERVER GREETING YET");
+  text("SERVER REPORTS", 330, 606, kMuted, 2);
+  text(value, 1218, 606, TFT_WHITE, 2, middle_right);
+  snprintf(value, sizeof(value), "%.1f GB IN, %.1f%% LOST, %u RECONNECTS", g_state.rt_received_mb / 1000.0,
+           g_state.rt_lost_permille / 10.0, static_cast<unsigned>(g_state.rt_reconnects));
+  text("TRAFFIC", 330, 642, kMuted, 2);
+  text(value, 1218, 642, TFT_WHITE, 2, middle_right);
+  if (g_state.rt_reason[0]) {
+    snprintf(value, sizeof(value), "LAST: %s", g_state.rt_reason);
+    text(value, 330, 678, TFT_ORANGE, 2);
   }
 }
 
@@ -644,6 +723,7 @@ void draw_content() {
     case Section::data_maps: draw_data_maps(); break;
     case Section::display_audio: draw_display_audio(); break;
     case Section::radio_defaults: draw_radio_defaults(); break;
+    case Section::rtl_tcp: draw_rtl_tcp(); break;
     case Section::storage: draw_storage(); break;
     case Section::companion: draw_companion(); break;
     case Section::system: draw_system(); break;
@@ -868,6 +948,7 @@ void draw() {
   M5.Display.setFont(nullptr);
   M5.Display.setTextSize(1);
   M5.Display.fillScreen(kBg);
+  ensure_rail_visible();   // opening on a page that is below the fold scrolls the selector to it
   draw_header();
   draw_rail();
   draw_content();
@@ -961,6 +1042,17 @@ void update(const State& state_value) {
       (g_state.receiver_source != state_value.receiver_source ||
        strcmp(g_state.remote_server, state_value.remote_server) != 0 ||
        strcmp(g_state.remote_status, state_value.remote_status) != 0);
+  const bool rtl_tcp_changed = g_section == Section::rtl_tcp &&
+      (g_state.receiver_source != state_value.receiver_source ||
+       strcmp(g_state.remote_server, state_value.remote_server) != 0 ||
+       g_state.rt_rate_cap != state_value.rt_rate_cap || g_state.rt_ppm != state_value.rt_ppm ||
+       g_state.rt_ppm_set != state_value.rt_ppm_set || g_state.rt_direct != state_value.rt_direct ||
+       g_state.rt_direct_set != state_value.rt_direct_set || g_state.rt_offset_set != state_value.rt_offset_set ||
+       g_state.rt_offset_on != state_value.rt_offset_on || strcmp(g_state.rt_state, state_value.rt_state) != 0 ||
+       strcmp(g_state.rt_reason, state_value.rt_reason) != 0 || g_state.rt_link_pct != state_value.rt_link_pct ||
+       g_state.rt_rate_sps != state_value.rt_rate_sps || strcmp(g_state.rt_tuner, state_value.rt_tuner) != 0 ||
+       g_state.rt_gain_steps != state_value.rt_gain_steps || g_state.rt_received_mb != state_value.rt_received_mb ||
+       g_state.rt_lost_permille != state_value.rt_lost_permille || g_state.rt_reconnects != state_value.rt_reconnects);
   if (catalog_inventory_changed) g_catalog_cursor.catalog_changed(state_value.catalog_packs);
   g_state = state_value;
   if(g_edit==EditField::none&&g_state.location_configured)g_latitude_set=g_longitude_set=true;
@@ -986,7 +1078,7 @@ void update(const State& state_value) {
     draw_content();
   if (companion_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none)
     draw_content();
-  if (remote_changed && g_edit == EditField::none && g_wifi_edit == WifiEdit::none && !g_location_edit)
+  if ((remote_changed || rtl_tcp_changed) && g_edit == EditField::none && g_wifi_edit == WifiEdit::none && !g_location_edit)
     draw_content();
 }
 
@@ -1032,8 +1124,15 @@ Action handle_touch(int32_t x, int32_t y) {
     return {ActionKind::close, 0};
   }
   if (x < kRailW && y >= kRailY) {
-    const int index = (y - kRailY) / kRailRowH;
-    if (index >= 0 && index < static_cast<int>(Section::count)) {
+    if (static_cast<int>(Section::count) > kRailVisible && y >= kRailArrowY) {
+      const int before = g_rail_top;
+      if (x < 142) g_rail_top = std::max(0, g_rail_top - 1);
+      else g_rail_top = std::min(static_cast<int>(Section::count) - kRailVisible, g_rail_top + 1);
+      if (g_rail_top != before) draw_rail();
+      return {};
+    }
+    const int index = g_rail_top + (y - kRailY) / kRailRowH;
+    if ((y - kRailY) / kRailRowH < kRailVisible && index >= 0 && index < static_cast<int>(Section::count)) {
       g_section = static_cast<Section>(index);
       draw_rail();
       draw_content();
@@ -1200,18 +1299,52 @@ Action handle_touch(int32_t x, int32_t y) {
       draw_content();
       return {ActionKind::graphics_changed, g_state.graphics_default};
     }
-    if (hit(x, y, 930, 575, 288, 50)) {
+    if (hit(x, y, 330, 625, 420, 50)) {
+      g_section = Section::rtl_tcp;
+      ensure_rail_visible();
+      draw_rail();
+      draw_content();
+      return {};
+    }
+  } else if (g_section == Section::rtl_tcp) {
+    if (hit(x, y, 930, rt_y(0) - 23, 288, 46)) {
       g_state.receiver_source = static_cast<uint8_t>((g_state.receiver_source + 1) % 3);
       draw_content();
       return {ActionKind::receiver_source_changed, g_state.receiver_source};
     }
-    if (hit(x, y, 930, 630, 288, 50)) {
+    if (hit(x, y, 930, rt_y(1) - 23, 288, 46)) {
       g_location_edit = true;   // the shared full-width text editor, aimed at the server
       g_remote_target = true;
       text_editor::begin("REMOTE RTL_TCP SERVER", g_state.remote_server,
                          sizeof(g_state.remote_server) - 1, false, "SAVE");
       text_editor::draw();
       return {};
+    }
+    if (hit(x, y, 930, rt_y(2) - 23, 288, 46)) {
+      g_state.rt_rate_cap = static_cast<uint8_t>((g_state.rt_rate_cap + 1) % 3);
+      draw_content();
+      return {ActionKind::rtl_rate_cap_changed, g_state.rt_rate_cap};
+    }
+    static const int kPpmStep[] = {-10, -1, 1, 10};
+    for (int b = 0; b < 4; ++b) {
+      if (!hit(x, y, 930 + b * 73, rt_y(3) - 23, 69, 46)) continue;
+      const int next = std::clamp<int>((g_state.rt_ppm_set ? g_state.rt_ppm : 0) + kPpmStep[b], -1000, 1000);
+      g_state.rt_ppm = static_cast<int16_t>(next);
+      g_state.rt_ppm_set = true;
+      draw_content();
+      return {ActionKind::rtl_ppm_changed, next};
+    }
+    if (hit(x, y, 930, rt_y(4) - 23, 288, 46)) {
+      g_state.rt_direct = static_cast<uint8_t>(g_state.rt_direct_set ? (g_state.rt_direct + 1) % 3 : 1);
+      g_state.rt_direct_set = true;
+      draw_content();
+      return {ActionKind::rtl_direct_changed, g_state.rt_direct};
+    }
+    if (hit(x, y, 930, rt_y(5) - 23, 288, 46)) {
+      g_state.rt_offset_on = g_state.rt_offset_set ? !g_state.rt_offset_on : true;
+      g_state.rt_offset_set = true;
+      draw_content();
+      return {ActionKind::rtl_offset_changed, g_state.rt_offset_on ? 1 : 0};
     }
   } else if (g_section == Section::companion) {
     if (hit(x, y, 960, 150, 170, 48))

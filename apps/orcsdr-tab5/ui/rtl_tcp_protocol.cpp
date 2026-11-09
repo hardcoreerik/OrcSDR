@@ -154,7 +154,11 @@ size_t nominal_gain_steps(uint32_t tuner_type_raw, uint32_t reported_count, int*
 }
 
 bool reconnect_delay_ms(const BackoffPolicy& policy, uint32_t attempt, uint32_t* delay_ms) {
-  if (attempt >= policy.max_attempts) return false;
+  if (attempt >= policy.max_attempts) {
+    if (policy.slow_ms == 0) return false;
+    if (delay_ms != nullptr) *delay_ms = policy.slow_ms;
+    return true;
+  }
   uint64_t delay = policy.initial_ms;
   for (uint32_t i = 0; i < attempt && delay < policy.max_ms; ++i) delay *= 2;
   if (delay > policy.max_ms) delay = policy.max_ms;

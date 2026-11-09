@@ -229,6 +229,10 @@ static void test_backoff_is_bounded() {
     CHECK(reconnect_delay_ms(policy, i, &delay));
     CHECK(delay == expect[i]);
   }
+  // After the fast attempts: the slow interval, forever (G13).
+  CHECK(reconnect_delay_ms(policy, 8, &delay) && delay == 30000);
+  CHECK(reconnect_delay_ms(policy, 1000000, &delay) && delay == 30000);
+  policy.slow_ms = 0;   // the old behaviour is still available
   CHECK(!reconnect_delay_ms(policy, 8, &delay));
   CHECK(!reconnect_delay_ms(policy, 1000000, &delay));
   BackoffPolicy huge{1, 0xFFFFFFFFu, 100};

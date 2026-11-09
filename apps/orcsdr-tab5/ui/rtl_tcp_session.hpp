@@ -19,10 +19,11 @@ enum class EndReason : uint8_t {
   none,
   stopped,
   connect_failed,
-  greeting_failed,  // refused, wrong magic, implausible field, timeout or early close
+  greeting_failed,  // refused, wrong magic, implausible field, or closed before the greeting finished
   closed_by_peer,
   stalled,          // connected but no IQ for stall_timeout_ms
   socket_error,
+  no_greeting,      // connected, but not one byte arrived: rtl_tcp serves one client at a time and a second one waits in silence
 };
 
 const char* state_name(State state);
@@ -52,6 +53,8 @@ struct Desired {
   int32_t ppm = 0;
   bool offset_set = false;
   bool offset_on = false;
+  bool direct_set = false;
+  uint8_t direct_mode = 0;   // 0 off, 1 I branch, 2 Q branch (the HF input of a V3 dongle)
 };
 
 struct Stats {
