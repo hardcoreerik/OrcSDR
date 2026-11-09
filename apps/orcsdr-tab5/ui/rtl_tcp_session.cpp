@@ -27,7 +27,6 @@ constexpr uint32_t kSendTimeoutMs = 1000;
 constexpr uint32_t kHealthyStreamMs = 2000;
 constexpr uint64_t kHealthyStreamBytes = 65536;  // about two read chunks; a real stream moves far more in two seconds
 constexpr size_t kScratchBytes = 2048;
-constexpr uint32_t kRingWaitMs = 40;      // about two 960 kS/s blocks of DSP time
 
 bool timed_out(int error) {
   return error == EAGAIN || error == EWOULDBLOCK || error == ETIMEDOUT;
@@ -294,7 +293,7 @@ EndReason run_connection(const SessionConfig& config, Env& env, Stats& stats) {
     bool have_slot = env.acquire(&slot, &capacity);
     // TCP already pushes back on the server while we wait, so a short wait for the
     // DSP to free a slot loses nothing. Only a DSP stalled longer than this drops.
-    for (uint32_t waited = 0; !have_slot && waited < kRingWaitMs && !env.stop_requested(); ++waited) {
+    for (uint32_t waited = 0; !have_slot && waited < config.ring_wait_ms && !env.stop_requested(); ++waited) {
       env.sleep_ms(1);
       have_slot = env.acquire(&slot, &capacity);
     }

@@ -35,6 +35,10 @@ struct SessionConfig {
   uint32_t connect_timeout_ms = 5000;
   uint32_t greeting_timeout_ms = 10000;  // a Windows rtl_tcp can take ~5 s to greet a new LAN peer
   uint32_t stall_timeout_ms = 3000;
+  // How long to wait for the DSP to free a slot before reading the bytes into scratch and counting them as lost. TCP holds the data
+  // back meanwhile, so a longer wait turns a short DSP or screen stall into a little delay instead of lost samples (FT8 needs an
+  // unbroken sample rate). Measured on the Tab5: 3 slots of about 12 KB at 240 kS/s leave only about 80 ms of slack.
+  uint32_t ring_wait_ms = 250;
   BackoffPolicy backoff{};
 };
 

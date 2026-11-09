@@ -238,6 +238,7 @@ static SessionConfig fast_config(uint16_t port) {
   c.connect_timeout_ms = 1000;
   c.greeting_timeout_ms = 400;
   c.stall_timeout_ms = 1500;
+  c.ring_wait_ms = 40;   // the old fixed wait: tests that block the ring on purpose expect a quick drop
   c.backoff = BackoffPolicy{10, 40, 3, 0};   // slow_ms 0: give up, so the tests that expect a final state end
   return c;
 }
@@ -476,6 +477,27 @@ static void test_full_ring_drops_are_counted_and_aligned() {
   CHECK(aligned);  // after losing bytes, every delivered pair still starts on I
 }
 
+static void test_short_dsp_stall_loses_nothing() {
+  FakeServer server([](int fd, int, FakeServer& self) {
+    const auto g = greeting(5, 29);
+    FakeServer::write_all(fd, g.data(), g.size());
+    stream_pattern(fd, 200000, self);
+    for (int i = 0; i < 60 && !self.stopping(); ++i) FakeServer::sleep(10);
+  });
+  TestEnv env;
+  env.block_acquire = true;  // the DSP is busy for a moment
+  Stats stats;
+  auto cfg = fast_config(server.port());
+  cfg.ring_wait_ms = 600;    // longer than the stall below
+  std::thread session([&] { run(cfg, env, stats); });
+  FakeServer::sleep(150);
+  env.block_acquire = false;
+  CHECK(wait_for([&] { return env.delivered_total() >= 150000; }, 5000));
+  env.stop = true;
+  session.join();
+  CHECK(stats.bytes_dropped.load() == 0);  // the stall was absorbed, nothing was thrown away
+}
+
 static void test_slow_link_is_reported() {
   FakeServer server([](int fd, int, FakeServer& self) {
     const auto g = greeting(5, 29);
@@ -553,6 +575,7 @@ int main() {
   test_greeting_without_samples_keeps_backing_off();
   test_reconnect_has_no_stale_samples();
   test_full_ring_drops_are_counted_and_aligned();
+  test_short_dsp_stall_loses_nothing();
   test_slow_link_is_reported();
   test_fast_link_reads_full();
   test_stop_is_prompt();
