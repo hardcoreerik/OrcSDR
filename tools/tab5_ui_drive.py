@@ -122,7 +122,8 @@ class Drive:
 
     def open_dashboard(self, name):
         page, c, r = TILES[name]
-        self.go_home()
+        if not self.go_home() and not self.go_home():   # a tile tapped from the wrong screen opens the wrong dashboard (seen once, iteration 24)
+            return False
         self.tap(*ALL_DASH, settle=2.0)
         if page == 2: self.tap(*NEXT, settle=1.5)
         return self.tap(COL[c], ROW[r], settle=0.5)

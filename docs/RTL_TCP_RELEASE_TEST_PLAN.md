@@ -301,6 +301,8 @@ Corrections and confirmations to the gap list:
 
 - 2026-11-09 iteration 25 (health after about 1.9 h of mixed use, 19-dashboard sweep and ADS-B dwell included): Tab5 up 6,911 s with no reset, PSRAM free 1.69 MB (largest block 1.47 MB), internal RAM min 10.5 KB, main stack high-water 4,872 B, 34 tasks; stream streaming at 85% link, 10.39 GB received, 42 MB dropped by the server-side ratio (0.4%), 47 connections of which 18 reconnects (the Pi wedge and my restarts account for them). Pi: service active, 59.9 C, throttled 0x0. No leak or stack growth visible after the sweeps. Nothing changed.
 
+- 2026-11-09 iteration 26 (tooling): `open_dashboard` now refuses to tap a tile unless the Home screen is confirmed (two tries), the guard for the iteration 24 wrong-screen case; smoke test ADS-B and AM both OK. Finding that corrects iteration 24: the screenshot failure is not specific to ADS-B. In the 19-dashboard sweep screenshots worked for the first nine dashboards and returned nothing for the rest, and today AM (which worked then) fails too, with the same `encode_failed` seen on ADS-B. The Tab5 had been up 2.9 h with internal RAM largest free block about 11 KB (13.8 KB earlier), so the PNG encoder most likely fails when internal RAM is fragmented. That is a diagnostic-path limit, not a streaming fault, but it blocks the G9 proof; a reboot would restore it (not done: the owner may be watching, and the stream is healthy).
+
 ## 6. Next iterations (in order)
 
 1. Fix the retune detector and repeat at all rates and at `-b 2`; add a Tab5-side check of what FM seek dwell is.
