@@ -293,6 +293,8 @@ Corrections and confirmations to the gap list:
   Not done, still G1: (a) a remote-only setup (no local dongle) still shows gain as N/A and `rtl_gain_set_*` refuse when the local driver handle is null: needs the capability provider of section 7 and a test with the V3c unplugged; (b) the other dashboards' gain controls use the same getters
   so they should follow, but each is unverified; (c) bias tee and offset tuning controls still describe the local dongle.
 
+- 2026-11-09 iteration 22 (health check): Tab5 found in state failed ("no data", 17 connections, 0% link) with the Pi service active and no client attached: the Pi dongle had wedged again (greeting, then no samples; same signature as the earlier wedge). `systemctl restart rtl-tcp` (USB reset in ExecStartPre) cleared it and FM streamed at 104% link straight away. Two observations: (1) the wedge recurs on the Pi, so the trigger is still unknown and a watchdog on the Pi (restart when a client is connected and sends no bytes for 10 s) is worth proposing; (2) the client cannot tell a wedged server from a dead one, which is the G15 wording issue: it says "no data" and gives up. No code change this iteration.
+
 ## 6. Next iterations (in order)
 
 1. Fix the retune detector and repeat at all rates and at `-b 2`; add a Tab5-side check of what FM seek dwell is.
