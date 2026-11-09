@@ -272,6 +272,11 @@ Corrections and confirmations to the gap list:
   settings, a number to design scan dwell around (plus the network round trip). The earlier 0.46 s was an artifact of measuring the carrier before the previous tuning had flushed. Recommendation for the Pi guide: `-b`/`-n` need no tuning for retune
   latency; keep `-n` small only to bound how stale a stalled stream can become (about `n * block time`). Pi cleanup note: stopping a transient `rtl_tcp` unit with systemd's default `TimeoutStopSec` hangs for 90 s (as the service did before the drop-in); use `TimeoutStopSec` or `systemd-run -p TimeoutStopSec=3`.
 
+- 2026-11-09 iteration 19, **FM seek: remote and local behave the same (no staleness symptom).** Hypothesis from G5: seek steps through frequencies fast, so stale samples after each retune could make it stop on the wrong channel. Test: on the FM Listen
+  screen tap SEEK+ three times (14 s apart) on the remote stream from the Pi, then the identical taps on the local V3c. Remote: 96.1 to 96.4 MHz; local: 96.4 to 96.7 MHz; both +0.1 MHz per tap, so seek stops one channel on in both cases (the
+  antennas see little there, or SEEK is a one-channel nudge on this screen; not investigated). No remote-only difference. The Pi's server log cannot give dwell times: the Blog rtl_tcp prints through a pipe and its stdout is buffered, so several
+  `set freq` lines carry the same microsecond timestamp (flush time, not receipt time). The G5 effect on scanning stays a measured number (0.07-0.12 s), not an observed fault.
+
 ## 6. Next iterations (in order)
 
 1. Fix the retune detector and repeat at all rates and at `-b 2`; add a Tab5-side check of what FM seek dwell is.
