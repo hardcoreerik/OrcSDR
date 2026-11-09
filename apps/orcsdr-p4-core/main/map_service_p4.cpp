@@ -13,6 +13,7 @@
 
 #include <M5GFX.h>
 #include <esp_heap_caps.h>
+#include <atomic>
 #include <cstdio>
 #include <cstring>
 #include <memory>
@@ -35,6 +36,7 @@ constexpr const char* kArchive = "/sd/orcmaps/basemap.pmtiles";
 const char* const kProfiles[] = {"openmaptiles-3.16", "protomaps-v4", "orcmaps-overview-1"};
 
 bool g_begun = false, g_installed = false, g_have_frame = false;
+std::atomic<bool> g_pending{false};  // set from any task (the SD mount task); acted on only by the UI task, which owns the pipeline
 uint32_t g_revision = 1, g_frame_revision = 0;
 std::unique_ptr<orcmap::esp_idf::FileByteSource> g_source;
 std::unique_ptr<Pipeline> g_pipeline;
@@ -55,6 +57,13 @@ bool open_archive() {
   g_pipeline.reset();
   g_source.reset();
   return false;
+}
+// UI task only: (re)open the archive when a rescan was requested.
+void apply_pending() {
+  if (!g_pending.exchange(false)) return;
+  g_have_frame = false;
+  g_installed = open_archive();
+  ++g_revision;
 }
 bool same_view(const orcmap::Viewport& a, const orcmap::Viewport& b) {
   return a.center_lat_deg == b.center_lat_deg && a.center_lon_deg == b.center_lon_deg && a.zoom == b.zoom &&
@@ -77,7 +86,8 @@ void blit_scaled(lgfx::v1::LovyanGFX& target, int x, int y, int width, int heigh
       const int sx = static_cast<int>(i / scale);
       row[i] = source_row[sx < width ? sx : width - 1];
     }
-    target.pushImage(dx0, dy0 + j, dw, 1, row.get());
+    // The sprite stores RGB565 byte-swapped; hand the words back as that type so the colours are not swapped again.
+    target.pushImage(dx0, dy0 + j, dw, 1, reinterpret_cast<const lgfx::swap565_t*>(row.get()));
   }
   p4_display::mark_dirty(dx0, dy0, dx0 + dw, dy0 + dh);
 }
@@ -91,6 +101,7 @@ bool begin(storage::FileSystem*) {
 void service_downloads() {}
 bool running() { return g_begun; }
 bool snapshot(MapSnapshot* out) {
+  apply_pending();
   if (!out) return false;
   *out = MapSnapshot{};
   out->loaded = true;
@@ -106,17 +117,14 @@ bool snapshot(MapSnapshot* out) {
   }
   return true;
 }
-void rescan() {
-  g_have_frame = false;
-  g_installed = open_archive();
-  invalidate();
-}
+void rescan() { g_pending = true; }
 void cancel() {}
 void invalidate() { ++g_revision; }
-uint32_t revision() { return g_revision; }
-bool installed() { return g_installed; }
+uint32_t revision() { apply_pending(); return g_revision; }
+bool installed() { apply_pending(); return g_installed; }
 
 Frame draw(const orcmap::Viewport& view, lgfx::v1::LovyanGFX& target, int x, int y, FrameInfo* info, const char*, bool) {
+  apply_pending();
   FrameInfo none;
   none.state = Frame::unavailable;
   if (!g_installed || !g_pipeline || view.width_px <= 0 || view.height_px <= 0 || view.width_px > 1280 || view.height_px > 720) {

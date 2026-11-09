@@ -5,6 +5,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "orcsdr_board_profile.h"
+#include "map_service.hpp"
 #include "orcsdr_storage.hpp"
 
 namespace sd_card {
@@ -33,6 +34,7 @@ void task(void*) {
   }
   const bool ok = orcsdr::storage::mount_tab5_sd();
   g_attempted = true;
+  orcsdr::maps::begin(&orcsdr::storage::filesystem());  // the map service looks for its basemap on the card; the UI task opens it
   if (ok) ESP_LOGI(TAG, "microSD mounted, %llu MB", (unsigned long long)(orcsdr::storage::total_bytes() >> 20));
   else ESP_LOGI(TAG, "no microSD card mounted");
   vTaskDelete(nullptr);
