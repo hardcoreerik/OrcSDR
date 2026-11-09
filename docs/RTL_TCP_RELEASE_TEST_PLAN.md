@@ -170,6 +170,12 @@ Corrections and confirmations to the gap list:
   before: PSRAM -28,828 B per visit, internal -824 B per visit; after: PSRAM -40 B per visit (noise), internal no trend (45.4 KB to 44.9 KB, up and down). The 700 B per loop seen over
   13 dashboards earlier was this leak. A full two-loop confirmation over all 13 dashboards is running.
 
+- 2026-11-09 iteration 8: **G12 confirmed fixed over all dashboards.** Two full loops over the 13 dashboards on the fixed firmware (29 `RTL_HEALTH` samples, fresh boot): at Home after loop 1
+  PSRAM 7,465,220 B, `dma_free` 16,815 B, `internal_free` 33,191 B; after loop 2 PSRAM 7,465,280 B (+60), `dma_free` 16,459 B, `internal_free` 32,967 B. Loop-to-loop change is noise, against
+  about 28.5 KB of PSRAM and 700 B of `dma_free` lost per loop before the fix, and `dma_min` stays at 13.8 KB (it reached 1.2 KB before). One-time first-use allocations that are kept, not
+  leaks (they do not repeat in loop 2): SSTV takes about 8 KB of internal RAM (`dma_free` 25.1 KB to 16.9 KB), LoRa about 7 MB of PSRAM, Dead Air about 4 MB while open (returned on exit).
+  Worth a look separately: LoRa holding 7 MB after its first visit, and SSTV holding 8 KB of the scarce internal pool.
+
 ## 6. Next iterations (in order)
 
 1. Fix the retune detector and repeat at all rates and at `-b 2`; add a Tab5-side check of what FM seek dwell is.
