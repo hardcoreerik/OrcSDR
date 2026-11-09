@@ -145,6 +145,7 @@
 #include "settings_remote_source.hpp"
 #include "rtl_tcp_server.hpp"
 #include "rtl_tcp_source.hpp"
+#include "source_capabilities.hpp"
 #include "radio_ui_service.hpp"
 #include "receiver_band_plan.hpp"
 #include "rf_lab.hpp"
@@ -2766,7 +2767,16 @@ static_assert(!rtl_tuner_gain_available_for_caps(
 static_assert(rtl_tuner_gain_available_for_caps(
     kRtlNoHfMinHz, ESP_RTL_SDR_CAP_GAIN | ESP_RTL_SDR_CAP_DIRECT_SAMPLING));
 
+// The active source describes itself: the USB dongle through the driver's bits, a remote rtl_tcp server through its greeting
+// (source_capabilities.cpp). With a remote stream running the local driver's bits, if any, belong to a dongle nobody is using.
 uint32_t rtl_device_capabilities() {
+  if (rtl_remote_active()) {
+    const auto status = orcsdr::rtl_tcp_source::status();
+    const auto caps = orcsdr::source_caps::remote(status.tuner_type_raw, status.gain_count);
+    return (caps.stream ? ESP_RTL_SDR_CAP_STREAM : 0u) | (caps.retune ? ESP_RTL_SDR_CAP_RETUNE : 0u) |
+           (caps.gain ? ESP_RTL_SDR_CAP_GAIN : 0u) | (caps.gain_auto ? ESP_RTL_SDR_CAP_GAIN_AUTO : 0u) |
+           (caps.rtl_agc ? ESP_RTL_SDR_CAP_RTL_AGC : 0u);
+  }
   return g_rtl_device_capabilities.load(std::memory_order_acquire);
 }
 
@@ -15082,7 +15092,7 @@ esp_err_t rtl_gain_set_auto(const char* source) {
   esp_err_t result = ESP_RTL_SDR_ERR_UNSUPPORTED;
   const bool smart = rtl_gain_band_uses_smart();
 #if !RTL_USE_LEGACY_USB
-  if (g_rtl == nullptr) {
+  if (g_rtl == nullptr && !rtl_remote_active()) {
     result = ESP_ERR_INVALID_STATE;
   } else if (rtl_tuner_gain_available(rtl_ui_frequency_hz) &&
              rtl_has_device_capability(smart ? ESP_RTL_SDR_CAP_GAIN
@@ -15109,7 +15119,7 @@ esp_err_t rtl_gain_set_manual(const char* source, int gain_tenth_db) {
   esp_err_t result = ESP_RTL_SDR_ERR_UNSUPPORTED;
   rtl_gain_stop_smart();
 #if !RTL_USE_LEGACY_USB
-  if (g_rtl == nullptr) result = ESP_ERR_INVALID_STATE;
+  if (g_rtl == nullptr && !rtl_remote_active()) result = ESP_ERR_INVALID_STATE;
   else if (rtl_tuner_gain_available(rtl_ui_frequency_hz) &&
            rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN))
     result = esp_rtl_sdr_set_tuner_gain(g_rtl, gain_tenth_db);  // forces MANUAL
@@ -15123,7 +15133,7 @@ esp_err_t rtl_gain_set_manual(const char* source, int gain_tenth_db) {
 esp_err_t rtl_gain_set_rtl_agc(const char* source, bool enabled) {
   esp_err_t result = ESP_RTL_SDR_ERR_UNSUPPORTED;
 #if !RTL_USE_LEGACY_USB
-  if (g_rtl == nullptr) result = ESP_ERR_INVALID_STATE;
+  if (g_rtl == nullptr && !rtl_remote_active()) result = ESP_ERR_INVALID_STATE;
   else if (rtl_has_device_capability(ESP_RTL_SDR_CAP_RTL_AGC))
     result = esp_rtl_sdr_set_rtl_agc(g_rtl, enabled);
 #endif

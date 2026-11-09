@@ -19,6 +19,7 @@ flags=(-std=c++17 -Wall -Wextra -Werror -fsanitize=address,undefined -pthread "-
 g++ "${flags[@]}" "$app/ui/rtl_tcp_protocol.cpp" "$app/tests/rtl_tcp_protocol_host_test.cpp" -o "$out/protocol"
 g++ "${flags[@]}" "$app/tests/rtl_tcp_iq_ring_host_test.cpp" -o "$out/ring"
 g++ "${flags[@]}" "$app/ui/receiver_source_policy.cpp" "$app/tests/receiver_source_policy_host_test.cpp" -o "$out/policy"
+g++ "${flags[@]}" "$app/ui/source_capabilities.cpp" "$app/tests/source_capabilities_host_test.cpp" -o "$out/caps"
 g++ "${flags[@]}" "$app/ui/rtl_tcp_protocol.cpp" "$app/ui/rtl_tcp_session.cpp" \
   "$app/tests/rtl_tcp_session_host_test.cpp" -o "$out/client"
 g++ "${flags[@]}" "$app/ui/rtl_tcp_protocol.cpp" "$app/ui/rtl_tcp_server_session.cpp" \
@@ -35,6 +36,7 @@ g++ -std=c++17 -UNDEBUG -Wall -Wno-format-truncation -fsanitize=address,undefine
 "$out/protocol"
 "$out/ring"
 "$out/policy"
+"$out/caps"
 "$out/client"
 "$out/server"
 "$out/settings_ui"
