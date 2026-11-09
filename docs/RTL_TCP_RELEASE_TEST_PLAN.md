@@ -49,7 +49,7 @@ Severity: B = blocks release for remote users, M = clearly worse than a competit
 
 | # | Gap | Where | Sev | Test that would catch it |
 |---|---|---|---|---|
-| G1 | Gain, AGC and bias controls are gated on a local dongle (`g_rtl != nullptr`, `rtl_tuner_gain_available`, `rtl_has_device_capability`), so with a remote source they show N/A and cannot be used; the gain routing hook exists but the dashboards stop before reaching it | gain handlers about lines 6836-6912, 11241-11261, 11391-11411, 11622-11651, 12896-12937, 13401-13433, 14466-14490, 14753-14762 | B | open each dashboard on remote, try to change gain, check the server log shows `set gain` |
+| G1 | **CONFIRMED BROKEN for manual gain on a remote stream (iteration 20): see the run log.** Gain, AGC and bias controls are gated on a local dongle (`g_rtl != nullptr`, `rtl_tuner_gain_available`, `rtl_has_device_capability`), so with a remote source they show N/A and cannot be used; the gain routing hook exists but the dashboards stop before reaching it | gain handlers about lines 6836-6912, 11241-11261, 11391-11411, 11622-11651, 12896-12937, 13401-13433, 14466-14490, 14753-14762 | B | open each dashboard on remote, try to change gain, check the server log shows `set gain` |
 | G2 | **RETRACTED 2026-11-08: not reproducible, no code change made** (see run log). It was: FT8, SSTV and ACARS ask the local driver whether 240 or 250 kS/s is supported (`esp_rtl_sdr_is_rate_supported`); with no local dongle they do not set their low rate (ACARS refuses to tune) | lines 14531, 14738, 14816 | B | FT8 and ACARS on remote: stream rate must be 240 or 250 kS/s |
 | G3 | Health and metrics come from the local driver (`esp_rtl_sdr_get_metrics(g_rtl...)`), so RF Health, rate and overrun cards show nothing real for a remote stream; the remote counters (link %, dropped, reconnects) are not shown there | 2139, 2466, 3837, 3879, 11115, 12077, 13381 | M | FM, P25, Home RF health on remote vs the `RTL_TCP STATUS` numbers |
 | G4 | **FIXED and verified 2026-11-08** (see run log). Reconnect back-off resets after any 2 s connection, so a server that greets and then sends nothing is retried every ~13 s forever (744 reconnects seen) | `ui/rtl_tcp_session.cpp` `run()` | B | stop samples on the server side (kill the dongle) and watch the back-off |
@@ -276,6 +276,13 @@ Corrections and confirmations to the gap list:
   screen tap SEEK+ three times (14 s apart) on the remote stream from the Pi, then the identical taps on the local V3c. Remote: 96.1 to 96.4 MHz; local: 96.4 to 96.7 MHz; both +0.1 MHz per tap, so seek stops one channel on in both cases (the
   antennas see little there, or SEEK is a one-channel nudge on this screen; not investigated). No remote-only difference. The Pi's server log cannot give dwell times: the Blog rtl_tcp prints through a pipe and its stdout is buffered, so several
   `set freq` lines carry the same microsecond timestamp (flush time, not receipt time). The G5 effect on scanning stays a measured number (0.07-0.12 s), not an observed fault.
+
+- 2026-11-09 iteration 20, **G1 proven on the device: Home's MANUAL gain does nothing on a remote stream.** Home, FM at 96.7 MHz from the Pi, local V3c also plugged in; level read with `RTL_SIGNAL` (`signal_dbfs_tenths`). Start (SMART): -36.1 dBFS.
+  Tapped the gain tile (popup titled "RTL-TCP" opens), MANUAL: level -41.1 dBFS and the popup reads "MANUAL GAIN 0.0 dB" (so MANUAL starts at the lowest step). Six taps on "+": -42.5, -42.4, -42.4, -42.5, -42.6, -42.5 (no rise); the popup still reads 0.0 dB with
+  the bar on the first segment, confirmed by a screenshot after four "+" taps. Twelve taps on "-": -43.0 to -43.1 (clamped at the bottom). So switching to MANUAL reaches the server (the level changed) but the step buttons do not change the gain. SMART works remotely
+  (earlier -1 dBFS and clipping at a fixed 49.6 dB became -21 dBFS under SMART). A likely cause (not verified): the step list comes from the local driver, which has no table for a remote server (the greeting gives only a count, 29, and the tuner type 5);
+  the design in section 7 would supply the standard R820T/R828D table from the tuner type. Also seen: the server's own log fills with `ll+, now N` / `ll-, now 0` lines, its linked-list queue being filled and then emptied (dropping) on this link, and its `set ...` command lines are buffered so the server log cannot be used to confirm
+  commands; the signal level is the check to use. Not fixed (dashboard behaviour, needs the owner's yes).
 
 ## 6. Next iterations (in order)
 
