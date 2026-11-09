@@ -44,6 +44,8 @@ Severity: B = blocks release for remote users, M = clearly worse than a competit
 
 | G15 | **Busy server.** With another client holding the server's only slot, the Tab5 waits correctly, but (a) after the 10 s greeting timeout it shows "not an rtl_tcp server" instead of "server busy" (a held connection with no greeting is the busy signal, measured), and (b) its start gives up after 12 s and goes idle, so it never connects when the slot frees | `ui/rtl_tcp_session.cpp` end reasons, `start_and_wait` in `ui/main.cpp` | M | PC client holds the slot, Tab5 starts, holder leaves: the Tab5 should connect within a retry interval and say "busy" meanwhile |
 
+| G16 | **A steady 85-92% link means about 10% of samples are being dropped, and the rate ladder does nothing about it.** Soak (Tab5 FM at 1.44 MS/s from the Pi, both on Wi-Fi): 30 minutes, one connection, zero reconnects, but the Pi sent only 4.51 GB of the 5.01 GB the dongle produces (90%); the server drops its oldest blocks when the client cannot keep up. The ladder steps down only after 4 consecutive 2 s samples below 85%, and this link hovered just above 85%, so it never stepped down. Likely cause: both ends on Wi-Fi, so every packet crosses the air twice (about 21 Mbit/s usable, 1.44 MS/s needs 23) | `RateAdapter` thresholds in `ui/rtl_tcp_protocol.hpp` (`kBehindPct` 85, `kHealthyPct` 95), `ui/rtl_tcp_session.cpp` | B for audio quality | soak both ends on Wi-Fi vs Pi on Ethernet; compare sent bytes with the dongle's rate; adapter step-down at 94% |
+
 ## 3. Dashboard matrix
 
 IQ need = what the dashboard asks the stream for locally; "remote" = what a remote stream gives today (by reading).
@@ -197,6 +199,11 @@ Corrections and confirmations to the gap list:
   unknown. Pi change: `/usr/local/bin/rtl-usb-reset.sh` run as root before every start (`20-usb-reset.conf`, `ExecStartPre=+`), chosen because `USBDEVFS_RESET` raises no udev add/remove and cannot loop the restart
   rule; checked: one start, 100% at 240 and 960 kS/s. **Clean busy-server test on the healthy server** (PC holder confirmed with `ss`): the second client waits and is not served, as designed. The Tab5 gives
   up after about 12 s, shows "not an rtl_tcp server" and goes idle (G15). The earlier claim that a second client might displace the first is withdrawn.
+
+- 2026-11-09 iteration 11 (soak midpoint, 30 of 60 minutes): Tab5 on FM, 1.44 MS/s from the Pi (Pi on Wi-Fi, Tab5 on Wi-Fi). Stable: no reconnects (108 connections, 94 reconnects, unchanged), 0 dropped bytes on the
+  Tab5, Pi power flag 0x0 throughout, temperature 55 to 64 C, no server errors, memory flat (`dma_free` 16.1-16.6 KB, `dma_min` 13.8 KB, PSRAM 7.3-7.4 MB: the leak fix holds over time). **But the link ratio averaged 88%
+  (80-92%, one dip to 34% at minute 17 that recovered)**, and `bytes_sent` on the Pi was 4.51 GB over 1740 s = 2.59 MB/s against 2.88 MB/s needed, with 1.1% of the sent bytes retransmitted. Earlier tests with the PC
+  on Ethernet and the Pi on Wi-Fi gave 100% at the same rate, so the double Wi-Fi hop is the likely limit (G16). The ladder never stepped down because 88% is above its 85% threshold.
 
 ## 6. Next iterations (in order)
 
