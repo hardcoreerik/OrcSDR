@@ -153,3 +153,36 @@ Corrections and confirmations to the gap list:
 4. With the owner's go-ahead: fix G4 (back-off), then G1/G2/G3 behind the existing source routing, one dashboard family at a time.
 5. Failure injection (L3): kill the server, drop the dongle, Wi-Fi off and on, wrong host, busy server; record behaviour and recovery time.
 6. Parity pass (section 4) with the real clients if available on the PC.
+
+## 7. Design proposal (NOT implemented): active source capabilities
+
+Problem (gaps G1, G3, G6, G7): dashboards ask the local USB driver what the receiver can do (`rtl_device_capabilities()`, `g_rtl`, `esp_rtl_sdr_get_*`), so
+with a remote source and no local dongle gain, AGC and metrics read as unavailable, and with a local dongle also plugged in they describe the wrong device.
+
+Proposal: one small module, `ui/source_capabilities.{hpp,cpp}` (not in `main.cpp`), that answers "what can the ACTIVE source do" for both source kinds.
+The existing `receiver_tuning_controls.hpp` `Capabilities {rf_gain, tuner_agc, rtl_agc, offset_tuning}` and `Availability {enabled, unavailable, hidden}` stay the interface
+dashboards already use; only the place the capability bits come from changes.
+
+| Field | Local USB | Remote rtl_tcp |
+|---|---|---|
+| `rf_gain`, `tuner_agc`, `rtl_agc` | driver caps | true (the server accepts 0x03, 0x04, 0x08); value shown is the last one requested, marked "unconfirmed" (no readback) |
+| `offset_tuning` | driver caps | false for tuner 5 and 6 (R820T, R828D); the Blog fork also toggles bias on 0x0A |
+| `bias_tee` | driver caps | false always (safety policy) |
+| `min_tune_hz` | by profile (24 MHz without an HF route) | tuner 6 (Blog V4): "likely HF"; tuner 5: 24 MHz unless the owner chooses direct sampling; tuner 1 (E4000): 52 MHz |
+| `retune_settle_ms` | about 0 | measured 460 ms at 240 kS/s (stale samples after a retune, G5); scans and seeks use it as the minimum dwell |
+| health | USB overruns, drops | link %, dropped bytes, reconnects (G3) |
+| hardware lab (RF Lab controls, V3 HF route) | yes | "needs a local dongle" |
+
+Each unavailable item carries a reason string, like today's "below 24 MHz unavailable": `needs local dongle`, `server tuner has no HF`, `link too slow for this band`.
+`active_source()` already exists (`rtl_choose_source`, `g_rtl_active_source`); the provider reads it, so a local dongle plugged in while the stream is remote no longer leaks its capabilities.
+
+Implementation order (each step built, flashed and checked on the Tab5, host-tested where it is pure logic):
+1. Provider plus host tests for the capability table (pure, no hardware).
+2. Home: gain and AGC follow the provider (it already routes gain to the server through `rtl_source_routing`).
+3. Gain on the dashboard families, one family per change: FM/AM/CB/Airband/Shortwave, then P25, FT8/SSTV.
+4. Health cards (FM, P25, Home footer): remote link, drops, reconnects.
+5. Scan dwell from `retune_settle_ms` (FM preset scan, Shortwave hunt, Airband).
+6. Reason strings on controls and the RF Lab "local dongle only" note.
+
+Risks: offering gain controls that cannot confirm they applied (mitigation: show requested value, label it); changing every dashboard's control state for remote users (owner approval needed per family);
+the tuner type is known only after the greeting (the provider reports "unknown" until connected).
