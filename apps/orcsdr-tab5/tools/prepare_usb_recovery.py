@@ -20,7 +20,7 @@ def digest(path):
 
 def prepare(idf, build):
     """Return the component directory after checking source and generated identities."""
-    version = (idf / 'tools/cmake/version.cmake').read_text()
+    version = (idf / 'tools/cmake/version.cmake').read_text(encoding='utf-8')
     parts = [re.search(r'set\(IDF_VERSION_' + part + r' (\d+)\)', version)
              for part in ('MAJOR', 'MINOR', 'PATCH')]
     if any(part is None for part in parts) or [part.group(1) for part in parts] != ['5', '5', '4']:
@@ -37,17 +37,21 @@ def prepare(idf, build):
     if folder.exists():
         if not marker.is_file():
             raise RuntimeError(f'Incomplete USB override at {folder}. Use a fresh build directory.')
-        saved = json.loads(marker.read_text())
+        saved = json.loads(marker.read_text(encoding='utf-8'))
         actual = {str(p.relative_to(component)): digest(p) for p in component.rglob('*') if p.is_file()}
         if saved != {'patch': signature, 'files': actual}:
             raise RuntimeError(f'Modified USB override at {folder}. Use a fresh build directory.')
         return component
     folder.mkdir(parents=True)
-    shutil.copytree(source, component, ignore=shutil.ignore_patterns('test_apps', 'host_test', '.git'))
-    subprocess.run(['git', 'apply', '--check', str(patch)], cwd=component, check=True, capture_output=True)
-    subprocess.run(['git', 'apply', str(patch)], cwd=component, check=True, capture_output=True)
-    hashes = {str(p.relative_to(component)): digest(p) for p in component.rglob('*') if p.is_file()}
-    marker.write_text(json.dumps({'patch': signature, 'files': hashes}, indent=2), encoding='utf-8')
+    try:
+        shutil.copytree(source, component, ignore=shutil.ignore_patterns('test_apps', 'host_test', '.git'))
+        subprocess.run(['git', 'apply', '--check', str(patch)], cwd=component, check=True, capture_output=True)
+        subprocess.run(['git', 'apply', str(patch)], cwd=component, check=True, capture_output=True)
+        hashes = {str(p.relative_to(component)): digest(p) for p in component.rglob('*') if p.is_file()}
+        marker.write_text(json.dumps({'patch': signature, 'files': hashes}, indent=2), encoding='utf-8')
+    except BaseException:
+        shutil.rmtree(folder, ignore_errors=True)
+        raise
     return component
 
 

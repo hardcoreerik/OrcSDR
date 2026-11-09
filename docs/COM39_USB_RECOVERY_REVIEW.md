@@ -10,7 +10,7 @@ The application CMake entry point prepares the patched USB component inside each
 
 The physical test used OrcSDR base `12f1cad15adf2b4171a58b8687b0d1c8b6512aa9`, driver 0.9.5 with interrupted-start fix `b3ab77e`, and a project-local copy of the patched USB component. Its ELF SHA-256 was `3cdaa1074f8f38ffb0c053994cf80cc4c3bf54868741dc418ef7c5456164066b`. The complete lab firmware compiled on ESP-IDF 5.5.4 and was flashed to COM39.
 
-Five user-confirmed XTR unplug/reconnect cycles automatically resumed IQ near 2.40 MS/s, with zero driver overruns or drops and continuous uptime during the captures. The user reports a loose dongle connection. An earlier watchdog reset and a receiver loss outside capture remain unattributed. The physical traces include root-port power retries but do not prove that the rejected power-off branch executed. That branch is exercised by the host regression. Driver release 0.9.6 remains on hold.
+Five user-confirmed XTR unplug/reconnect cycles automatically resumed IQ near 2.40 MS/s, with zero driver overruns or drops and continuous uptime during the captures. The user reports a loose dongle connection. An earlier watchdog reset and a receiver loss outside capture remain unattributed. The physical traces include root-port power retries but do not prove that the rejected power-off branch executed. That branch is exercised by the host regression. Driver release 0.9.6 is handled separately; this PR retains the existing 0.9.5 pin.
 
 ## Reproduce the focused regression
 
@@ -36,4 +36,6 @@ The harness extracts the actual changed functions and models a disconnect arrivi
 
 The patch modifies Espressif's Apache-2.0 USB host code and retains its source attribution. It was developed from the local ESP-IDF 5.5.4 source. The earlier missing-node investigation consulted Espressif's report at https://github.com/espressif/esp-idf/issues/18366 and esp-usb PR https://github.com/espressif/esp-usb/pull/485. The accompanying regression harness is independently authored. Private crash dumps and serial captures are retained locally.
 
-The build preparer regression is `python tools/test_prepare_usb_recovery.py --idf <stock-idf-5.5.4>`. It covers initial preparation, repeat configuration, preservation of SDK source, generated-source tampering, unsupported SDK and modified SDK source. These checks passed on Windows.
+The build preparer regression is `python tools/test_prepare_usb_recovery.py --idf <stock-idf-5.5.4>`. It covers initial preparation, repeat configuration, preservation of SDK source, generated-source tampering, unsupported SDK and modified SDK source. These checks passed on Windows, including injected copy, patch-command and marker-write failures followed by successful retries. Failed preparation removes only the new override folder; existing overrides still fail closed when modified.
+
+The integrated commit `0c7c2a5d` completed all 1686 ESP-IDF 5.5.4 build steps. Generated `build.ninja` selected the patched `hub.c` and `usb_host.c` from the per-build override. Application size was `0x41d120` bytes with 31% of the factory slot free. The review follow-up changes only preparer failure handling, explicit text encoding and regression coverage; the compiled USB patch is unchanged. The integrated PR firmware has not been flashed.
