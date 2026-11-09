@@ -238,78 +238,106 @@ static void test_backoff_is_bounded() {
 static void test_rate_adapter() {
   using C = RateAdapter::Change;
   auto none = [](C c) { return c == C::none; };
+  // Recorded on the real link (Tab5 on Wi-Fi, Pi on Wi-Fi), link ratio every few seconds:
+  // 1.44 MS/s (one hour, every minute): the server dropped about 11% of the samples and nothing stepped down at the old 85% threshold.
+  const uint8_t lossy_144[] = {91, 85, 82, 87, 90, 85, 89, 89, 89, 91, 88, 88, 80, 90, 87, 87, 80, 34, 89, 91, 90, 91, 88, 92, 89, 87, 89, 84, 87, 86};
+  // 0.96 MS/s (five minutes, every 5 s): acceptable, noisy around 94.
+  const uint8_t fine_96[] = {95, 95, 93, 92, 94, 95, 94, 95, 94, 95, 93, 93, 92, 96, 94, 95, 96, 93, 96, 92, 96, 94, 93, 94, 95, 96, 94, 93, 94, 92,
+                             95, 92, 92, 93, 97, 94, 93, 79, 95, 95, 93, 92, 97, 93, 95, 91, 96, 95, 95, 95, 94, 95, 94, 94, 95, 95, 95, 97};
+  // 0.24 MS/s: clean.
+  const uint8_t clean_24[] = {101, 99, 99, 99, 86, 100, 100, 99, 99, 100, 100, 99, 99, 101};
+
   RateAdapter a;
   CHECK(a.rate(960000) == 960000);
-  // A healthy or unmeasured link never steps, and a good sample clears the count.
+  // An unmeasured or healthy link never steps, and not-measured clears the window.
   for (int i = 0; i < 20; ++i) CHECK(none(a.note(0, 960000, 240000)));
   for (int i = 0; i < 20; ++i) CHECK(none(a.note(100, 960000, 240000)));
-  for (int i = 0; i < 3; ++i) CHECK(none(a.note(50, 960000, 240000)));
-  CHECK(none(a.note(98, 960000, 240000)));            // recovered: count restarts
-  for (int i = 0; i < 3; ++i) CHECK(none(a.note(50, 960000, 240000)));
-  CHECK(a.note(50, 960000, 240000) == C::down);       // four behind samples in a row
+  // A collapsing link steps down within three readings (here the mean of the window drops below 91% on the second;
+  // the three-readings-below-70% fast path covers a link whose window is not yet full).
+  CHECK(none(a.note(50, 960000, 240000)));
+  CHECK(a.note(50, 960000, 240000) == C::down);
   CHECK(a.rate(960000) == 240000);                    // 480 kS/s is not a rate an RTL2832 can run
   for (int i = 0; i < 50; ++i) CHECK(none(a.note(10, 960000, 240000)));  // ladder ends at 240k
   CHECK(a.rate(960000) == 240000);
   a.reset();
   CHECK(a.rate(960000) == 960000);
+  // A steady shortfall needs a full window: seven 88% readings do nothing, the eighth steps down.
+  RateAdapter w;
+  for (int i = 0; i < 7; ++i) CHECK(none(w.note(88, 1440000, 240000)));
+  CHECK(w.note(88, 1440000, 240000) == C::down);
+  CHECK(w.rate(1440000) == 960000);
+  // One bad reading in eight does not trigger a step; an alternating 97 / 80 link (mean 88.5) does.
+  RateAdapter x;
+  for (int i = 0; i < 40; ++i) CHECK(none(x.note(i % 8 == 3 ? 80 : 98, 1440000, 240000)));
+  RateAdapter y;
+  bool stepped = false;
+  for (int i = 0; i < 16; ++i) stepped = (y.note(i % 2 ? 97 : 80, 1440000, 240000) == C::down) || stepped;
+  CHECK(stepped);
   // The consumer's floor stops the descent early.
   RateAdapter b;
-  for (int i = 0; i < 4; ++i) CHECK(none(b.note(30, 960000, 500000)));  // 240k is below the floor
+  for (int i = 0; i < 20; ++i) CHECK(none(b.note(30, 960000, 500000)));  // 240k is below the floor
   CHECK(b.rate(960000) == 960000);
   // The 1.44 MS/s ladder only uses rates a real dongle supports and whole multiples of 240 kS/s.
   RateAdapter c;
   CHECK(c.rate(1440000) == 1440000);
   const uint32_t expect[] = {960000, 240000};
   for (uint32_t want : expect) {
-    for (int i = 0; i < 3; ++i) CHECK(none(c.note(40, 1440000, 240000)));
-    CHECK(c.note(40, 1440000, 240000) == C::down);
+    int guard = 0;
+    while (c.note(40, 1440000, 240000) != C::down && ++guard < 20) {}
     CHECK(c.rate(1440000) == want);
     CHECK(want % 240000 == 0);
     CHECK((want >= 225001 && want <= 300000) || (want >= 900001 && want <= 3200000));
   }
   for (int i = 0; i < 20; ++i) CHECK(none(c.note(40, 1440000, 240000)));  // nothing below the bottom rung
-  // A wanted rate off the ladder (ADS-B, lab override) is left alone until it steps.
+  // A wanted rate off the ladder (ADS-B, lab overrides) is left alone until it steps.
   RateAdapter d;
   CHECK(d.rate(2048000) == 2048000);
-  // Automatic recovery: a healthy minute at a reduced rate steps up one rung at a time.
+
+  // The recorded series. The lossy 1.44 MS/s link steps down; the acceptable 0.96 MS/s link never does.
+  RateAdapter r144;
+  bool r144_down = false;
+  for (uint8_t v : lossy_144) {
+    if (r144.note(v, 1440000, 240000) == C::down) { r144_down = true; break; }   // the series belongs to 1.44 MS/s: stop at the first step
+  }
+  CHECK(r144_down && r144.rate(1440000) == 960000);
+  RateAdapter r96;
+  r96.step = 1;                                        // running at 0.96 MS/s after a step down from 1.44
+  bool r96_moved = false;
+  for (uint8_t v : fine_96) r96_moved = (r96.note(v, 1440000, 240000) != C::none) || r96_moved;
+  CHECK(!r96_moved && r96.rate(1440000) == 960000);   // no step down, and no probe up: its mean (94) is not clearly healthy
+  RateAdapter r24;
+  r24.step = 2;                                        // running at 0.24 MS/s; a clean link earns a probe up after a healthy minute
+  bool r24_up = false;
+  for (int i = 0; i < 200 && !r24_up; ++i) r24_up = r24.note(clean_24[i % 14], 1440000, 240000) == C::up;
+  CHECK(r24_up && r24.rate(1440000) == 960000);
+
+  // Automatic recovery: a clean window plus 30 healthy readings steps up one rung at a time.
   RateAdapter e;
-  for (int i = 0; i < 3; ++i) e.note(40, 1440000, 240000);
-  CHECK(e.note(40, 1440000, 240000) == C::down);       // 960k
+  e.step = 1;
+  for (int i = 0; i < 7; ++i) CHECK(none(e.note(100, 1440000, 240000)));   // fill the window
   for (int i = 0; i < 29; ++i) CHECK(none(e.note(100, 1440000, 240000)));
-  CHECK(e.note(100, 1440000, 240000) == C::up);        // 30 healthy samples
+  CHECK(e.note(100, 1440000, 240000) == C::up);        // the 30th healthy reading
   CHECK(e.rate(1440000) == 1440000);
   for (int i = 0; i < 100; ++i) CHECK(none(e.note(100, 1440000, 240000)));  // nothing above the top
-  // Between 93% and 95% neither steps down nor counts toward stepping up.
+  // Readings in the grey zone (mean 91-96) neither step down nor count toward stepping up.
   RateAdapter f;
-  for (int i = 0; i < 3; ++i) f.note(40, 960000, 240000);
-  f.note(40, 960000, 240000);                           // 240k
-  for (int i = 0; i < 200; ++i) CHECK(none(f.note(94, 960000, 240000)));
-  CHECK(f.rate(960000) == 240000);
-  // The soak's link: a steady 88-90% means the server is dropping samples, so it must step down (it used to sit above the threshold forever).
-  RateAdapter h;
-  const uint32_t soak[] = {91, 85, 82, 87, 90, 85};      // readings from the one-hour Pi soak
-  for (int i = 0; i < 3; ++i) CHECK(none(h.note(soak[i], 1440000, 240000)));
-  CHECK(h.note(soak[3], 1440000, 240000) == C::down);     // the fourth reading in a row below 93% steps down
-  CHECK(h.rate(1440000) == 960000);
-  RateAdapter m;                                            // one good reading in the middle clears the count
-  for (int i = 0; i < 3; ++i) CHECK(none(m.note(soak[i], 1440000, 240000)));
-  CHECK(none(m.note(97, 1440000, 240000)));
-  for (int i = 0; i < 3; ++i) CHECK(none(m.note(soak[i], 1440000, 240000)));
-  CHECK(m.note(soak[3], 1440000, 240000) == C::down);
-  // Healthy readings at a good rate (95-105%) never step down.
-  RateAdapter k;
-  const uint32_t healthy[] = {95, 96, 99, 101, 95, 97, 100, 95};
-  for (int i = 0; i < 40; ++i) CHECK(none(k.note(healthy[i % 8], 960000, 240000)));
+  f.step = 2;                                          // at 0.24 MS/s on the 1.44 MS/s ladder
+  for (int i = 0; i < 300; ++i) CHECK(none(f.note(94, 1440000, 240000)));
+  CHECK(f.rate(1440000) == 240000);
   // A probe that fails doubles the wait before the next one, then settles.
   RateAdapter g;
-  for (int i = 0; i < 3; ++i) g.note(40, 960000, 240000);
-  g.note(40, 960000, 240000);                           // 240k
-  for (int i = 0; i < 29; ++i) g.note(100, 960000, 240000);
-  CHECK(g.note(100, 960000, 240000) == C::up);          // probe 960k
-  for (int i = 0; i < 3; ++i) g.note(40, 960000, 240000);
-  CHECK(g.note(40, 960000, 240000) == C::down);         // probe failed, back to 240k
-  for (int i = 0; i < 59; ++i) CHECK(none(g.note(100, 960000, 240000)));  // wait is now 60
-  CHECK(g.note(100, 960000, 240000) == C::up);
+  g.step = 2;                                          // at 0.24 MS/s on the 1.44 MS/s ladder
+  auto climb = [&](int healthy_needed) {
+    for (int i = 0; i < 7; ++i) g.note(99, 1440000, 240000);                // fill the window
+    for (int i = 0; i < healthy_needed - 1; ++i) CHECK(none(g.note(99, 1440000, 240000)));
+    return g.note(99, 1440000, 240000);
+  };
+  CHECK(climb(30) == C::up);                           // probe 960k
+  CHECK(g.rate(1440000) == 960000);
+  bool failed = false;
+  for (int i = 0; i < 8 && !failed; ++i) failed = g.note(80, 1440000, 240000) == C::down;
+  CHECK(failed && g.rate(1440000) == 240000);          // probe failed, back to 240k
+  CHECK(climb(60) == C::up);                           // the wait is now 60
 }
 
 int main() {

@@ -126,30 +126,38 @@ struct BackoffPolicy {
 // `attempt` counts from 0. Returns false once the attempts are spent.
 bool reconnect_delay_ms(const BackoffPolicy& policy, uint32_t attempt, uint32_t* delay_ms);
 
-// Steps the sample rate down by halves when the link stays behind real time, so a weak
-// Wi-Fi link gives slower but live audio instead of fast-forwarded stutter. One call per
-// link-ratio sample (about every 2 s). Pure, so it is host-tested.
+// Steps the sample rate down when the link cannot carry it, so a weak Wi-Fi link gives live audio
+// with fewer samples lost, and climbs back when the link has room. One call per link-ratio sample
+// (about every 2 s). Pure, so it is host-tested against readings recorded on the real link.
 // The rates are an explicit ladder because every rung must be a whole multiple of the 240 kS/s
 // demodulation rate AND a rate the RTL2832 can run (225001-300000 and 900001-3200000 S/s only, so
-// 480 kS/s is not possible on a real dongle). The adapter also climbs
-// back: after kUpTicks healthy samples at a reduced rate it probes one rung up; a probe that
-// falls behind again steps back down and doubles the wait (up to kUpTicksMax), so a link that
-// cannot carry the higher rate settles instead of flapping.
+// 480 kS/s is not possible on a real dongle).
+//
+// Why a windowed mean, not single readings: below 100% the server is dropping samples (it discards its oldest blocks
+// when the client cannot keep up and TCP delivers everything it was given), but one 2 s reading is noisy. Measured on a
+// double Wi-Fi hop: 1.44 MS/s read 80-92% for an hour (mean 87, about 11% of samples missing); 0.96 MS/s read 79-97%
+// (mean 94, acceptable); 0.24 MS/s read 99-101%. A rule on single readings either never fires (85%) or sits in the
+// middle of the acceptable rate's noise (93%), so decisions use the mean of the last kWindow readings, with a fast
+// path for a collapsing link. A step up also needs the mean to be clearly healthy, which 0.96 MS/s on that link never is,
+// so it settles there instead of probing 1.44 MS/s over and over. A probe that falls behind again doubles the wait.
 struct RateAdapter {
-  // Below this the server is dropping samples: it discards its oldest blocks when the client cannot keep up, and TCP then delivers
-  // everything it was given, so a steady 88% link is 12% of the samples missing, not a slow stream. A one-hour soak on a double
-  // Wi-Fi hop sat at 80-92% for the whole hour, so 85% never stepped down; healthy rates read 95% and above. The status text uses the same line.
-  static constexpr uint32_t kBehindPct = 93;
-  static constexpr uint32_t kHealthyPct = 95;     // needed to count toward a step up
-  static constexpr uint32_t kBehindTicks = 4;     // consecutive samples before stepping down
-  static constexpr uint32_t kUpTicks = 30;        // about 60 s healthy before the first probe
-  static constexpr uint32_t kUpTicksMax = 480;    // about 16 min between probes after failures
+  static constexpr uint32_t kBehindPct = 90;       // a single reading below this is labelled BEHIND in the status text
+  static constexpr uint32_t kWindow = 8;           // readings averaged for decisions (about 16 s)
+  static constexpr uint32_t kStepDownMeanPct = 91; // mean below this: the server is dropping samples
+  static constexpr uint32_t kSeverePct = 70;       // a collapsing link does not wait for a full window ...
+  static constexpr uint32_t kSevereTicks = 3;      // ... three readings in a row below this step down
+  static constexpr uint32_t kHealthyMeanPct = 97;  // mean at or above this counts toward a step up
+  static constexpr uint32_t kUpTicks = 30;         // about 60 s healthy before the first probe
+  static constexpr uint32_t kUpTicksMax = 480;     // about 16 min between probes after failures
   static constexpr uint32_t kLadder[] = {1440000, 960000, 240000};
   static constexpr uint8_t kLadderSize = 3;
   enum class Change : uint8_t { none, down, up };
 
   uint8_t step = 0;                 // rungs below the wanted rate
-  uint8_t behind_ticks = 0;
+  uint8_t window[kWindow]{};        // the last readings at the current rate
+  uint8_t window_count = 0;
+  uint8_t window_pos = 0;
+  uint8_t severe_ticks = 0;
   uint32_t healthy_ticks = 0;
   uint32_t up_wait = kUpTicks;
   bool probing = false;             // just stepped up and not yet proven
@@ -166,31 +174,43 @@ struct RateAdapter {
     // (ADS-B, lab overrides) stays as asked.
     return (step == 0 && kLadder[i] != wanted_sps) ? wanted_sps : kLadder[at];
   }
-  void reset() { step = 0; behind_ticks = 0; healthy_ticks = 0; up_wait = kUpTicks; probing = false; }
+  void clear_window() { window_count = 0; window_pos = 0; severe_ticks = 0; }
+  void reset() { step = 0; healthy_ticks = 0; up_wait = kUpTicks; probing = false; clear_window(); }
+  uint32_t window_mean() const {
+    if (window_count == 0) return 0;
+    uint32_t sum = 0;
+    for (uint8_t i = 0; i < window_count; ++i) sum += window[i];
+    return sum / window_count;
+  }
   // `link_pct` 0 means not measured yet. `floor_sps` is the lowest rate the consumer accepts.
   // Returns the change just made; on down or up the stream should restart at rate().
   Change note(uint32_t link_pct, uint32_t wanted_sps, uint32_t floor_sps) {
-    if (link_pct == 0) { behind_ticks = 0; return Change::none; }
-    if (link_pct >= kBehindPct) {
-      behind_ticks = 0;
-      if (step == 0) { healthy_ticks = 0; probing = false; return Change::none; }
-      if (link_pct < kHealthyPct) { healthy_ticks = 0; return Change::none; }
-      if (++healthy_ticks < up_wait) return Change::none;
+    if (link_pct == 0) { clear_window(); return Change::none; }
+    window[window_pos] = static_cast<uint8_t>(link_pct > 255 ? 255 : link_pct);
+    window_pos = static_cast<uint8_t>((window_pos + 1) % kWindow);
+    if (window_count < kWindow) ++window_count;
+    severe_ticks = link_pct < kSeverePct ? static_cast<uint8_t>(severe_ticks + 1) : 0;
+    const bool full = window_count == kWindow;
+    const uint32_t mean = window_mean();
+    if (severe_ticks >= kSevereTicks || (full && mean < kStepDownMeanPct)) {
       healthy_ticks = 0;
-      --step;
-      probing = true;
-      if (step == 0) up_wait = kUpTicks;  // fully recovered
-      return Change::up;
+      const uint8_t i = base_index(wanted_sps);
+      if (i + step + 1 >= kLadderSize || kLadder[i + step + 1] < floor_sps) return Change::none;  // nothing lower to go to
+      if (probing) up_wait = (up_wait * 2 > kUpTicksMax) ? kUpTicksMax : up_wait * 2;
+      probing = false;
+      ++step;
+      clear_window();                                  // judge the new rate on its own readings
+      return Change::down;
     }
+    if (step == 0) { healthy_ticks = 0; probing = false; return Change::none; }
+    if (!(full && mean >= kHealthyMeanPct)) { healthy_ticks = 0; return Change::none; }
+    if (++healthy_ticks < up_wait) return Change::none;
     healthy_ticks = 0;
-    if (++behind_ticks < kBehindTicks) return Change::none;
-    behind_ticks = 0;
-    const uint8_t i = base_index(wanted_sps);
-    if (i + step + 1 >= kLadderSize || kLadder[i + step + 1] < floor_sps) return Change::none;
-    if (probing) up_wait = (up_wait * 2 > kUpTicksMax) ? kUpTicksMax : up_wait * 2;
-    probing = false;
-    ++step;
-    return Change::down;
+    --step;
+    probing = true;
+    if (step == 0) up_wait = kUpTicks;                 // fully recovered
+    clear_window();
+    return Change::up;
   }
 };
 
