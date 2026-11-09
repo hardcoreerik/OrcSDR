@@ -10,6 +10,29 @@ Lab: Tab5 on COM17 (source `remote` or `usb`; a Blog V3c is plugged into its USB
 Blog `rtl_tcp` V1.4.0 (dongle "Blog V4L", greeting tuner 5), PC with `tools/rtl_tcp_probe.py`. Serial helpers: `UI_DOC_SHOW <id> live`,
 `UI_DOC_EXIT`, `RTL_TAG_DOC ON`, `RTL_TCP STATUS`, `RTL_FM_SCOPE`, `RTL_SCREEN_STATUS`, screenshots with `tools/tab5_ft8_shot.py`.
 
+## Status at a glance (updated 2026-11-09, iteration 18)
+
+What has been proven on the Tab5 and a real Pi (a Pi 4B, Blog V4L dongle, Blog `rtl_tcp` V1.4.0), and what is waiting. Every fix below was built, flashed to COM17 and checked on the device; each row points to its evidence in the run log (section 5).
+
+| Area | Status |
+|---|---|
+| All 19 dashboards open on a remote stream, RTL-TCP tag shown correctly | **Done** (sweep, section 5a); no crashes |
+| Tapping, screenshots and crash detection are automated | **Done**: `UI_TAP`, `tools/tab5_ui_drive.py`, `tools/tab5_ft8_shot.py` |
+| One-hour soak: connection, memory, Pi power and temperature | **Done**: no reconnects, memory flat, Pi clean |
+| G4 reconnect back-off never gave up (744 reconnects) | **Fixed and verified** |
+| G12 internal RAM leak (FT8 tasks ended with the wrong delete call; also catalog sync and the bench tasks) | **Fixed and verified**: PSRAM -28.8 KB per FT8 visit before, noise after; two full dashboard loops flat |
+| G16 about 10% of samples dropped while the rate ladder never reacted | **Fixed and verified**: the ladder now decides on the mean of the last 8 readings, tested on recorded real-link data |
+| G2 FT8/ACARS cannot use the remote rate | **Retracted**: not reproducible; they start at 240 kS/s |
+| G5 stale samples after a retune | **Measured**: about 0.12 s at 240 kS/s, 0.07 s at 0.96-1.44 MS/s, independent of server buffers |
+| G14 Pi server (slow stop, dongle that stops delivering samples) | **Fixed on the Pi**: fast stop, USB reset at every start, follows the default-route address |
+| Competitor parity | **Sourced** (section 4a): retry-forever is the norm, bias tee stays server-side |
+| **G13 keep retrying after the fast attempts run out** | **Waiting for the owner's yes** (client behaviour) |
+| **G15 say "server busy" and keep trying when the slot is held** | **Waiting for the owner's yes** (client behaviour) |
+| G1 gain/AGC controls on remote, G3 health cards, G6 remote HF and direct sampling, G7 RF Lab note, G8 remote profile, G10 lag display | **Designed, not built** (section 7); each changes dashboard behaviour, so each needs the owner's yes |
+| G9 ADS-B at 2.048 MS/s | **Open**: the link held 99% in the sweep, decoding not proven (no aircraft in view) |
+| G11 `UI_DOC_SHOW` crash for AM/CB/ADS-B/POCSAG | **Open, low**: serial test command only; the screens open normally by tapping |
+| Not done | Real internet path (needs a second site), audio judged by ear, Pi on Ethernet to confirm the double Wi-Fi hop, a Linux/Pi rtl_tcp server test of the Tab5's own server |
+
 ## 1. Test layers
 
 | Layer | What | How | Automated now |
