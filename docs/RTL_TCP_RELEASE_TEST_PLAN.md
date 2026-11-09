@@ -29,7 +29,7 @@ Severity: B = blocks release for remote users, M = clearly worse than a competit
 | G1 | Gain, AGC and bias controls are gated on a local dongle (`g_rtl != nullptr`, `rtl_tuner_gain_available`, `rtl_has_device_capability`), so with a remote source they show N/A and cannot be used; the gain routing hook exists but the dashboards stop before reaching it | gain handlers about lines 6836-6912, 11241-11261, 11391-11411, 11622-11651, 12896-12937, 13401-13433, 14466-14490, 14753-14762 | B | open each dashboard on remote, try to change gain, check the server log shows `set gain` |
 | G2 | FT8, SSTV and ACARS ask the local driver whether 240 or 250 kS/s is supported (`esp_rtl_sdr_is_rate_supported`); with no local dongle they do not set their low rate (ACARS refuses to tune) | lines 14531, 14738, 14816 | B | FT8 and ACARS on remote: stream rate must be 240 or 250 kS/s |
 | G3 | Health and metrics come from the local driver (`esp_rtl_sdr_get_metrics(g_rtl...)`), so RF Health, rate and overrun cards show nothing real for a remote stream; the remote counters (link %, dropped, reconnects) are not shown there | 2139, 2466, 3837, 3879, 11115, 12077, 13381 | M | FM, P25, Home RF health on remote vs the `RTL_TCP STATUS` numbers |
-| G4 | Reconnect back-off resets after any 2 s connection, so a server that greets and then sends nothing is retried every ~13 s forever (744 reconnects seen) | `ui/rtl_tcp_session.cpp` `run()` | B | stop samples on the server side (kill the dongle) and watch the back-off |
+| G4 | **FIXED and verified 2026-11-08** (see run log). Reconnect back-off resets after any 2 s connection, so a server that greets and then sends nothing is retried every ~13 s forever (744 reconnects seen) | `ui/rtl_tcp_session.cpp` `run()` | B | stop samples on the server side (kill the dongle) and watch the back-off |
 | G5 | After a retune the stream still carries old-frequency samples: 0.461 s at 240 kS/s measured; scanners, seek and hunt that dwell less read the wrong frequency | FM seek/preset scan, Shortwave hunt, Airband and Browse scans, Dead Air | M | `probe retune`, then a scan on remote against a known list |
 | G6 | Remote HF: a server tuner of type 5 (R820T) cannot tune below 24 MHz without direct sampling; no direct-sampling control exists for a remote server | Shortwave, AM, CB | M | Shortwave on remote against a Blog V4 server and a plain R820T server |
 | G7 | RF Lab and the V3 HF route assume the local driver (`g_rtl`) | 7197-7430, 8883 | L | RF Lab on remote must say "local dongle only", not show zeros |
@@ -126,6 +126,12 @@ Corrections and confirmations to the gap list:
   It still needs a long run and a real decode check.
 - **G7 narrowed.** RF Lab's LIVE measurements work on remote; only hardware controls are local.
 - **G1** is visible on every dashboard that shows gain; not yet individually checked.
+
+- 2026-11-08 iteration 4: **G4 fixed.** `ui/rtl_tcp_session.cpp`: a connection resets the reconnect back-off only if it also delivered at least 64 KiB
+  (`last_stream_bytes`), not merely lasted 2 s. New host test `test_greeting_without_samples_keeps_backing_off` (a server that greets and then sends nothing)
+  fails before the fix (the session never gives up) and passes after; all rtl_tcp host tests pass. Built, flashed to COM17 and checked on the Tab5 against a
+  fake server that greets then goes silent: connection gaps 3.5, 4.1, 5.0, 7.0, 11.0, 18.0, 18.0, 18.1 s (the 3 s stall plus the 0.5 to 15 s back-off), then
+  `state=failed reason=no data` after 9 connections, instead of 744 reconnects. A normal stream from the Pi still starts and runs afterwards (link 97%).
 
 ## 6. Next iterations (in order)
 

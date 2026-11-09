@@ -348,6 +348,38 @@ static void test_silent_and_truncated_servers() {
   }
 }
 
+// A server that greets and then never sends samples (rtl_tcp running on a dead USB handle did exactly this: 744 reconnects, one every
+// 13 s, and never a give-up). The connection lasts as long as the stall timeout, so a back-off that resets on connection time alone
+// treats every one of them as healthy and retries forever. Only a connection that carried data may reset the back-off.
+static void test_greeting_without_samples_keeps_backing_off() {
+  FakeServer server(
+      [](int fd, int, FakeServer& self) {
+        const auto g = greeting(5, 29);
+        FakeServer::write_all(fd, g.data(), g.size());
+        // No samples, held open until the client leaves (the server loop is single-threaded, so it must notice that promptly).
+        for (int i = 0; i < 400 && !self.stopping(); ++i) {
+          char sink[16];
+          const ssize_t n = recv(fd, sink, sizeof(sink), MSG_DONTWAIT);
+          if (n == 0) break;  // peer closed
+          FakeServer::sleep(10);
+        }
+      },
+      16);
+  TestEnv env;
+  Stats stats;
+  auto cfg = fast_config(server.port());
+  cfg.stall_timeout_ms = 2300;  // longer than the 2 s a connection needs to count as "healthy by time"
+  State final_state = State::idle;
+  std::thread session([&] { final_state = run(cfg, env, stats); });
+  const bool gave_up = wait_for([&] { return final_state == State::failed; }, 25000);
+  env.stop = true;
+  session.join();
+  CHECK(gave_up);
+  CHECK(final_state == State::failed);
+  CHECK(env.saw_reason(EndReason::stalled));
+  CHECK(stats.reconnects.load() == 3);  // bounded by the policy, not endless
+}
+
 static void test_nothing_listening() {
   uint16_t dead_port = 0;
   {
@@ -495,6 +527,7 @@ int main() {
   test_wrong_service_is_refused();
   test_silent_and_truncated_servers();
   test_nothing_listening();
+  test_greeting_without_samples_keeps_backing_off();
   test_reconnect_has_no_stale_samples();
   test_full_ring_drops_are_counted_and_aligned();
   test_slow_link_is_reported();

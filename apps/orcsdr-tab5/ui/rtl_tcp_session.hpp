@@ -64,6 +64,9 @@ struct Stats {
   std::atomic<uint32_t> gain_count{0};
   std::atomic<int> last_errno{0};
   std::atomic<uint32_t> last_stream_ms{0};
+  // Bytes the last connection delivered. A connection counts as healthy (and resets the reconnect back-off) only if it carried data:
+  // a server that greets and then sends nothing holds the connection for the whole stall timeout and would otherwise look healthy.
+  std::atomic<uint64_t> last_stream_bytes{0};
   // Received bytes/s as a percentage of what the requested sample rate needs
   // (2 bytes per sample), measured over 2 s windows. Well under 100 means the
   // link cannot keep up: the server is queueing and what is shown falls behind

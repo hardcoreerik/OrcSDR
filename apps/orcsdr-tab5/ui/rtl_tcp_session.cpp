@@ -25,6 +25,7 @@ constexpr size_t kMaxChunk = 32768;       // same block size the USB path delive
 constexpr uint32_t kRecvPollMs = 200;     // bounds stop latency and stall checks
 constexpr uint32_t kSendTimeoutMs = 1000;
 constexpr uint32_t kHealthyStreamMs = 2000;
+constexpr uint64_t kHealthyStreamBytes = 65536;  // about two read chunks; a real stream moves far more in two seconds
 constexpr size_t kScratchBytes = 2048;
 constexpr uint32_t kRingWaitMs = 40;      // about two 960 kS/s blocks of DSP time
 
@@ -224,6 +225,7 @@ EndReason run_connection(const SessionConfig& config, Env& env, Stats& stats) {
 
   IqPairCarry carry;
   const uint32_t stream_started = env.now_ms();
+  const uint64_t bytes_at_stream_start = stats.bytes_received.load(std::memory_order_relaxed);
   uint32_t last_rx = stream_started;
   EndReason reason = EndReason::none;
 
@@ -321,6 +323,8 @@ EndReason run_connection(const SessionConfig& config, Env& env, Stats& stats) {
     }
   }
   stats.last_stream_ms.store(env.now_ms() - stream_started, std::memory_order_relaxed);
+  stats.last_stream_bytes.store(stats.bytes_received.load(std::memory_order_relaxed) - bytes_at_stream_start,
+                                std::memory_order_relaxed);
   close(fd);
   return reason;
 }
@@ -330,8 +334,10 @@ State run(const SessionConfig& config, Env& env, Stats& stats) {
   while (!env.stop_requested()) {
     const EndReason reason = run_connection(config, env, stats);
     if (reason == EndReason::stopped) break;
-    if (stats.last_stream_ms.exchange(0, std::memory_order_relaxed) >= kHealthyStreamMs)
-      attempt = 0;  // it streamed for a while; the next failure starts a fresh back-off
+    const uint32_t streamed_ms = stats.last_stream_ms.exchange(0, std::memory_order_relaxed);
+    const uint64_t streamed_bytes = stats.last_stream_bytes.exchange(0, std::memory_order_relaxed);
+    if (streamed_ms >= kHealthyStreamMs && streamed_bytes >= kHealthyStreamBytes)
+      attempt = 0;  // it streamed samples for a while; the next failure starts a fresh back-off
     uint32_t delay = 0;
     if (!reconnect_delay_ms(config.backoff, attempt, &delay)) {
       env.on_state(State::failed, reason);
