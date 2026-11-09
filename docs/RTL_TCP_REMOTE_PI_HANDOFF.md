@@ -368,3 +368,30 @@ asking for 1.44 MS/s. The stream was not scripted; these are readings taken when
   error"` is the end reason of the previous connection (consistent with the Pi reboot).
 - **Not measured:** the Tab5's own continuous time on this connection (the Tab5 does not report it; the Pi's counter above is the
   proxy), audio quality, and main-loop stalls over the whole run (none seen in a 60 s window at 1.44 MS/s).
+
+## 16. The Pi's dongle dropped for an hour and the Tab5 reconnected 744 times; local USB frame rate (2026-11-08)
+
+**What happened.** Rechecking at 21:11 PST the Tab5's counters had gone from 27 connections / 11 reconnects (18:27) to 760 / 744, with
+`last="no data"`, `link=0%`, `state=streaming`. The Pi's `rtl_tcp` journal showed 16,598 lines of `rtlsdr_demod_write_reg failed with -4`
+and `r82xx_write: i2c wr failed=-4` starting 20:09:07: libusb error -4 is "no device", so the dongle left the USB bus at about
+20:09 while the `rtl_tcp` process stayed up on a dead handle. The kernel logged the dongle reappearing as a new device at 21:10:33. The
+cause of the drop was not established (a replug was in progress that evening). `rtl_tcp` kept accepting clients (108 in 10 minutes), sent
+the 12-byte greeting, then no samples. A restart of the service fixed it: the greeting is correct and 99.1 MHz is centred and strong
+(+38.9 dB at 25 dB gain, overloading).
+
+**Two consequences.**
+1. *Server side.* The service does not recover when the dongle returns. Fixed on the Pi with `/etc/udev/rules.d/99-rtl-tcp-restart.rules`:
+   stop `rtl-tcp` when `PRODUCT=bda/2838/*` is removed, restart it when it is added. Tested with `udevadm trigger --action=add`: the
+   service restarted (start time 21:16:36 to 21:16:51) with 0 errors. Not tested: a real physical unplug and replug. The setup guide
+   (T6) should include this rule.
+2. *Client side, found by reading `ui/rtl_tcp_session.cpp`, not yet changed.* The Tab5 reconnect back-off resets whenever a connection
+   lasted at least `kHealthyStreamMs` (2 s). A connection that gets a greeting and then no samples lasts the 3 s stall timeout, so every
+   failure counts as "healthy" and the back-off never grows: that is how it reached 744 reconnects at about one per 13 s and never gave up
+   to `failed`. The reset should depend on bytes received, not connection time.
+
+**Local USB frame rate.** With a Blog V3c in the Tab5 (driver profile `blog_v3_r820t2`, source set to `usb`), FM at 96.1 MHz streams at
+2.4 MS/s. `RTL_FM_SCOPE` on the FM spectrum screen read `fps=8 draw_ms=98` in three samples, identical to the remote stream at
+1.44 MS/s from the Pi, and 0 main-loop stalls in 40 s. So the FM spectrum frame rate is set by drawing (98 ms per frame), not by the
+source or the network. Source code pacing: the scope wants a faster trace than the 100 ms default and the peak-hold comment assumes
+about 20 frames a second, so 8 fps is below its design target. Home uses a 33 ms interval. Not measured: Home or other screens' frame
+rate (no counter), and what the 98 ms is spent on.
