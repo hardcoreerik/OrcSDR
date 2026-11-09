@@ -14,7 +14,10 @@ check = args.output
 check.mkdir(parents=True, exist_ok=True)
 
 def extract(name):
-    start = re.search(r'^(?:static void|esp_err_t) ' + name + r'\([^\n]*\)\n\{', source, re.M).start()
+    match = re.search(r'^(?:static void|esp_err_t) ' + re.escape(name) + r'\([^\n]*\)\n\{', source, re.M)
+    if match is None:
+        raise SystemExit(f'Function not found in hub.c: {name}')
+    start = match.start()
     end = source.index('\n}', start) + 2
     return source[start:end]
 

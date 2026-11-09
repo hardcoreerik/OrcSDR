@@ -1,12 +1,12 @@
 # Tab5 USB root-port recovery review
 
-This draft patch addresses two captured ESP-IDF 5.5.4 USB failures during receiver disconnect and enumeration recovery. The missing-node path returns `ESP_ERR_NOT_FOUND` after a node has already been removed. The power-off path can return an error when the controller has a pending event, while the hub asserts that every power-off succeeds.
+This patch addresses two captured ESP-IDF 5.5.4 USB failures during receiver disconnect and enumeration recovery. The missing-node path returns `ESP_ERR_NOT_FOUND` after a node has already been removed. The power-off path can return an error when the controller has a pending event, while the hub asserts that every power-off succeeds.
 
 The patch retains recovery for an absent node, serializes root-port commands with root-port event processing, and publishes the off state only after a successful command or a confirmed already-off controller. A controller in recovery is left for the host event task. A rejected stop returns an error so the driver's existing retry can run. USB uninstall propagates a stop error before freeing the stack.
 
 ## Review and integration boundary
 
-The draft contains a patch against stock ESP-IDF 5.5.4 and a source-extracted regression harness. It is based on current OrcSDR main. Applying the patch is an explicit developer step. Normal OrcSDR builds do not apply it automatically yet. Build integration and validation against current main are required before this draft can merge.
+The application CMake entry point prepares the patched USB component inside each build directory before ESP-IDF resolves components. Windows, CI and direct idf.py builds share this path. The preparer requires ESP-IDF 5.5.4, verifies the baseline files and checks generated file hashes on reuse. It preserves the shared SDK. An unknown SDK or modified generated override stops configuration. The patch and source-extracted regression harness are based on current OrcSDR main.
 
 The physical test used OrcSDR base `12f1cad15adf2b4171a58b8687b0d1c8b6512aa9`, driver 0.9.5 with interrupted-start fix `b3ab77e`, and a project-local copy of the patched USB component. Its ELF SHA-256 was `3cdaa1074f8f38ffb0c053994cf80cc4c3bf54868741dc418ef7c5456164066b`. The complete lab firmware compiled on ESP-IDF 5.5.4 and was flashed to COM39.
 
@@ -35,3 +35,5 @@ The harness extracts the actual changed functions and models a disconnect arrivi
 ## Source and licensing
 
 The patch modifies Espressif's Apache-2.0 USB host code and retains its source attribution. It was developed from the local ESP-IDF 5.5.4 source. The earlier missing-node investigation consulted Espressif's report at https://github.com/espressif/esp-idf/issues/18366 and esp-usb PR https://github.com/espressif/esp-usb/pull/485. The accompanying regression harness is independently authored. Private crash dumps and serial captures are retained locally.
+
+The build preparer regression is `python tools/test_prepare_usb_recovery.py --idf <stock-idf-5.5.4>`. It covers initial preparation, repeat configuration, preservation of SDK source, generated-source tampering, unsupported SDK and modified SDK source. These checks passed on Windows.
