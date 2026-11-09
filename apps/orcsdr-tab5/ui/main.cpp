@@ -9523,7 +9523,10 @@ static void rtl_tcp_sink_submit(uint8_t *slot, size_t bytes) {
 }
 
 // A reconnect breaks the sample sequence; demodulator state must not carry over.
-static void rtl_tcp_sink_discontinuity() { rtl_dsp_request_reset(kRtlResetFull); }
+static void rtl_tcp_sink_discontinuity() {
+  rtl_dsp_request_reset(kRtlResetFull);
+  orcsdr::ft8_runtime::note_discontinuity();   // FT8 times its slots by sample count: a gap must restart that count
+}
 
 // rtl_tcp server (rtl_tcp_server.cpp): primitives only; the ownership policy is in the module.
 static std::atomic<bool> g_rtl_server_owner{false};  // gates local stream starts

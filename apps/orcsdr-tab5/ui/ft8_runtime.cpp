@@ -343,6 +343,11 @@ void decode_slot(uint64_t slot_start_ms, uint32_t slot_ms, uint64_t now_ms, uint
     if (rate_seen < 11.82 || rate_seen > 12.18) {
       incomplete = true;
       why = "rate";
+      // The rate is averaged since the last discontinuity, so one lost second would keep failing every later slot for as long as the
+      // receiver had been running (seen: 51 minutes of history, 121 of 201 slots skipped on a healthy stream). Samples were lost
+      // somewhere in that span, so start a fresh span: the tap resets on the next block and this costs the next slot, not the session.
+      // Only for a span over a minute: a short one is still noisy (network delivery is bursty) and simply gets longer by itself.
+      if (now_ms - cont_ms > 60000u) g.reset_pending.store(true, std::memory_order_release);
     }
   }
   if (incomplete) {
