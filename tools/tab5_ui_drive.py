@@ -25,6 +25,9 @@ import tab5_ft8 as t  # noqa: E402
 HOME_BTN = (1068, 38)
 ALL_DASH = (150, 610)
 NEXT = (738, 671)
+BACK_BTN = (68, 38)   # RF Lab's BACK button
+CLOSE_BTN = (782, 36)  # Settings' red CLOSE button
+EXIT = {"rf_lab": BACK_BTN, "settings": CLOSE_BTN}
 COL = (225, 635, 1045)
 ROW = (155, 291, 427, 563)
 # name -> (page, column, row)
@@ -110,7 +113,12 @@ class Drive:
         return False
 
     def go_home(self):
-        self.tap(*HOME_BTN, settle=2.0)
+        """Header Home button; RF Lab has BACK and Settings has CLOSE. Verifies the Home screen, retrying."""
+        for attempt in range(3):
+            scr = self.screen()
+            if scr == "home": return True
+            self.tap(*EXIT.get(scr, BACK_BTN if attempt == 2 else HOME_BTN), settle=2.0)
+        return self.screen() == "home"
 
     def open_dashboard(self, name):
         page, c, r = TILES[name]
@@ -125,6 +133,7 @@ def sweep(a):
     d = Drive(a.port)
     if a.source in ("remote", "usb"):
         d.cmd(f"RTL_TCP SOURCE {a.source}", ("RTL_TCP SOURCE",), 4)
+        d.cmd("RTL_STOP", ("RTL_STOP_RESULT",), 12); time.sleep(2)   # the new source only applies on the next start
     d.cmd("RTL_SPLASH_GATE OFF", ("RTL_SPLASH_GATE",), 4)
     names = a.names.split(",") if a.names else list(TILES)
     results = []
