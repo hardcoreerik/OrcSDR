@@ -1,0 +1,49 @@
+name: P4 Core compile check
+# Builds OrcSDR P4 Core (apps/orcsdr-p4-core) so drift in the shared screens, the board layer or the pinned components is caught on the PR that
+# causes it. It publishes nothing and is not part of the nightly firmware path. No C6 image and no browser bundle are included: the firmware
+# builds without either (the update entry is not offered, the server offers the JSON API only), which is what this check needs.
+on:
+  pull_request:
+    paths:
+      - "apps/orcsdr-p4-core/**"
+      - "apps/orcsdr-tab5/ui/**"
+      - "components/**"
+      - ".github/workflows/p4-core-build.yml"
+  push:
+    branches: [main]
+    paths:
+      - "apps/orcsdr-p4-core/**"
+      - "apps/orcsdr-tab5/ui/**"
+      - "components/**"
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+jobs:
+  compile-p4-core:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    container:
+      image: espressif/idf:v5.5.4@sha256:b9f2d6ea1c19e0c9f7959bdb74a9e3c775642f9d0f3b841937c5fa3363db892b
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Set safe directory
+        run: git config --global --add safe.directory "$GITHUB_WORKSPACE"
+      - name: Build P4 Core (Waveshare ESP32-P4-ETH, silicon v3)
+        working-directory: apps/orcsdr-p4-core
+        run: |
+          . "$IDF_PATH/export.sh" >/dev/null
+          idf.py -B build-p4eth-net -D IDF_TARGET=esp32p4 -D SDKCONFIG=build-p4eth-net/sdkconfig \
+            -D "SDKCONFIG_DEFAULTS=sdkconfig.defaults;sdkconfig.board-p4-eth;sdkconfig.net-throughput;sdkconfig.silicon-v3" build
+      - name: App size
+        working-directory: apps/orcsdr-p4-core
+        run: |
+          . "$IDF_PATH/export.sh" >/dev/null
+          ls -l build-p4eth-net/orcsdr_p4_core.bin | tee -a "$GITHUB_STEP_SUMMARY"
