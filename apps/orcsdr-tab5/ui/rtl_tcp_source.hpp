@@ -61,7 +61,9 @@ uint16_t port();
 // Starts the worker; returns at once. Poll state() for streaming / failed.
 bool start(uint32_t sample_rate_sps, uint32_t frequency_hz);
 // start() then wait, bounded, for the first working connection. False on timeout,
-// failure or cancel; the worker is stopped again in that case.
+// failure or cancel; the worker is stopped again in that case. While the server accepts but
+// stays silent (its one slot is held by another client) the wait stretches to two minutes so
+// the start succeeds as soon as the slot frees; a cancel still ends it at once.
 bool start_and_wait(uint32_t sample_rate_sps, uint32_t frequency_hz, uint32_t timeout_ms,
                     bool (*cancelled)());
 // The worker is running and has not given up (reconnecting still counts as alive).

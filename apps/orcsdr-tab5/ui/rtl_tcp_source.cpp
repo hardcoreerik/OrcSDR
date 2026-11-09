@@ -329,11 +329,19 @@ bool start(uint32_t sample_rate_sps, uint32_t frequency_hz) {
 bool start_and_wait(uint32_t sample_rate_sps, uint32_t frequency_hz, uint32_t timeout_ms,
                     bool (*cancelled)()) {
   if (!start(sample_rate_sps, frequency_hz)) return false;
-  for (uint32_t waited = 0; waited < timeout_ms; waited += 50) {
+  // A server that accepts the connection but sends no greeting is holding its one slot for another client. That is worth waiting for:
+  // the worker keeps retrying and connects as soon as the slot frees, so the wait stretches (to kBusyWaitMs) only in that case and
+  // still ends at once on a cancel. Any other failure keeps the caller's own timeout.
+  constexpr uint32_t kBusyWaitMs = 120000;
+  uint32_t limit = timeout_ms;
+  for (uint32_t waited = 0; waited < limit; waited += 50) {
     const State s = state();
     if (s == State::streaming) return true;
     if (s == State::failed || !running()) break;
     if (cancelled && cancelled()) break;
+    if (waited + 50 >= limit && limit < kBusyWaitMs &&
+        static_cast<EndReason>(g_reason.load(std::memory_order_acquire)) == EndReason::no_greeting)
+      limit = kBusyWaitMs;
     vTaskDelay(pdMS_TO_TICKS(50));
   }
   stop();
