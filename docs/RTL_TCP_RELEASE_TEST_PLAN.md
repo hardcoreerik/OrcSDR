@@ -297,6 +297,8 @@ Corrections and confirmations to the gap list:
 
 - 2026-11-09 iteration 23 (regression sweep after the G1 getter change): all 19 dashboards opened on the remote source with the Pi stream, no crash (uptime monotonic), no not-OK results. Link per dashboard 80-121% (Dead Air 80%, the lowest; Marine reconnecting at the moment of its reading, 56%); Wi-Fi analysis reads 0% because it does not use the IQ stream. Weather, Marine and Satellite taps land on Home (no screen behind those tiles, as before). Gain getter routing caused no regression.
 
+- 2026-11-09 iteration 24 (G9, ADS-B on remote, 150 s dwell): screen stays on ADS-B, stream state streaming, link 88% at the end (99% in the earlier sampled windows), no reconnect. Decoding still NOT proven: the screenshot capture on the ADS-B screen answers `ORC_SNAP_ERROR encode_failed`, so I could not read the aircraft list, and no serial status exposes the message count. Needs either a message counter in `RTL_TCP STATUS`/an ADS-B status command or a screenshot that works on this screen. A first attempt landed on SSTV instead (the sweep started from the Settings screen); going Home first fixes it, so `sweep` should return Home before tapping. Nothing changed in the firmware.
+
 ## 6. Next iterations (in order)
 
 1. Fix the retune detector and repeat at all rates and at `-b 2`; add a Tab5-side check of what FM seek dwell is.
