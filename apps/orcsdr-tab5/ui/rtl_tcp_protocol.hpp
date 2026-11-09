@@ -136,7 +136,10 @@ bool reconnect_delay_ms(const BackoffPolicy& policy, uint32_t attempt, uint32_t*
 // falls behind again steps back down and doubles the wait (up to kUpTicksMax), so a link that
 // cannot carry the higher rate settles instead of flapping.
 struct RateAdapter {
-  static constexpr uint32_t kBehindPct = 85;      // same threshold the status text uses
+  // Below this the server is dropping samples: it discards its oldest blocks when the client cannot keep up, and TCP then delivers
+  // everything it was given, so a steady 88% link is 12% of the samples missing, not a slow stream. A one-hour soak on a double
+  // Wi-Fi hop sat at 80-92% for the whole hour, so 85% never stepped down; healthy rates read 95% and above. The status text uses the same line.
+  static constexpr uint32_t kBehindPct = 93;
   static constexpr uint32_t kHealthyPct = 95;     // needed to count toward a step up
   static constexpr uint32_t kBehindTicks = 4;     // consecutive samples before stepping down
   static constexpr uint32_t kUpTicks = 30;        // about 60 s healthy before the first probe

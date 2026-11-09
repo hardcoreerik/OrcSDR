@@ -244,7 +244,7 @@ static void test_rate_adapter() {
   for (int i = 0; i < 20; ++i) CHECK(none(a.note(0, 960000, 240000)));
   for (int i = 0; i < 20; ++i) CHECK(none(a.note(100, 960000, 240000)));
   for (int i = 0; i < 3; ++i) CHECK(none(a.note(50, 960000, 240000)));
-  CHECK(none(a.note(90, 960000, 240000)));            // recovered: count restarts
+  CHECK(none(a.note(98, 960000, 240000)));            // recovered: count restarts
   for (int i = 0; i < 3; ++i) CHECK(none(a.note(50, 960000, 240000)));
   CHECK(a.note(50, 960000, 240000) == C::down);       // four behind samples in a row
   CHECK(a.rate(960000) == 240000);                    // 480 kS/s is not a rate an RTL2832 can run
@@ -279,12 +279,27 @@ static void test_rate_adapter() {
   CHECK(e.note(100, 1440000, 240000) == C::up);        // 30 healthy samples
   CHECK(e.rate(1440000) == 1440000);
   for (int i = 0; i < 100; ++i) CHECK(none(e.note(100, 1440000, 240000)));  // nothing above the top
-  // Between 85% and 95% neither steps down nor counts toward stepping up.
+  // Between 93% and 95% neither steps down nor counts toward stepping up.
   RateAdapter f;
   for (int i = 0; i < 3; ++i) f.note(40, 960000, 240000);
   f.note(40, 960000, 240000);                           // 240k
-  for (int i = 0; i < 200; ++i) CHECK(none(f.note(90, 960000, 240000)));
+  for (int i = 0; i < 200; ++i) CHECK(none(f.note(94, 960000, 240000)));
   CHECK(f.rate(960000) == 240000);
+  // The soak's link: a steady 88-90% means the server is dropping samples, so it must step down (it used to sit above the threshold forever).
+  RateAdapter h;
+  const uint32_t soak[] = {91, 85, 82, 87, 90, 85};      // readings from the one-hour Pi soak
+  for (int i = 0; i < 3; ++i) CHECK(none(h.note(soak[i], 1440000, 240000)));
+  CHECK(h.note(soak[3], 1440000, 240000) == C::down);     // the fourth reading in a row below 93% steps down
+  CHECK(h.rate(1440000) == 960000);
+  RateAdapter m;                                            // one good reading in the middle clears the count
+  for (int i = 0; i < 3; ++i) CHECK(none(m.note(soak[i], 1440000, 240000)));
+  CHECK(none(m.note(97, 1440000, 240000)));
+  for (int i = 0; i < 3; ++i) CHECK(none(m.note(soak[i], 1440000, 240000)));
+  CHECK(m.note(soak[3], 1440000, 240000) == C::down);
+  // Healthy readings at a good rate (95-105%) never step down.
+  RateAdapter k;
+  const uint32_t healthy[] = {95, 96, 99, 101, 95, 97, 100, 95};
+  for (int i = 0; i < 40; ++i) CHECK(none(k.note(healthy[i % 8], 960000, 240000)));
   // A probe that fails doubles the wait before the next one, then settles.
   RateAdapter g;
   for (int i = 0; i < 3; ++i) g.note(40, 960000, 240000);
