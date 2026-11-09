@@ -80,6 +80,22 @@ IQ need = what the dashboard asks the stream for locally; "remote" = what a remo
 | Latency or buffer indication | rare | link % only (G10) |
 | Server buffer stats | no | the Pi session can read `ss` and the journal |
 
+## 4a. Competitor parity: what is actually documented (web search 2026-11-09; replaces the hypotheses in section 4 where it speaks)
+
+Only what the sources state. Gaps in what I could find are listed as such; nothing here comes from running those programs.
+
+| Client | Documented fact | Source | OrcSDR today / opportunity |
+|---|---|---|---|
+| gr-osmosdr (the backend Gqrx uses) | rtl_tcp device string `rtl_tcp=host:port[,psize=16384][,direct_samp=0\|1\|2][,offset_tune=0\|1][,bias=0\|1]`; gain and frequency are sent over the connection | [gr-osmosdr commit adding bias to rtl_tcp](https://gitea.osmocom.org/sdr/gr-osmosdr/commit/3c7d3f166401b1af6afd903b8d2b9729e8897189), [rtl_tcp man page](https://manpages.org/rtl_tcp/1) | OrcSDR sends rate, frequency, gain mode, gain, AGC. **Opportunity:** offer direct sampling (0/1/2) and offset tuning as owner settings on the remote settings page (G6) |
+| Gqrx | For a remote rtl_tcp, bias tee is enabled on the server with `-T`; the device-string `bias=` applies to a locally attached dongle (maintainer's reply in the thread) | [Gqrx list: enabling bias tee with rtl_tcp](https://groups.google.com/g/gqrx/c/Nn9ZCiMitys) | Matches OrcSDR's policy (never switch bias tee remotely); the setup guide should say `-T` is the server owner's decision |
+| SDRangel Remote TCP input | Works with rtl_tcp, rsp_tcp, Spy Server and its own sink; **on a connection error it keeps trying to reconnect continuously**; a user-set buffer trades gaps for latency and "a buffer that repeatedly runs empty points to insufficient bandwidth"; decimation only works against an SDRangel server (plain rtl_tcp is 8-bit, no decimation, and sends no device settings on connect) | [SDRangel remotetcpinput readme](https://repo.radio/VE7UWU/sdrangel/src/tag/v7.21.4/plugins/samplesource/remotetcpinput), [SDRangel remotetcpsink readme](https://repo.radio/VE7UWU/sdrangel/src/tag/v7.22.2/plugins/channelrx/remotetcpsink) | **Gap G13 confirmed as a parity gap:** OrcSDR gives up after about 60 s; a competitor retries forever. Their "buffer empty = not enough bandwidth" rule is our link-ratio rule (G16). **Opportunity:** a latency/buffer choice in the remote settings |
+| SDR# | A separate "RTL-SDR / TCP" source: host and IPv4 address, port (default 1234); sample rate and gain in its Configure panel; about 35 Mbit/s of network traffic at 2.048 MS/s quoted for rtl_tcp | [SDR# user guide](https://www.rtl-sdr.com/sdrsharp-users-guide/), [rtl-sdr.com rtl_tcp tag](https://www.rtl-sdr.com/tag/rtl_tcp/) | OrcSDR automates rate (ladder) where SDR# leaves it manual. Could not find SDR#'s AGC, offset-tuning or direct-sampling options for the TCP source documented |
+| SDR++ | Manual lists general source options (gain/LNA, AGC, sample rate, bias-T, offset, IQ correction, decimation) and RTL-only direct sampling, RTL AGC, tuner AGC, PPM; could not confirm which of these the RTL-TCP source module exposes | [SDR++ manual](https://www.sdrpp.org/manual.pdf) | not verifiable from the search |
+| rtl_tcp servers | A community rtl_tcp with a ring buffer is reported to perform much better than the stock linked-list queue | [rtl-sdr.com: ring buffers for rtl_tcp](https://www.rtl-sdr.com/significantly-improving-rtl_tcps-performance-with-ring-buffers/) | **Opportunity (Pi side):** evaluate that server for the setup guide; stock drop-oldest queue is what loses samples on a slow link |
+
+Conclusions for the plan: (1) retry-forever behaviour is the norm in the client the search found documentation for, so G13 is a parity gap, not a matter of taste; (2) bias tee stays server-side everywhere; (3) the remote
+settings page should expose direct sampling and offset tuning as explicit owner choices, as gr-osmosdr's device string does; (4) a visible buffer/latency choice is a differentiator available at low cost.
+
 ## 5. Run log (the loop appends here)
 
 - 2026-11-08 iteration 1: audit (section 2), plan, new `retune` test in `tools/rtl_tcp_probe.py`. Retune stale time: 0.461 s at 240 kS/s
