@@ -661,7 +661,7 @@ void decoder_task(void*) {
   }
   if (g.wwv_phase.load(std::memory_order_acquire) == 1) wwv_finish(1);   // stop() ended the loop mid-measurement: report it so the band is restored and the next start is accepted
   g.task_alive.store(false, std::memory_order_release);
-  vTaskDelete(nullptr);
+  vTaskDeleteWithCaps(nullptr);  // a WithCaps task must end this way: plain vTaskDelete leaks its PSRAM stack and control block
 }
 
 
@@ -716,7 +716,7 @@ void waterfall_task(void*) {
   if (power) psram_free(power);
   if (sorted) psram_free(sorted);
   g.wf_alive.store(false, std::memory_order_release);
-  vTaskDelete(nullptr);
+  vTaskDeleteWithCaps(nullptr);  // a WithCaps task must end this way: plain vTaskDelete leaks its PSRAM stack and control block
 }
 
 }  // namespace

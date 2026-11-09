@@ -36,7 +36,7 @@ Severity: B = blocks release for remote users, M = clearly worse than a competit
 | G8 | No remote profile (LAN or Internet) or 240 kS/s default for narrow bands; 1.44 and 0.96 MS/s suit a LAN, not a WAN | `rtl_remote_wanted_rate`, Settings | M | lossy-link runs at each profile |
 | G9 | ADS-B needs 2.048 MS/s (about 4.1 MB/s), above the Tab5 Wi-Fi ceiling of about 3.8 MB/s measured on a Pi stream | `rtl_default_sample_rate` | M | ADS-B on remote: link % and decoded messages |
 | G10 | The server's USB buffers and queue are only partly visible: no "behind real time by N seconds" display, only a percentage | status bar, Home | L | slow-link run: displayed lag vs measured |
-| G12 | **CONFIRMED 2026-11-08 (iteration 6): internal RAM ratchets down and does not recover at Home; see the run log.** Internal RAM (`dma_free`) falls with use: 25,967 B (69 s uptime) to 16,903 B (15 min, about 30 dashboard transitions); the Tab5's internal pool is nearly full, so a leak would be a boot-loop or crash risk | `RTL_HEALTH` | M (unconfirmed) | repeat dashboard switches and stream restarts and plot `dma_free`/`internal_free`; check it recovers at Home |
+| G12 | **FIXED 2026-11-09 (FT8 task leak; verified on the Tab5, see the run log).** Internal RAM ratcheted down and did not recover at Home. Internal RAM (`dma_free`) falls with use: 25,967 B (69 s uptime) to 16,903 B (15 min, about 30 dashboard transitions); the Tab5's internal pool is nearly full, so a leak would be a boot-loop or crash risk | `RTL_HEALTH` | M (unconfirmed) | repeat dashboard switches and stream restarts and plot `dma_free`/`internal_free`; check it recovers at Home |
 | G11 | `UI_DOC_SHOW am.radio live` (and cb, adsb, pocsag) crashes the Tab5: `Guru Meditation Error: Core 0 panic'ed (Load access fault)`, reset reason 7. Reproduced on a remote stream AND on a local V3c, so not rtl_tcp. The stack pointer is below the main task's stack bottom (SP 0x4ff2d2f0, bounds 0x4ff2d328-0x4ff314a0, about 16.7 KB): a stack overflow. Fault address resolves to `OrcConsole::printf` (`ui/main.cpp:265`, a 2048-byte `char output[]` on the stack) called from `draw_sdr_screen` (`main.cpp:7538`, the AM dashboard branch), itself reached from the serial command handler | `ui/main.cpp` 265, 7538 | L: the normal tap path does NOT crash (AM RADIO opened by `UI_TAP` 2026-11-08 and ran), so this is a bug in the serial `UI_DOC_SHOW` path only | tap AM RADIO and CB RADIO on Home; `UI_DOC_SHOW am.radio live` again after a fix |
 
 ## 3. Dashboard matrix
@@ -159,6 +159,16 @@ Corrections and confirmations to the gap list:
   `dma_free` (and 600-1000 B of `internal_free`) per loop of 13 dashboard switches that is not given back at Home. Extrapolating, `dma_free` reaches zero after about five more loops, the
   kind of exhaustion that earlier boot-looped the Tab5 (+800 B of statics). `free_heap` (PSRAM) is flat at about 6.2 MB at Home, so the leak is internal RAM only.
   Not yet known which action leaks: a differential test (stream restarts only on remote, the same on local USB, dashboard taps with no restart) is running; result in the next entry.
+
+- 2026-11-09 iteration 7: **G12 root cause found and fixed.** Differential test: 25 stream restarts on remote, 25 on local USB and 25 dashboard-grid round trips (no restart) were all flat;
+  repeated single-dashboard visits showed the leak only on FT8: about 28.8 KB of PSRAM and about 800 B of internal RAM lost per visit (ACARS and ADS-B: none).
+  Cause: `ft8_runtime.cpp` creates its two tasks (`ft8_native` 20,480 B and `ft8_wf` 8,192 B, stacks in PSRAM) with `xTaskCreatePinnedToCoreWithCaps` but ends them with plain
+  `vTaskDelete(nullptr)`. ESP-IDF's `idf_additions.c` states that a self-deleting WithCaps task must use `vTaskDeleteWithCaps(NULL)`, because the idle task will not free the
+  stack and control block ("Therefore, it will leak memory"). Fix: `vTaskDeleteWithCaps(nullptr)` at both exits. The same mistake was in the catalog-sync worker (32 KiB stack per run,
+  `catalog_sync.cpp`) and in the two `RTL_TCP BENCH`/`BENCHUDP` debug tasks (6 KiB each, `rtl_tcp_source.cpp`); fixed the same way (not separately measured; same documented defect).
+  Verified on the Tab5 (built, flashed to COM17), same procedure before and after on a fresh boot (warm-up visit, then 6 FT8 visits, `RTL_HEALTH` at Home each time):
+  before: PSRAM -28,828 B per visit, internal -824 B per visit; after: PSRAM -40 B per visit (noise), internal no trend (45.4 KB to 44.9 KB, up and down). The 700 B per loop seen over
+  13 dashboards earlier was this leak. A full two-loop confirmation over all 13 dashboards is running.
 
 ## 6. Next iterations (in order)
 

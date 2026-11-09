@@ -697,7 +697,7 @@ void worker(void*) {
   set_busy(Operation::none, ok ? 100 : 0);
   g_requested = Operation::none;
   g_worker = nullptr;
-  vTaskDelete(nullptr);
+  vTaskDeleteWithCaps(nullptr);  // a WithCaps task must end this way: plain vTaskDelete leaks its PSRAM stack and control block
 }
 
 bool request(Operation operation, uint8_t pack_index) {

@@ -141,7 +141,7 @@ void bench_task(void* arg) {
   }
   heap_caps_free(buffer);
   g_bench_running.store(false, std::memory_order_release);
-  vTaskDelete(nullptr);
+  vTaskDeleteWithCaps(nullptr);  // a WithCaps task must end this way: plain vTaskDelete leaks its PSRAM stack and control block
 }
 
 // UDP variant: binds the given port and counts datagrams and sequence gaps from a sender that puts a
@@ -196,7 +196,7 @@ void bench_udp_task(void* arg) {
   if (fd >= 0) close(fd);
   heap_caps_free(buffer);
   g_bench_running.store(false, std::memory_order_release);
-  vTaskDelete(nullptr);
+  vTaskDeleteWithCaps(nullptr);  // a WithCaps task must end this way: plain vTaskDelete leaks its PSRAM stack and control block
 }
 
 
