@@ -299,6 +299,8 @@ Corrections and confirmations to the gap list:
 
 - 2026-11-09 iteration 24 (G9, ADS-B on remote, 150 s dwell): screen stays on ADS-B, stream state streaming, link 88% at the end (99% in the earlier sampled windows), no reconnect. Decoding still NOT proven: the screenshot capture on the ADS-B screen answers `ORC_SNAP_ERROR encode_failed`, so I could not read the aircraft list, and no serial status exposes the message count. Needs either a message counter in `RTL_TCP STATUS`/an ADS-B status command or a screenshot that works on this screen. A first attempt landed on SSTV instead (the sweep started from the Settings screen); going Home first fixes it, so `sweep` should return Home before tapping. Nothing changed in the firmware.
 
+- 2026-11-09 iteration 25 (health after about 1.9 h of mixed use, 19-dashboard sweep and ADS-B dwell included): Tab5 up 6,911 s with no reset, PSRAM free 1.69 MB (largest block 1.47 MB), internal RAM min 10.5 KB, main stack high-water 4,872 B, 34 tasks; stream streaming at 85% link, 10.39 GB received, 42 MB dropped by the server-side ratio (0.4%), 47 connections of which 18 reconnects (the Pi wedge and my restarts account for them). Pi: service active, 59.9 C, throttled 0x0. No leak or stack growth visible after the sweeps. Nothing changed.
+
 ## 6. Next iterations (in order)
 
 1. Fix the retune detector and repeat at all rates and at `-b 2`; add a Tab5-side check of what FM seek dwell is.
