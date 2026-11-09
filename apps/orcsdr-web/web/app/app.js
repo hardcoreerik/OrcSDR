@@ -926,8 +926,48 @@ try { if (sessionStorage.getItem('m5splash') || /nosplash/.test(location.hash)) 
 $('splash-go').onclick = () => Splash.end();
 addEventListener('keydown', e => { if (!Splash.done && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); Splash.end(); } }, true);
 
+// Basemap: the board serves the PMTiles archive from its SD card in signed chunks (apps/orcsdr-p4-core/main/web_maps.cpp). The page writes it
+// into the WebAssembly virtual filesystem where the shared map code reads it, then asks the map service to rescan. Status is shown bottom left.
+const MapSync = {
+  el: null, done: false,
+  say(text) {
+    if (!this.el) {
+      this.el = document.createElement('div');
+      this.el.style.cssText = 'position:fixed;left:6px;bottom:6px;z-index:9000;opacity:.6;padding:2px 8px;font:12px sans-serif;background:#0b1620;color:#e5e7eb;border:1px solid #334155;border-radius:4px';
+      document.body.appendChild(this.el);
+    }
+    this.el.textContent = text; this.el.style.display = text ? '' : 'none';
+  },
+  async run() {
+    if (MOCK || this.done || !M.FS || !M._m5_maps_rescan) return;
+    this.done = true;
+    try {
+      const st = await (await fetch('/api/v1/map/status', { method: 'POST' })).json();
+      if (!st.ok) { this.say('Basemap: not available'); return; }
+      if (!st.sd) { this.say('Basemap: no SD card in the board'); return; }
+      if (!st.present) { this.say('Basemap: no basemap.pmtiles on the SD card'); return; }
+      const CHUNK = 32768, data = new Uint8Array(st.bytes);
+      for (let off = 0; off < st.bytes; off += CHUNK) {
+        const len = Math.min(CHUNK, st.bytes - off);
+        const r = await fetch('/api/v1/map/read?offset=' + off + '&len=' + len, { method: 'POST' });
+        if (!r.ok) { this.say('Basemap: download failed (' + r.status + ')'); return; }
+        const part = new Uint8Array(await r.arrayBuffer());
+        if (part.length !== len) { this.say('Basemap: short read, not loaded'); return; }
+        data.set(part, off);
+        if (((off / CHUNK) & 15) === 0) this.say('Basemap: loading ' + Math.floor(100 * off / st.bytes) + '%');
+      }
+      try { M.FS.mkdir('/orcmaps'); } catch {}
+      M.FS.writeFile('/orcmaps/browser.pmtiles', data);
+      M._m5_maps_rescan();
+      this.say('Basemap: loaded (' + (st.bytes / 1048576).toFixed(1) + ' MB)');
+      setTimeout(() => this.say(''), 8000);
+    } catch (e) { this.say('Basemap: ' + (e && e.message ? e.message : 'error')); }
+  }
+};
+
 function start() {
   Splash.status('Loading…');
+  MapSync.run();
   if (!M._m5_init()) { toast('Could not allocate the 1280x720 canvas'); return; }
   nvsImport();
   Promise.resolve(refreshSoon()).catch(() => {}).then(() => Splash.ready());

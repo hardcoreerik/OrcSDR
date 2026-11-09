@@ -61,7 +61,7 @@ emcc -O2 -std=c++17 -D__linux__ -DLGFX_LINUX_FB -Wno-everything \
   $L/LGFXBase.cpp $L/LGFX_Sprite.cpp $L/lgfx_fonts.cpp \
   $L/misc/SpriteBuffer.cpp $L/misc/pixelcopy.cpp $L/misc/common_function.cpp \
   -Wl,--error-limit=0 -sALLOW_MEMORY_GROWTH=1 -sINITIAL_MEMORY=33554432 -sMODULARIZE=1 -sEXPORT_NAME=M5Core \
-  -sEXPORTED_RUNTIME_METHODS=HEAPU8,HEAPF32,UTF8ToString,stringToUTF8,lengthBytesUTF8 \
+  -sFORCE_FILESYSTEM=1 -sEXPORTED_RUNTIME_METHODS=FS,HEAPU8,HEAPF32,UTF8ToString,stringToUTF8,lengthBytesUTF8 \
   -sEXPORTED_FUNCTIONS=_malloc,_free \
   -o "$OUT/core.js"
 ls -l "$OUT"

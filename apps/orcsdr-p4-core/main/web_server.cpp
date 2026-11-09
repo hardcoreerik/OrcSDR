@@ -16,6 +16,7 @@
 #include "nvs_store.hpp"
 #include "eth_app.hpp"
 #include "web_auth.hpp"
+#include "web_maps.hpp"
 #include "web_control.hpp"
 #include "web_iq.hpp"
 #include "web_compat.hpp"
@@ -336,6 +337,7 @@ esp_err_t handle_post(httpd_req_t* req) {
     return send_json(req, static_cast<size_t>(std::snprintf(g_json, kJsonBytes, "{\"ok\":true}")));
   }
 
+  if (web_maps::is_route(route)) return web_maps::handle(req, route);  // basemap delivery (signed like everything below)
   // The page's own control routes (receivers/tune, tuner/gain, fm, time ...), same signed session.
   {
     char q[96] = {};

@@ -9,6 +9,7 @@ This is the **project-level release and current-source index**. It links the aut
 - **OrcSDR P4 Core** (`apps/orcsdr-p4-core`): the firmware for ESP32-P4 boards, built from the shared OrcSDR screens, with OrcSDR Web in the image. Built for the Waveshare ESP32-P4-ETH and ESP32-P4-WIFI6-POE-ETH.
 - **OrcSDR Web** (`apps/orcsdr-web`): the browser page, the signed-request login and the port-81 IQ and audio sockets. The page now compiles OrcMaps; no map file is supplied to the browser yet, so maps show "NO BASEMAP".
 - **Waveshare ESP32-P4-ETH (COM29):** health check and the browser protocol tests pass on Ethernet. **Waveshare ESP32-P4-WIFI6-POE-ETH (COM28):** boots and finds its IP101 PHY and the ESP32-C6; link and web tests not yet run.
+- **Browser basemap delivery:** the board serves `/sd/orcmaps/basemap.pmtiles` to the page in signed 32 KiB chunks (`POST /api/v1/map/status` and `/map/read`); the page writes it into the WebAssembly virtual filesystem and rescans, with a status line (no SD card, no file, loading, loaded). Tested on COM28 for the absent path only (`tools/web_maps_test.js`): no board has a card with a basemap, so delivery of real data and the browser rendering of a map are untested.
 - **Not verified:** the P4 map service with a real basemap, browser audio heard by a person, any other board.
 
 ## Unreleased source/documentation reconciliation — 2026-11-04

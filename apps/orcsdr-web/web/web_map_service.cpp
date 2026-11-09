@@ -121,3 +121,7 @@ void report(void (*write)(const char*)) {
   if (write) write(g_installed ? "ORC_MAP browser archive loaded\n" : "ORC_MAP browser archive absent\n");
 }
 }  // namespace orcsdr::maps
+
+#include <emscripten.h>
+// Called by the page after it has written a basemap into the virtual filesystem (app.js, MapSync).
+extern "C" EMSCRIPTEN_KEEPALIVE void m5_maps_rescan() { orcsdr::maps::rescan(); }
