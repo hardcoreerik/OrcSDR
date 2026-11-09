@@ -5,6 +5,7 @@ re-run. This page is the plan plus a running log; a scheduled loop (every 30 min
 marked "by reading" comes from the source and has not been run. Competitor statements come from general knowledge of SDR++, Gqrx,
 SDR#, SDRangel and SpyServer clients, not from fresh research: treat them as hypotheses until checked.
 
+Hands-off control: `UI_TAP x y` (authenticated, panel 1280x720) taps through the normal touch path; `tools/tab5_ft8_shot.py` screenshots.
 Lab: Tab5 on COM17 (source `remote` or `usb`; a Blog V3c is plugged into its USB port), Pi 4B at 192.168.1.218:1234 running the
 Blog `rtl_tcp` V1.4.0 (dongle "Blog V4L", greeting tuner 5), PC with `tools/rtl_tcp_probe.py`. Serial helpers: `UI_DOC_SHOW <id> live`,
 `UI_DOC_EXIT`, `RTL_TAG_DOC ON`, `RTL_TCP STATUS`, `RTL_FM_SCOPE`, `RTL_SCREEN_STATUS`, screenshots with `tools/tab5_ft8_shot.py`.
@@ -35,7 +36,7 @@ Severity: B = blocks release for remote users, M = clearly worse than a competit
 | G8 | No remote profile (LAN or Internet) or 240 kS/s default for narrow bands; 1.44 and 0.96 MS/s suit a LAN, not a WAN | `rtl_remote_wanted_rate`, Settings | M | lossy-link runs at each profile |
 | G9 | ADS-B needs 2.048 MS/s (about 4.1 MB/s), above the Tab5 Wi-Fi ceiling of about 3.8 MB/s measured on a Pi stream | `rtl_default_sample_rate` | M | ADS-B on remote: link % and decoded messages |
 | G10 | The server's USB buffers and queue are only partly visible: no "behind real time by N seconds" display, only a percentage | status bar, Home | L | slow-link run: displayed lag vs measured |
-| G11 | `UI_DOC_SHOW am.radio live` (and cb, adsb, pocsag) crashes the Tab5: `Guru Meditation Error: Core 0 panic'ed (Load access fault)`, reset reason 7. Reproduced on a remote stream AND on a local V3c, so not rtl_tcp. The stack pointer is below the main task's stack bottom (SP 0x4ff2d2f0, bounds 0x4ff2d328-0x4ff314a0, about 16.7 KB): a stack overflow. Fault address resolves to `OrcConsole::printf` (`ui/main.cpp:265`, a 2048-byte `char output[]` on the stack) called from `draw_sdr_screen` (`main.cpp:7538`, the AM dashboard branch), itself reached from the serial command handler | `ui/main.cpp` 265, 7538 | B if the normal tap path also crashes (not yet tested), otherwise a tooling bug | tap AM RADIO and CB RADIO on Home; `UI_DOC_SHOW am.radio live` again after a fix |
+| G11 | `UI_DOC_SHOW am.radio live` (and cb, adsb, pocsag) crashes the Tab5: `Guru Meditation Error: Core 0 panic'ed (Load access fault)`, reset reason 7. Reproduced on a remote stream AND on a local V3c, so not rtl_tcp. The stack pointer is below the main task's stack bottom (SP 0x4ff2d2f0, bounds 0x4ff2d328-0x4ff314a0, about 16.7 KB): a stack overflow. Fault address resolves to `OrcConsole::printf` (`ui/main.cpp:265`, a 2048-byte `char output[]` on the stack) called from `draw_sdr_screen` (`main.cpp:7538`, the AM dashboard branch), itself reached from the serial command handler | `ui/main.cpp` 265, 7538 | L: the normal tap path does NOT crash (AM RADIO opened by `UI_TAP` 2026-11-08 and ran), so this is a bug in the serial `UI_DOC_SHOW` path only | tap AM RADIO and CB RADIO on Home; `UI_DOC_SHOW am.radio live` again after a fix |
 
 ## 3. Dashboard matrix
 
@@ -88,8 +89,7 @@ IQ need = what the dashboard asks the stream for locally; "remote" = what a remo
 
 - 2026-11-08 iteration 2: the earlier "am, cb, adsb, pocsag do not open in remote mode" is a crash (G11). Reproduced twice on a remote
   stream and once on the local V3c. Core dump is saved in the Tab5's flash (partition `coredump`). The addresses were mapped with
-  `riscv32-esp-elf-addr2line` against `build-native-hosted3/orcsdr_tab5.elf` (the same build as the flashed one). Not yet known: whether
-  the normal tap path to AM crashes. No fix made yet.
+  `riscv32-esp-elf-addr2line` against `build-native-hosted3/orcsdr_tab5.elf` (the same build as the flashed one). Update the same evening: a new authenticated serial command `UI_TAP x y` (firmware, built and flashed to COM17) injects a touch through the existing virtual-tap path; tapping AM RADIO from Home opened the AM dashboard with no crash (uptime kept counting, `RTL_SCREEN_STATUS active=am`). So G11 affects only `UI_DOC_SHOW`. Not fixed.
 
 ## 6. Next iterations (in order)
 

@@ -21025,6 +21025,31 @@ void process_command(char* command) {
     print_wifi_coexistence_status();
     return;
   }
+  // UI_TAP x y: one finger press at panel coordinates, through the same path as a real touch (the virtual tap the keyboard's
+  // Enter key uses), so every screen's own touch handling runs unchanged. For hands-off test automation over USB serial:
+  // authenticated, one tap at a time (a new tap while one is still playing is refused), panel is 1280 x 720.
+  if (strncmp(command, "UI_TAP ", 7) == 0) {
+    if (!authenticated) {
+      Serial.println("UI_TAP_ERROR auth_required");
+      return;
+    }
+    int x = -1, y = -1;
+    char trailing = 0;
+    if (sscanf(command + 7, "%d %d %c", &x, &y, &trailing) != 2 || x < 0 || x >= 1280 || y < 0 || y >= 720) {
+      Serial.println("UI_TAP_ERROR usage: UI_TAP <x 0-1279> <y 0-719>");
+      return;
+    }
+    if (virtual_tap_live()) {
+      Serial.println("UI_TAP_ERROR busy");
+      return;
+    }
+    g_tap.x = x;
+    g_tap.y = y;
+    g_tap.start_ms = millis();
+    g_tap.active = true;
+    Serial.printf("UI_TAP_DONE x=%d y=%d\n", x, y);
+    return;
+  }
   if (strcmp(command, "RTL_TAG_DOC ON") == 0 || strcmp(command, "RTL_TAG_DOC OFF") == 0) {
     g_tag_in_documentation.store(strcmp(command, "RTL_TAG_DOC ON") == 0, std::memory_order_relaxed);
     Serial.printf("RTL_TAG_DOC %s (not saved; a reset turns it off)\n",
