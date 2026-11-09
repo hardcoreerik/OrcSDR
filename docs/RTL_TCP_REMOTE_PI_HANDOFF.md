@@ -395,3 +395,15 @@ the 12-byte greeting, then no samples. A restart of the service fixed it: the gr
 source or the network. Source code pacing: the scope wants a faster trace than the 100 ms default and the peak-hold comment assumes
 about 20 frames a second, so 8 fps is below its design target. Home uses a 33 ms interval. Not measured: Home or other screens' frame
 rate (no counter), and what the 98 ms is spent on.
+
+
+## 17. Pi service hardening found by testing (2026-11-09) - for the setup guide (T6)
+
+1. `rtl_tcp` catches SIGTERM but does not exit while a client is connected, so `systemctl stop` or `restart` waits the default 90 s before SIGKILL. Add
+   `TimeoutStopSec=3` (drop-in) if anything restarts the service.
+2. The dongle can end up delivering no samples (the server greets, then sends nothing; journal `worker cond timeout`). A USB reset without unplugging
+   (`ioctl USBDEVFS_RESET 0x5514` on `/dev/bus/usb/BBB/DDD`) fixes it. Run it as root before each start with `ExecStartPre=+/path/script`. Do not reset by toggling
+   `authorized` or unbinding: that re-enumerates the device and a udev rule that restarts the service on "add" would loop.
+3. Bind to the default-route address with a wrapper script, restart the service from a NetworkManager dispatcher on link changes, and restart it from a udev rule when the dongle
+   (re)appears; all three are in place on the lab Pi.
+4. A second client connects at TCP level and waits with no greeting until the first leaves (measured on a healthy server); a client library should treat "connected, no greeting" as "busy".

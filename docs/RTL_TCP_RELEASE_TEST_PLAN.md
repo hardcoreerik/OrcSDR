@@ -40,7 +40,9 @@ Severity: B = blocks release for remote users, M = clearly worse than a competit
 | G11 | `UI_DOC_SHOW am.radio live` (and cb, adsb, pocsag) crashes the Tab5: `Guru Meditation Error: Core 0 panic'ed (Load access fault)`, reset reason 7. Reproduced on a remote stream AND on a local V3c, so not rtl_tcp. The stack pointer is below the main task's stack bottom (SP 0x4ff2d2f0, bounds 0x4ff2d328-0x4ff314a0, about 16.7 KB): a stack overflow. Fault address resolves to `OrcConsole::printf` (`ui/main.cpp:265`, a 2048-byte `char output[]` on the stack) called from `draw_sdr_screen` (`main.cpp:7538`, the AM dashboard branch), itself reached from the serial command handler | `ui/main.cpp` 265, 7538 | L: the normal tap path does NOT crash (AM RADIO opened by `UI_TAP` 2026-11-08 and ran), so this is a bug in the serial `UI_DOC_SHOW` path only | tap AM RADIO and CB RADIO on Home; `UI_DOC_SHOW am.radio live` again after a fix |
 
 | G13 | After its reconnect budget (8 attempts, about 60 s) the client gives up (`failed`) and stays down until the dashboard is reopened: right for a server that is wrong, wrong for an unattended remote Pi that was only briefly offline. Opportunity: after the fast attempts, keep retrying slowly (for example every 30 s) while a dashboard wants the stream | `ui/rtl_tcp_session.cpp` `run()` | M | server down for 2 minutes, then up: does the Tab5 recover on its own? |
-| G14 | Server side (Pi): `rtl_tcp` ignores SIGTERM while a client is connected, so `systemctl stop` or `restart` waited the default 90 s. Fixed on the Pi with a drop-in `TimeoutStopSec=3`. Also unexplained: after a client leaves, the server sometimes does not return to "listening..." for minutes (see run log) | Pi unit, setup guide | M | stop and restart with a client attached; busy-server and quick-reconnect tests with a clean server |
+| G14 | Server side (Pi): `rtl_tcp` ignores SIGTERM while a client is connected, so `systemctl stop` or `restart` waited the default 90 s. Fixed on the Pi with a drop-in `TimeoutStopSec=3`. The dongle can also stop delivering samples (the server then greets clients and sends nothing; each session dies after 5 s, "worker cond timeout"); a USB reset without unplugging fixes it, and the Pi unit now resets the dongle at every start. The trigger was not reproduced | Pi unit, setup guide | M | stop and restart with a client attached; busy-server and quick-reconnect tests with a clean server |
+
+| G15 | **Busy server.** With another client holding the server's only slot, the Tab5 waits correctly, but (a) after the 10 s greeting timeout it shows "not an rtl_tcp server" instead of "server busy" (a held connection with no greeting is the busy signal, measured), and (b) its start gives up after 12 s and goes idle, so it never connects when the slot frees | `ui/rtl_tcp_session.cpp` end reasons, `start_and_wait` in `ui/main.cpp` | M | PC client holds the slot, Tab5 starts, holder leaves: the Tab5 should connect within a retry interval and say "busy" meanwhile |
 
 ## 3. Dashboard matrix
 
@@ -188,6 +190,13 @@ Corrections and confirmations to the gap list:
   `connecting`, `streaming`, `no data` cycle every 5 s, and the PC holder was reset by the server; the server log showed "Signal caught, exiting!" on every attempt and no "listening..." for 2 min 16 s
   (00:46:46 to 00:49:02). Earlier loopback tests by the Pi session showed a second client waiting quietly, so this contradicts them and needs a clean rerun (fresh server, one client at a time,
   server log and `ss` captured at each step) before it is called a Tab5 or a server issue. Not fixed.
+
+- 2026-11-09 iteration 9, busy server rerun and the server wedge. **Explained:** the odd F2 result was a wedged dongle on the Pi: after the forced stop the server accepted clients, sent the greeting and then no samples
+  (journal: `worker cond timeout`, session dead after 5 s, next queued client takes over), which looked like one client displacing another. Proof: a client received 0 IQ bytes over 3 s, a USB reset
+  (`USBDEVFS_RESET`, no unplug) restored 100% throughput at once. A plain `kill -9` and a `systemctl restart` while streaming did NOT reproduce it (both recovered to 100% immediately), so the trigger is
+  unknown. Pi change: `/usr/local/bin/rtl-usb-reset.sh` run as root before every start (`20-usb-reset.conf`, `ExecStartPre=+`), chosen because `USBDEVFS_RESET` raises no udev add/remove and cannot loop the restart
+  rule; checked: one start, 100% at 240 and 960 kS/s. **Clean busy-server test on the healthy server** (PC holder confirmed with `ss`): the second client waits and is not served, as designed. The Tab5 gives
+  up after about 12 s, shows "not an rtl_tcp server" and goes idle (G15). The earlier claim that a second client might displace the first is withdrawn.
 
 ## 6. Next iterations (in order)
 
