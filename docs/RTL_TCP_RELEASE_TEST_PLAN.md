@@ -295,6 +295,8 @@ Corrections and confirmations to the gap list:
 
 - 2026-11-09 iteration 22 (health check): Tab5 found in state failed ("no data", 17 connections, 0% link) with the Pi service active and no client attached: the Pi dongle had wedged again (greeting, then no samples; same signature as the earlier wedge). `systemctl restart rtl-tcp` (USB reset in ExecStartPre) cleared it and FM streamed at 104% link straight away. Two observations: (1) the wedge recurs on the Pi, so the trigger is still unknown and a watchdog on the Pi (restart when a client is connected and sends no bytes for 10 s) is worth proposing; (2) the client cannot tell a wedged server from a dead one, which is the G15 wording issue: it says "no data" and gives up. No code change this iteration.
 
+- 2026-11-09 iteration 23 (regression sweep after the G1 getter change): all 19 dashboards opened on the remote source with the Pi stream, no crash (uptime monotonic), no not-OK results. Link per dashboard 80-121% (Dead Air 80%, the lowest; Marine reconnecting at the moment of its reading, 56%); Wi-Fi analysis reads 0% because it does not use the IQ stream. Weather, Marine and Satellite taps land on Home (no screen behind those tiles, as before). Gain getter routing caused no regression.
+
 ## 6. Next iterations (in order)
 
 1. Fix the retune detector and repeat at all rates and at `-b 2`; add a Tab5-side check of what FM seek dwell is.
