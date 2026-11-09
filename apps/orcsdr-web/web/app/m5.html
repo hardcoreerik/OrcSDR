@@ -1,0 +1,70 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>OrcSDR Web</title>
+<style>
+:root{color-scheme:dark;--bg:#05070a;--fg:#c8d4de;--dim:#6b7c8a;--accent:#f4a23a}
+html,body{margin:0;height:100%;background:var(--bg);color:var(--fg);font:13px/1.4 system-ui,sans-serif}
+body{display:flex;flex-direction:column;align-items:center;justify-content:center}
+#stage{position:relative;width:min(100vw,calc((100vh - 34px) * 16 / 9));aspect-ratio:16/9}
+canvas{width:100%;height:100%;display:block;image-rendering:pixelated;touch-action:none;background:#000;outline:none}
+#bar{height:34px;display:flex;gap:14px;align-items:center;padding:0 10px;color:var(--dim);width:100%;box-sizing:border-box;justify-content:center;flex-wrap:wrap}
+#bar b{color:var(--fg);font-weight:600}
+#bar button{background:#111820;color:var(--fg);border:1px solid #26323d;border-radius:4px;padding:2px 10px;font:inherit;cursor:pointer}
+#bar button.on{border-color:var(--accent);color:var(--accent)}
+#bar label.btn{background:#111820;color:var(--fg);border:1px solid #26323d;border-radius:4px;padding:2px 10px;cursor:pointer}
+#bar select,#bar a{background:#111820;color:var(--fg);border:1px solid #26323d;border-radius:4px;padding:2px 6px;font:inherit;text-decoration:none}
+#dec{position:fixed;right:8px;top:8px;bottom:42px;width:400px;max-width:calc(100vw - 16px);overflow:auto;background:#0b1118f2;border:1px solid #26323d;border-radius:6px;padding:8px 10px;box-sizing:border-box;z-index:5}
+#dec[hidden]{display:none}
+#dec .dh{display:flex;justify-content:space-between;align-items:center;margin-bottom:6px}
+#dec .dr{display:flex;flex-wrap:wrap;gap:8px;margin:6px 0}
+#dec label{color:var(--dim)}
+#dec select,#dec input,#dec button{background:#111820;color:var(--fg);border:1px solid #26323d;border-radius:4px;padding:2px 6px;font:inherit}
+#dec button{cursor:pointer}
+#dec .dim{color:var(--dim)}
+#dec .bad{color:#ff7b6b}
+#dec-img{width:100%;height:auto;display:block;image-rendering:auto;background:#000;margin:6px 0;border:1px solid #26323d}
+#dec-img[hidden]{display:none}
+#dec-air table{border-collapse:collapse;width:100%;font:12px/1.4 ui-monospace,Consolas,monospace}
+#dec-air th,#dec-air td{text-align:left;padding:1px 4px;border-bottom:1px solid #1a242e}
+#dec-air th{color:var(--dim);font-weight:normal}
+#dec-air[hidden]{display:none}
+#dec-list{font:12px/1.5 ui-monospace,Consolas,monospace;white-space:pre-wrap;word-break:break-word}
+#dec .ev{border-top:1px solid #1a242e;padding:2px 0}
+#dec .tag{display:inline-block;min-width:3.2em;text-align:center;border-radius:3px;font-size:10px;margin-right:4px;background:#1b2833;color:var(--dim)}
+#dec .tag.node{background:#17301f;color:#7bd88f}
+#dec .tag.browser{background:#2b2615;color:var(--accent)}
+#toast{position:absolute;left:50%;bottom:3%;transform:translateX(-50%);background:#151d26ee;border:1px solid #34424f;border-radius:6px;padding:6px 14px;opacity:0;transition:opacity .2s;pointer-events:none;max-width:80%;text-align:center}
+#toast.on{opacity:1}
+#splash{position:absolute;inset:0;background:#000;z-index:8;transition:opacity .35s}
+#splash.gone{opacity:0;pointer-events:none}
+#splash img{width:100%;height:100%;display:block;object-fit:fill}
+#splash-status{position:absolute;left:0;right:0;top:2.5%;height:3.9%;display:flex;align-items:center;justify-content:center;background:#000;color:#d3d3d3;font-size:clamp(11px,2.2vw,28px)}
+#splash-go{position:absolute;left:34.4%;top:83.3%;width:31.2%;height:11.4%;border-radius:2%/16%;border:2px solid #00ffff;background:#008b8b;color:#fff;font:inherit;font-size:clamp(14px,3.2vw,40px);cursor:pointer;display:none}
+#err{display:none;position:absolute;inset:0;align-items:center;justify-content:center;text-align:center;padding:20px;background:#000c}
+</style>
+</head>
+<body>
+<div id="stage">
+  <canvas id="c" width="1280" height="720" tabindex="0"></canvas>
+  <div id="toast"></div>
+  <div id="err"></div>
+  <div id="splash"><img src="/m5/splash.jpg" alt="OrcSDR"><div id="splash-status">Starting…</div><button id="splash-go">Press OK/Enter</button></div>
+</div>
+<div id="bar">
+  <span>Source <b id="src">…</b></span>
+  <label>Receiver <select id="rx"></select></label>
+  <span>Spectrum <b id="spec">–</b></span>
+  <button id="listen" title="Play the node's FM audio in this browser">Listen here</button>
+  <span id="abtools" style="display:none"><button id="abloc" title="Needed for nearby airports">Location…</button> <label class="btn" title="Load an aviation.idx catalog from your computer">Aviation data…<input type="file" id="abcat" hidden></label></span>
+  <button id="dectoggle" title="Decode POCSAG, FT8 and SSTV on the node or in this browser">Decoders</button>
+  <button id="stopfm"style="display:none" title="Stop FM on the node">Stop FM</button>
+  <span id="audiostat"></span>
+  <a href="/classic" id="classic">Classic page</a>
+</div>
+<script src="/m5/core.js"></script>
+<script src="/m5/app.js"></script>
+</body>
+</html>

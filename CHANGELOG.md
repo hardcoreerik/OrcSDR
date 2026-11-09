@@ -2,6 +2,15 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased: OrcSDR Web and OrcSDR P4 Core landing branch, in progress — 2026-11-08
+
+**Not a release.** Work on `claude/orcsdr-web-landing`, not on `origin/main`.
+
+- **OrcSDR P4 Core** (`apps/orcsdr-p4-core`): the firmware for ESP32-P4 boards, built from the shared OrcSDR screens, with OrcSDR Web in the image. Built for the Waveshare ESP32-P4-ETH and ESP32-P4-WIFI6-POE-ETH.
+- **OrcSDR Web** (`apps/orcsdr-web`): the browser page, the signed-request login and the port-81 IQ and audio sockets. The page now compiles OrcMaps; no map file is supplied to the browser yet, so maps show "NO BASEMAP".
+- **Waveshare ESP32-P4-ETH (COM29):** health check and the browser protocol tests pass on Ethernet. **Waveshare ESP32-P4-WIFI6-POE-ETH (COM28):** boots and finds its IP101 PHY and the ESP32-C6; link and web tests not yet run.
+- **Not verified:** the P4 map service with a real basemap, browser audio heard by a person, any other board.
+
 ## Unreleased source/documentation reconciliation — 2026-11-04
 
 **Documentation update, not a new firmware release.** The current-source documentation was reconciled with the native build, implementation, dated hardware records and specific firsthand maintainer acceptance:
