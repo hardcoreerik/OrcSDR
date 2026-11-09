@@ -30,7 +30,7 @@ Severity: B = blocks release for remote users, M = clearly worse than a competit
 | G2 | **RETRACTED 2026-11-08: not reproducible, no code change made** (see run log). It was: FT8, SSTV and ACARS ask the local driver whether 240 or 250 kS/s is supported (`esp_rtl_sdr_is_rate_supported`); with no local dongle they do not set their low rate (ACARS refuses to tune) | lines 14531, 14738, 14816 | B | FT8 and ACARS on remote: stream rate must be 240 or 250 kS/s |
 | G3 | Health and metrics come from the local driver (`esp_rtl_sdr_get_metrics(g_rtl...)`), so RF Health, rate and overrun cards show nothing real for a remote stream; the remote counters (link %, dropped, reconnects) are not shown there | 2139, 2466, 3837, 3879, 11115, 12077, 13381 | M | FM, P25, Home RF health on remote vs the `RTL_TCP STATUS` numbers |
 | G4 | **FIXED and verified 2026-11-08** (see run log). Reconnect back-off resets after any 2 s connection, so a server that greets and then sends nothing is retried every ~13 s forever (744 reconnects seen) | `ui/rtl_tcp_session.cpp` `run()` | B | stop samples on the server side (kill the dongle) and watch the back-off |
-| G5 | After a retune the stream still carries old-frequency samples: 0.461 s at 240 kS/s measured; scanners, seek and hunt that dwell less read the wrong frequency | FM seek/preset scan, Shortwave hunt, Airband and Browse scans, Dead Air | M | `probe retune`, then a scan on remote against a known list |
+| G5 | After a retune the stream still carries old-frequency samples: **measured 0.12 s at 240 kS/s and 0.07 s at 0.96 and 1.44 MS/s (iteration 17; an earlier 0.46 s was a detector artifact), independent of the server's `-b`/`-n`**; scans, seek and hunt need a dwell of at least about 0.3 s plus the link round trip | FM seek/preset scan, Shortwave hunt, Airband and Browse scans, Dead Air | M | `probe retune`, then a scan on remote against a known list |
 | G6 | Remote HF: a server tuner of type 5 (R820T) cannot tune below 24 MHz without direct sampling; no direct-sampling control exists for a remote server | Shortwave, AM, CB | M | Shortwave on remote against a Blog V4 server and a plain R820T server |
 | G7 | RF Lab and the V3 HF route assume the local driver (`g_rtl`) | 7197-7430, 8883 | L | RF Lab on remote must say "local dongle only", not show zeros |
 | G8 | No remote profile (LAN or Internet) or 240 kS/s default for narrow bands; 1.44 and 0.96 MS/s suit a LAN, not a WAN | `rtl_remote_wanted_rate`, Settings | M | lossy-link runs at each profile |
@@ -243,6 +243,12 @@ Corrections and confirmations to the gap list:
   t=81 s DOWN to 0.24 at link 62% and t=388 s DOWN to 0.24 at link 45% (genuine collapses; the soak saw dips to 34% and 50%); UP to 0.96 at t=158 s and t=531 s. About 43% of the 540 s were spent at 0.24 MS/s after those dips: recovery takes 77-143 s.
   Opportunity: a step down caused by a brief collapse could earn an earlier probe back up than one caused by a steady shortfall.
 
+- 2026-11-09 iteration 17, **G5 retune staleness measured properly.** `tools/rtl_tcp_probe.py retune` now discards the first `--warm` seconds after the tune, measures the carrier level, then retunes and times when the carrier vanishes (in
+  stream sample time). Against the Pi (99.1 MHz carrier moved to 98.5), 3 repeats per cell, every cell produced a result: stale sample time, seconds, current `-b 4 -n 32`: 0.12 (240 kS/s), 0.02-0.07 (960 kS/s), 0.05-0.07 (1.44 MS/s);
+  `-b 2 -n 8`: 0.12-0.19, 0.07-0.14, 0.07-0.11; `-b 2 -n 32`: 0.12-0.14, 0.07-0.08, 0.07-0.08; stock `-b 15 -n 500`: 0.12, 0.07-0.17, 0.07-0.09. So a retune takes effect within about 0.1-0.2 s of stream time whatever the server's buffer
+  settings, a number to design scan dwell around (plus the network round trip). The earlier 0.46 s was an artifact of measuring the carrier before the previous tuning had flushed. Recommendation for the Pi guide: `-b`/`-n` need no tuning for retune
+  latency; keep `-n` small only to bound how stale a stalled stream can become (about `n * block time`). Pi cleanup note: stopping a transient `rtl_tcp` unit with systemd's default `TimeoutStopSec` hangs for 90 s (as the service did before the drop-in); use `TimeoutStopSec` or `systemd-run -p TimeoutStopSec=3`.
+
 ## 6. Next iterations (in order)
 
 1. Fix the retune detector and repeat at all rates and at `-b 2`; add a Tab5-side check of what FM seek dwell is.
@@ -267,7 +273,7 @@ dashboards already use; only the place the capability bits come from changes.
 | `offset_tuning` | driver caps | false for tuner 5 and 6 (R820T, R828D); the Blog fork also toggles bias on 0x0A |
 | `bias_tee` | driver caps | false always (safety policy) |
 | `min_tune_hz` | by profile (24 MHz without an HF route) | tuner 6 (Blog V4): "likely HF"; tuner 5: 24 MHz unless the owner chooses direct sampling; tuner 1 (E4000): 52 MHz |
-| `retune_settle_ms` | about 0 | measured 460 ms at 240 kS/s (stale samples after a retune, G5); scans and seeks use it as the minimum dwell |
+| `retune_settle_ms` | about 0 | measured about 120 ms at 240 kS/s and 70 ms at 0.96 and 1.44 MS/s (stale samples after a retune, G5), plus the link round trip; scans and seeks use it as the minimum dwell |
 | health | USB overruns, drops | link %, dropped bytes, reconnects (G3) |
 | hardware lab (RF Lab controls, V3 HF route) | yes | "needs a local dongle" |
 

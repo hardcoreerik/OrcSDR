@@ -203,33 +203,38 @@ def cmd_capture(srv, a):
 
 def cmd_retune(srv, a):
     """Stale samples after a retune. rtl_tcp never acknowledges a command and the server buffers USB data, so samples
-    already in flight still carry the old frequency. Needs a strong station at --from (carrier at the centre) that
-    --to moves out of the passband. Reports how much sample time arrives after the command before the carrier vanishes."""
+    already in flight still carry the old frequency. Needs a strong station at --from (carrier near the centre) that
+    --to moves out of the passband. The first --warm seconds after tuning are discarded (the server may still deliver data from
+    the previous tuning), then the carrier level is measured, then the retune is sent. Reports how much sample time arrives
+    after the command before the carrier vanishes (stale_sample_seconds) and the wall time it took."""
     import numpy as np
     rate = a.rate; n = 4096; w = np.hanning(n)
     for _ in range(a.repeat):
         s, h, ms = srv.open(rate=rate, freq=a.from_hz, gain=int(a.gain))
-        s.settimeout(3.0); total = 0; carry = b""; ref = []; sent_at = None; n_at_send = 0; changed = None; t_wall = None
+        s.settimeout(3.0); total = 0; carry = b""; ref = []; sent_at = None; n_at_send = 0; changed = None; t_wall = None; refp = None
         t0 = time.time()
-        while time.time() - t0 < 12 and changed is None:
+        while time.time() - t0 < a.warm + 8 and changed is None:
             try: d = s.recv(262144)
             except socket.timeout: continue
             if not d: break
             carry += d; usable = len(carry) - len(carry) % (2 * n)
             for off in range(0, usable, 2 * n):
+                if sent_at is None and time.time() - t0 < a.warm:
+                    continue                                   # discard: still settling after the tune
                 blk = np.frombuffer(carry[off:off + 2 * n], dtype=np.uint8).astype(np.float32) - 127.5
                 iq = (blk[0::2] + 1j * blk[1::2]) * w
                 sp = np.abs(np.fft.fftshift(np.fft.fft(iq))) ** 2
-                f = (np.arange(n) - n // 2) * rate / n; band = float(sp[np.abs(f) < 60e3].mean())
+                f = (np.arange(n) - n // 2) * rate / n
+                band = float(sp[(np.abs(f) < 80e3) & (np.abs(f) > 8e3)].mean())   # the carrier, without the DC spike
                 if sent_at is None:
                     ref.append(band)
-                    if len(ref) == 40:   # carrier level established (about 0.17 s at 960 kS/s): retune now
-                        sent_at = time.time(); n_at_send = total + off // 2; s.sendall(cmd(0x01, int(a.to_hz)))
-                        refp = float(np.median(ref))
+                    if len(ref) >= 30:                         # carrier level established: retune now
+                        refp = float(np.median(ref)); sent_at = time.time(); n_at_send = total + off // 2
+                        s.sendall(cmd(0x01, int(a.to_hz)))
                 elif changed is None and band < refp / 10 ** 1.0:   # 10 dB below the carrier level
                     changed = total + off // 2; t_wall = time.time() - sent_at
             total += usable // 2; carry = carry[usable:]
-        s.close(); time.sleep(2.0)
+        s.close(); time.sleep(2.5)
         if changed is None:
             out(test="retune", rate=rate, result="carrier did not vanish (no strong station at --from, or retune ignored)")
         else:
@@ -276,7 +281,7 @@ def main():
     c.add_argument("--secs", type=float, default=5); c.add_argument("--gain", default="250"); c.add_argument("--out")
     rt = sub.add_parser("retune"); rt.add_argument("--from", dest="from_hz", type=float, required=True)
     rt.add_argument("--to", dest="to_hz", type=float, required=True); rt.add_argument("--rate", type=int, default=960000)
-    rt.add_argument("--gain", default="150"); rt.add_argument("--repeat", type=int, default=3)
+    rt.add_argument("--gain", default="150"); rt.add_argument("--repeat", type=int, default=3); rt.add_argument("--warm", type=float, default=1.5)
     sc = sub.add_parser("scan"); sc.add_argument("--lo", type=float, default=88e6); sc.add_argument("--hi", type=float, default=108e6)
     sc.add_argument("--gain", default="250"); sc.add_argument("--save-iq"); sc.add_argument("--want", nargs="*")
     a = p.parse_args()
