@@ -27,7 +27,7 @@ Severity: B = blocks release for remote users, M = clearly worse than a competit
 | # | Gap | Where | Sev | Test that would catch it |
 |---|---|---|---|---|
 | G1 | Gain, AGC and bias controls are gated on a local dongle (`g_rtl != nullptr`, `rtl_tuner_gain_available`, `rtl_has_device_capability`), so with a remote source they show N/A and cannot be used; the gain routing hook exists but the dashboards stop before reaching it | gain handlers about lines 6836-6912, 11241-11261, 11391-11411, 11622-11651, 12896-12937, 13401-13433, 14466-14490, 14753-14762 | B | open each dashboard on remote, try to change gain, check the server log shows `set gain` |
-| G2 | FT8, SSTV and ACARS ask the local driver whether 240 or 250 kS/s is supported (`esp_rtl_sdr_is_rate_supported`); with no local dongle they do not set their low rate (ACARS refuses to tune) | lines 14531, 14738, 14816 | B | FT8 and ACARS on remote: stream rate must be 240 or 250 kS/s |
+| G2 | **RETRACTED 2026-11-08: not reproducible, no code change made** (see run log). It was: FT8, SSTV and ACARS ask the local driver whether 240 or 250 kS/s is supported (`esp_rtl_sdr_is_rate_supported`); with no local dongle they do not set their low rate (ACARS refuses to tune) | lines 14531, 14738, 14816 | B | FT8 and ACARS on remote: stream rate must be 240 or 250 kS/s |
 | G3 | Health and metrics come from the local driver (`esp_rtl_sdr_get_metrics(g_rtl...)`), so RF Health, rate and overrun cards show nothing real for a remote stream; the remote counters (link %, dropped, reconnects) are not shown there | 2139, 2466, 3837, 3879, 11115, 12077, 13381 | M | FM, P25, Home RF health on remote vs the `RTL_TCP STATUS` numbers |
 | G4 | **FIXED and verified 2026-11-08** (see run log). Reconnect back-off resets after any 2 s connection, so a server that greets and then sends nothing is retried every ~13 s forever (744 reconnects seen) | `ui/rtl_tcp_session.cpp` `run()` | B | stop samples on the server side (kill the dongle) and watch the back-off |
 | G5 | After a retune the stream still carries old-frequency samples: 0.461 s at 240 kS/s measured; scanners, seek and hunt that dwell less read the wrong frequency | FM seek/preset scan, Shortwave hunt, Airband and Browse scans, Dead Air | M | `probe retune`, then a scan on remote against a known list |
@@ -36,6 +36,7 @@ Severity: B = blocks release for remote users, M = clearly worse than a competit
 | G8 | No remote profile (LAN or Internet) or 240 kS/s default for narrow bands; 1.44 and 0.96 MS/s suit a LAN, not a WAN | `rtl_remote_wanted_rate`, Settings | M | lossy-link runs at each profile |
 | G9 | ADS-B needs 2.048 MS/s (about 4.1 MB/s), above the Tab5 Wi-Fi ceiling of about 3.8 MB/s measured on a Pi stream | `rtl_default_sample_rate` | M | ADS-B on remote: link % and decoded messages |
 | G10 | The server's USB buffers and queue are only partly visible: no "behind real time by N seconds" display, only a percentage | status bar, Home | L | slow-link run: displayed lag vs measured |
+| G12 | Internal RAM (`dma_free`) falls with use: 25,967 B (69 s uptime) to 16,903 B (15 min, about 30 dashboard transitions); the Tab5's internal pool is nearly full, so a leak would be a boot-loop or crash risk | `RTL_HEALTH` | M (unconfirmed) | repeat dashboard switches and stream restarts and plot `dma_free`/`internal_free`; check it recovers at Home |
 | G11 | `UI_DOC_SHOW am.radio live` (and cb, adsb, pocsag) crashes the Tab5: `Guru Meditation Error: Core 0 panic'ed (Load access fault)`, reset reason 7. Reproduced on a remote stream AND on a local V3c, so not rtl_tcp. The stack pointer is below the main task's stack bottom (SP 0x4ff2d2f0, bounds 0x4ff2d328-0x4ff314a0, about 16.7 KB): a stack overflow. Fault address resolves to `OrcConsole::printf` (`ui/main.cpp:265`, a 2048-byte `char output[]` on the stack) called from `draw_sdr_screen` (`main.cpp:7538`, the AM dashboard branch), itself reached from the serial command handler | `ui/main.cpp` 265, 7538 | L: the normal tap path does NOT crash (AM RADIO opened by `UI_TAP` 2026-11-08 and ran), so this is a bug in the serial `UI_DOC_SHOW` path only | tap AM RADIO and CB RADIO on Home; `UI_DOC_SHOW am.radio live` again after a fix |
 
 ## 3. Dashboard matrix
@@ -121,7 +122,7 @@ Results: 19 of 19 open on a remote stream, **no crashes**, the RTL-TCP tag is co
 is not reachable by tapping.
 
 Corrections and confirmations to the gap list:
-- **G2 confirmed with evidence.** FT8 runs at 1.44 MS/s and falls behind (84%) instead of 240 kS/s; ACARS never attaches a receiver. SSTV is fine.
+- **G2 was wrong (see the iteration 5 log).** The sweep only opened FT8 and ACARS; I then called an in-transition reading (FT8 at 1.44 MS/s, ACARS "paused") a failure. Both start at their low rate on remote.
 - **G9 corrected.** ADS-B at 2.048 MS/s (4.1 MB/s) ran at 99% link on the Tab5's Wi-Fi for the sampled windows, so it is not ruled out by bandwidth.
   It still needs a long run and a real decode check.
 - **G7 narrowed.** RF Lab's LIVE measurements work on remote; only hardware controls are local.
@@ -132,6 +133,17 @@ Corrections and confirmations to the gap list:
   fails before the fix (the session never gives up) and passes after; all rtl_tcp host tests pass. Built, flashed to COM17 and checked on the Tab5 against a
   fake server that greets then goes silent: connection gaps 3.5, 4.1, 5.0, 7.0, 11.0, 18.0, 18.0, 18.1 s (the 3 s stall plus the 0.5 to 15 s back-off), then
   `state=failed reason=no data` after 9 connections, instead of 744 reconnects. A normal stream from the Pi still starts and runs afterwards (link 97%).
+
+- 2026-11-08 iteration 5: **G2 retracted.** `esp_rtl_sdr_is_rate_supported()` is a pure function (rate window and quantisation, no device), so the local-dongle theory was wrong.
+  Cold tests on the Pi stream (FM, then open the dashboard, log every `RTL_START`): FT8 -> `RTL_START rate=240000 display_hz=14074000` within about 7 s;
+  ACARS -> `rate=240000 display_hz=131490000` (5.5 s in one run, and the same on the local V3c in 5-6.4 s); SSTV runs at 0.240 MS/s. Nine fresh-session
+  switches (fm, acars, ft8 x3) started a remote stream in a median of 3.5 s, max 4.4 s, none slow and none failed. One earlier ACARS start took about 21 s after the tile tap and could not be
+  reproduced (cause unknown, possibly a slow first connect); it is a watch item, not a fix. The sweep's "1.44 MS/s BEHIND 84%" FT8 reading was a transient before the rate switch.
+  Lesson recorded: opening a screen is not the same as using it; reproduce on local and remote with the same actions before calling a gap.
+- 2026-11-08 iteration 5, watch items: (a) **internal RAM trend**: `RTL_HEALTH` `dma_free` read 25,967 B at 69 s uptime, 19,219 B at 15 min and 16,903 B after about 30 dashboard
+  transitions and many stream restarts (`internal_free` 45.5 KB at boot, 17.4 KB later); not yet known whether it recovers or leaks (G12 to measure). (b) The serial pairing
+  (`authenticate`) intermittently fails with "pairing failed (device response omitted)" when several processes open the port in quick succession; the driver tool needs a fresh
+  session per step as a workaround.
 
 ## 6. Next iterations (in order)
 
