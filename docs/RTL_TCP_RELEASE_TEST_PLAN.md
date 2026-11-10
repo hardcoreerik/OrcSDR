@@ -376,6 +376,10 @@ Server refuses `0.0.0.0` in `run_server` and the worker waits on a `0.0.0.0` Wi-
 
 A band change made while a remote stream was still connecting is no longer lost (the cancelled start restarts with the newest request). A remote stream that failed at boot is retried every 30 s with the last requested band. Flashed on COM17: Pi server stopped, Tab5 failed to connect, server restarted, stream came back by itself in about 30 s with no reboot. Live FT8 on 20 m, 4 min: 105 decodes in 15 slots (7.0 per slot), 100% link, no drops. A run started right after that recovery decoded one slot only (link adapter had stepped the rate up); not investigated further. The cancelled-start path itself is not exercised by a test.
 
+### Iteration 44 (2026-11-10): real rtl_tcp across the cellular hop, FT8
+
+Setup: the Pi (V4L, stock rtl_tcp 1.4.0) on the phone hotspot "Wifi" (10.110.212.7), reached over Tailscale; an SSH forward on the PC (192.168.1.15:1236 -> Pi:1234) relayed it to the Tab5 (COM17), which stayed on the home Wi-Fi. FT8 dashboard on 20 m (14.074 MHz), 8 minutes: 194 decodes in 31 slots (6.3 per slot, min 3, max 12), link 88-109% (mean 100%), 480 kB/s, 0 dropped, 0 reconnects. This closes the pending re-measurement from iteration 38: the receive-queue fix holds with the real server through a real internet path. Not covered: a server bound to a public address with no relay, and long duration. Gotchas: the Pi's server binds to its Wi-Fi address, so the forward target must be that address (not 127.0.0.1); the server takes one client, so a reconnecting Tab5 can hold the slot while another client tests. Lab restored afterwards: Pi on home Wi-Fi (192.168.1.219), Tab5 host 192.168.1.219:1234.
+
 ## 6. Next iterations (in order)
 
 1. Fix the retune detector and repeat at all rates and at `-b 2`; add a Tab5-side check of what FM seek dwell is.
