@@ -1542,6 +1542,10 @@ static std::atomic<bool> rtl_offset_tuning_enabled{true};
 static std::atomic<bool> g_ft8_rate_owned{false};
 static std::atomic<bool> g_ft8_rate_restart_pending{false};   // the stream is still at the FT8 rate after the decoder let go
 static std::atomic<uint32_t> rtl_active_sample_rate_sps{kRtlSampleRateSps};
+// The band's default rate as decided when the running stream started. IQ blocks are classified against this, not against
+// rtl_default_sample_rate() called live: on a remote stream that reads the rate cap and the link adapter, which can change
+// before the stream restarts, and every block would then look like a custom rate and miss its decoders.
+static std::atomic<uint32_t> rtl_stream_default_rate_sps{kRtlSampleRateSps};
 // M5GFX framebuffer writes are single-task only.  The RTL worker requests a
 // repaint; loop() owns the actual draw.
 static std::atomic<bool> rtl_stream_ui_refresh_pending{false};
@@ -9574,7 +9578,7 @@ static void rtl_tcp_sink_submit(uint8_t *slot, size_t bytes) {
   rtl_capture_bytes += n;
   rtl_iq_received_samples.fetch_add(n / 2, std::memory_order_relaxed);
   const uint32_t active_rate = rtl_active_sample_rate_sps.load(std::memory_order_relaxed);
-  const uint32_t decoder_rate = rtl_default_sample_rate(g_stream_band);
+  const uint32_t decoder_rate = rtl_stream_default_rate_sps.load(std::memory_order_relaxed);
   const RtlIqBlock block{
       rtl_ring_slots[slot_index], n,
       rtl_iq_sequence.fetch_add(1, std::memory_order_relaxed), slot_index, g_stream_band,
@@ -9710,7 +9714,7 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
       }
       std::memcpy(rtl_ring_slots[slot], iq->data, n);
       const uint32_t active_rate = rtl_active_sample_rate_sps.load(std::memory_order_relaxed);
-      const uint32_t decoder_rate = rtl_default_sample_rate(g_stream_band);
+      const uint32_t decoder_rate = rtl_stream_default_rate_sps.load(std::memory_order_relaxed);
       const RtlIqBlock block{
           rtl_ring_slots[slot], n,
           rtl_iq_sequence.fetch_add(1, std::memory_order_relaxed), slot, g_stream_band,
@@ -10046,7 +10050,9 @@ static void rtl_driver_app_task(void *) {
       st.frequency_hz =
           band == RtlBand::fm ? rtl_fm_command_lo_hz(frequency_hz) : frequency_hz;
       const uint32_t lab_rate = rtl_rate_override_sps.load(std::memory_order_acquire);
-      st.sample_rate_sps = lab_rate ? lab_rate : rtl_default_sample_rate(band);
+      const uint32_t band_default_rate = rtl_default_sample_rate(band);
+      st.sample_rate_sps = lab_rate ? lab_rate : band_default_rate;
+      rtl_stream_default_rate_sps.store(band_default_rate, std::memory_order_release);
       rtl_active_sample_rate_sps.store(st.sample_rate_sps, std::memory_order_release);
       // The scope span must never claim more bandwidth than the stream carries.
       if (rtl_scope_span_hz.load(std::memory_order_relaxed) > st.sample_rate_sps)
