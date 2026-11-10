@@ -10163,7 +10163,15 @@ static void rtl_driver_app_task(void *) {
         g_rtl_active_source.store(static_cast<uint8_t>(orcsdr::source::Active::none),
                                   std::memory_order_release);
         g_rtl_remote_narrow.store(false, std::memory_order_release);
-        set_rtl_profile_status(remote ? "remote server unavailable" : "start failed");
+        if (remote) {
+          // Say why (connect failed, not an rtl_tcp server, server busy or silent...) instead of one fixed sentence.
+          char why[48];
+          snprintf(why, sizeof(why), "remote: %s",
+                   orcsdr::rtl_tcp::end_reason_name(orcsdr::rtl_tcp_source::status().last_reason));
+          set_rtl_profile_status(why);
+        } else {
+          set_rtl_profile_status("start failed");
+        }
         rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
         if (rtl_am_scan_active.load(std::memory_order_acquire)) {
           if (orcsdr::am_finder::active()) orcsdr::am_finder::cancel();
@@ -10338,6 +10346,7 @@ static void rtl_driver_app_task(void *) {
               const auto rate_change =
                   (remote_state == orcsdr::rtl_tcp::State::streaming &&
                    g_stream_band != RtlBand::adsb &&  // ADS-B keeps its own rate
+                   rtl_rate_override_sps.load(std::memory_order_acquire) == 0 &&  // a pinned rate (FT8's 240 kS/s) is not the adapter's to move
                    !rtl_band_needs_fixed_rate(g_stream_band))  // so do LoRa, POCSAG and P25 (their decoders need 960 kS/s)
                       ? orcsdr::rtl_tcp_source::note_link_and_adapt(
                             link_pct, rtl_remote_wanted_rate(g_stream_band), kRtlDemodRateSps)  // 240 kS/s needs the capped read size in rtl_tcp_sink_acquire

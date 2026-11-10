@@ -384,6 +384,10 @@ Setup: the Pi (V4L, stock rtl_tcp 1.4.0) on the phone hotspot "Wifi" (10.110.212
 
 The rtl_tcp server (Tab5 serving its own dongle) now saves gain mode, gain, digital AGC and ppm when a client connects and puts them back when it leaves, so a remote client's commands no longer change the local app's tuner. Built and flashed on COM17, but **not exercised**: COM17 has no dongle plugged in, so no client was ever served. The boot-time remote start now uses the band a dashboard already recorded (instead of always FM) when one was opened before the stream could start. One FT8 session after a flash sat on an FM-rate stream with the FT8 screen open (tap off, 0 decodes for 3 minutes); sending the band again did nothing because it was unchanged, and a different band restarted it correctly at 240 kS/s. It did not reproduce after the boot-band change (fresh boot, FT8 opened: 72 decodes in 11 slots), but the cause is not proven. Internet-hop setup and pass record: [RTL_TCP_INTERNET_HOP_TEST.md](RTL_TCP_INTERNET_HOP_TEST.md).
 
+### Iteration 46 (2026-11-10): pinned rate is not the link adapter's; real failure reason
+
+The remote link adapter no longer steps a stream whose rate is pinned (FT8's 240 kS/s override): a bad moment on the link used to restart FT8 at the same rate and cost a slot, and a probe up could move it off 240 kS/s. A failed remote start now shows the reason (`remote: connect failed`, `not an rtl_tcp server`, `server busy or silent`...) instead of one fixed sentence. Flashed on COM17: live FT8 on 20 m for 6 minutes, 135 decodes in 23 slots, none skipped, 0 dropped, 0 reconnects. The new message text was **not seen on screen**: with the server stopped the stream sat in `reconnecting`, which is a different status path. Still open from the reviews: the 2 KB stall-drain scratch (not reproduced), control-surface doc mismatches, ADS-B at 2.048 MS/s against a 2 MB/s link.
+
 ## 6. Next iterations (in order)
 
 1. Fix the retune detector and repeat at all rates and at `-b 2`; add a Tab5-side check of what FM seek dwell is.
