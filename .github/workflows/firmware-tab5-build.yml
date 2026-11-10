@@ -50,6 +50,8 @@ jobs:
         run: |
           git config --global --add safe.directory "$GITHUB_WORKSPACE"
           command -v jq >/dev/null || (apt-get update -qq && apt-get install -y -qq jq >/dev/null)
+      - id: meta
+        run: echo "build_id=pr $(git rev-parse --short=7 HEAD)" >> "$GITHUB_OUTPUT"
       - name: Restore ESP-Hosted C6 image
         id: c6cache
         uses: actions/cache@0057852bfaa89a56745cba8c7296529d2fc39830 # v4
@@ -62,4 +64,4 @@ jobs:
       - name: Fetch world map
         run: bash tools/ci/fetch-world-map.sh .ci-cache/world-map
       - name: Build Tab5 firmware
-        run: . "$IDF_PATH/export.sh" >/dev/null && bash tools/ci/build-tab5.sh --c6 .ci-cache/hosted-c6/esp_hosted_tab5_c6.bin --world-map .ci-cache/world-map/world-overview-z4.pmtiles --out out --build-id "pr ${{ github.sha }}"
+        run: . "$IDF_PATH/export.sh" >/dev/null && bash tools/ci/build-tab5.sh --c6 .ci-cache/hosted-c6/esp_hosted_tab5_c6.bin --world-map .ci-cache/world-map/world-overview-z4.pmtiles --out out --build-id "${{ steps.meta.outputs.build_id }}"
