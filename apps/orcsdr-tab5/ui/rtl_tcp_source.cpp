@@ -228,6 +228,7 @@ bool queue_command(Command command, uint32_t parameter) {
 }
 
 uint8_t g_rate_cap = 0;   // see Tuning::rate_cap
+std::atomic<bool> g_wifi_keepalive{false};
 
 // The sample rate a stream may ask for under the user's cap. The adapter ladder works on whatever it is given, so the cap is applied first.
 uint32_t capped(uint32_t wanted_sps) {
@@ -242,6 +243,7 @@ void save_settings() {
   store.put_string("host", g_config.host);
   store.put_u16("port", g_config.port);
   store.put_u8("cap", g_rate_cap);
+  store.put_u8("wifikeep", g_wifi_keepalive.load() ? 1 : 0);
   store.put_u8("ppm_set", g_desired.ppm_set ? 1 : 0);
   store.put_i32("ppm", g_desired.ppm);
   store.put_u8("dir_set", g_desired.direct_set ? 1 : 0);
@@ -269,6 +271,7 @@ void begin(const IqSink& sink) {
     if (g_config.port == 0) g_config.port = rtl_tcp::kDefaultPort;
     g_rate_cap = store.get_u8("cap", 0);
     if (g_rate_cap > 2) g_rate_cap = 0;
+    g_wifi_keepalive.store(store.get_u8("wifikeep", 0) != 0);
     g_desired.ppm_set = store.get_u8("ppm_set", 0) != 0;
     g_desired.ppm = store.get_i32("ppm", 0);
     if (g_desired.ppm < -1000 || g_desired.ppm > 1000) g_desired.ppm_set = false, g_desired.ppm = 0;
@@ -475,6 +478,14 @@ bool set_offset_tuning(bool on) {
   return !running() || queue_command(Command::set_offset_tuning, on ? 1u : 0u);
 }
 
+bool wifi_keepalive() { return g_wifi_keepalive.load(); }
+
+void set_wifi_keepalive(bool on) {
+  g_wifi_keepalive.store(on);
+  Lock lock;
+  save_settings();
+}
+
 RemoteGain remote_gain() {
   RemoteGain r;
   {
@@ -594,6 +605,13 @@ bool handle_command(const char* line, char* reply, size_t reply_size) {
       std::snprintf(reply, reply_size, "RTL_TCP RATECAP cap=%u (%s) saved=1", g_rate_cap, rate_cap_name(g_rate_cap));
     else
       std::snprintf(reply, reply_size, "RTL_TCP RATECAP error=use 0 (auto), 1 (max 0.96 MS/s) or 2 (0.24 MS/s)");
+  } else if (!std::strcmp(verb, "WIFIKEEP")) {
+    if (arg1[0] == '0' || arg1[0] == '1') {
+      set_wifi_keepalive(arg1[0] == '1');
+      std::snprintf(reply, reply_size, "RTL_TCP WIFIKEEP on=%d saved=1", wifi_keepalive() ? 1 : 0);
+    } else {
+      std::snprintf(reply, reply_size, "RTL_TCP WIFIKEEP on=%d (use 0 or 1)", wifi_keepalive() ? 1 : 0);
+    }
   } else if (!std::strcmp(verb, "PPM")) {
     const long value = std::strtol(arg1, nullptr, 10);
     if (arg1[0] && set_ppm(static_cast<int32_t>(value))) std::snprintf(reply, reply_size, "RTL_TCP PPM ppm=%ld saved=1", value);

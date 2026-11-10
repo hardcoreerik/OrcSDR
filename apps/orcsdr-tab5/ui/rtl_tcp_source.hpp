@@ -114,6 +114,10 @@ bool set_rate_cap(uint8_t cap);              // takes effect on the next start
 bool set_ppm(int32_t ppm);                   // -1000..1000; live when streaming
 bool set_direct_sampling(uint8_t mode);      // 0..2; live when streaming
 bool set_offset_tuning(bool on);             // live when streaming
+// Off by default. When on and the receiver source is not local USB, main.cpp re-arms Wi-Fi reconnect and C6 link recovery every
+// 5 minutes while Wi-Fi stays down, instead of giving up after its bounded attempts. Saved.
+bool wifi_keepalive();
+void set_wifi_keepalive(bool on);
 const char* rate_cap_name(uint8_t cap);
 
 Status status();

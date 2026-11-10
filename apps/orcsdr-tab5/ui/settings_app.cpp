@@ -419,7 +419,7 @@ void draw_radio_defaults() {
 // ---- RTL_TCP page -------------------------------------------------------------------------------------------------
 // Everything a person sets for a remote rtl_tcp receiver, in one place. Rows at kRtRow0 + n * kRtRowH; the buttons share a column.
 constexpr int kRtRow0 = 180;
-constexpr int kRtRowH = 54;
+constexpr int kRtRowH = 48;
 int rt_y(int row) { return kRtRow0 + row * kRtRowH; }
 
 void rt_row(const char* label, const char* value, int row, uint16_t color = TFT_WHITE) {
@@ -463,7 +463,10 @@ void draw_rtl_tcp() {
   text("BIAS TEE", 330, rt_y(6), kMuted, 2);
   text("NEVER SENT TO A REMOTE SERVER", 1218, rt_y(6), kMuted, 2, middle_right);   // powering an antenna at the far end is a decision made there
 
-  M5.Display.drawFastHLine(330, rt_y(6) + 28, 888, 0x2945);
+  rt_row("KEEP WI-FI ALIVE", g_state.rt_wifi_keep ? "ON: EVERY 5 MIN" : "OFF", 7, g_state.rt_wifi_keep ? TFT_WHITE : kMuted);
+  button("TOGGLE", 930, rt_y(7) - 23, 288, 46, TFT_DARKCYAN);
+
+  M5.Display.drawFastHLine(330, rt_y(7) + 28, 888, 0x2945);
   const bool live = g_state.rt_state[0] != '\0';
   if (live && g_state.rt_link_pct > 0) snprintf(value, sizeof(value), "%s, LINK %u%%", g_state.rt_state, static_cast<unsigned>(g_state.rt_link_pct));
   else snprintf(value, sizeof(value), "%s", live ? g_state.rt_state : "NOT RUNNING");
@@ -1048,7 +1051,7 @@ void update(const State& state_value) {
        g_state.rt_rate_cap != state_value.rt_rate_cap || g_state.rt_ppm != state_value.rt_ppm ||
        g_state.rt_ppm_set != state_value.rt_ppm_set || g_state.rt_direct != state_value.rt_direct ||
        g_state.rt_direct_set != state_value.rt_direct_set || g_state.rt_offset_set != state_value.rt_offset_set ||
-       g_state.rt_offset_on != state_value.rt_offset_on || strcmp(g_state.rt_state, state_value.rt_state) != 0 ||
+       g_state.rt_offset_on != state_value.rt_offset_on || g_state.rt_wifi_keep != state_value.rt_wifi_keep || strcmp(g_state.rt_state, state_value.rt_state) != 0 ||
        strcmp(g_state.rt_reason, state_value.rt_reason) != 0 || g_state.rt_link_pct != state_value.rt_link_pct ||
        g_state.rt_rate_sps != state_value.rt_rate_sps || strcmp(g_state.rt_tuner, state_value.rt_tuner) != 0 ||
        g_state.rt_gain_steps != state_value.rt_gain_steps || g_state.rt_received_mb != state_value.rt_received_mb ||
@@ -1345,6 +1348,11 @@ Action handle_touch(int32_t x, int32_t y) {
       g_state.rt_offset_set = true;
       draw_content();
       return {ActionKind::rtl_offset_changed, g_state.rt_offset_on ? 1 : 0};
+    }
+    if (hit(x, y, 930, rt_y(7) - 23, 288, 46)) {
+      g_state.rt_wifi_keep = !g_state.rt_wifi_keep;
+      draw_content();
+      return {ActionKind::rtl_wifi_keepalive_changed, g_state.rt_wifi_keep ? 1 : 0};
     }
   } else if (g_section == Section::companion) {
     if (hit(x, y, 960, 150, 170, 48))

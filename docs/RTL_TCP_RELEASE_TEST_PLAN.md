@@ -388,6 +388,15 @@ The rtl_tcp server (Tab5 serving its own dongle) now saves gain mode, gain, digi
 
 The remote link adapter no longer steps a stream whose rate is pinned (FT8's 240 kS/s override): a bad moment on the link used to restart FT8 at the same rate and cost a slot, and a probe up could move it off 240 kS/s. A failed remote start now shows the reason (`remote: connect failed`, `not an rtl_tcp server`, `server busy or silent`...) instead of one fixed sentence. Flashed on COM17: live FT8 on 20 m for 6 minutes, 135 decodes in 23 slots, none skipped, 0 dropped, 0 reconnects. The new message text was **not seen on screen**: with the server stopped the stream sat in `reconnecting`, which is a different status path. Still open from the reviews: the 2 KB stall-drain scratch (not reproduced), control-surface doc mismatches, ADS-B at 2.048 MS/s against a 2 MB/s link.
 
+### Iteration 47 (2026-11-10): ADS-B message, Wi-Fi keep-alive toggle, health log, doc corrections
+
+- `docs/RTL_TCP_CONTROL_SURFACE.md` corrected against the code (client states and reconnect policy, the new commands, which server commands are applied versus counted as unsupported, the tuner restore, the 192-entry receive mailbox, the ADS-B bandwidth).
+- ADS-B on a remote stream now says what it needs: "listening (remote; ADS-B needs ~4.1 MB/s)", and "remote link too slow for ADS-B (needs ~4.1 MB/s)" when behind. The decoder stays at 2.048 MS/s. **Not seen on screen** (ADS-B was not opened on the remote stream).
+- Settings > RTL_TCP has a KEEP WI-FI ALIVE toggle (serial `RTL_TCP WIFIKEEP 0|1`), off by default, saved. Shown on COM17 ([screenshot](evidence/rtl_tcp/2026-11-10-settings-rtl-tcp-keep-wifi-alive.png)); serial and touch toggles verified. The recovery itself is **not exercised**: it needs a Wi-Fi outage of more than 5 minutes with the toggle on.
+- `RTL_WIFI_HEALTH` is logged once a minute while a remote receiver may need Wi-Fi (one sample seen: connected, no failures, stream streaming, DMA free 23,819 B; the RSSI field reads 0, so it is unreliable). The give-up logic found while reading: reconnect gives up after 5 tries (about 3.7 minutes) and C6 recovery after 3; the recovery budget refills only after 5 minutes connected. A Wi-Fi outage longer than about four minutes therefore ends in "restart Wi-Fi". This fits what was seen, but is **not proven to be the wedge**: the evidence from the original event was not captured.
+- Settings page rows are 48 px apart (were 54) to fit the new row; the touch test was updated.
+- Flashed on COM17: live FT8 on 20 m for 3 minutes, 76 decodes in 11 slots (one slot skipped at start), 0 dropped, 0 reconnects.
+
 ## 6. Next iterations (in order)
 
 1. Fix the retune detector and repeat at all rates and at `-b 2`; add a Tab5-side check of what FM seek dwell is.

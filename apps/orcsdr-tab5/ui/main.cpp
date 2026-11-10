@@ -10365,8 +10365,13 @@ static void rtl_driver_app_task(void *) {
                 const bool live = remote_state == orcsdr::rtl_tcp::State::streaming;
                 set_radio_session_state(live ? orcsdr::radio::ReceiverState::running
                                              : orcsdr::radio::ReceiverState::starting);
-                set_rtl_profile_status(behind ? "remote link too slow: behind real time"
-                                       : live ? "continuous listening (remote)"
+                // ADS-B is fixed at 2.048 MS/s (about 4.1 MB/s): name that limit, so a slow link is not mistaken for a bad server.
+                set_rtl_profile_status(behind ? (g_stream_band == RtlBand::adsb
+                                                     ? "remote link too slow for ADS-B (needs ~4.1 MB/s)"
+                                                     : "remote link too slow: behind real time")
+                                       : live ? (g_stream_band == RtlBand::adsb
+                                                     ? "listening (remote; ADS-B needs ~4.1 MB/s)"
+                                                     : "continuous listening (remote)")
                                               : "remote reconnecting");
                 rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
               }
@@ -11062,6 +11067,41 @@ void poll_wifi() {
       static_cast<int32_t>(millis() - wifi_link_recovery_due_ms) >= 0) {
     wifi_link_recovery_due_ms = 0;
     recover_wifi_link();
+  }
+  // Evidence for the Wi-Fi wedge: one line a minute while a remote receiver may depend on Wi-Fi, so a long soak shows what changed
+  // before Wi-Fi died (link flags, retry budgets, how long it has been down, internal DMA RAM).
+  static uint32_t down_since_ms = 0;
+  static uint32_t last_rearm_ms = 0;
+  static uint32_t last_health_ms = 0;
+  const bool remote_may_need_wifi = orcsdr::rtl_tcp_source::mode() != orcsdr::source::Mode::local_usb &&
+                                    orcsdr::rtl_tcp_source::configured();
+  if (wifi_connected) down_since_ms = 0;
+  else if (down_since_ms == 0) down_since_ms = millis() | 1u;
+  if (remote_may_need_wifi && millis() - last_health_ms >= 60000u) {
+    last_health_ms = millis();
+    Serial.printf("RTL_WIFI_HEALTH connected=%d ready=%d link_failed=%d reconnect_attempts=%u recoveries=%u down_s=%lu rssi=%d "
+                  "dma_free=%lu stream=%s\n",
+                  wifi_connected ? 1 : 0, wifi_station_ready ? 1 : 0, orcsdr::wifi::link_failed() ? 1 : 0,
+                  static_cast<unsigned>(wifi_reconnect_attempts), static_cast<unsigned>(wifi_link_recoveries),
+                  static_cast<unsigned long>(down_since_ms ? (millis() - down_since_ms) / 1000u : 0u),
+                  wifi_connected ? static_cast<int>(orcsdr::wifi::rssi()) : 0,
+                  static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)),
+                  orcsdr::rtl_tcp::state_name(orcsdr::rtl_tcp_source::state()));
+  }
+  // Optional (Settings > RTL_TCP, off by default): reconnect and C6 link recovery are bounded, so a Wi-Fi outage longer than about
+  // four minutes (an access point restarting) left the Tab5 offline until someone reset it. With this on, a remote receiver's Wi-Fi
+  // gets a fresh budget every 5 minutes it stays down. It reuses the existing reconnect and recovery paths.
+  if (remote_may_need_wifi && orcsdr::rtl_tcp_source::wifi_keepalive() && !wifi_connected && !wifi_connecting &&
+      !wifi_scan_running && down_since_ms != 0 && millis() - down_since_ms >= 300000u &&
+      millis() - last_rearm_ms >= 300000u) {
+    last_rearm_ms = millis();
+    wifi_link_recoveries = 0;
+    wifi_reconnect_attempts = 0;
+    Serial.printf("RTL_WIFI_KEEPALIVE rearm down_s=%lu link_failed=%d\n",
+                  static_cast<unsigned long>((millis() - down_since_ms) / 1000u),
+                  orcsdr::wifi::link_failed() ? 1 : 0);
+    if (orcsdr::wifi::link_failed()) link_failure_handled = false;  // run the C6 link recovery again
+    else schedule_wifi_reconnect("keepalive");
   }
   if (orcsdr::wifi::link_failed() || wifi_link_recovery_due_ms != 0) return;
   link_failure_handled = false;
@@ -15629,6 +15669,7 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
     case orcsdr::settings::ActionKind::rtl_ppm_changed:
     case orcsdr::settings::ActionKind::rtl_direct_changed:
     case orcsdr::settings::ActionKind::rtl_offset_changed:
+    case orcsdr::settings::ActionKind::rtl_wifi_keepalive_changed:
       orcsdr::settings_remote::handle(action);
       break;
     case orcsdr::settings::ActionKind::clock_offset_changed:

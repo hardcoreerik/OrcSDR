@@ -113,6 +113,7 @@ struct State {
   bool rt_direct_set = false;
   bool rt_offset_set = false;
   bool rt_offset_on = false;
+  bool rt_wifi_keep = false;   // keep trying to bring Wi-Fi back while a remote receiver depends on it
   char rt_state[24]{};            // "STREAMING", "CONNECTING", "RETRYING", "IDLE" ...
   char rt_reason[28]{};           // why the last connection ended, in plain words; empty when none
   uint8_t rt_link_pct = 0;        // 0 = not measured; steps of 5
@@ -193,6 +194,7 @@ enum class ActionKind : uint8_t {
   ,rtl_ppm_changed          // value = ppm, -1000..1000
   ,rtl_direct_changed       // value = 0 off, 1 I branch, 2 Q branch
   ,rtl_offset_changed       // value = 0 or 1
+  ,rtl_wifi_keepalive_changed  // value = 0 or 1
   ,remote_server_changed    // fetch the text with take_remote_server()
   ,clock_set_utc          // utc = UTC seconds, value = UTC offset in minutes: write the RTC and store the offset
   ,clock_offset_changed   // value = UTC offset in minutes: store it (the time itself was already right)

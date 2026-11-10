@@ -127,13 +127,16 @@ int main() {
   assert(action.value == 10);
   action = settings::handle_touch(962, 342);                        // -10
   assert(action.value == 0 && visible("+0 PPM"));
-  action = settings::handle_touch(1070, 396);                       // direct sampling: default -> I -> Q -> off
+  action = settings::handle_touch(1070, 372);                       // direct sampling: default -> I -> Q -> off
   assert(action.kind == settings::ActionKind::rtl_direct_changed && action.value == 1 && visible("I BRANCH"));
-  assert(settings::handle_touch(1070, 396).value == 2);
-  assert(settings::handle_touch(1070, 396).value == 0 && visible("OFF"));
-  action = settings::handle_touch(1070, 450);                       // offset tuning
+  assert(settings::handle_touch(1070, 372).value == 2);
+  assert(settings::handle_touch(1070, 372).value == 0 && visible("OFF"));
+  action = settings::handle_touch(1070, 420);                       // offset tuning
   assert(action.kind == settings::ActionKind::rtl_offset_changed && action.value == 1);
-  assert(settings::handle_touch(1070, 450).value == 0);
+  assert(settings::handle_touch(1070, 420).value == 0);
+  action = settings::handle_touch(1070, 516);                       // keep Wi-Fi alive (off by default)
+  assert(action.kind == settings::ActionKind::rtl_wifi_keepalive_changed && action.value == 1 && visible("ON: EVERY 5 MIN"));
+  assert(settings::handle_touch(1070, 516).value == 0 && visible("KEEP WI-FI ALIVE"));
 
   // 10. The page selector scrolls: all ten pages are reachable and UP / DOWN move the window.
   state = base_state();

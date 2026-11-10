@@ -48,6 +48,7 @@ void fill(settings::State& state) {
   state.rt_direct = tuning.direct_mode;
   state.rt_offset_set = tuning.offset_set;
   state.rt_offset_on = tuning.offset_on;
+  state.rt_wifi_keep = rtl_tcp_source::wifi_keepalive();
   const auto s = rtl_tcp_source::status();
   const char* word = "";
   if (rtl_tcp_source::running()) {
@@ -93,6 +94,10 @@ bool handle(const settings::Action& action) {
   }
   if (action.kind == settings::ActionKind::rtl_direct_changed) {
     (void)rtl_tcp_source::set_direct_sampling(static_cast<uint8_t>(action.value));
+    return true;
+  }
+  if (action.kind == settings::ActionKind::rtl_wifi_keepalive_changed) {
+    rtl_tcp_source::set_wifi_keepalive(action.value != 0);
     return true;
   }
   if (action.kind == settings::ActionKind::rtl_offset_changed) {
