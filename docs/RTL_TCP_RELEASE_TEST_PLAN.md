@@ -397,6 +397,16 @@ The remote link adapter no longer steps a stream whose rate is pinned (FT8's 240
 - Settings page rows are 48 px apart (were 54) to fit the new row; the touch test was updated.
 - Flashed on COM17: live FT8 on 20 m for 3 minutes, 76 decodes in 11 slots (one slot skipped at start), 0 dropped, 0 reconnects.
 
+### Iteration 48 (2026-11-10): Wi-Fi outage test on a phone hotspot; the wedge reproduced and fixed
+
+Setup: the Tab5 (COM17) joined the phone hotspot (password typed on the Tab5 by the owner), remote source selected, a serial logger recording `RTL_WIFI_*`. The hotspot was switched off for about 9 minutes.
+
+- **Run 1, keep-alive OFF: wedge reproduced.** The Tab5 lost the link at 14:22:02, retried 5 times (3 s to 120 s backoff) and logged `RTL_WIFI_RECONNECT_GIVE_UP` at 14:26:01. The hotspot came back at about 14:31 and the Tab5 stayed offline (`connected=0`, `reconnect_attempts=5`, down 614 s) with nothing left to retry. This is the "Wi-Fi never comes back until a reset" failure seen earlier: the reconnect budget is bounded and only refills after the link has been up for 5 minutes.
+- **Run 2, keep-alive ON, from that stuck state:** the toggle re-armed the budget (`RTL_WIFI_KEEPALIVE rearm down_s=670`) and the Tab5 reconnected 7 seconds later. This was recovery from the given-up state with the hotspot already back, not a second 9-minute outage.
+- **Second defect found: "Radio pause failed".** After a reboot with no saved network, every Wi-Fi scan and connect failed with `radio_pause_failed` (a 5-second main-loop stall each, and each failure also used up a reconnect attempt), so Wi-Fi could not be set up from the touch UI at all. Cause (from the code, reproduced only once and not with a saved network): the receiver stays marked `queued` when no source can start it (remote source, Wi-Fi down), and the pause waited for `queued` to clear, which only the driver task does. Fixed: the pause no longer waits on a `queued` stream that nothing can start, and the Wi-Fi resume only queues a stream when a source is usable. Flashed; 12 scans over 3 minutes with a saved network and an unreachable server all succeeded (they also succeeded before the fix, so this does not prove the fix; the failing case needs a reboot with no saved network and was not rerun).
+- Added `RTL_RADIO_PAUSE_FAILED` (receiver state when a pause gives up).
+- Not tested: the toggle through a full outage start to finish, and the stream resuming afterwards (the Pi was not on the hotspot).
+
 ## 6. Next iterations (in order)
 
 1. Fix the retune detector and repeat at all rates and at `-b 2`; add a Tab5-side check of what FM seek dwell is.

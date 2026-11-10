@@ -10933,11 +10933,24 @@ bool pause_radio_for_io(bool& paused) {
     rtl_restart_requested.store(false, std::memory_order_release);
     rtl_stop_requested.store(true, std::memory_order_release);
     const uint32_t deadline = millis() + 5000;
-    while ((rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::queued ||
-            rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running) &&
-           static_cast<int32_t>(deadline - millis()) > 0) delay(10);
+    // A stream marked `queued` that no receiver can start (a remote source with Wi-Fi down, no dongle) is not running anything:
+    // only the driver task clears `queued`, and it starts nothing without a usable source. Waiting on it made every Wi-Fi scan or
+    // connect fail with "radio pause failed" until a reset, which is how Wi-Fi could not be brought back with a remote source selected.
+    auto blocking = [] {
+      const auto st = rtl_capture_state.load(std::memory_order_acquire);
+      return st == RtlCaptureState::running || (st == RtlCaptureState::queued && rtl_device_ready());
+    };
+    while (blocking() && static_cast<int32_t>(deadline - millis()) > 0) delay(10);
+    if (!blocking() && rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::queued)
+      rtl_capture_state.store(RtlCaptureState::ready, std::memory_order_release);
     const auto state = rtl_capture_state.load(std::memory_order_acquire);
-    if (state == RtlCaptureState::queued || state == RtlCaptureState::running) {
+    if (blocking()) {
+      // Evidence for "Wi-Fi cannot be changed while a remote stream is stuck": what the receiver was doing after 5 s of waiting.
+      Serial.printf("RTL_RADIO_PAUSE_FAILED capture_state=%d was=%d remote=%s remote_running=%d source=%d\n",
+                    static_cast<int>(state), static_cast<int>(original_state),
+                    orcsdr::rtl_tcp::state_name(orcsdr::rtl_tcp_source::state()),
+                    orcsdr::rtl_tcp_source::running() ? 1 : 0,
+                    static_cast<int>(g_rtl_active_source.load(std::memory_order_acquire)));
       rtl_stop_requested.store(false, std::memory_order_release);
       rtl_restart_requested.store(restart_was_requested, std::memory_order_release);
       rtl_capture_requested.store(capture_was_requested, std::memory_order_release);
@@ -10961,7 +10974,7 @@ void resume_radio_after_io(bool& paused) {
   const bool resume_speaker = radio_io_speaker_resume_pending;
   radio_io_resume_pending = false;
   radio_io_speaker_resume_pending = false;
-  if (resume_radio) {
+  if (resume_radio && rtl_device_ready()) {  // with no usable source nothing would ever clear `queued`
     rtl_capture_state.store(RtlCaptureState::queued, std::memory_order_release);
     rtl_stop_requested.store(false, std::memory_order_release);
     rtl_restart_requested.store(true, std::memory_order_release);
