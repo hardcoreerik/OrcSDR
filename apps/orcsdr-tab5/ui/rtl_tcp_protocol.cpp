@@ -127,6 +127,19 @@ size_t IqPairCarry::commit(uint8_t* slot, size_t offset, size_t received) {
   return total - 1;
 }
 
+bool serial_command_is_read_only(const char* line, const char* prefix) {
+  if (line == nullptr || prefix == nullptr) return false;
+  const size_t n = std::strlen(prefix);
+  if (std::strncmp(line, prefix, n) != 0) return false;
+  const char* p = line + n;
+  if (*p != '\0' && *p != ' ' && *p != '\t') return false;   // a longer word (RTL_TCPD for RTL_TCP) is not this command
+  while (*p == ' ' || *p == '\t') ++p;
+  const char* end = p;
+  while (*end != '\0' && *end != ' ' && *end != '\t') ++end;
+  const size_t verb = static_cast<size_t>(end - p);
+  return verb == 0 || (verb == 6 && std::strncmp(p, "STATUS", 6) == 0);
+}
+
 bool valid_host(const char* host) {
   if (host == nullptr) return false;
   size_t length = 0;

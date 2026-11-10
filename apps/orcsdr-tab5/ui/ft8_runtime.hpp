@@ -97,6 +97,9 @@ using ClockValidFn = bool (*)();
 using DialOffsetFn = float (*)();
 bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* context, ClockValidFn clock_valid, DialOffsetFn dial_offset);
 void stop();
+// Deletes the decoder and waterfall tasks once they have finished. Call from normal application code (never from those tasks);
+// cheap when there is nothing to do.
+void reap();
 // The FT8 screen calls this on every refresh. When it has not been called for several seconds the screen is gone and the
 // runtime stops itself, so leaving the screen never needs an explicit hook.
 void touch();

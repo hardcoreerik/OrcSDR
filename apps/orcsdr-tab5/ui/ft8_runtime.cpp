@@ -677,7 +677,10 @@ void decoder_task(void*) {
   }
   if (g.wwv_phase.load(std::memory_order_acquire) == 1) wwv_finish(1);   // stop() ended the loop mid-measurement: report it so the band is restored and the next start is accepted
   g.task_alive.store(false, std::memory_order_release);
-  vTaskDeleteWithCaps(nullptr);  // a WithCaps task must end this way: plain vTaskDelete leaks its PSRAM stack and control block
+  // Do not delete ourselves: on ESP-IDF 5.5.4 a self-deleting WithCaps task needs a temporary cleanup task from internal RAM and
+  // abort()s when that allocation fails. Park instead; reap() deletes this task by handle from another task, which frees the PSRAM
+  // stack and control block without the temporary task.
+  vTaskSuspend(nullptr);
 }
 
 
@@ -732,7 +735,7 @@ void waterfall_task(void*) {
   if (power) psram_free(power);
   if (sorted) psram_free(sorted);
   g.wf_alive.store(false, std::memory_order_release);
-  vTaskDeleteWithCaps(nullptr);  // a WithCaps task must end this way: plain vTaskDelete leaks its PSRAM stack and control block
+  vTaskSuspend(nullptr);   // parked for reap(), as the decoder task above
 }
 
 }  // namespace
@@ -754,8 +757,22 @@ static void mem_mark(const char* stage) {   // internal DMA-capable heap at each
 
 StartReport last_start_report() { return g_start_report; }
 
+void reap() {
+  // A finished task clears its flag and suspends itself; deleting it from here (another task) frees its WithCaps memory without
+  // the temporary cleanup task a self-delete needs. vTaskDeleteWithCaps suspends it again and waits until it is not running.
+  if (g.task != nullptr && !g.task_alive.load(std::memory_order_acquire)) {
+    vTaskDeleteWithCaps(g.task);
+    g.task = nullptr;
+  }
+  if (g.wf_task != nullptr && !g.wf_alive.load(std::memory_order_acquire)) {
+    vTaskDeleteWithCaps(g.wf_task);
+    g.wf_task = nullptr;
+  }
+}
+
 bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* context, ClockValidFn clock_valid, DialOffsetFn dial_offset) {
   if (g.active.load(std::memory_order_acquire)) return true;
+  reap();   // tasks from the previous session must be gone before new ones take the handles
   mem_mark("entry");
   g_alloc_fail_bytes.store(0, std::memory_order_relaxed);
   if (g.task_alive.load(std::memory_order_acquire) || g.wf_alive.load(std::memory_order_acquire))

@@ -119,5 +119,7 @@ uint64_t bytes_total();
 // Serial/console commands. Returns true when `line` was an RTL_TCP command and
 // writes a one-line reply.
 bool handle_command(const char* line, char* reply, size_t reply_size);
+// Deletes a finished bench task. Call from normal application code; cheap when idle.
+void reap();
 
 }  // namespace orcsdr::rtl_tcp_source

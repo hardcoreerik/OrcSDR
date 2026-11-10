@@ -96,6 +96,7 @@ AppEnv g_env;
 // Receive-only network benchmark: connects to the configured server and just counts bytes, so the
 // link (Wi-Fi + SDIO) is measured without the demodulator or the IQ ring in the path.
 std::atomic<bool> g_bench_running{false};
+TaskHandle_t g_bench_task = nullptr;   // parked at its end, deleted by reap() (never self-deleted; see bench_task)
 
 void bench_task(void* arg) {
   const uint32_t seconds = reinterpret_cast<uintptr_t>(arg);
@@ -142,7 +143,9 @@ void bench_task(void* arg) {
   }
   heap_caps_free(buffer);
   g_bench_running.store(false, std::memory_order_release);
-  vTaskDeleteWithCaps(nullptr);  // a WithCaps task must end this way: plain vTaskDelete leaks its PSRAM stack and control block
+  // A self-deleting WithCaps task needs a temporary cleanup task from internal RAM and abort()s when that fails (ESP-IDF 5.5.4).
+  // Park instead; reap() deletes this task by handle from the application loop.
+  vTaskSuspend(nullptr);
 }
 
 // UDP variant: binds the given port and counts datagrams and sequence gaps from a sender that puts a
@@ -197,7 +200,9 @@ void bench_udp_task(void* arg) {
   if (fd >= 0) close(fd);
   heap_caps_free(buffer);
   g_bench_running.store(false, std::memory_order_release);
-  vTaskDeleteWithCaps(nullptr);  // a WithCaps task must end this way: plain vTaskDelete leaks its PSRAM stack and control block
+  // A self-deleting WithCaps task needs a temporary cleanup task from internal RAM and abort()s when that fails (ESP-IDF 5.5.4).
+  // Park instead; reap() deletes this task by handle from the application loop.
+  vTaskSuspend(nullptr);
 }
 
 
@@ -495,6 +500,13 @@ Status status() {
   return s;
 }
 
+void reap() {
+  if (g_bench_task != nullptr && !g_bench_running.load(std::memory_order_acquire)) {
+    vTaskDeleteWithCaps(g_bench_task);   // already parked; frees its PSRAM stack and control block without a cleanup task
+    g_bench_task = nullptr;
+  }
+}
+
 bool handle_command(const char* line, char* reply, size_t reply_size) {
   if (line == nullptr || reply == nullptr || reply_size == 0) return false;
   if (std::strncmp(line, "RTL_TCP", 7) != 0 || (line[7] != '\0' && line[7] != ' ')) return false;
@@ -531,23 +543,27 @@ bool handle_command(const char* line, char* reply, size_t reply_size) {
     if (g_running.load(std::memory_order_acquire) || seconds == 0 || seconds > 120 || port_number == 0 ||
         port_number > 65535) {
       std::snprintf(reply, reply_size, "RTL_TCP BENCHUDP error=needs 1-120 s, a port and no active stream");
-    } else if (g_bench_running.exchange(true)) {
+    } else if (reap(), g_bench_running.exchange(true)) {
       std::snprintf(reply, reply_size, "RTL_TCP BENCHUDP error=already running");
+    } else if (xTaskCreatePinnedToCoreWithCaps(bench_udp_task, "rtl_bench", 6144,
+                                               reinterpret_cast<void*>((port_number << 16) | seconds), 10, &g_bench_task, 0,
+                                               MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
+      g_bench_running.store(false, std::memory_order_release);   // otherwise a failed start would block every later bench
+      std::snprintf(reply, reply_size, "RTL_TCP BENCHUDP error=could not start the task");
     } else {
-      xTaskCreatePinnedToCoreWithCaps(bench_udp_task, "rtl_bench", 6144,
-                                      reinterpret_cast<void*>((port_number << 16) | seconds), 10, nullptr, 0,
-                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
       std::snprintf(reply, reply_size, "RTL_TCP BENCHUDP listening port=%lu seconds=%lu", port_number, seconds);
     }
   } else if (!std::strcmp(verb, "BENCH")) {
     const unsigned long seconds = arg1[0] ? std::strtoul(arg1, nullptr, 10) : 10;
     if (g_running.load(std::memory_order_acquire) || seconds == 0 || seconds > 120 || !configured()) {
       std::snprintf(reply, reply_size, "RTL_TCP BENCH error=needs a configured server, 1-120 s and no active stream");
-    } else if (g_bench_running.exchange(true)) {
+    } else if (reap(), g_bench_running.exchange(true)) {
       std::snprintf(reply, reply_size, "RTL_TCP BENCH error=already running");
+    } else if (xTaskCreatePinnedToCoreWithCaps(bench_task, "rtl_bench", 6144, reinterpret_cast<void*>(seconds), 10, &g_bench_task, 0,
+                                               MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
+      g_bench_running.store(false, std::memory_order_release);
+      std::snprintf(reply, reply_size, "RTL_TCP BENCH error=could not start the task");
     } else {
-      xTaskCreatePinnedToCoreWithCaps(bench_task, "rtl_bench", 6144, reinterpret_cast<void*>(seconds), 10, nullptr, 0,
-                                      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
       std::snprintf(reply, reply_size, "RTL_TCP BENCH started seconds=%lu (watch RTL_TCP_BENCH lines)", seconds);
     }
   } else if (!std::strcmp(verb, "HOST")) {

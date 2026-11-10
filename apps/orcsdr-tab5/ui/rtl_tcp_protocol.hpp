@@ -117,6 +117,11 @@ bool valid_host(const char* host);
 // part is invalid or the host does not fit `host_size`.
 bool parse_endpoint(const char* text, char* host, size_t host_size, uint16_t* port);
 
+// Serial control: true only for a read-only `RTL_TCP` / `RTL_TCPD` command (no verb, or STATUS). `line` is the whole command.
+// Everything else changes a setting or starts network activity and needs an authenticated session. The verb is found the
+// way the handlers find it (whitespace skipped), so extra spaces cannot slip a command past this check.
+bool serial_command_is_read_only(const char* line, const char* prefix);
+
 // Nominal manual tuner gain steps, in tenths of a dB, for the tuner type an rtl_tcp greeting reports. The greeting carries only the type and a
 // COUNT of steps, never the values, so a client that wants to offer a gain control needs the table. Known: R820T and R828D (types 5 and 6, 29 steps)
 // and E4000 (type 1, 14 steps). Returns the number of steps written (0 when the type is unknown or the reported count does not match the table, so a

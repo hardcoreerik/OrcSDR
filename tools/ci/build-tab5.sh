@@ -61,8 +61,18 @@ apply_patch() {
   fi
 }
 apply_patch m5gfx-tab5-pageflip.patch
-mapfile -t hosted < <(grep -oP "File = '\K[^']+" "$tools/apply-esp-hosted-trampoline-fix.ps1")
+# The .ps1 holds one $patches = @( ... ) list per ESP-Hosted version (3.0.6 first, then 3.1.0): use only the
+# list for the version the component manager installed, exactly as the .ps1 does.
+hosted_version=$(grep -oP '^version:\s*\K\S+' managed_components/espressif__esp_hosted/idf_component.yml | tr -d "\"'")
+case "$hosted_version" in
+  3.0.6) hosted_list=1 ;;
+  3.1.0) hosted_list=2 ;;
+  *) echo "no local ESP-Hosted patch set for version '$hosted_version'" >&2; exit 1 ;;
+esac
+mapfile -t hosted < <(awk -v want="$hosted_list" '/\$patches = @\(/{n++; f=(n==want); next} f&&/^[[:space:]]*\)/{f=0} f' \
+  "$tools/apply-esp-hosted-trampoline-fix.ps1" | grep -oP "File = '\K[^']+")
 [ "${#hosted[@]}" -gt 0 ] || { echo "could not read the ESP-Hosted patch list" >&2; exit 1; }
+echo "ESP-Hosted $hosted_version patch list: ${hosted[*]}"
 for p in "${hosted[@]}"; do apply_patch "$p"; done
 
 # Required sdkconfig lines: the $required = @( ... ) block of build-tab5-idf.ps1.

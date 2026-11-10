@@ -221,6 +221,28 @@ static void test_server_side_framing() {
   CHECK(!commands.push(0x01, &out));
 }
 
+static void test_serial_read_only_allow_list() {
+  CHECK(serial_command_is_read_only("RTL_TCP", "RTL_TCP"));
+  CHECK(serial_command_is_read_only("RTL_TCP STATUS", "RTL_TCP"));
+  CHECK(serial_command_is_read_only("RTL_TCP   STATUS", "RTL_TCP"));
+  CHECK(serial_command_is_read_only("RTL_TCPD STATUS", "RTL_TCPD"));
+  // Everything that changes a setting or starts network activity needs authentication.
+  CHECK(!serial_command_is_read_only("RTL_TCP PPM 5", "RTL_TCP"));
+  CHECK(!serial_command_is_read_only("RTL_TCP RATECAP 1", "RTL_TCP"));
+  CHECK(!serial_command_is_read_only("RTL_TCP DIRECT 2", "RTL_TCP"));
+  CHECK(!serial_command_is_read_only("RTL_TCP OFFSET 1", "RTL_TCP"));
+  CHECK(!serial_command_is_read_only("RTL_TCP BENCH", "RTL_TCP"));
+  CHECK(!serial_command_is_read_only("RTL_TCP SOURCE remote", "RTL_TCP"));
+  CHECK(!serial_command_is_read_only("RTL_TCP STATUSX", "RTL_TCP"));
+  // Extra spaces must not slip a mutating command past the check (it used to compare the exact text).
+  CHECK(!serial_command_is_read_only("RTL_TCPD  ENABLE wifi 1234", "RTL_TCPD"));
+  CHECK(!serial_command_is_read_only("RTL_TCPD\tENABLE wifi 1234", "RTL_TCPD"));
+  CHECK(!serial_command_is_read_only("RTL_TCPD DISABLE", "RTL_TCPD"));
+  // RTL_TCPD is not an RTL_TCP command, and nothing else is either.
+  CHECK(!serial_command_is_read_only("RTL_TCPD STATUS", "RTL_TCP"));
+  CHECK(!serial_command_is_read_only("RTL_HEALTH", "RTL_TCP"));
+}
+
 static void test_backoff_is_bounded() {
   BackoffPolicy policy;
   const uint32_t expect[] = {500, 1000, 2000, 4000, 8000, 15000, 15000, 15000};
@@ -371,6 +393,7 @@ int main() {
   test_endpoint_parsing();
   test_server_side_framing();
   test_backoff_is_bounded();
+  test_serial_read_only_allow_list();
   std::printf("RTL_TCP_PROTOCOL_HOST_TEST failures=%d pass=%d\n", g_failures, g_failures == 0);
   return g_failures == 0 ? 0 : 1;
 }

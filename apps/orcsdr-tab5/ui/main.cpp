@@ -20538,10 +20538,10 @@ void process_command(char* command) {
     Serial.printf("RTL_SERIAL_VERBOSITY_OK mode=%s\n", serial_verbosity_name(level));
     return;
   }
-  if (strncmp(command, "RTL_TCP", 7) == 0) {
+  if (strncmp(command, "RTL_TCP", 7) == 0 && (command[7] == '\0' || command[7] == ' ' || command[7] == '\t')) {
     char reply[320];
-    const bool changes = strncmp(command, "RTL_TCP SOURCE", 14) == 0 ||
-                         strncmp(command, "RTL_TCP HOST", 12) == 0;
+    // Allow-list: only STATUS is open; every other verb changes a setting or starts network activity.
+    const bool changes = !orcsdr::rtl_tcp::serial_command_is_read_only(command, "RTL_TCP");
     if (changes && !authenticated) {
       Serial.println("RTL_TCP_ERROR auth_required");
       return;
@@ -20553,8 +20553,8 @@ void process_command(char* command) {
   }
   if (strncmp(command, "RTL_TCPD", 8) == 0) {
     char reply[400];
-    const bool changes = strncmp(command, "RTL_TCPD ENABLE", 15) == 0 ||
-                         strncmp(command, "RTL_TCPD DISABLE", 16) == 0;
+    // Allow-list, as for RTL_TCP: extra spaces before ENABLE must not skip the check.
+    const bool changes = !orcsdr::rtl_tcp::serial_command_is_read_only(command, "RTL_TCPD");
     if (changes && !authenticated) {
       Serial.println("RTL_TCPD_ERROR auth_required");
       return;
@@ -23828,6 +23828,10 @@ void loop() {
   orcdial_poll();
 #endif
   ft8_native_service();
+  // Finished WithCaps workers park themselves; delete them here, from another task (a self-delete can abort on low internal RAM).
+  orcsdr::ft8_runtime::reap();
+  orcsdr::catalog::reap();
+  orcsdr::rtl_tcp_source::reap();
   // Issue #66: mirror Settings connect_saved — queue only; poll_wifi() calls
   // start_wifi_connection() then initialize_wifi() on the normal loop path.
   if (wifi_boot_bringup_pending &&
