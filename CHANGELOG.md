@@ -2,6 +2,17 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — rtl_tcp remote receiver — 2026-11-09
+
+**New receiver source.** The Tab5 can take its IQ from a standard `rtl_tcp` server on the network (for example a Raspberry Pi with an RTL-SDR) instead of a dongle on its own USB port, and can serve its own dongle with an `rtl_tcp` server. Branch `claude/orcsdr-rtl-tcp-interop-f12b5d`; full test record in [docs/RTL_TCP_RELEASE_TEST_PLAN.md](docs/RTL_TCP_RELEASE_TEST_PLAN.md).
+
+- **Client:** standard protocol (12-byte greeting, 5-byte commands, raw 8-bit IQ). Link-adaptive sample rate (1.44, 0.96, 0.24 MS/s ladder), reconnects forever (fast attempts, then every 30 s), names a server whose single client slot is taken ("server busy or silent") and waits up to two minutes for it, and absorbs short DSP stalls instead of dropping samples.
+- **Remote capabilities:** the server's greeting (tuner type, gain steps) now drives the gain controls, so manual and auto gain work with no local dongle plugged in. Only what the protocol can carry is offered; the bias tee is never sent to a remote server.
+- **Settings > RTL_TCP:** one page for every rtl_tcp setting (source, server, sample-rate cap, frequency correction, direct sampling, offset tuning) with live connection, server and traffic status. The Settings page selector now scrolls.
+- **Fixes found while testing:** FT8 and Shortwave SSB read the idle local driver's centre frequency on a remote stream (FT8 decoded nothing, SSB could be up to 6 kHz off); one sample gap made FT8 skip every later slot; an internal RAM leak on each FT8 visit.
+- **Server:** off by default, binds only to a named LAN address, never all interfaces. `rtl_tcp` has no authentication; do not expose port 1234 to the internet.
+- **Verified on the Tab5 against a Pi 4B running stock RTL-SDR Blog `rtl_tcp` 1.4.0:** all 19 dashboards open on the remote stream; one-hour soak; FT8 decodes (7-16 messages per slot) with and without a local dongle; remote gain changes the measured input level; recovery after a 2-minute server outage. **Not yet verified:** ACARS, SSTV and ADS-B decoding on a remote stream, frequency correction, direct sampling and offset tuning on a real signal, the gain popups on every dashboard, an internet (non-LAN) path, and audio judged by ear. Changing the receiver source applies at the next stream start, not immediately.
+
 ## Unreleased — esp-rtl-sdr driver v0.9.6 — 2026-11-09
 
 **Firmware dependency update.** The Tab5 build now pins `esp_rtl_sdr` to the published release [`v0.9.6`](https://github.com/hardcoreerik/esp-rtl-sdr/blob/v0.9.6/docs/releases/v0.9.6.md) at immutable commit `dabdda1aff6aa196f3c1523d791adf80d2c24ccc` (previously `v0.9.5`, `4bf0171`), in both `idf_component.yml` and `dependencies.lock`.
