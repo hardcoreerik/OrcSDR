@@ -27,7 +27,7 @@ std::atomic<bool> g_rtl_is_nooelec_xtr{false};
 void* g_rtl=&identity;
 constexpr int ESP_OK=0;
 int esp_rtl_sdr_get_device_info(void*,esp_rtl_sdr_device_info_t* out) { *out=identity;return ESP_OK; }
-struct Snapshot { bool wifi_connected=true,driver_ready=true,gain_direct_sampling=false; char receiver[12]="RTL-SDR",wifi_ip[16]="192.0.2.1",clock[12]="12:00",date[20]="2026-10-31"; } current;
+struct Snapshot { bool wifi_connected=true,driver_ready=true,gain_direct_sampling=false; char receiver[12]="RTL-SDR",wifi_ip[16]="192.0.2.1",clock[12]="12:00",date[20]="2026-10-31",link_state[12]=""; } current;
 struct Primitive { std::string text;int x,y,size; };
 #undef assert
 #define assert(x) do { if (!(x)) { std::fprintf(stderr,"FAIL: %s\n",#x); return 1; } } while(0)
@@ -58,7 +58,11 @@ int main() {
  std::strcpy(current.receiver,"RTL V4");primitives.clear();draw_header_status();found=false;
  for(auto &p:primitives) if(p.text=="RTL V4")found=true;
  assert(found && full_clears==0 && bounded_clears==2);
- std::puts("PASS actual Home header: model updates, XTR identity, bounded label, zero full-screen clears");
+ // A remote rtl_tcp stream reports its link in place of READY, still as a bounded repaint.
+ std::strcpy(current.link_state,"STREAMING");primitives.clear();draw_header_status();found=false;bool ready=false;
+ for(auto &p:primitives){ if(p.text=="STREAMING")found=true; if(p.text=="READY")ready=true; }
+ assert(found && !ready && full_clears==0 && bounded_clears==3);
+ std::puts("PASS actual Home header: model updates, XTR identity, remote link state, bounded label, zero full-screen clears");
 }
 '''
 (out/"test.cpp").write_text(code)
