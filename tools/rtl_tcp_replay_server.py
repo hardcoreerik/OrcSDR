@@ -99,8 +99,11 @@ class Client:
                     buf = buf[5:]
                     self.commands.append((op, val))
                     if op == 2 and val != self.rate:
-                        self.rate = val
-                        self.rate_changed.set()
+                        if 225001 <= val <= 300000 or 900001 <= val <= 3200000:   # the RTL2832's valid sample-rate ranges
+                            self.rate = val
+                            self.rate_changed.set()
+                        else:
+                            print(f"  ignoring rate {val}: outside the RTL-SDR's valid ranges", flush=True)
                     print(f"  command 0x{op:02x} {val}", flush=True)
         except OSError:
             pass
@@ -114,8 +117,8 @@ class Client:
         rng = np.random.default_rng(1)
         time.sleep(0.4)   # let the client's rate command arrive before the first block is built
         while self.alive:
+            self.rate_changed.clear()   # clear first: a rate command arriving after this read must still set the event
             rate = a.rate if a.iq else self.rate
-            self.rate_changed.clear()
             if a.iq:
                 tx = open(a.iq, "rb").read()
             else:
@@ -128,10 +131,13 @@ class Client:
                 lead = noise_iq(wait, rate, a.level, a.noise, rng)
                 print(f"{self.addr[0]}: aligning to the next {a.align_utc:.0f} s UTC boundary in {wait:.1f} s", flush=True)
             print(f"{self.addr[0]}: replaying {seconds:.1f} s at {rate} S/s (+{a.gap:.0f} s gap)", flush=True)
+            rate_abort = False
             for stream in (lead, gap, tx, gap):
-                if not self.pace(stream, rate): break
+                if not self.pace(stream, rate):
+                    rate_abort = self.alive   # a live client changed the rate: rebuild and play again; a dead one ends the loop
+                    break
             if not self.alive: break
-            if a.once: break
+            if a.once and not rate_abort: break
         self.alive = False
 
     def pace(self, data, rate):
@@ -198,8 +204,12 @@ def main():
         while True:
             conn, addr = srv.accept()
             print(f"client {addr[0]}:{addr[1]} connected", flush=True)
-            Client(conn, addr, args, audio_rate, audio).run()
-            conn.close()
+            try:
+                Client(conn, addr, args, audio_rate, audio).run()
+            except OSError as e:   # a client that resets right after accept must not stop the server
+                print(f"client {addr[0]}: {e}", flush=True)
+            finally:
+                conn.close()
             print("client gone", flush=True)
     except KeyboardInterrupt:
         pass

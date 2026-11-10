@@ -168,11 +168,14 @@ class TestEnv : public Env {
     return true;
   }
   Desired desired() override {
+    if (use_fixed) return fixed;
     Desired d;
     d.sample_rate_sps = 2400000;
     d.frequency_hz = 100100000;
     return d;
   }
+  bool use_fixed = false;
+  Desired fixed;
   bool stop_requested() override { return stop.load(); }
   void on_state(State state, EndReason reason) override {
     std::lock_guard<std::mutex> lock(mutex_);
@@ -566,6 +569,43 @@ static void test_stop_is_prompt() {
   CHECK(std::chrono::steady_clock::now() - asked2 < std::chrono::milliseconds(1000));
 }
 
+// Switching back to AUTO leaves a stale manual gain value in the desired state. rtl_tcp (librtlsdr) treats a gain command as a
+// switch to manual mode, so sending it after "gain mode = auto" would silently put the tuner back into manual at the old gain.
+static void test_auto_gain_sends_no_gain_value() {
+  FakeServer server([&](int fd, int, FakeServer& self) {
+    const auto g = greeting(5, 29);
+    FakeServer::write_all(fd, g.data(), g.size());
+    stream_pattern(fd, 50000, self);
+    for (int i = 0; i < 100 && !self.stopping(); ++i) {
+      self.read_commands(fd);
+      FakeServer::sleep(10);
+    }
+  });
+  TestEnv env;
+  env.use_fixed = true;
+  env.fixed.sample_rate_sps = 240000;
+  env.fixed.frequency_hz = 7074000;
+  env.fixed.gain_mode_set = true;
+  env.fixed.gain_manual = false;
+  env.fixed.gain_set = true;  // left over from an earlier manual setting
+  env.fixed.gain_tenths_db = 100;
+  Stats stats;
+  const auto cfg = fast_config(server.port());
+  std::thread session([&] { run(cfg, env, stats); });
+  CHECK(wait_for([&] { return server.commands().size() >= 15; }, 3000));
+  FakeServer::sleep(100);
+  env.stop = true;
+  session.join();
+  const auto commands = server.commands();
+  bool saw_gain_mode = false, saw_gain = false;
+  for (size_t i = 0; i + 5 <= commands.size(); i += 5) {
+    if (commands[i] == 0x03) saw_gain_mode = true;
+    if (commands[i] == 0x04) saw_gain = true;
+  }
+  CHECK(saw_gain_mode);
+  CHECK(!saw_gain);
+}
+
 int main() {
   test_normal_stream_and_commands();
   test_wrong_service_is_refused();
@@ -579,6 +619,7 @@ int main() {
   test_slow_link_is_reported();
   test_fast_link_reads_full();
   test_stop_is_prompt();
+  test_auto_gain_sends_no_gain_value();
   std::printf("RTL_TCP_SESSION_HOST_TEST failures=%d pass=%d\n", g_failures, g_failures == 0);
   return g_failures == 0 ? 0 : 1;
 }

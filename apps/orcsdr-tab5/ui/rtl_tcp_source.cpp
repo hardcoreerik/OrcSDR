@@ -395,6 +395,7 @@ bool set_gain_manual(bool manual) {
     Lock lock;
     g_desired.gain_mode_set = true;
     g_desired.gain_manual = manual;
+    if (!manual) g_desired.gain_set = false;  // a stale manual value must not be replayed after AUTO
   }
   return queue_command(Command::set_gain_mode, manual ? 1u : 0u);
 }

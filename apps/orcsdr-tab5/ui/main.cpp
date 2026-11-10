@@ -7313,7 +7313,7 @@ void service_visualizer() {
     else if (action.kind == orcsdr::visualizer::ActionKind::tune_hz)
       request_hot_retune(action.value);
     else if (action.kind == orcsdr::visualizer::ActionKind::span_hz)
-      rtl_scope_span_hz.store(action.value, std::memory_order_relaxed);
+      rtl_scope_span_hz.store(std::min(action.value, rtl_span_cap_hz()), std::memory_order_relaxed);
   }
 }
 
@@ -8972,7 +8972,10 @@ __attribute__((noinline)) void demodulate_shortwave_ssb(RtlBand band, const uint
   uint32_t centre_hz = 0;
   int32_t carrier_offset = 0;
   // A remote stream has no readback: the local driver (idle, often at its last FM tune) must not be asked for the centre.
-  if (!rtl_remote_active() && g_rtl != nullptr && esp_rtl_sdr_get_center_freq(g_rtl, &centre_hz) == ESP_OK && centre_hz != 0)
+  // The centre is the last LO sent to the server (a hot retune quantizes it to 5 kHz, so it is not the dial).
+  if (rtl_remote_active()) centre_hz = orcsdr::rtl_tcp_source::status().frequency_hz;
+  else if (g_rtl == nullptr || esp_rtl_sdr_get_center_freq(g_rtl, &centre_hz) != ESP_OK) centre_hz = 0;
+  if (centre_hz != 0)
     carrier_offset = std::clamp<int32_t>(static_cast<int32_t>(tuned_hz) - static_cast<int32_t>(centre_hz), -6000, 6000);
   if (sideband != wanted) carrier_offset = -carrier_offset;  // a folded spectrum is mirrored about the centre
   audio_scale *= 3.0f;  // SSB has no carrier: the same station is about 10 dB below its AM level
@@ -10211,7 +10214,7 @@ static void rtl_driver_app_task(void *) {
             auto_fm_frequency_hz = kRtlFmMinHz + kRtlFmAutoStepHz / 2;
             auto_fm_best_hz = frequency_hz;
             auto_fm_best_level = -120.0f;
-            rtl_scope_span_hz.store(kRtlScopeSpanMaxHz, std::memory_order_relaxed);
+            rtl_scope_span_hz.store(rtl_span_cap_hz(), std::memory_order_relaxed);   // widest the live stream covers (a remote stream is narrower than 2.4 MHz)
             // FM owns its Settings/Spectrum surfaces.  Reset the shared
             // renderer for the scan, but never repaint legacy Browse chrome.
             reset_spectrum_renderer();
@@ -12905,7 +12908,7 @@ void service_shared_scan(uint32_t now) {
       rtl_fm_preset_scan_total_steps.store(static_cast<int>(count), std::memory_order_relaxed);
       rtl_fm_preset_scan_step.store(0, std::memory_order_relaxed);
       rtl_fm_preset_scan_found.store(0, std::memory_order_relaxed);
-      rtl_scope_span_hz.store(kRtlScopeSpanMaxHz, std::memory_order_relaxed);
+      rtl_scope_span_hz.store(rtl_span_cap_hz(), std::memory_order_relaxed);   // see the auto-scan above
       rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
       Serial.println("RTL_PRESET_SCAN start");
     }
@@ -13873,8 +13876,12 @@ uint32_t ft8_dial_hz(size_t band_index, orcsdr::ft8::DigitalMode mode) {
 float ft8_native_dial_offset_hz() {
   const uint32_t dial = orcsdr::ft8_runtime::requested_dial_hz();
   uint32_t centre = 0;
-  // A remote rtl_tcp server tunes to exactly what it is told and offers no readback; the idle local driver's centre is not the stream's.
-  if (dial == 0 || rtl_remote_active() || g_rtl == nullptr || esp_rtl_sdr_get_center_freq(g_rtl, &centre) != ESP_OK || centre == 0) return 0.0f;
+  // A remote rtl_tcp server tunes to exactly what it is told and offers no readback: the centre is the last LO we sent it
+  // (a hot retune quantizes that to 5 kHz). The idle local driver's centre is not the stream's.
+  if (dial == 0) return 0.0f;
+  if (rtl_remote_active()) centre = orcsdr::rtl_tcp_source::status().frequency_hz;
+  else if (g_rtl == nullptr || esp_rtl_sdr_get_center_freq(g_rtl, &centre) != ESP_OK) centre = 0;
+  if (centre == 0) return 0.0f;
   return static_cast<float>(static_cast<int32_t>(dial) - static_cast<int32_t>(centre));
 }
 

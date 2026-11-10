@@ -131,7 +131,8 @@ bool send_desired(int fd, const Desired& d, Env& env) {
   if (d.gain_mode_set &&
       !send_command(fd, Command::set_gain_mode, d.gain_manual ? 1u : 0u, env))
     return false;
-  if (d.gain_set &&
+  // Only in manual mode: librtlsdr treats a gain command as a switch to manual, so a stale value would undo AUTO.
+  if (d.gain_set && d.gain_manual &&
       !send_command(fd, Command::set_gain, parameter_signed(d.gain_tenths_db), env))
     return false;
   if (d.agc_set && !send_command(fd, Command::set_agc_mode, d.agc_on ? 1u : 0u, env))
