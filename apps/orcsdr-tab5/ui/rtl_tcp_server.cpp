@@ -76,6 +76,38 @@ void release_receiver() {
   }
 }
 
+// The tuner state the local app had before a remote client arrived. A client's gain, AGC and ppm commands are not its own:
+// they change the shared dongle, so they are put back when it leaves.
+struct SavedTuner {
+  bool valid = false;
+  esp_rtl_sdr_gain_mode_t gain_mode = ESP_RTL_SDR_GAIN_MODE_AUTO;
+  int gain_tenth_db = 0;
+  bool rtl_agc = false;
+  int ppm = 0;
+};
+SavedTuner g_saved_tuner;
+
+void save_tuner() {
+  const auto handle = g_hooks.handle();
+  SavedTuner s;
+  s.valid = esp_rtl_sdr_get_tuner_gain_mode(handle, &s.gain_mode) == ESP_OK;
+  (void)esp_rtl_sdr_get_tuner_gain(handle, &s.gain_tenth_db);
+  (void)esp_rtl_sdr_get_rtl_agc(handle, &s.rtl_agc);
+  (void)esp_rtl_sdr_get_freq_correction(handle, &s.ppm);
+  g_saved_tuner = s;
+}
+
+void restore_tuner() {
+  if (!g_saved_tuner.valid) return;
+  const auto handle = g_hooks.handle();
+  (void)esp_rtl_sdr_set_freq_correction(handle, g_saved_tuner.ppm);
+  (void)esp_rtl_sdr_set_rtl_agc(handle, g_saved_tuner.rtl_agc);
+  if (g_saved_tuner.gain_mode == ESP_RTL_SDR_GAIN_MODE_MANUAL)
+    (void)esp_rtl_sdr_set_tuner_gain(handle, g_saved_tuner.gain_tenth_db);
+  (void)esp_rtl_sdr_set_tuner_gain_mode(handle, g_saved_tuner.gain_mode);
+  g_saved_tuner.valid = false;
+}
+
 bool start_stream() {
   esp_rtl_sdr_stream_config_t st;
   esp_rtl_sdr_stream_config_default(&st);
@@ -130,6 +162,7 @@ class Backend final : public rtl_tcp::ServerBackend {
     }
     g_rate.store(kDefaultRate);
     g_frequency.store(kDefaultFrequency);
+    save_tuner();
     if (!start_stream()) {
       release_receiver();
       return false;
@@ -140,6 +173,7 @@ class Backend final : public rtl_tcp::ServerBackend {
 
   void client_disconnected() override {
     stop_stream();
+    restore_tuner();
     g_client_active.store(false, std::memory_order_release);
     release_receiver();
   }

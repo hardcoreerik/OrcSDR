@@ -9974,7 +9974,9 @@ static void rtl_driver_app_task(void *) {
       remote_boot_started = true;
       remote_boot_retry_ms = millis();
       rtl_stop_requested.store(false, std::memory_order_release);
-      const bool queued = boot_retry
+      // A dashboard opened before the stream could start (FT8, ACARS...) recorded its band here: start that one, not
+      // FM, or its decoder sits on a stream of the wrong rate.
+      const bool queued = (boot_retry || rtl_ui_active.load(std::memory_order_acquire))
           ? queue_local_rtl_listen(rtl_requested_band.load(std::memory_order_acquire),
                                    rtl_requested_frequency_hz.load(std::memory_order_acquire), false)
           : queue_local_rtl_listen(RtlBand::fm, rtl_saved_fm_hz);
