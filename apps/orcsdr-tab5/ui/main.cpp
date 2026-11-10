@@ -9960,13 +9960,24 @@ static void rtl_driver_app_task(void *) {
     }
     // Remote-only boot: no dongle is plugged in, so nothing else would ever start
     // the stream. Once per boot, and only when the saved server is usable.
+    // A first attempt that fails (server off, wrong address) is retried every 30 s with the band the user last asked
+    // for, so a server that comes up later is picked up without a reboot.
     static bool remote_boot_started = false;
-    if (!remote_boot_started && rtl_boot_complete.load(std::memory_order_acquire) &&
+    static uint32_t remote_boot_retry_ms = 0;
+    const RtlCaptureState boot_state = rtl_capture_state.load(std::memory_order_acquire);
+    const bool boot_retry = remote_boot_started && boot_state == RtlCaptureState::failed &&
+                            millis() - remote_boot_retry_ms >= 30000u;
+    if ((!remote_boot_started || boot_retry) && rtl_boot_complete.load(std::memory_order_acquire) &&
         !radio_io_paused() && !rtl_usb_device_ready() && rtl_remote_source_ready() &&
-        rtl_capture_state.load(std::memory_order_acquire) != RtlCaptureState::running) {
+        boot_state != RtlCaptureState::running && boot_state != RtlCaptureState::queued &&
+        !rtl_capture_requested.load(std::memory_order_acquire)) {
       remote_boot_started = true;
+      remote_boot_retry_ms = millis();
       rtl_stop_requested.store(false, std::memory_order_release);
-      const bool queued = queue_local_rtl_listen(RtlBand::fm, rtl_saved_fm_hz);
+      const bool queued = boot_retry
+          ? queue_local_rtl_listen(rtl_requested_band.load(std::memory_order_acquire),
+                                   rtl_requested_frequency_hz.load(std::memory_order_acquire), false)
+          : queue_local_rtl_listen(RtlBand::fm, rtl_saved_fm_hz);
       Serial.printf("RTL_TCP_BOOT_START server=%s:%u queued=%d\n", orcsdr::rtl_tcp_source::host(),
                     static_cast<unsigned>(orcsdr::rtl_tcp_source::port()), queued ? 1 : 0);
     }
@@ -10140,6 +10151,13 @@ static void rtl_driver_app_task(void *) {
       if (err != ESP_OK) {
         rtl_active_sample_rate_sps.store(0, std::memory_order_release);
         rtl_capture_state.store(RtlCaptureState::failed, std::memory_order_release);
+        // A band change made while this stream was still connecting cancelled the wait (restart + stop were set by
+        // queue_local_rtl_listen). Nothing else consumes the restart in this state, so start the new band here.
+        if (rtl_restart_requested.exchange(false, std::memory_order_acq_rel)) {
+          rtl_stop_requested.store(false, std::memory_order_release);
+          rtl_capture_requested.store(true, std::memory_order_release);
+          Serial.println("RTL_START cancelled by a newer request; restarting");
+        }
         g_rtl_active_source.store(static_cast<uint8_t>(orcsdr::source::Active::none),
                                   std::memory_order_release);
         g_rtl_remote_narrow.store(false, std::memory_order_release);

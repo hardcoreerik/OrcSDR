@@ -372,6 +372,10 @@ Corrections and confirmations to the gap list:
 
 Server refuses `0.0.0.0` in `run_server` and the worker waits on a `0.0.0.0` Wi-Fi address (host test covers `0.0.0.0`, `0.0.0.00`, `00.0.0.0`). Client sends ppm 0, offset 0 and direct 0 on every connect, before the frequency (host test checks the byte order). Flashed on COM17: live FT8 over rtl_tcp, 4 min, 63 decodes in 15 slots, 100% link, no drops or reconnects. Deferred, not reproduced: the 2 KB stall-drain scratch (client finding 3). Others remain open.
 
+### Iteration 43 (2026-11-10): connect-wait and boot recovery
+
+A band change made while a remote stream was still connecting is no longer lost (the cancelled start restarts with the newest request). A remote stream that failed at boot is retried every 30 s with the last requested band. Flashed on COM17: Pi server stopped, Tab5 failed to connect, server restarted, stream came back by itself in about 30 s with no reboot. Live FT8 on 20 m, 4 min: 105 decodes in 15 slots (7.0 per slot), 100% link, no drops. A run started right after that recovery decoded one slot only (link adapter had stepped the rate up); not investigated further. The cancelled-start path itself is not exercised by a test.
+
 ## 6. Next iterations (in order)
 
 1. Fix the retune detector and repeat at all rates and at `-b 2`; add a Tab5-side check of what FM seek dwell is.
