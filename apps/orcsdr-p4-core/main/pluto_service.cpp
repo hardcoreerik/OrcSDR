@@ -254,7 +254,7 @@ void run_session(uint32_t start_hz) {
   }
   p.run = true;
   p.exited = false;
-  if (!alloc_ok || xTaskCreatePinnedToCore(convert_task, "pluto_cv", 6144, nullptr, 5, nullptr, 1) != pdPASS) {
+  if (!alloc_ok || xTaskCreatePinnedToCore(convert_task, "pluto_cv", 6144, nullptr, 5, nullptr, 0) != pdPASS) {
     ESP_LOGE(TAG, "IQ buffers or conversion task could not be created");
     p.run = false;
     p.exited = true;
@@ -276,6 +276,7 @@ void run_session(uint32_t start_hz) {
   int64_t last_pub = 0, window_start = esp_timer_get_time(), rate_changed_at = 0;
   uint64_t window_samples = 0;
   uint32_t sps = 0;
+  uint32_t log_count = 0;
   while (ok && p.run.load() && !pluto_usb_gone()) {
     const int64_t now = esp_timer_get_time();
     handle_requests(s, now, &rate_changed_at, &wanted);
@@ -302,6 +303,21 @@ void run_session(uint32_t start_hz) {
                unsigned(s.drops));
       window_start = now;
       window_samples = 0;
+      if (++log_count % 4 == 0) {  // a coarse spectrum read: strongest bin against the median shows a real carrier from noise
+        uint8_t bins[256];
+        uint32_t seq = 0;
+        if (radio::peek_bins(kRx, bins, &seq)) {
+          int peak = 0;
+          uint8_t sorted[256];
+          std::memcpy(sorted, bins, sizeof(sorted));
+          for (int i = 1; i < 256; ++i)
+            if (bins[i] > bins[peak]) peak = i;
+          std::nth_element(sorted, sorted + 128, sorted + 256);
+          ESP_LOGI(TAG, "SPECTRUM peak_bin=%d (offset %+d kHz) peak=%u median=%u level=%.1f dBFS", peak,
+                   static_cast<int>((peak - 128) * static_cast<int>(s.out_rate) / 256 / 1000), unsigned(bins[peak]),
+                   unsigned(sorted[128]), static_cast<double>(radio::level_dbfs(kRx)));
+        }
+      }
     }
     if (now - last_pub > 250000) {
       last_pub = now;
