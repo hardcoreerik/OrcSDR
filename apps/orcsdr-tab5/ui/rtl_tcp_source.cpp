@@ -279,6 +279,7 @@ void begin(const IqSink& sink) {
     g_desired.offset_on = store.get_u8("off", 0) != 0;
     store.end();
   }
+  reset_gain_to_auto();   // never rely on what the server's tuner was left at: send a known gain state on the first connect
   xTaskCreatePinnedToCoreWithCaps(worker, "rtl_tcp", kTaskStackBytes, nullptr, kTaskPriority,
                                   &g_task, 0, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
 }
@@ -373,6 +374,20 @@ bool retune(uint32_t frequency_hz) {
     g_desired.frequency_hz = frequency_hz;  // re-applied after a reconnect
   }
   return queue_command(Command::set_frequency, frequency_hz);
+}
+
+void reset_gain_to_auto() {
+  // rtl_tcp keeps the tuner's gain mode, gain and digital AGC between clients, and the Tab5 only sent gain commands after
+  // someone had set one in the session. A new stream therefore inherited whatever an earlier dashboard or client had left
+  // (seen: FT8 over a remote stream started at a near-zero manual gain, about 28 dB too low, while the screen said AUTO).
+  // The state sent on every connect is now defined: tuner AGC on, digital AGC off, until a control changes it.
+  Lock lock;
+  g_desired.gain_mode_set = true;
+  g_desired.gain_manual = false;
+  g_desired.gain_set = false;
+  g_desired.gain_tenths_db = 0;
+  g_desired.agc_set = true;
+  g_desired.agc_on = false;
 }
 
 bool set_gain_manual(bool manual) {

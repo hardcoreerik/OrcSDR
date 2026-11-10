@@ -11,7 +11,12 @@ The carrier sits at the centre of the IQ, so the receiver must be tuned to a nar
 is ignored. Pair it with `SSTV TUNE 145500000` on the Tab5 (narrow FM) and `RTL_TCP HOST <this PC> <port>`.
 
 Safety: rtl_tcp has no authentication, so this refuses to bind to 0.0.0.0 or ::; name one interface address.
-One client at a time, like a real rtl_tcp (a second client waits). Needs numpy and scipy.
+One client at a time, like a real rtl_tcp (a second client waits). Needs numpy; synthesising from a WAV also needs scipy.
+
+Render once, replay anywhere (for example on a Raspberry Pi across a real network hop, where scipy is not needed):
+  python tools/rtl_tcp_replay_server.py robot_36.wav --render robot_36_240k.cu8 --rate 240000
+  python tools/rtl_tcp_replay_server.py --bind 10.0.0.5 --port 1235 --iq robot_36_240k.cu8 --rate 240000
+In --iq mode the file is streamed at --rate whatever rate the client asks for (a rate command is accepted and ignored).
 """
 import argparse
 import math
@@ -24,7 +29,6 @@ import wave
 from fractions import Fraction
 
 import numpy as np
-from scipy.signal import resample_poly
 
 
 def read_wav(path):
@@ -36,8 +40,21 @@ def read_wav(path):
     return rate, data
 
 
+def usb_iq(audio, audio_rate, out_rate, level, noise, rng):
+    """Upper-sideband modulate `audio`: the analytic signal, so an audio tone of f Hz appears f Hz above the IQ centre
+    (what an SSB receiver tuned to the dial frequency hears). `level` scales full-scale audio to IQ amplitude."""
+    from scipy.signal import hilbert, resample_poly
+    ratio = Fraction(out_rate, audio_rate).limit_denominator(1000)
+    up = resample_poly(audio, ratio.numerator, ratio.denominator)
+    iq = level * hilbert(up)
+    if noise > 0:
+        iq = iq + noise * (rng.standard_normal(iq.size) + 1j * rng.standard_normal(iq.size))
+    return to_cu8(iq)
+
+
 def fm_iq(audio, audio_rate, out_rate, deviation, level, noise, rng):
     """Narrow-FM modulate `audio` and return interleaved CU8 bytes at `out_rate`."""
+    from scipy.signal import resample_poly   # only needed to synthesise; --iq playback runs without scipy
     ratio = Fraction(out_rate, audio_rate).limit_denominator(1000)
     up = resample_poly(audio, ratio.numerator, ratio.denominator)
     phase = 2.0 * math.pi * deviation * np.cumsum(up) / out_rate
@@ -97,24 +114,32 @@ class Client:
         rng = np.random.default_rng(1)
         time.sleep(0.4)   # let the client's rate command arrive before the first block is built
         while self.alive:
-            rate = self.rate
+            rate = a.rate if a.iq else self.rate
             self.rate_changed.clear()
-            tx = fm_iq(self.audio, self.audio_rate, rate, a.deviation, a.level, a.noise, rng)
+            if a.iq:
+                tx = open(a.iq, "rb").read()
+            else:
+                tx = fm_iq(self.audio, self.audio_rate, rate, a.deviation, a.level, a.noise, rng)
             gap = noise_iq(a.gap, rate, a.level, a.noise, rng)
             seconds = len(tx) / 2 / rate
+            lead = b""
+            if a.align_utc > 0 and a.iq:
+                wait = a.align_utc - (time.time() % a.align_utc)
+                lead = noise_iq(wait, rate, a.level, a.noise, rng)
+                print(f"{self.addr[0]}: aligning to the next {a.align_utc:.0f} s UTC boundary in {wait:.1f} s", flush=True)
             print(f"{self.addr[0]}: replaying {seconds:.1f} s at {rate} S/s (+{a.gap:.0f} s gap)", flush=True)
-            for stream in (gap, tx, gap):
+            for stream in (lead, gap, tx, gap):
                 if not self.pace(stream, rate): break
             if not self.alive: break
             if a.once: break
         self.alive = False
 
     def pace(self, data, rate):
-        block = 4096                      # bytes = 2048 samples
+        block = self.args.burst or 4096   # bytes sent back to back; --burst 262144 mimics stock rtl_tcp's async buffers
         per_block = (block / 2) / rate    # seconds of signal per block
         start, sent = time.perf_counter(), 0
         for i in range(0, len(data), block):
-            if not self.alive or self.rate_changed.is_set():
+            if not self.alive or (self.rate_changed.is_set() and not self.args.iq):
                 return False   # a new rate: the caller rebuilds the stream; a dead client ends the loop
             try:
                 self.conn.sendall(data[i:i + block])
@@ -130,8 +155,11 @@ class Client:
 
 def main():
     p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    p.add_argument("wav")
-    p.add_argument("--bind", required=True, help="an IPv4 address of this machine (never 0.0.0.0)")
+    p.add_argument("wav", nargs="?", help="mono PCM16 WAV to modulate (not needed with --iq)")
+    p.add_argument("--bind", help="an IPv4 address of this machine (never 0.0.0.0)")
+    p.add_argument("--iq", help="stream this pre-rendered CU8 file instead of synthesising from a WAV")
+    p.add_argument("--render", help="write the IQ for the WAV to this CU8 file and exit")
+    p.add_argument("--rate", type=int, default=240000, help="sample rate of --iq / --render output")
     p.add_argument("--port", type=int, default=1235)
     p.add_argument("--deviation", type=float, default=2500.0, help="FM deviation in Hz at full-scale audio")
     p.add_argument("--level", type=float, default=0.5, help="carrier amplitude, 0..1 of full scale")
@@ -139,16 +167,33 @@ def main():
     p.add_argument("--gap", type=float, default=4.0, help="seconds of noise before, between and after plays")
     p.add_argument("--tuner", type=int, default=5, help="tuner type in the greeting (5 = R820T)")
     p.add_argument("--gains", type=int, default=29, help="gain-step count in the greeting")
+    p.add_argument("--usb", action="store_true", help="with --render: upper-sideband modulation (audio at +f Hz) instead of narrow FM; FT8 and other SSB modes")
+    p.add_argument("--align-utc", type=float, default=0.0, help="with --iq: start the file on the next multiple of this many UTC seconds (15 for FT8); the file must be a whole number of them")
+    p.add_argument("--burst", type=int, default=0, help="send this many bytes at wire speed, then wait (stock rtl_tcp sends 262144 about every half second at 240 kS/s)")
     p.add_argument("--once", action="store_true", help="play once per client instead of looping")
     args = p.parse_args()
-    if args.bind in ("0.0.0.0", "::", ""):
-        sys.exit("refusing to bind to all interfaces: rtl_tcp has no authentication; name one address")
-    audio_rate, audio = read_wav(args.wav)
+    if args.render:
+        if not args.wav: sys.exit("--render needs a WAV")
+        audio_rate, audio = read_wav(args.wav)
+        rng = np.random.default_rng(1)
+        data = (usb_iq(audio, audio_rate, args.rate, args.level, args.noise, rng) if args.usb
+                else fm_iq(audio, audio_rate, args.rate, args.deviation, args.level, args.noise, rng))
+        open(args.render, "wb").write(data)
+        print(f"wrote {len(data)} bytes = {len(data)/2/args.rate:.1f} s at {args.rate} S/s to {args.render}")
+        return
+    if not args.bind or args.bind in ("0.0.0.0", "::", ""):
+        sys.exit("refusing to bind to all interfaces: rtl_tcp has no authentication; name one address with --bind")
+    if args.iq:
+        audio_rate, audio = 1, np.zeros(0)
+    else:
+        if not args.wav: sys.exit("give a WAV, or --iq FILE")
+        audio_rate, audio = read_wav(args.wav)
     srv = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
     srv.bind((args.bind, args.port))
     srv.listen(1)
-    print(f"rtl_tcp replay server on {args.bind}:{args.port}, {len(audio)/audio_rate:.1f} s of audio from {args.wav}", flush=True)
+    print(f"rtl_tcp replay server on {args.bind}:{args.port}, " +
+          (f"streaming {args.iq} at {args.rate} S/s" if args.iq else f"{len(audio)/audio_rate:.1f} s of audio from {args.wav}"), flush=True)
     try:
         while True:
             conn, addr = srv.accept()

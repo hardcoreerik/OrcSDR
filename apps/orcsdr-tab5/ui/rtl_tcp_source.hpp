@@ -76,6 +76,9 @@ bool streaming();
 // Live controls. Each is sent to the server, which never acknowledges, so
 // `true` means "queued", never "the hardware applied it".
 bool retune(uint32_t frequency_hz);
+// Puts the desired gain state back to tuner AGC on, digital AGC off. rtl_tcp keeps tuner state across clients, so a stream for
+// a different band must start from this instead of inheriting the last band's gain. Applied at the next connect.
+void reset_gain_to_auto();
 bool set_gain_manual(bool manual);
 bool set_gain_tenths_db(int32_t tenths_db);
 bool set_agc(bool on);

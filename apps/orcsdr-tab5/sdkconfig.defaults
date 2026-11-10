@@ -74,7 +74,10 @@ CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP=y
 CONFIG_LWIP_WND_SCALE=y
 CONFIG_LWIP_TCP_RCV_SCALE=3
 CONFIG_LWIP_TCP_WND_DEFAULT=262140
-CONFIG_LWIP_TCP_RECVMBOX_SIZE=64
+# The TCP receive mailbox must hold a whole window of segments: ESP-IDF recommends LWIP_TCP_WND_DEFAULT / TCP_MSS + 2, which is
+# 262140 / 1440 + 2 = 184. At 64 a burst larger than about 92 KB overflowed it, the segments were dropped and TCP stalled to
+# recover (a real rtl_tcp server sends 256 KB bursts: the Tab5 received 65-80% of the stream). Keep this at or above the ratio.
+CONFIG_LWIP_TCP_RECVMBOX_SIZE=192
 CONFIG_LWIP_UDP_RECVMBOX_SIZE=64
 CONFIG_LWIP_TCPIP_RECVMBOX_SIZE=64
 CONFIG_LWIP_TCP_SND_BUF_DEFAULT=65534

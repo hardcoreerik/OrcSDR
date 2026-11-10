@@ -10086,6 +10086,15 @@ static void rtl_driver_app_task(void *) {
       g_rtl_active_source.store(static_cast<uint8_t>(remote ? orcsdr::source::Active::remote_tcp
                                                             : orcsdr::source::Active::local_usb),
                                 std::memory_order_release);
+      if (remote) {
+        // rtl_tcp keeps its tuner state between clients: a stream for another band must start from a known gain, not from
+        // the last band's (a same-band restart, such as a rate step, keeps the user's gain).
+        static int last_remote_band = -1;
+        if (last_remote_band != static_cast<int>(band)) {
+          orcsdr::rtl_tcp_source::reset_gain_to_auto();
+          last_remote_band = static_cast<int>(band);
+        }
+      }
       esp_err_t err = remote ? (orcsdr::rtl_tcp_source::start_and_wait(
                                     st.sample_rate_sps, st.frequency_hz, 12000,
                                     [] { return rtl_stop_requested.load(std::memory_order_acquire); })
