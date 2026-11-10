@@ -845,8 +845,13 @@ bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* contex
   g.last_touch_us.store(esp_timer_get_time(), std::memory_order_release);
   set_state(State::waiting_signal);
   g.active.store(true, std::memory_order_release);
+  // Mark the task alive BEFORE creating it: a new task may not have run yet when the main loop next calls reap(), and a
+  // false flag with a non-null handle would make reap() delete it before it starts.
+  g.task_alive.store(true, std::memory_order_release);
   if (xTaskCreatePinnedToCoreWithCaps(decoder_task, "ft8_native", 20480, nullptr, 1, &g.task, 0,
                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
+    g.task_alive.store(false, std::memory_order_release);
+    g.task = nullptr;
     g.active.store(false, std::memory_order_release);
     set_state(State::error);
     // The stack comes from PSRAM but the task control block from internal RAM, so a failure is only a PSRAM shortage when PSRAM really
@@ -869,7 +874,11 @@ bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* contex
     g_start_report.failures = failures;
   }
   mem_mark("backend");
-  (void)xTaskCreatePinnedToCoreWithCaps(waterfall_task, "ft8_wf", 8192, nullptr, 1, &g.wf_task, 0, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  g.wf_alive.store(true, std::memory_order_release);   // before creation, as for the decoder task above
+  if (xTaskCreatePinnedToCoreWithCaps(waterfall_task, "ft8_wf", 8192, nullptr, 1, &g.wf_task, 0, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
+    g.wf_alive.store(false, std::memory_order_release);
+    g.wf_task = nullptr;
+  }
   mem_mark("tasks");
   std::printf("ORC_FT8_RT started mode=%d\n", static_cast<int>(mode));
   return true;

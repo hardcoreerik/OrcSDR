@@ -3754,9 +3754,16 @@ uint32_t rtl_remote_wanted_rate(RtlBand band) {
   return rtl_wide_dashboard_band(band) ? 1440000u : ESP_RTL_SDR_RATE_960K;
 }
 
+// Bands whose decoders only work at the band's default rate (the DSP feeds them only non-custom blocks): the remote
+// link adapter and the RTL_TCP rate cap must not move them, or a 240 kS/s stream would reach a 960 kS/s decoder.
+bool rtl_band_needs_fixed_rate(RtlBand band) {
+  return band == RtlBand::lora || band == RtlBand::pocsag || band == RtlBand::p25;
+}
+
 uint32_t rtl_default_sample_rate(RtlBand band) {
   if (band == RtlBand::adsb) return ESP_RTL_SDR_RATE_2048K;
   const bool remote_narrow = g_rtl_remote_narrow.load(std::memory_order_acquire);
+  if (remote_narrow && rtl_band_needs_fixed_rate(band)) return ESP_RTL_SDR_RATE_960K;
   if (remote_narrow)
     return orcsdr::rtl_tcp_source::adapted_rate(rtl_remote_wanted_rate(band));
   return rtl_wide_dashboard_band(band) ? ESP_RTL_SDR_RATE_2400K : ESP_RTL_SDR_RATE_960K;
@@ -8947,7 +8954,13 @@ __attribute__((noinline)) void demodulate_shortwave_ssb(RtlBand band, const uint
   const uint32_t tuned_hz = rtl_requested_frequency_hz.load(std::memory_order_relaxed);
   // The sideband in force: Home's pick while Home is on screen, else the Shortwave dashboard's.
   const Mode wanted = effective_demod(band) == HomeDemod::lsb ? Mode::lsb : Mode::usb;
-  const bool direct_sampling = g_rtl_profile.load(std::memory_order_acquire) == ESP_RTL_SDR_PROFILE_BLOG_V3;
+  // Folding follows the receiver in use: a local Blog V3 samples HF directly; a remote server does so only when the
+  // RTL_TCP page asked it to (I or Q branch). The local profile says nothing about the server's dongle.
+  bool direct_sampling = g_rtl_profile.load(std::memory_order_acquire) == ESP_RTL_SDR_PROFILE_BLOG_V3;
+  if (rtl_remote_active()) {
+    const auto remote_tuning = orcsdr::rtl_tcp_source::tuning();
+    direct_sampling = remote_tuning.direct_set && remote_tuning.direct_mode != 0;
+  }
   const Mode sideband = demod_sideband(wanted, tuned_hz, direct_sampling);
   // Hot retunes quantize the LO to 5 kHz while the dial moves in 100 Hz steps: pass the dial's offset from the IQ centre.
   uint32_t centre_hz = 0;
@@ -10284,7 +10297,8 @@ static void rtl_driver_app_task(void *) {
               // After a healthy minute it probes one rung back up, and backs off if that fails.
               const auto rate_change =
                   (remote_state == orcsdr::rtl_tcp::State::streaming &&
-                   g_stream_band != RtlBand::adsb)  // ADS-B keeps its own rate
+                   g_stream_band != RtlBand::adsb &&  // ADS-B keeps its own rate
+                   !rtl_band_needs_fixed_rate(g_stream_band))  // so do LoRa, POCSAG and P25 (their decoders need 960 kS/s)
                       ? orcsdr::rtl_tcp_source::note_link_and_adapt(
                             link_pct, rtl_remote_wanted_rate(g_stream_band), kRtlDemodRateSps)  // 240 kS/s needs the capped read size in rtl_tcp_sink_acquire
                       : orcsdr::rtl_tcp::RateAdapter::Change::none;
