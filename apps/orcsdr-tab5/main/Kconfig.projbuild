@@ -1,0 +1,20 @@
+# esp_hosted 3.1.0 (registry, 2026-11-05) gates its USB components on these
+# promptless ints. Component Manager still evaluates that release while
+# solving, because esp_wifi_remote depends on espressif/esp_hosted >=2.11,
+# even though this project pins 3.0.6. 3.0.6 does not define the symbols, so
+# a missing value is not "USB off": configure retries and then fails.
+# OrcSDR's host link is SDIO. Keep the ints at 0 so the 3.1.0 USB rules do
+# not match and 3.0.6 stays selected. Delete these if a newer esp_hosted
+# pin starts defining the same symbols.
+
+config ESP_HOSTED_HOST_USB_CDC_ACM_MANIFEST
+    int
+    default 0
+
+config ESP_HOSTED_HOST_USB_RNDIS_MANIFEST
+    int
+    default 0
+
+config ESP_HOSTED_HOST_USB_CHERRYUSB_MANIFEST
+    int
+    default 0
