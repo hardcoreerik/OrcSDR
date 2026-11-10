@@ -162,7 +162,7 @@ struct Requests {
   int gain_value = 0;
 };
 bool host_ready();            // the USB host library is installed (by the RTL-SDR driver on receiver 0)
-bool acquire(int rx);         // false while the RTL-SDR loop is streaming on this receiver
+bool acquire(int rx);         // false while the RTL-SDR loop is streaming on this receiver; waits (up to 3 s) for the RTL task to go idle
 void release(int rx);
 Requests poll(int rx);
 struct Status {
@@ -175,6 +175,8 @@ struct Status {
 void publish(int rx, const Status& status, const Gain& gain);
 void tune_result(int rx, uint32_t hz, int error);  // the device's answer to a retune (0 = accepted)
 void new_stream(int rx);                           // a start, stop, rate change or recovery: bumps the generation
-void feed(int rx, const uint8_t* cu8, size_t bytes);
+// `rate` and `center_hz` describe exactly these samples (the backend knows what it had configured when it read them); consumers receive
+// them in the IqBlock, so a rate change can never be mislabelled by a status value that has not been published yet.
+void feed(int rx, const uint8_t* cu8, size_t bytes, uint32_t rate, uint32_t center_hz);
 }  // namespace ext
 }

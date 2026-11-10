@@ -13,6 +13,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <new>
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
@@ -68,38 +69,53 @@ struct Session {
   bool manual = false;
   int gain_tenth = 0;
   pluto_iq_conv_t conv;
-  SemaphoreHandle_t conv_lock = nullptr;  // the conversion task and a rate change both touch `conv`
+  SemaphoreHandle_t conv_lock = nullptr;  // guards `conv` and `epoch`: the conversion task and a rate change both touch them
+  uint32_t epoch = 1;                     // bumped (under conv_lock) whenever the output rate or decimation changes
   bool buffer_open = false;
-  uint32_t drops = 0;
+  uint32_t drops = 0;                     // blocks the reader had to discard because every raw buffer was in use
 };
 
 // USB reads must never wait for conversion, audio or the FFT: the Pluto drops samples when the host is late. The reader (the pluto
 // task) only reads and queues; a second task converts and feeds the sinks. kBuffers raw blocks circulate between them.
+// Every block queued to the converter carries the epoch, output rate and centre frequency it was read under: a block read before a rate
+// change is discarded, never converted with the new decimation, and consumers get the block's own rate, not a periodically published one.
+// One Pipe (with its Session) is allocated per attach and owned by the converter task until that task ends. A task that does not stop
+// in time is quarantined: its Pipe is leaked, never reused, so a later session can not touch its state.
 constexpr int kBuffers = 4;
 constexpr size_t kRawBytes = kSamplesPerRead * 4;
+struct Item {
+  uint32_t idx, bytes, epoch, rate, hz;
+};
 struct Pipe {
-  Session* s = nullptr;
+  Session s;
   int16_t* raw[kBuffers + 1] = {};  // the last one is scratch for reads that find no free block
   uint8_t* cu8 = nullptr;
   QueueHandle_t filled = nullptr, freeq = nullptr;
   std::atomic<bool> run{false}, exited{true};
   std::atomic<uint32_t> blocks{0}, convert_us{0}, feed_us{0};  // totals since the last log line, for the CPU cost split
+  std::atomic<uint32_t> delivered{0};                          // samples converted and handed to the sinks since the last log line
+  std::atomic<uint32_t> stale{0};                              // blocks discarded because their rate/decimation was superseded
 };
-Pipe g_pipe;
 
-void convert_task(void*) {
-  Pipe& p = g_pipe;
-  uint32_t v = 0;
+void convert_task(void* arg) {
+  Pipe& p = *static_cast<Pipe*>(arg);
+  Item it;
   while (p.run.load()) {
-    if (xQueueReceive(p.filled, &v, pdMS_TO_TICKS(100)) != pdTRUE) continue;
-    const int idx = static_cast<int>(v & 0xF);
-    const size_t bytes = v >> 4;
-    xSemaphoreTake(p.s->conv_lock, portMAX_DELAY);
+    if (xQueueReceive(p.filled, &it, pdMS_TO_TICKS(100)) != pdTRUE) continue;
+    const int idx = static_cast<int>(it.idx);
+    xSemaphoreTake(p.s.conv_lock, portMAX_DELAY);
+    if (it.epoch != p.s.epoch) {  // read under a previous rate: drop it
+      xSemaphoreGive(p.s.conv_lock);
+      p.stale.fetch_add(1);
+      xQueueSend(p.freeq, &idx, 0);
+      continue;
+    }
     const int64_t t0 = esp_timer_get_time();
-    const size_t pairs = pluto_iq_convert(&p.s->conv, p.raw[idx], bytes / 4, p.cu8);
+    const size_t pairs = pluto_iq_convert(&p.s.conv, p.raw[idx], it.bytes / 4, p.cu8);
     const int64_t t1 = esp_timer_get_time();
-    xSemaphoreGive(p.s->conv_lock);
-    if (pairs) radio::ext::feed(kRx, p.cu8, pairs * 2);
+    xSemaphoreGive(p.s.conv_lock);
+    if (pairs && p.run.load()) radio::ext::feed(kRx, p.cu8, pairs * 2, it.rate, it.hz);
+    p.delivered.fetch_add(static_cast<uint32_t>(pairs));
     p.convert_us.fetch_add(static_cast<uint32_t>(t1 - t0));
     p.feed_us.fetch_add(static_cast<uint32_t>(esp_timer_get_time() - t1));
     p.blocks.fetch_add(1);
@@ -156,6 +172,7 @@ bool apply_rate(Session& s, uint32_t wanted) {
   s.decim = d;
   xSemaphoreTake(s.conv_lock, portMAX_DELAY);
   pluto_iq_conv_init(&s.conv, d);
+  ++s.epoch;  // blocks already queued belong to the old rate; the converter will discard them
   xSemaphoreGive(s.conv_lock);
   if (pluto_iiod_buffer_open(&s.iiod, kSamplesPerRead, 0x3) < 0) return false;
   s.buffer_open = true;
@@ -197,6 +214,7 @@ void publish(const Session& s, int state, uint32_t sps) {
   st.drops = s.drops;
   if (s.freq.ok) {
     st.tune_min_hz = static_cast<uint32_t>(s.freq.lo);
+    // The console's frequency type is 32 bits, so tuning above 4.29 GHz is not reachable until it becomes 64 bits (the device goes to 6 GHz).
     st.tune_max_hz = static_cast<uint32_t>(std::min<long long>(s.freq.hi, 0xFFFFFFFFLL));
   }
   std::snprintf(st.device, sizeof(st.device), "PlutoSDR AD9361");
@@ -237,21 +255,23 @@ void handle_requests(Session& s, int64_t now, int64_t* rate_changed_at, uint32_t
 
 // One attach: configure, stream until the device goes away or a read fails. Returns when the session is over.
 void run_session(uint32_t start_hz) {
-  static Session s;
-  s = Session{};
   pluto_io_t io;
   if (pluto_usb_open(&io) != 0) {
     ESP_LOGE(TAG, "libiio USB pipe did not open");
     return;
   }
-  if (pluto_iiod_open(&s.iiod, &io) != 0) {
-    ESP_LOGE(TAG, "iiod handshake failed");
+  Pipe* pp = new (std::nothrow) Pipe();
+  if (!pp) {
+    ESP_LOGE(TAG, "session allocation failed");
     return;
   }
-  Pipe& p = g_pipe;
-  p.s = &s;
+  Pipe& p = *pp;
+  Session& s = p.s;
+  bool task_started = false;
+  bool ok = pluto_iiod_open(&s.iiod, &io) == 0;
+  if (!ok) ESP_LOGE(TAG, "iiod handshake failed");
   s.conv_lock = xSemaphoreCreateMutex();
-  p.filled = xQueueCreate(kBuffers, sizeof(uint32_t));
+  p.filled = xQueueCreate(kBuffers, sizeof(Item));
   p.freeq = xQueueCreate(kBuffers, sizeof(int));
   p.cu8 = static_cast<uint8_t*>(heap_caps_malloc(kSamplesPerRead * 2 + 8, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
   bool alloc_ok = s.conv_lock && p.filled && p.freeq && p.cu8;
@@ -260,30 +280,38 @@ void run_session(uint32_t start_hz) {
     alloc_ok = alloc_ok && p.raw[b];
     if (alloc_ok && b < kBuffers) xQueueSend(p.freeq, &b, 0);
   }
-  p.run = true;
-  p.exited = false;
-  if (!alloc_ok || xTaskCreatePinnedToCore(convert_task, "pluto_cv", 6144, nullptr, 5, nullptr, 0) != pdPASS) {
-    ESP_LOGE(TAG, "IQ buffers or conversion task could not be created");
-    p.run = false;
-    p.exited = true;
+  ok = ok && alloc_ok;
+  if (ok) {
+    p.run = true;
+    p.exited = false;
+    task_started = xTaskCreatePinnedToCore(convert_task, "pluto_cv", 6144, &p, 5, nullptr, 0) == pdPASS;
+    if (!task_started) {
+      ESP_LOGE(TAG, "conversion task could not be created");
+      p.run = false;
+      p.exited = true;
+      ok = false;
+    }
   }
-  s.freq = read_range(&s.iiod, "altvoltage0", true, "frequency_available");
-  s.rate = read_range(&s.iiod, "voltage0", false, "sampling_frequency_available");
-  s.gain_db = read_range(&s.iiod, "voltage0", false, "hardwaregain_available");
-  ESP_LOGI(TAG, "ranges: tune %lld..%lld Hz, rate %lld..%lld S/s, gain %lld..%lld dB", s.freq.lo, s.freq.hi, s.rate.lo, s.rate.hi,
-           s.gain_db.lo, s.gain_db.hi);
-  read_gain(s);
-  const radio::ext::Requests first = radio::ext::poll(kRx);  // takes any tune the console already asked for
-  uint32_t wanted = first.rate_target ? first.rate_target : 960000;
-  if (first.tune_hz) start_hz = first.tune_hz;
-  s.lo_hz = start_hz;
-  if (!write_num(&s.iiod, "altvoltage0", true, "frequency", start_hz))
-    ESP_LOGW(TAG, "start frequency %u refused", unsigned(start_hz));
-  radio::ext::new_stream(kRx);
-  bool ok = alloc_ok && apply_rate(s, wanted);
+  uint32_t wanted = 960000;
+  if (ok) {
+    s.freq = read_range(&s.iiod, "altvoltage0", true, "frequency_available");
+    s.rate = read_range(&s.iiod, "voltage0", false, "sampling_frequency_available");
+    s.gain_db = read_range(&s.iiod, "voltage0", false, "hardwaregain_available");
+    ESP_LOGI(TAG, "ranges: tune %lld..%lld Hz, rate %lld..%lld S/s, gain %lld..%lld dB", s.freq.lo, s.freq.hi, s.rate.lo, s.rate.hi,
+             s.gain_db.lo, s.gain_db.hi);
+    read_gain(s);
+    const radio::ext::Requests first = radio::ext::poll(kRx);  // takes any tune the console already asked for
+    if (first.rate_target) wanted = first.rate_target;
+    if (first.tune_hz) start_hz = first.tune_hz;
+    s.lo_hz = start_hz;
+    if (!write_num(&s.iiod, "altvoltage0", true, "frequency", start_hz))
+      ESP_LOGW(TAG, "start frequency %u refused", unsigned(start_hz));
+    radio::ext::new_stream(kRx);
+    ok = apply_rate(s, wanted);
+  }
   int64_t last_pub = 0, window_start = esp_timer_get_time(), rate_changed_at = 0;
-  uint64_t window_samples = 0;
-  uint32_t sps = 0;
+  uint64_t window_received = 0;
+  uint32_t delivered_sps = 0, received_sps = 0;
   uint32_t log_count = 0;
   while (ok && p.run.load() && !pluto_usb_gone()) {
     const int64_t now = esp_timer_get_time();
@@ -299,19 +327,24 @@ void run_session(uint32_t start_hz) {
       break;
     }
     if (have) {
-      const uint32_t v = (static_cast<uint32_t>(n) << 4) | static_cast<uint32_t>(idx);
-      xQueueSend(p.filled, &v, 0);
+      const Item it{static_cast<uint32_t>(idx), static_cast<uint32_t>(n), s.epoch, s.out_rate, s.lo_hz};  // epoch is only written by this thread
+      xQueueSend(p.filled, &it, 0);
     } else {
       ++s.drops;
     }
-    window_samples += static_cast<uint64_t>(n) / 4 / s.decim;
+    window_received += static_cast<uint64_t>(n) / 4 / s.decim;
     if (now - window_start >= 750000) {
-      sps = static_cast<uint32_t>(window_samples * 1000000ULL / static_cast<uint64_t>(now - window_start));
+      const uint64_t us = static_cast<uint64_t>(now - window_start);
+      received_sps = static_cast<uint32_t>(window_received * 1000000ULL / us);
+      delivered_sps = static_cast<uint32_t>(static_cast<uint64_t>(p.delivered.exchange(0)) * 1000000ULL / us);
       const uint32_t nb = std::max<uint32_t>(p.blocks.exchange(0), 1);
-      ESP_LOGI(TAG, "IQ hz=%u sps=%u rate=%u dropped_blocks=%u convert_us/block=%u feed_us/block=%u", unsigned(s.lo_hz), unsigned(sps),
-               unsigned(s.out_rate), unsigned(s.drops), unsigned(p.convert_us.exchange(0) / nb), unsigned(p.feed_us.exchange(0) / nb));
+      // received = what came off the USB pipe; delivered = what reached the sinks; source_drops = blocks lost for want of a free buffer;
+      // stale = blocks discarded by a rate-change barrier. Consumer-side drops are per sink (radio::sink_stats), audio underruns are audio's.
+      ESP_LOGI(TAG, "IQ hz=%u rate=%u received_sps=%u delivered_sps=%u source_drops=%u stale=%u convert_us/block=%u feed_us/block=%u",
+               unsigned(s.lo_hz), unsigned(s.out_rate), unsigned(received_sps), unsigned(delivered_sps), unsigned(s.drops),
+               unsigned(p.stale.load()), unsigned(p.convert_us.exchange(0) / nb), unsigned(p.feed_us.exchange(0) / nb));
       window_start = now;
-      window_samples = 0;
+      window_received = 0;
       if (++log_count % 4 == 0) {  // a coarse spectrum read: strongest bin against the median shows a real carrier from noise
         uint8_t bins[256];
         uint32_t seq = 0;
@@ -330,21 +363,26 @@ void run_session(uint32_t start_hz) {
     }
     if (now - last_pub > 250000) {
       last_pub = now;
-      publish(s, 2, sps);
+      publish(s, 2, delivered_sps);
     }
   }
   close_buffer(s);
   p.run = false;
-  for (int i = 0; i < 100 && !p.exited.load(); ++i) vTaskDelay(pdMS_TO_TICKS(10));
-  if (!p.exited.load()) {
-    ESP_LOGE(TAG, "conversion task did not stop; its buffers are kept, not freed");
-    return;
+  if (task_started) {
+    for (int i = 0; i < 200 && !p.exited.load(); ++i) vTaskDelay(pdMS_TO_TICKS(10));
+    if (!p.exited.load()) {
+      // Quarantine: the task may still be inside feed(). Its Pipe (state, queues, buffers) is leaked and never reused; the next
+      // session allocates a fresh one and the old task, once it returns, sees run == false and ends without touching the sinks.
+      ESP_LOGE(TAG, "conversion task did not stop in 2 s: its session is quarantined (leaked)");
+      return;
+    }
   }
   for (int b = 0; b <= kBuffers; ++b) heap_caps_free(p.raw[b]);
   heap_caps_free(p.cu8);
   if (p.filled) vQueueDelete(p.filled);
   if (p.freeq) vQueueDelete(p.freeq);
   if (s.conv_lock) vSemaphoreDelete(s.conv_lock);
+  delete pp;
 }
 
 void task(void*) {

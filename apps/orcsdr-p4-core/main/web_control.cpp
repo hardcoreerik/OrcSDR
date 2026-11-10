@@ -71,7 +71,7 @@ Result run(const char* route, const char* query, uint32_t peer, char* out, size_
   long long v = 0;
   if (std::strcmp(route, "receivers/tune") == 0) {
     const int rx = receiver_index(query);
-    if (rx < 0 || !parse_long(query, "hz", &v) || v < tune_min_hz(rx) || v > ESP_RTL_SDR_FREQ_MAX_HZ) return fail(out, cap, Result::bad_request, "bad_hz_or_index");
+    if (rx < 0 || !parse_long(query, "hz", &v) || v < tune_min_hz(rx) || v > static_cast<long long>(radio::tune_max_hz(rx))) return fail(out, cap, Result::bad_request, "bad_hz_or_index");
     tune(rx, static_cast<uint32_t>(v));
     if (driver_rejected(rx, static_cast<uint32_t>(v))) return fail(out, cap, Result::bad_request, "driver_rejected_frequency");
     char f[64];

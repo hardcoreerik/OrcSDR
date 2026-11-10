@@ -1,5 +1,6 @@
 #include "serial_cli.hpp"
 #include <algorithm>
+#include <cerrno>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -173,19 +174,30 @@ void cmd_help() {
 }
 
 
+// A frequency is an unsigned decimal that fits the 32-bit tune API. strtoul saturates at ULONG_MAX (4,294,967,295) on overflow, which is also a
+// number the range check could accept, so overflow, signs, spaces and trailing text are rejected here, before any narrowing.
+bool parse_hz(const char* s, uint32_t* out) {
+  if (!s || *s < '0' || *s > '9') return false;
+  errno = 0;
+  char* end = nullptr;
+  const unsigned long long v = std::strtoull(s, &end, 10);
+  if (errno == ERANGE || end == s || *end != '\0' || v > 0xFFFFFFFFULL) return false;
+  *out = static_cast<uint32_t>(v);
+  return true;
+}
+
 void cmd_freq(const char* arg) {
   if (!authed()) {
     std::printf("RTL_FREQ_ERROR auth_required\n");
     return;
   }
-  char* end = nullptr;
-  const unsigned long hz = std::strtoul(arg, &end, 10);
-  if (end == arg || *end != '\0' || hz < tune_min() || hz > tune_max()) {
+  uint32_t hz = 0;
+  if (!parse_hz(arg, &hz) || hz < tune_min() || hz > tune_max()) {
     std::printf("RTL_FREQ_INVALID use RTL_FREQ <%u-%u>\n", unsigned(tune_min()), unsigned(tune_max()));
     return;
   }
-  home_app::request_frequency(static_cast<uint32_t>(hz));
-  std::printf("RTL_FREQ_OK band=%s frequency_hz=%lu\n", band_name(static_cast<uint32_t>(hz)), hz);
+  home_app::request_frequency(hz);
+  std::printf("RTL_FREQ_OK band=%s frequency_hz=%u\n", band_name(hz), unsigned(hz));
 }
 
 void cmd_tune(const char* args) {
@@ -194,17 +206,18 @@ void cmd_tune(const char* args) {
     return;
   }
   char band[16] = {};
-  unsigned long hz = 0;
+  char hz_text[24] = {};
+  uint32_t hz = 0;
   static const char* const kBands[] = {"FM", "AM", "WX", "CB", "P25", "LORA", "BROWSE"};
   bool known = false;
-  if (std::sscanf(args, "%15s %lu", band, &hz) == 2)
+  if (std::sscanf(args, "%15s %23s", band, hz_text) == 2 && parse_hz(hz_text, &hz))
     for (const char* b : kBands) known |= std::strcmp(b, band) == 0;
   if (!known || hz < tune_min() || hz > tune_max()) {
     std::printf("RTL_TUNE_INVALID use RTL_TUNE <FM|AM|WX|CB|P25|LORA|BROWSE> <HZ>\n");
     return;
   }
-  home_app::request_frequency(static_cast<uint32_t>(hz));
-  std::printf("RTL_TUNE_OK band=%s frequency_hz=%lu\n", band, hz);
+  home_app::request_frequency(hz);
+  std::printf("RTL_TUNE_OK band=%s frequency_hz=%u\n", band, unsigned(hz));
 }
 
 

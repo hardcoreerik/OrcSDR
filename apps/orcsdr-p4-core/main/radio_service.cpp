@@ -76,8 +76,9 @@ struct Rx {
   std::atomic<uint32_t> sequence{0};    // +1 per block read
   TaskHandle_t task_handle = nullptr;
   uint8_t* frame = nullptr;           // scratch copy of the block, shared by every queued consumer
-  // A non-RTL backend (ext:: in the header) owns this receiver while `external` is set; the RTL loop then stays idle.
-  std::atomic<bool> external{false};
+  // Who owns this receiver: 0 the RTL-SDR loop, 1 an external backend has asked for it, 2 the RTL loop acknowledged and is idle.
+  // Only the RTL task moves 1 -> 2 (or back to 0 when it is streaming and keeps the receiver); only the backend moves 0 -> 1 and 2 -> 0.
+  std::atomic<int> own{0};
   std::atomic<uint32_t> ext_min_hz{0}, ext_max_hz{0};
   int64_t ext_last_fft = 0;
 };
@@ -179,7 +180,12 @@ void task(void* arg) {
   uint32_t scans = 0, last_seen_target = 0;
   int64_t target_changed_at = 0;
   for (;;) {
-    if (r.external.load()) {  // another backend (the PlutoSDR) holds this receiver: do not scan, read or retune
+    int requested_own = 1;
+    if (r.own.load() == 1) {  // a backend asked for this receiver; answer at this safe point between iterations
+      if (streaming) r.own.compare_exchange_strong(requested_own, 0);  // streaming a dongle: keep it, the backend's acquire() fails
+      else r.own.compare_exchange_strong(requested_own, 2);            // idle: acknowledged, hands-off from here
+    }
+    if (r.own.load() == 2) {  // another backend (the PlutoSDR) holds this receiver: do not scan, read or retune
       vTaskDelay(pdMS_TO_TICKS(50));
       continue;
     }
@@ -587,11 +593,11 @@ Info info() { return info(0); }
 // span and reports what the driver said (tune_error); it never invents a narrower range of its own.
 uint32_t tune_min_hz(int rx) {
   Rx* r = rx_at(rx);
-  return r && r->external.load() && r->ext_min_hz.load() ? r->ext_min_hz.load() : ESP_RTL_SDR_FREQ_MIN_HZ;
+  return r && r->own.load() == 2 && r->ext_min_hz.load() ? r->ext_min_hz.load() : ESP_RTL_SDR_FREQ_MIN_HZ;
 }
 uint32_t tune_max_hz(int rx) {
   Rx* r = rx_at(rx);
-  return r && r->external.load() && r->ext_max_hz.load() ? r->ext_max_hz.load() : ESP_RTL_SDR_FREQ_MAX_HZ;
+  return r && r->own.load() == 2 && r->ext_max_hz.load() ? r->ext_max_hz.load() : ESP_RTL_SDR_FREQ_MAX_HZ;
 }
 int tune_error(int rx, uint32_t* hz) {
   Rx* r = rx_at(rx);
@@ -714,14 +720,20 @@ namespace ext {
 bool host_ready() { return g_host_ready.load(); }
 bool acquire(int rx) {
   Rx* r = rx_at(rx);
-  if (!r || r->state.load() == 2) return false;  // an RTL-SDR is streaming here: it keeps the receiver
-  r->external = true;
+  if (!r) return false;
+  int expected = 0;
+  if (!r->own.compare_exchange_strong(expected, 1)) return false;  // already requested or owned
+  // The RTL task answers at the top of its loop (it may be inside a scan or a start right now). It refuses when it is streaming a dongle.
+  for (int i = 0; i < 300 && r->own.load() == 1; ++i) vTaskDelay(pdMS_TO_TICKS(10));
+  int still_requested = 1;
+  if (r->own.load() == 1) r->own.compare_exchange_strong(still_requested, 0);  // no answer in 3 s: withdraw (if it answered meanwhile, own is 2)
+  if (r->own.load() != 2) return false;
   r->state = 1;
   return true;
 }
 void release(int rx) {
   if (Rx* r = rx_at(rx)) {
-    r->external = false;
+    r->own = 0;
     r->state = 0;
     r->applied = 0;
     r->sps = 0;
@@ -744,8 +756,10 @@ void publish(int rx, const Status& s, const Gain& g) {
   Rx* r = rx_at(rx);
   if (!r) return;
   r->state = s.state;
-  r->applied = s.applied_hz;
-  r->rate_now = s.rate;
+  if (s.state != 2) {  // while streaming, feed() sets the rate and centre per block: a periodic status must not overwrite them
+    r->applied = s.applied_hz;
+    r->rate_now = s.rate;
+  }
   r->sps = s.sps;
   r->drops = s.drops;
   r->ext_min_hz = s.tune_min_hz;
@@ -768,9 +782,11 @@ void tune_result(int rx, uint32_t hz, int error) {
 void new_stream(int rx) {
   if (Rx* r = rx_at(rx)) r->generation.fetch_add(1);
 }
-void feed(int rx, const uint8_t* cu8, size_t bytes) {
+void feed(int rx, const uint8_t* cu8, size_t bytes, uint32_t rate, uint32_t center_hz) {
   Rx* r = rx_at(rx);
   if (!r || !r->frame || !cu8) return;
+  if (rate) r->rate_now = rate;
+  if (center_hz) r->applied = center_hz;
   while (bytes) {
     const size_t n = bytes < kIqBytes ? bytes : kIqBytes;
     const int64_t now = esp_timer_get_time();
