@@ -169,6 +169,10 @@ ServerState run_server(const ServerConfig& config, ServerBackend& backend, Serve
     backend.on_state(ServerState::failed);  // an explicit IPv4 bind address is required
     return ServerState::failed;
   }
+  if (address.sin_addr.s_addr == 0) {  // 0.0.0.0 in any spelling would listen on every interface
+    backend.on_state(ServerState::failed);
+    return ServerState::failed;
+  }
   const int listen_fd = socket(AF_INET, SOCK_STREAM, 0);
   if (listen_fd < 0) {
     stats.last_errno.store(errno, std::memory_order_relaxed);

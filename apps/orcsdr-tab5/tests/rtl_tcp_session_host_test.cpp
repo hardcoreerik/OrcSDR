@@ -291,7 +291,7 @@ static void test_normal_stream_and_commands() {
   std::thread session([&] { final_state = run(cfg, env, stats); });
   CHECK(wait_for([&] { return env.delivered_total() >= total - 1; }, 5000));
   env.queue_command(Command::set_frequency, 145800000u);  // live retune
-  CHECK(wait_for([&] { return server.commands().size() >= 15; }, 3000));
+  CHECK(wait_for([&] { return server.commands().size() >= 30; }, 3000));
   env.stop = true;
   session.join();
   CHECK(final_state == State::idle);
@@ -301,10 +301,13 @@ static void test_normal_stream_and_commands() {
   CHECK(pattern_prefix(segments[0]));  // every sample in order, I before Q
   CHECK(segments[0].size() >= total - 1);
   const auto commands = server.commands();
-  const uint8_t expected[15] = {0x02, 0x00, 0x24, 0x9F, 0x00,   // sample rate 2.4 MS/s
+  const uint8_t expected[30] = {0x02, 0x00, 0x24, 0x9F, 0x00,   // sample rate 2.4 MS/s
+                                0x05, 0x00, 0x00, 0x00, 0x00,   // ppm 0 (reset: the server keeps an earlier client's)
+                                0x0A, 0x00, 0x00, 0x00, 0x00,   // offset tuning off
+                                0x09, 0x00, 0x00, 0x00, 0x00,   // direct sampling off
                                 0x01, 0x05, 0xF7, 0x67, 0xA0,   // 100.1 MHz
                                 0x01, 0x08, 0xB0, 0xBB, 0x40};  // 145.8 MHz retune
-  CHECK(commands.size() >= 15 && std::memcmp(commands.data(), expected, 15) == 0);
+  CHECK(commands.size() >= 30 && std::memcmp(commands.data(), expected, 30) == 0);
   CHECK(stats.tuner_type_raw.load() == 5 && stats.gain_count.load() == 29);
   CHECK(env.saw_state(State::connecting) && env.saw_state(State::streaming));
   CHECK(stats.bytes_dropped.load() == 0);

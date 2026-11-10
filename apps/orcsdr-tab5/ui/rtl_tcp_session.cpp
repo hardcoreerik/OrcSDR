@@ -126,6 +126,14 @@ bool send_command(int fd, Command command, uint32_t parameter, Env& env) {
 bool send_desired(int fd, const Desired& d, Env& env) {
   if (d.sample_rate_sps && !send_command(fd, Command::set_sample_rate, d.sample_rate_sps, env))
     return false;
+  // A stock rtl_tcp keeps these between clients, so always send them (defaults when unset) before the frequency:
+  // an earlier client's ppm, offset tuning or direct sampling must not shift or blank this stream.
+  if (!send_command(fd, Command::set_freq_correction, d.ppm_set ? parameter_signed(d.ppm) : 0u, env))
+    return false;
+  if (!send_command(fd, Command::set_offset_tuning, d.offset_set && d.offset_on ? 1u : 0u, env))
+    return false;
+  if (!send_command(fd, Command::set_direct_sampling, d.direct_set ? d.direct_mode : 0u, env))
+    return false;
   if (d.frequency_hz && !send_command(fd, Command::set_frequency, d.frequency_hz, env))
     return false;
   if (d.gain_mode_set &&
@@ -136,13 +144,6 @@ bool send_desired(int fd, const Desired& d, Env& env) {
       !send_command(fd, Command::set_gain, parameter_signed(d.gain_tenths_db), env))
     return false;
   if (d.agc_set && !send_command(fd, Command::set_agc_mode, d.agc_on ? 1u : 0u, env))
-    return false;
-  if (d.ppm_set && !send_command(fd, Command::set_freq_correction, parameter_signed(d.ppm), env))
-    return false;
-  if (d.offset_set &&
-      !send_command(fd, Command::set_offset_tuning, d.offset_on ? 1u : 0u, env))
-    return false;
-  if (d.direct_set && !send_command(fd, Command::set_direct_sampling, d.direct_mode, env))
     return false;
   return true;
 }

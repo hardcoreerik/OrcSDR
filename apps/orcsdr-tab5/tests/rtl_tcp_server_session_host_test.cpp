@@ -296,6 +296,14 @@ static void test_bind_failures() {
     config.port = free_port();
     CHECK(run_server(config, backend, stats) == ServerState::failed);
   }
+  for (const char* any : {"0.0.0.0", "0.0.0.00", "00.0.0.0"}) {  // never listen on every interface
+    FakeBackend backend;
+    ServerStats stats;
+    ServerConfig config;
+    std::strcpy(config.bind_host, any);
+    config.port = free_port();
+    CHECK(run_server(config, backend, stats) == ServerState::failed);
+  }
   {
     const uint16_t port = free_port();  // occupy it first
     const int occupier = socket(AF_INET, SOCK_STREAM, 0);

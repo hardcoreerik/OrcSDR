@@ -221,7 +221,7 @@ void worker(void*) {
     rtl_tcp::ServerConfig config;
     if (std::strcmp(g_bind, "wifi") == 0) {
       const char* ip = g_hooks.wifi_ip ? g_hooks.wifi_ip() : "";
-      if (ip == nullptr || ip[0] == '\0') {
+      if (ip == nullptr || ip[0] == '\0' || std::strcmp(ip, "0.0.0.0") == 0) {  // no address yet: wait, never fall back to all interfaces
         vTaskDelay(pdMS_TO_TICKS(500));
         continue;
       }
