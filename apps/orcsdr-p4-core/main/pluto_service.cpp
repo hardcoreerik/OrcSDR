@@ -83,6 +83,7 @@ struct Pipe {
   uint8_t* cu8 = nullptr;
   QueueHandle_t filled = nullptr, freeq = nullptr;
   std::atomic<bool> run{false}, exited{true};
+  std::atomic<uint32_t> blocks{0}, convert_us{0}, feed_us{0};  // totals since the last log line, for the CPU cost split
 };
 Pipe g_pipe;
 
@@ -94,9 +95,14 @@ void convert_task(void*) {
     const int idx = static_cast<int>(v & 0xF);
     const size_t bytes = v >> 4;
     xSemaphoreTake(p.s->conv_lock, portMAX_DELAY);
+    const int64_t t0 = esp_timer_get_time();
     const size_t pairs = pluto_iq_convert(&p.s->conv, p.raw[idx], bytes / 4, p.cu8);
+    const int64_t t1 = esp_timer_get_time();
     xSemaphoreGive(p.s->conv_lock);
     if (pairs) radio::ext::feed(kRx, p.cu8, pairs * 2);
+    p.convert_us.fetch_add(static_cast<uint32_t>(t1 - t0));
+    p.feed_us.fetch_add(static_cast<uint32_t>(esp_timer_get_time() - t1));
+    p.blocks.fetch_add(1);
     xQueueSend(p.freeq, &idx, 0);
   }
   p.exited = true;
@@ -136,7 +142,9 @@ bool apply_rate(Session& s, uint32_t wanted) {
   char v[32] = {};
   if (pluto_iiod_read_attr(&s.iiod, s.iiod.phy, "voltage0", false, "sampling_frequency", v, sizeof(v)) > 0) {
     const long long got = std::atoll(v);
-    if (got > 0 && got != static_cast<long long>(ad)) {
+    // The AD9361 rounds to a few Hz (2.4 MS/s reads back as 2,399,999). Within 2 Hz the nominal rate stays, as a dongle's does;
+    // otherwise consumers that divide the rate down (the browser channel) would see 299,999 S/s and refuse it.
+    if (got > 0 && std::llabs(got - static_cast<long long>(ad)) > 2) {
       ESP_LOGW(TAG, "asked %u S/s, device runs %lld", unsigned(ad), got);
       ad = static_cast<uint32_t>(got);
       out = ad / d;
@@ -299,8 +307,9 @@ void run_session(uint32_t start_hz) {
     window_samples += static_cast<uint64_t>(n) / 4 / s.decim;
     if (now - window_start >= 750000) {
       sps = static_cast<uint32_t>(window_samples * 1000000ULL / static_cast<uint64_t>(now - window_start));
-      ESP_LOGI(TAG, "IQ hz=%u sps=%u rate=%u dropped_blocks=%u", unsigned(s.lo_hz), unsigned(sps), unsigned(s.out_rate),
-               unsigned(s.drops));
+      const uint32_t nb = std::max<uint32_t>(p.blocks.exchange(0), 1);
+      ESP_LOGI(TAG, "IQ hz=%u sps=%u rate=%u dropped_blocks=%u convert_us/block=%u feed_us/block=%u", unsigned(s.lo_hz), unsigned(sps),
+               unsigned(s.out_rate), unsigned(s.drops), unsigned(p.convert_us.exchange(0) / nb), unsigned(p.feed_us.exchange(0) / nb));
       window_start = now;
       window_samples = 0;
       if (++log_count % 4 == 0) {  // a coarse spectrum read: strongest bin against the median shows a real carrier from noise

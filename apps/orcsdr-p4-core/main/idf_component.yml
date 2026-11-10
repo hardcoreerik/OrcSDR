@@ -8,7 +8,7 @@ dependencies:
   esp-pluto-sdr:
     git: https://github.com/hardcoreerik/esp-pluto-sdr.git
     # PlutoSDR iiod client, IQ conversion and USB transport (receive only). Immutable pin; the driver never depends on OrcSDR.
-    version: 3b19e0ca5c4218c59ae1d3b3145c26187e0501cd
+    version: ee66222904357c0b5d69f86bfa6409000d220299
   orcmaps:
     git: https://github.com/hardcoreerik/OrcMaps.git
     # Same immutable pin as apps/orcsdr-tab5, so the map engine is identical on every OrcSDR build.
