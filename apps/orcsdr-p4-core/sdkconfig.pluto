@@ -1,0 +1,2 @@
+# Adds the PlutoSDR (USB) receiver source on top of a board build. Receive only.
+CONFIG_ORCSDR_PLUTO_SOURCE=y

@@ -2,6 +2,17 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased: PlutoSDR (AD9361) as a USB receiver source for OrcSDR P4 Core, in progress — 2026-11-10
+
+**Not a release.** Work on `claude/pluto-p4-core-source`, branched from `claude/orcsdr-web-landing`; nothing is merged.
+
+- **New source, receive only:** with `sdkconfig.pluto` (`CONFIG_ORCSDR_PLUTO_SOURCE`) a PlutoSDR on the board's USB-A port becomes receiver 0 when no RTL-SDR is streaming there. Its 12-bit IQ is converted to the 8-bit stream every consumer already takes (audio, RF Lab, decoders, browser IQ). No transmit attribute is ever written. The iiod client, IQ conversion and USB transport live in the separate `esp-pluto-sdr` repository (pinned in `main/idf_component.yml`), which does not depend on OrcSDR.
+- **Seam:** `radio_service` gained a small `radio::ext` interface (acquire/release, requests, publish, feed) and an idle path for the RTL-SDR loop; the Pluto logic is in `main/pluto_service.cpp`.
+- **Device-derived limits:** tune span (70 MHz to 6 GHz on the unit tested), the rate floor and the gain span are read from the Pluto, not assumed. Console rates map to the AD9361 by integer decimation (960 kS/s from 2.88 MS/s, 2.4 MS/s direct).
+- **Verified on COM28** (Waveshare ESP32-P4-WIFI6-POE-ETH, rev v3.2, Pluto on the USB-A port): 960 kS/s and 2.4 MS/s delivered at the requested rate (2.398 to 2.404 MS/s steady at 2.4 MS/s), no dropped blocks, one boot. A first version that converted inline with the USB read delivered only about 2.3 MS/s because the Pluto overruns when the host is late; the reader is now a separate higher-priority task.
+- **Flash clock:** this v3.2 unit hit "mismatch chip ID" in the second-stage bootloader at an 80 MHz flash clock; `sdkconfig.flash-40m` fixes it.
+- **Not verified:** sensitivity or calibration against a known signal, sustained hours, Pluto together with an RTL-SDR, hot-unplug recovery, gain behaviour across bands, a Pluto on the Tab5 or any other board, decimation filter quality (boxcar).
+
 ## Unreleased: OrcSDR Web and OrcSDR P4 Core landing branch, in progress — 2026-11-08
 
 **Not a release.** Work on `claude/orcsdr-web-landing`, not on `origin/main`.

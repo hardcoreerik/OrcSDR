@@ -76,6 +76,10 @@ struct Rx {
   std::atomic<uint32_t> sequence{0};    // +1 per block read
   TaskHandle_t task_handle = nullptr;
   uint8_t* frame = nullptr;           // scratch copy of the block, shared by every queued consumer
+  // A non-RTL backend (ext:: in the header) owns this receiver while `external` is set; the RTL loop then stays idle.
+  std::atomic<bool> external{false};
+  std::atomic<uint32_t> ext_min_hz{0}, ext_max_hz{0};
+  int64_t ext_last_fft = 0;
 };
 
 QueueHandle_t queue = nullptr;  // Home's commands go to receiver 0 only
@@ -175,6 +179,10 @@ void task(void* arg) {
   uint32_t scans = 0, last_seen_target = 0;
   int64_t target_changed_at = 0;
   for (;;) {
+    if (r.external.load()) {  // another backend (the PlutoSDR) holds this receiver: do not scan, read or retune
+      vTaskDelay(pdMS_TO_TICKS(50));
+      continue;
+    }
     const uint32_t absolute = r.tune_request.exchange(0);
     if (absolute) {
       r.requested = absolute;
@@ -577,8 +585,14 @@ Info info() { return info(0); }
 // The driver has no per-dongle range query: each profile enforces its own range when it retunes (V4 from 24 kHz, V3c Q-branch from 60 kHz, Nooelec
 // SMArt v5 from 100 kHz, a tuner-only dongle from 24 MHz) and answers ESP_RTL_SDR_ERR_BAD_FREQ. So this service only applies the driver's arithmetic
 // span and reports what the driver said (tune_error); it never invents a narrower range of its own.
-uint32_t tune_min_hz(int) { return ESP_RTL_SDR_FREQ_MIN_HZ; }
-uint32_t tune_max_hz(int) { return ESP_RTL_SDR_FREQ_MAX_HZ; }
+uint32_t tune_min_hz(int rx) {
+  Rx* r = rx_at(rx);
+  return r && r->external.load() && r->ext_min_hz.load() ? r->ext_min_hz.load() : ESP_RTL_SDR_FREQ_MIN_HZ;
+}
+uint32_t tune_max_hz(int rx) {
+  Rx* r = rx_at(rx);
+  return r && r->external.load() && r->ext_max_hz.load() ? r->ext_max_hz.load() : ESP_RTL_SDR_FREQ_MAX_HZ;
+}
 int tune_error(int rx, uint32_t* hz) {
   Rx* r = rx_at(rx);
   if (!r) return 0;
@@ -693,4 +707,97 @@ bool peek_bins(int rx, uint8_t out[256], uint32_t* sequence) {
   portEXIT_CRITICAL(&r->bands_lock);
   return any;
 }
+
+// ---- external backend (PlutoSDR) ---------------------------------------------------------------------------------
+
+namespace ext {
+bool host_ready() { return g_host_ready.load(); }
+bool acquire(int rx) {
+  Rx* r = rx_at(rx);
+  if (!r || r->state.load() == 2) return false;  // an RTL-SDR is streaming here: it keeps the receiver
+  r->external = true;
+  r->state = 1;
+  return true;
+}
+void release(int rx) {
+  if (Rx* r = rx_at(rx)) {
+    r->external = false;
+    r->state = 0;
+    r->applied = 0;
+    r->sps = 0;
+    r->ext_min_hz = r->ext_max_hz = 0;
+    r->generation.fetch_add(1);
+  }
+}
+Requests poll(int rx) {
+  Requests q;
+  Rx* r = rx_at(rx);
+  if (!r) return q;
+  q.tune_hz = r->tune_request.exchange(0);
+  q.rate_target = r->rate_target.load();
+  q.gain_kind = r->gain_req_kind.exchange(0);
+  q.gain_value = r->gain_req_value.load();
+  if (q.tune_hz) r->requested = q.tune_hz;
+  return q;
+}
+void publish(int rx, const Status& s, const Gain& g) {
+  Rx* r = rx_at(rx);
+  if (!r) return;
+  r->state = s.state;
+  r->applied = s.applied_hz;
+  r->rate_now = s.rate;
+  r->sps = s.sps;
+  r->drops = s.drops;
+  r->ext_min_hz = s.tune_min_hz;
+  r->ext_max_hz = s.tune_max_hz;
+  Info inf;
+  std::snprintf(inf.device, sizeof(inf.device), "%s", s.device);
+  std::snprintf(inf.usb_path, sizeof(inf.usb_path), "%s", s.usb_path);
+  std::snprintf(inf.health, sizeof(inf.health), "OK");
+  portENTER_CRITICAL(&r->gain_lock);
+  r->info = inf;
+  r->gain = g;
+  portEXIT_CRITICAL(&r->gain_lock);
+}
+void tune_result(int rx, uint32_t hz, int error) {
+  if (Rx* r = rx_at(rx)) {
+    r->tune_err_hz = hz;
+    r->tune_err = error;
+  }
+}
+void new_stream(int rx) {
+  if (Rx* r = rx_at(rx)) r->generation.fetch_add(1);
+}
+void feed(int rx, const uint8_t* cu8, size_t bytes) {
+  Rx* r = rx_at(rx);
+  if (!r || !r->frame || !cu8) return;
+  while (bytes) {
+    const size_t n = bytes < kIqBytes ? bytes : kIqBytes;
+    const int64_t now = esp_timer_get_time();
+    dispatch(*r, cu8, n, now);
+    if (n >= 2048 && now - r->ext_last_fft > 50000) {
+      float acc = 0.0f;
+      const size_t count = n < 4096 ? n : 4096;
+      for (size_t i = 0; i < count; ++i) {
+        const float v = (static_cast<float>(cu8[i]) - 127.5f) * (1.0f / 127.5f);
+        acc += v * v;
+      }
+      const float rms = std::sqrt(acc / static_cast<float>(count));
+      r->dbfs = rms > 1e-6f ? 20.0f * std::log10(rms) : -120.0f;
+      if (n >= kFftSize * 2) {
+        Spectrum view = spectrum_from_cu8(cu8, n);
+        if (view.real_samples) {
+          portENTER_CRITICAL(&r->bands_lock);
+          memcpy(r->bands, view.values.data(), kFftSize);
+          ++r->band_seq;
+          portEXIT_CRITICAL(&r->bands_lock);
+        }
+      }
+      r->ext_last_fft = now;
+    }
+    cu8 += n;
+    bytes -= n;
+  }
+}
+}  // namespace ext
 }  // namespace orcsdr::radio

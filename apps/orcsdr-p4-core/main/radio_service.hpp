@@ -149,4 +149,32 @@ struct SinkStats {
   uint32_t blocks = 0, drops = 0, max_call_us = 0;
 };
 bool sink_stats(SinkHandle handle, SinkStats* out);
+
+// ---- A non-RTL-SDR backend owning a receiver (the PlutoSDR, pluto_service.cpp) ----
+// While a backend holds receiver `rx` the RTL-SDR loop stays idle on it, and the backend drives the same state through this
+// narrow interface: it reads the console's requests (tune, rate, gain), publishes status and feeds CU8 blocks that go to the
+// receiver's sinks exactly like a dongle's. Nothing here knows about any particular radio.
+namespace ext {
+struct Requests {
+  uint32_t tune_hz = 0;       // 0 = none pending
+  uint32_t rate_target = 0;   // the console's wanted output rate (S/s)
+  int gain_kind = 0;          // 0 none, 1 auto, 2 manual (tenth_db in gain_value), 4 bias tee
+  int gain_value = 0;
+};
+bool host_ready();            // the USB host library is installed (by the RTL-SDR driver on receiver 0)
+bool acquire(int rx);         // false while the RTL-SDR loop is streaming on this receiver
+void release(int rx);
+Requests poll(int rx);
+struct Status {
+  int state = 0;              // 0 no device, 1 scanning, 2 streaming, 3 error
+  uint32_t applied_hz = 0, rate = 0, sps = 0, drops = 0;
+  uint32_t tune_min_hz = 0, tune_max_hz = 0;  // the device's own range, as it reports it (0 = use the console's default)
+  char device[48] = {};
+  char usb_path[24] = {};
+};
+void publish(int rx, const Status& status, const Gain& gain);
+void tune_result(int rx, uint32_t hz, int error);  // the device's answer to a retune (0 = accepted)
+void new_stream(int rx);                           // a start, stop, rate change or recovery: bumps the generation
+void feed(int rx, const uint8_t* cu8, size_t bytes);
+}  // namespace ext
 }

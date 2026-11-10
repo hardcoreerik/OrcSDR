@@ -1,0 +1,2 @@
+# This COM28 unit (ESP32-P4 rev v3.2, Waveshare WIFI6-POE-ETH) failed the second-stage bootloader with "mismatch chip ID" at an 80 MHz flash clock and booted reliably at 40 MHz (2026-11-10).
+CONFIG_ESPTOOLPY_FLASHFREQ_40M=y

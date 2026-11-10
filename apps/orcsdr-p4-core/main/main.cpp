@@ -26,6 +26,7 @@
 #include "orcsdr_board_profile.h"
 #include "present.hpp"
 #include "radio_service.hpp"
+#include "pluto_service.hpp"
 #include "serial_cli.hpp"
 
 static constexpr char TAG[] = "CONSOLE";
@@ -56,6 +57,7 @@ extern "C" void app_main(void) {
   QueueHandle_t commands = xQueueCreate(4, sizeof(orcsdr::waveshare4b::home_v3::Command));
   if (!commands || !orcsdr::radio::start(commands)) ESP_LOGE(TAG, "receiver task failed");
 
+  orcsdr::pluto::start();  // PlutoSDR over USB: a no-op unless CONFIG_ORCSDR_PLUTO_SOURCE
   sd_card::start();
   wifi_app::start();       // C6 link comes up in the background a few seconds later
   eth_app::start();        // wired Ethernet where the build enables it and the board profile has the pins

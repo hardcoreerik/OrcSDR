@@ -12,6 +12,15 @@ menu "OrcSDR receivers"
             not yet measured. Check "RTL_MEM STATUS" dma_free, "RTL_CPU" and the per-receiver drops from
             "RTL_RX STATUS" with the console running before choosing more than 1 or 2.
 
+    config ORCSDR_PLUTO_SOURCE
+        bool "PlutoSDR (AD9361) as a USB receiver source"
+        default n
+        help
+            Starts a task that watches the USB host port for a PlutoSDR (VID 0456, PID b673). When one is attached and no RTL-SDR is
+            streaming on receiver 0, the Pluto becomes receiver 0: its IQ is converted to 8-bit and fed to the same consumers as a
+            dongle. Receive only; no transmit attribute is ever written. It needs about 12 MB/s of USB bandwidth, so it cannot
+            share the bus with other dongles.
+
     config ORCSDR_ETHERNET
         bool "Wired Ethernet (RMII PHY) from the board profile"
         default n
