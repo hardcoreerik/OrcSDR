@@ -1,7 +1,9 @@
 # VEIL-26 in Dead Air
 
-VEIL-26 is an experimental, opt-in analysis engine inside Dead Air. It turns **measured numbers** (a tuned frequency and a
-measured level) into **symbols** (a letter, a dictionary word, two gematria sums) with a fixed, deterministic recipe.
+VEIL-26 is an **implemented, opt-in symbolic analysis engine** inside Dead Air. It turns **measured numbers** (a tuned frequency and a
+measured level) into **interpreted symbols** (a letter, a dictionary word, two gematria sums) with a fixed, deterministic recipe.
+The computation is real and reproducible; the esoteric meaning is not a scientific measurement or evidence of paranormal activity.
+Per maintainer acceptance, Dead Air also operates with a real ENV III sensor on Tab5; VEIL-26 does not read or transform that sensor into paranormal detections.
 
 > Dead Air is allowed to be weird. Dead Air is not allowed to lie about what it measured.
 
@@ -157,4 +159,4 @@ The same tests run in `.github/workflows/dead-air-host-tests.yml`.
   centre. Feeding either as an audio-frequency measurement, or the tuned centre as a detected peak, would be dishonest, so
   nothing does. A real audio-peak input needs a bounded FFT of the demodulated audio on the worker side; not built.
 - **The canonical dictionary and verification against the original prototype** (see Provenance).
-- **Hardware validation.** Nothing here has been flashed or run on a unit.
+- **VEIL-26-specific physical acceptance.** The initial development record contained no device test; the maintainer now confirms the feature exists and works as a symbolic analyzer, but this document still has no new independently timestamped VEIL-26 hardware/overlay acceptance log. Do not infer full UI/soak acceptance from host tests.

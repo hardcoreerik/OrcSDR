@@ -5,6 +5,10 @@ No local checkout dependency, SDK HAL override, startup tracing or diagnostic
 firmware image is included. Existing repository display/Hosted patch process
 is used. Other in-progress worktrees and branch heads are not modified.
 
+## Current maintainer operational clarification (2026-11-04)
+
+The Nooelec XTR/E4000 driver works within OrcSDR for frequencies within its declared tuning range. A dashboard for a frequency E4000 cannot tune (e.g., broadcast AM without an appropriate external converter) can still open, but intentionally does **not** issue an invalid tuner request. This is functioning frequency-capability handling, **not** an unintegrated or failed driver. Consistent disabled-state UX across all dashboards and full RF-characterization remain separate work. See [field acceptance](MAINTAINER_FIELD_ACCEPTANCE_2026-11-04.md).
+
 ## Firmware behavior
 
 - Apply hardware offset tuning only when the driver advertises support.

@@ -1,20 +1,22 @@
 # AM, WX, CB, and shared receiver routes
 
-The current application has dedicated AM and CB dashboards plus a shared
-Radio/Scope/Capture receiver surface. Weather and the dashboard-catalog entries
-for Shortwave, Airband, Marine, and Satellite route into that shared surface;
-they are not separate full decoder applications.
+The current application includes dedicated AM, CB, Shortwave Explorer and
+Airband receiver screens. Shortwave's AM/USB/LSB controls share the common
+receiver/session and DSP infrastructure rather than using a separate driver.
+Weather uses its configured NFM route. Marine and Satellite use the shared
+Radio/Scope/Capture surface without dedicated signal decoders.
 
 - **Radio** tunes and listens with the mode currently implemented for the route.
 - **Scope** shows spectrum and waterfall activity.
 - **Capture** records the post-demodulated audio path.
 
-AM uses broadcast-band tuning and filtering. WX uses NFM on a configured NOAA
-weather channel. Shortwave, Airband,
-Marine, and Satellite currently use generic Browse/NFM routing, so this UI does
-not establish correct shortwave AM/SSB, aviation AM voice, or a satellite
-decoder. The older standalone Browse navigation entry is retired; the shared
-surface remains the implementation used by these band-entry routes.
+AM uses broadcast-band tuning and filtering, and WX uses NFM on a configured
+NOAA weather channel. Shortwave Explorer adds AM/USB/LSB, clarifier, band-plan
+AUTO and memories; the Airband dashboard implements aviation AM voice and
+25/8.33 kHz tuning/scanning. See the [Shortwave changes](https://github.com/hardcoreerik/OrcSDR/blob/main/docs/shortwave/CHANGELOG.md)
+and [Airband guide](https://github.com/hardcoreerik/OrcSDR/blob/main/docs/airband/README.md). Marine and Satellite still use
+shared receiver routes without specialized decoders. Live reception quality
+and complete on-air RF acceptance vary by band, antenna and firmware build.
 
 ## CB scanner
 

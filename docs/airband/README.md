@@ -249,13 +249,9 @@ spectrum as a VHF reference; a speaker tone test confirmed the output path. Two 
 they were found: the tuner AGC (see Gain above) and an over-strict squelch. Real signals were only 6 to 9 dB
 over the noise, so antenna placement still matters.
 
-**Not validated / limitations:**
+**Remaining validation limits (the dated voice test above is accepted):**
 
-- Reception of a real voice transmission and audio quality could not be judged
-  by serial: the scanner hold on 121.875 MHz shows the carrier path works, but
-  intelligibility, AM audio level and squelch tail need a listening test with
-  live traffic. Whether +8 dB is the right default in different RF
-  environments needs field data.
+- Intelligible arrival/departure voice **was actually heard**, on the receiver speaker and compared with live ATC audio; it is not an untested feature. Broader speech intelligibility, calibrated AM audio levels, squelch tails and whether +8 dB is an appropriate default in different RF environments still need field characterization.
 - ATIS/AWOS continuous channels have no dedicated scan policy.
 - Loading a worldwide pack takes about 2.5 to 3 seconds on the UI thread (it
   runs when Airband is entered with a location, when the radius changes, and

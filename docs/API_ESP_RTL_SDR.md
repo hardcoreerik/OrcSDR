@@ -2,21 +2,24 @@
 
 The public driver API is maintained in
 [`hardcoreerik/esp-rtl-sdr`](https://github.com/hardcoreerik/esp-rtl-sdr).
-Current OrcSDR uses the driver's published release **`v0.9.4`** (it reports `0.9.4`) at immutable
-commit `43474869e061a78c209091f9b3a65c498ae64fb4`. The same SHA is recorded in
+Current OrcSDR uses the driver's published release **`v0.9.6`** (it reports `0.9.6`) at immutable
+commit `dabdda1aff6aa196f3c1523d791adf80d2c24ccc`. The same SHA is recorded in
 `apps/orcsdr-tab5/main/idf_component.yml` and
 `apps/orcsdr-tab5/dependencies.lock`.
 
-## Receiver evidence
+## Receiver support and evidence
 
-| Receiver | Current boundary |
+**Fully supported in OrcSDR:** RTL-SDR Blog V4, V3c, V4 Lite (V4L), and Nooelec NESDR SMArt V5. These are accepted receiver models, not experimental dongle integrations; individual dashboard/RF calibration evidence remains scoped to specific tests.
+
+| Receiver | OrcSDR status / scope |
 |---|---|
-| RTL-SDR Blog V4 | RF-Verified tested baseline. |
-| RTL-SDR Blog V3C | RF-Verified/Experimental on one RC4 unit for detection, startup, streaming, FM/RDS, retune, hotplug, and USB/battery boot; gain and sensitivity remain provisional. |
-| Earlier Blog V3 variants | Implemented/Experimental; V3C evidence does not establish broad compatibility. |
-| Nooelec NESDR SMArt V5 | RF-Verified/tested at 24 MHz and above (v0.3.0-beta.2 band-select and replug tests, run on development images built from the driver commits that became v0.9.3); owner also accepted 7.074 MHz FT8 reception on 2026-10-09 with an externally powered MLA-30+; see [FT8 evidence](user-guide/dashboards/ft8.md). |
-| Blog V4L | Owner accepted 40 m FT8 reception on 2026-10-09; bounded setup and evidence in the [FT8 guide](user-guide/dashboards/ft8.md). |
-| Other receivers | Unsupported/Not Verified unless a named profile and evidence are added. |
+| RTL-SDR Blog V4 | **Fully supported**; historical RF-tested baseline with HF upconverter support. |
+| RTL-SDR Blog V3c | **Fully supported**; hardware-tested lifecycle, streaming, control and FM paths; direct-sampling HF has model-specific control behavior. |
+| RTL-SDR Blog V4 Lite (V4L) | **Fully supported**; tested lifecycle, streaming and tuner controls, with accepted [40 m FT8 evidence](user-guide/dashboards/ft8.md). |
+| Nooelec NESDR SMArt V5 | **Fully supported**; tested streaming/controls and accepted [40 m FT8 evidence](user-guide/dashboards/ft8.md). |
+| Earlier Blog V3 variants | Experimental until individually verified; V3c acceptance does not automatically qualify them. |
+| Nooelec SMArTee XTR / E4000 | **Supported within tuner range.** Dashboards show a warning for out-of-range frequencies. Home shows the reason in the waterfall and resumes reception after a supported retune. |
+| Other receivers | Unsupported / not verified without a named accepted profile. |
 
 OrcSDR deliberately selects callback delivery, three 32-KiB USB transfers, and
 USB task core 0. Borrowed IQ event data is consumed or copied during the
