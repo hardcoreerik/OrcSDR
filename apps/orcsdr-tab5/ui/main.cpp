@@ -1899,8 +1899,10 @@ static inline bool rtl_usb_device_ready() {
 }
 static bool rtl_remote_source_ready();  // rtl_tcp client selected and usable (defined with the IQ sink)
 static bool rtl_remote_active();        // the running stream comes from an rtl_tcp server, not the USB dongle
-// "A receiver source is ready": the USB dongle or a remote rtl_tcp server.
-static inline bool rtl_device_ready() { return rtl_usb_device_ready() || rtl_remote_source_ready(); }
+static orcsdr::source::Active rtl_choose_source();  // the receiver source policy (defined with the IQ sink)
+// "The selected receiver source can start": decided by the source policy, so a source set to remote does not start the
+// USB dongle when the network is down (the policy then chooses none), and USB mode never waits on a server.
+static inline bool rtl_device_ready() { return rtl_choose_source() != orcsdr::source::Active::none; }
 #endif
 std::atomic<RtlCaptureState> rtl_capture_state{RtlCaptureState::disconnected};
 std::atomic<bool> rtl_capture_requested{false};
