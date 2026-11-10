@@ -2,6 +2,14 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — esp-rtl-sdr driver v0.9.6 — 2026-11-09
+
+**Firmware dependency update.** The Tab5 build now pins `esp_rtl_sdr` to the published release [`v0.9.6`](https://github.com/hardcoreerik/esp-rtl-sdr/blob/v0.9.6/docs/releases/v0.9.6.md) at immutable commit `dabdda1aff6aa196f3c1523d791adf80d2c24ccc` (previously `v0.9.5`, `4bf0171`), in both `idf_component.yml` and `dependencies.lock`.
+
+- **Driver fix carried in:** a dongle that disconnects while the receiver is starting no longer leaves the driver in FAULT or interferes with a newly attached receiver. Disconnect cleanup waits for the start attempt to unwind, and the canceled start returns `NO_DEVICE`.
+- **No public API change.** The header changes only its version macro to 0.9.6. OrcSDR's existing start-failure path already handles any non-`ESP_OK` start result, so no caller change is needed.
+- **Separate from the SDK USB recovery patch.** The ESP-IDF USB root-port recovery patch from PR #239 is still applied by OrcSDR's build; driver v0.9.6 does not include it.
+
 ## Unreleased source/documentation reconciliation — 2026-11-04
 
 **Documentation update, not a new firmware release.** The current-source documentation was reconciled with the native build, implementation, dated hardware records and specific firsthand maintainer acceptance:

@@ -19,8 +19,8 @@ ESP32-P4. The onboard ESP32-C6 runs matching ESP-Hosted 3.0.6 firmware and uses
 historical and unsupported.
 
 The portable receiver boundary is the external `esp-rtl-sdr` component,
-published release `v0.9.5` (it reports `0.9.5`), pinned immutably at
-`4bf017195502d1a413e155d5a79aee7cd086035b` by
+published release `v0.9.6` (it reports `0.9.6`), pinned immutably at
+`dabdda1aff6aa196f3c1523d791adf80d2c24ccc` by
 `apps/orcsdr-tab5/main/idf_component.yml` and
 `apps/orcsdr-tab5/dependencies.lock`. OrcSDR uses callback delivery and owns
 DSP, UI, storage, and product behavior above that driver. The old local USB
