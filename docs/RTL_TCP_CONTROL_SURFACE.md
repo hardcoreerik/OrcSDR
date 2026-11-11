@@ -80,6 +80,8 @@ On every connect the client sends ppm (0 unless set), offset tuning (off unless 
 frequency, because a stock `rtl_tcp` keeps them from the previous client, and starts from tuner AGC for a new band (a same-band
 restart keeps the user's gain).
 
+**Wi-Fi outage test command:** `RTL_WIFI_OUTAGE <seconds>` (authenticated, 0 cancels, max 1800) makes the access point "vanish" for that long (a test fault, not persisted); see [RTL_TCP_WIFI_RECOVERY.md](RTL_TCP_WIFI_RECOVERY.md). `RTL_WIFI_STATUS` shows `outage_s=`.
+
 **Keep Wi-Fi alive** (`WIFIKEEP`, Settings > RTL_TCP, **on by default**, acts only while a remote receiver is selected; see [RTL_TCP_WIFI_RECOVERY.md](RTL_TCP_WIFI_RECOVERY.md)): Wi-Fi reconnect (5 tries over about 3.7 minutes) and the ESP32-C6
 link recovery (3 tries) are bounded, so a Wi-Fi outage longer than about four minutes, such as an access point restarting, left the Tab5
 offline until it was reset. With this on, and a remote receiver selected (source remote, or automatic with no dongle plugged in), each 5 minutes Wi-Fi stays down re-arms both budgets

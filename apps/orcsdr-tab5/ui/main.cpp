@@ -10970,17 +10970,33 @@ void resume_radio_after_io(bool& paused) {
   paused = false;
   if (catalog_radio_paused || wifi_connect_radio_paused || wifi_poweroff_radio_paused ||
       wifi_c6_probe_radio_paused || setup_radio_paused) return;
-  const bool resume_radio = radio_io_resume_pending;
+  // With no usable source (a remote receiver while Wi-Fi is down) nothing would ever clear `queued`, so the resume is not started
+  // now; it stays pending and resume_deferred_radio() starts it once Wi-Fi is back. Dropping it left the stream idle after an outage.
+  const bool ready = rtl_device_ready();
+  const bool resume_radio = radio_io_resume_pending && ready;
   const bool resume_speaker = radio_io_speaker_resume_pending;
-  radio_io_resume_pending = false;
+  radio_io_resume_pending = radio_io_resume_pending && !ready;
   radio_io_speaker_resume_pending = false;
-  if (resume_radio && rtl_device_ready()) {  // with no usable source nothing would ever clear `queued`
+  if (resume_radio) {
     rtl_capture_state.store(RtlCaptureState::queued, std::memory_order_release);
     rtl_stop_requested.store(false, std::memory_order_release);
     rtl_restart_requested.store(true, std::memory_order_release);
     rtl_capture_requested.store(true, std::memory_order_release);
   }
   if (resume_speaker) resume_rtl_speaker();
+}
+
+// Called every Wi-Fi poll: a stream that was paused for Wi-Fi work while no source was usable restarts when one is.
+void resume_deferred_radio() {
+  if (!radio_io_resume_pending || radio_io_paused() || !rtl_device_ready()) return;
+  radio_io_resume_pending = false;
+  const auto state = rtl_capture_state.load(std::memory_order_acquire);
+  if (state == RtlCaptureState::running || state == RtlCaptureState::queued) return;   // something already started it
+  Serial.println("RTL_RADIO_RESUME deferred stream restarted (source usable again)");
+  rtl_capture_state.store(RtlCaptureState::queued, std::memory_order_release);
+  rtl_stop_requested.store(false, std::memory_order_release);
+  rtl_restart_requested.store(true, std::memory_order_release);
+  rtl_capture_requested.store(true, std::memory_order_release);
 }
 
 bool pause_radio_for_catalog() { return pause_radio_for_io(catalog_radio_paused); }
@@ -11119,6 +11135,7 @@ void poll_wifi() {
     if (orcsdr::wifi::link_failed()) link_failure_handled = false;  // run the C6 link recovery again
     else schedule_wifi_reconnect("keepalive");
   }
+  resume_deferred_radio();
   if (orcsdr::wifi::link_failed() || wifi_link_recovery_due_ms != 0) return;
   link_failure_handled = false;
   if (wifi_reconnect_due_ms != 0 &&
@@ -21139,6 +21156,21 @@ void process_command(char* command) {
     Serial.println("RTL_WIFI_PROFILES_END");
     return;
   }
+  if (strncmp(command, "RTL_WIFI_OUTAGE", 15) == 0 && (command[15] == '\0' || command[15] == ' ')) {
+    // Test fault injection: the access point 'vanishes' for N seconds (see wifi_service.hpp). Needs an authenticated session.
+    if (!authenticated) {
+      Serial.println("RTL_WIFI_OUTAGE_ERROR auth_required");
+      return;
+    }
+    const unsigned long seconds = strtoul(command + 15, nullptr, 10);
+    if (seconds > 1800) {
+      Serial.println("RTL_WIFI_OUTAGE_ERROR use 0 (cancel) to 1800 seconds");
+      return;
+    }
+    if (command[15] != '\0') orcsdr::wifi::simulate_outage(static_cast<uint32_t>(seconds));
+    Serial.printf("RTL_WIFI_OUTAGE seconds_left=%lu\n", static_cast<unsigned long>(orcsdr::wifi::outage_remaining_s()));
+    return;
+  }
   if (strcmp(command, "RTL_WIFI_DISCONNECT") == 0) {
     if (!authenticated) {
       Serial.println("RTL_WIFI_DISCONNECT_ERROR auth_required");
@@ -21178,7 +21210,7 @@ void process_command(char* command) {
   if (strcmp(command, "RTL_WIFI_STATUS") == 0) {
     Serial.printf("RTL_WIFI_STATUS station=%d hosted_match=%d scanning=%d connecting=%d "
                   "connected=%d saved_profiles=%u power=%d auto_connect=%d antenna=%s "
-                  "ap_count=%u rssi=%d\n",
+                  "ap_count=%u rssi=%d outage_s=%lu\n",
                   wifi_station_ready ? 1 : 0, wifi_hosted_versions_match ? 1 : 0,
                   wifi_scan_running ? 1 : 0, wifi_connecting ? 1 : 0,
                   wifi_connected ? 1 : 0, wifi_profile_count,
@@ -21186,7 +21218,8 @@ void process_command(char* command) {
                   settings_wifi_start_at_boot ? 1 : 0,
                   settings_wifi_external_antenna ? "external" : "internal",
                   static_cast<unsigned>(wifi_scan_result_count),
-                  static_cast<int>(orcsdr::wifi::rssi()));
+                  static_cast<int>(orcsdr::wifi::rssi()),
+                  static_cast<unsigned long>(orcsdr::wifi::outage_remaining_s()));
     orcsdr::wifi::LinkDetails link{};
     if (orcsdr::wifi::link_details(&link))
       Serial.printf("RTL_WIFI_LINK rssi=%d channel=%u second=%u b=%d g=%d n=%d ax=%d ps=%d bandwidth=%d\n",

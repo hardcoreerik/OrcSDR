@@ -32,6 +32,12 @@ int scan_results(ScanResult* results, size_t capacity);
 bool connect(const char* ssid, const char* password);
 void disconnect();
 bool connected();
+// Test fault injection (authenticated serial `RTL_WIFI_OUTAGE <seconds>`, 0 cancels): behaves like an access point that vanished
+// for that long. A live link is dropped (a real disassociation), and every connect request fails as if the network were not
+// found (the C6 is asked to join a network that does not exist), until the time is up; then the next real connect works. Used to test reconnect, give-up and recovery repeatably
+// without switching a router off. Nothing is persisted and it never outlives a reset.
+void simulate_outage(uint32_t seconds);
+uint32_t outage_remaining_s();
 // True once the SDIO link to the C6 has failed; Wi-Fi stays down until restart.
 bool link_failed();
 // A transport-level start() failure (Hosted init, connect or version query) is treated like a lost link,
