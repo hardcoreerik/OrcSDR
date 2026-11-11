@@ -75,6 +75,7 @@ void forward_requests(pluto_sdr_handle_t h, uint32_t* last_rate, uint32_t* last_
   else if (q.gain_kind == 5) pluto_sdr_set_freq_correction(h, q.gain_value * 1000);  // whole ppm from the console's ppm request
   else if (q.gain_kind == 7) pluto_sdr_set_freq_correction(h, q.gain_value);        // thousandths of a ppm
   else if (q.gain_kind == 6) pluto_sdr_set_rf_bandwidth(h, static_cast<uint32_t>(q.gain_value));  // 0 = automatic
+  else if (q.gain_kind == 8) pluto_sdr_set_tracking(h, (q.gain_value & 1) != 0, (q.gain_value & 2) != 0, (q.gain_value & 4) != 0);
   // The device's own answer to the last retune goes back to the console, once per change.
   uint64_t hz = 0;
   int err = 0;
@@ -232,6 +233,7 @@ Snapshot snapshot() {
   s.rate_min_sps = c.rate_min_sps;
   s.rate_max_sps = c.rate_max_sps;
   s.rate_link_max_sps = c.rate_link_max_sps;
+  s.out_rate_min_sps = c.out_rate_min_sps;
   s.bw_min_hz = c.bw_min_hz;
   s.bw_max_hz = c.bw_max_hz;
   s.gain_min_db10 = c.gain_min_db10;

@@ -55,6 +55,8 @@ Info info();
 void set_ppm(int ppm);
 // Frequency correction in thousandths of a ppm (a dongle takes whole ppm, a PlutoSDR takes 0.025 ppm steps). Positive = the reference runs fast.
 void set_ppm_milli(int rx, int32_t ppm_milli);
+// Offset trackers of the source (a PlutoSDR has them: bit 0 RF DC, bit 1 baseband DC, bit 2 quadrature). A dongle ignores it.
+void set_tracking_mask(int rx, int mask);
 // The output rate receiver `rx` would run for `wanted`: the RTL-SDR driver's own answer, or the external backend's when it holds the receiver.
 bool quantize_sample_rate(int rx, uint32_t wanted, uint32_t* applied);
 void set_tuner_bandwidth(uint32_t hz);

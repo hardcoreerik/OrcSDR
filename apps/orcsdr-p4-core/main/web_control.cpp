@@ -117,6 +117,12 @@ Result run(const char* route, const char* query, uint32_t peer, char* out, size_
     radio::set_ppm_milli(rx, static_cast<int32_t>(v));
     return done(out, cap);
   }
+  if (std::strcmp(route, "tuner/offsets") == 0) {  // offset trackers: mask bit 0 RF DC, bit 1 baseband DC, bit 2 quadrature
+    const int rx = receiver_index(query);
+    if (rx < 0 || !parse_long(query, "mask", &v) || v < 0 || v > 7) return fail(out, cap, Result::bad_request, "bad_mask_or_index");
+    radio::set_tracking_mask(rx, static_cast<int>(v));
+    return done(out, cap);
+  }
   if (std::strcmp(route, "tuner/bandwidth") == 0) {
     const int rx = receiver_index(query);
     if (rx < 0 || !parse_long(query, "hz", &v) || v < 0 || v > 0xFFFFFFFFll) return fail(out, cap, Result::bad_request, "bad_hz_or_index");

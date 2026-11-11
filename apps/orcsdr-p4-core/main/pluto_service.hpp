@@ -12,7 +12,7 @@ struct Snapshot {
   char state[12] = {}, device[48] = {}, serial[40] = {}, version[12] = {};
   bool high_speed = false, caps_valid = false, hardware_tx = false, tx_enabled = false;
   uint64_t tune_min_hz = 0, tune_max_hz = 0;
-  uint32_t rate_min_sps = 0, rate_max_sps = 0, rate_link_max_sps = 0, bw_min_hz = 0, bw_max_hz = 0;
+  uint32_t rate_min_sps = 0, rate_max_sps = 0, rate_link_max_sps = 0, out_rate_min_sps = 0, bw_min_hz = 0, bw_max_hz = 0;
   int32_t gain_min_db10 = 0, gain_max_db10 = 0, ppm_min_milli = 0, ppm_max_milli = 0;
   uint32_t adc_bits = 0, rx_channels = 0;
   bool controls_valid = false, gain_manual = false, dc_rf = false, dc_bb = false, quad = false;

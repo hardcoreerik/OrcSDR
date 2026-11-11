@@ -623,6 +623,12 @@ void set_ppm_milli(int rx, int32_t ppm_milli) {
     r->gain_req_kind = 7;
   }
 }
+void set_tracking_mask(int rx, int mask) {
+  if (Rx* r = rx_at(rx)) {
+    r->gain_req_value = mask & 7;
+    r->gain_req_kind = 8;
+  }
+}
 bool quantize_sample_rate(int rx, uint32_t wanted, uint32_t* applied) {
   Rx* r = rx_at(rx);
   if (r && r->own.load() == 2) {
