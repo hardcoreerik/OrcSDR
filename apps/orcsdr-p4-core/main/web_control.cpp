@@ -89,7 +89,7 @@ Result run(const char* route, const char* query, uint32_t peer, char* out, size_
     }
     // The driver decides what it can run: it quantises the request to the nearest rate it can program, and the applied rate is reported.
     uint32_t applied = 0;
-    if (!esp_rtl_sdr_quantize_sample_rate(static_cast<uint32_t>(v), &applied)) return fail(out, cap, Result::bad_request, "sps_not_supported_by_the_driver");
+    if (!radio::quantize_sample_rate(rx, static_cast<uint32_t>(v), &applied)) return fail(out, cap, Result::bad_request, "sps_not_supported_by_the_driver");
     radio::set_sample_rate_pin(rx, applied);  // pinned: the Home screen would otherwise put its own rate back within a moment
     char f[96];
     std::snprintf(f, sizeof(f), "\"index\":%d,\"requested_sps\":%lld,\"applied_sps\":%u", rx, v, static_cast<unsigned>(applied));
@@ -109,6 +109,18 @@ Result run(const char* route, const char* query, uint32_t peer, char* out, size_
     } else {
       return fail(out, cap, Result::bad_request, "bad_mode");
     }
+    return done(out, cap);
+  }
+  if (std::strcmp(route, "tuner/ppm") == 0) {  // frequency correction in thousandths of a ppm; the source rejects what it cannot do
+    const int rx = receiver_index(query);
+    if (rx < 0 || !parse_long(query, "ppm_milli", &v) || v < -1000000 || v > 1000000) return fail(out, cap, Result::bad_request, "bad_ppm_or_index");
+    radio::set_ppm_milli(rx, static_cast<int32_t>(v));
+    return done(out, cap);
+  }
+  if (std::strcmp(route, "tuner/bandwidth") == 0) {
+    const int rx = receiver_index(query);
+    if (rx < 0 || !parse_long(query, "hz", &v) || v < 0 || v > 0xFFFFFFFFll) return fail(out, cap, Result::bad_request, "bad_hz_or_index");
+    if (rx == 0) radio::set_tuner_bandwidth(static_cast<uint32_t>(v));  // 0 = automatic
     return done(out, cap);
   }
   if (std::strcmp(route, "tuner/agc") == 0) {

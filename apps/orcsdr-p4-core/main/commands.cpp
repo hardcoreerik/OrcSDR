@@ -4,6 +4,7 @@
 #include "audio_service.hpp"
 #include "esp_heap_caps.h"
 #include "home_app.hpp"
+#include "pluto_service.hpp"
 #include "radio_service.hpp"
 #include "sd_card.hpp"
 #include "eth_app.hpp"
@@ -272,6 +273,60 @@ Status run_ui(const Caller&, const Args&, Result& r) {
   return Status::ok;
 }
 
+Status run_pluto(const Caller&, const Args&, Result& r) {
+  const orcsdr::pluto::Snapshot s = orcsdr::pluto::snapshot();
+  Record* rec = add_record(r, "RTL_PLUTO_STATUS");
+  put_int(*rec, "compiled", s.compiled);
+  put_int(*rec, "present", s.present);
+  put_text(r, *rec, "state", s.state);
+  put_text(r, *rec, "device", s.device, true);
+  put_text(r, *rec, "serial", s.serial, true);
+  put_text(r, *rec, "driver", s.version);
+  put_int(*rec, "usb_high_speed", s.high_speed);
+  put_int(*rec, "caps_valid", s.caps_valid);
+  put_uint(*rec, "tune_min_hz", s.tune_min_hz);
+  put_uint(*rec, "tune_max_hz", s.tune_max_hz);
+  put_uint(*rec, "rate_min_sps", s.rate_min_sps);
+  put_uint(*rec, "rate_max_sps", s.rate_max_sps);
+  put_uint(*rec, "rate_link_max_sps", s.rate_link_max_sps);
+  put_uint(*rec, "bw_min_hz", s.bw_min_hz);
+  put_uint(*rec, "bw_max_hz", s.bw_max_hz);
+  put_int(*rec, "gain_min_db10", s.gain_min_db10);
+  put_int(*rec, "gain_max_db10", s.gain_max_db10);
+  put_int(*rec, "ppm_min_milli", s.ppm_min_milli);
+  put_int(*rec, "ppm_max_milli", s.ppm_max_milli);
+  put_uint(*rec, "adc_bits", s.adc_bits);
+  put_uint(*rec, "rx_channels", s.rx_channels);
+  put_int(*rec, "hardware_tx", s.hardware_tx);
+  put_int(*rec, "tx_enabled", s.tx_enabled);
+  put_int(*rec, "controls_valid", s.controls_valid);
+  put_uint(*rec, "center_requested_hz", s.center_requested_hz);
+  put_uint(*rec, "center_actual_hz", s.center_actual_hz);
+  put_int(*rec, "center_error_hz", s.center_error_hz);
+  put_uint(*rec, "rate_requested", s.rate_requested);
+  put_uint(*rec, "rate_out", s.rate_out);
+  put_uint(*rec, "rate_converter", s.rate_converter);
+  put_uint(*rec, "decimation", s.decimation);
+  put_uint(*rec, "bandwidth_hz", s.bandwidth_hz);
+  put_int(*rec, "gain_manual", s.gain_manual);
+  put_int(*rec, "gain_db10", s.gain_db10);
+  put_int(*rec, "rssi_db10", s.rssi_db10);
+  put_int(*rec, "ppm_milli", s.ppm_milli);
+  put_uint(*rec, "xo_hz", s.xo_hz);
+  put_int(*rec, "dc_tracking_rf", s.dc_rf);
+  put_int(*rec, "dc_tracking_bb", s.dc_bb);
+  put_int(*rec, "quadrature_tracking", s.quad);
+  put_uint(*rec, "samples_received", s.samples_received);
+  put_uint(*rec, "samples_delivered", s.samples_delivered);
+  put_uint(*rec, "source_drops", s.source_drops);
+  put_uint(*rec, "stale_blocks", s.stale_blocks);
+  put_uint(*rec, "usb_errors", s.usb_errors);
+  put_uint(*rec, "sessions", s.sessions);
+  put_uint(*rec, "in_sps", s.in_sps);
+  put_uint(*rec, "out_sps", s.out_sps);
+  return Status::ok;
+}
+
 Status run_eth(const Caller&, const Args&, Result& r) {
   const eth_app::Status e = eth_app::status();
   Record* rec = add_record(r, "RTL_ETH_STATUS");
@@ -366,6 +421,7 @@ const Command kCommands[] = {
     {"RTL_VOLUME", "volume", Access::read, run_volume},
     {"RTL_MEM STATUS", "mem", Access::read, run_mem},
     {"RTL_RX STATUS", "rx", Access::read, run_rx},
+    {"RTL_PLUTO STATUS", "pluto", Access::read, run_pluto},
     {"RTL_WIFI STATUS", "wifi", Access::read, run_wifi},
     {"RTL_SD STATUS", "sd", Access::read, run_sd},
     {"RTL_AUDIO STATUS", "audio", Access::read, run_audio},

@@ -26,6 +26,8 @@ namespace orcsdr::pluto {
 namespace {
 const char* TAG = "PLUTO";
 constexpr int kRx = 0;  // the receiver this source takes (the RTL-SDR keeps it whenever it is streaming)
+pluto_sdr_handle_t g_handle = nullptr;  // for snapshot() and the rate quantizer
+bool quantize(uint32_t wanted, uint32_t* applied) { return g_handle && pluto_sdr_quantize_sample_rate(g_handle, wanted, applied) == PLUTO_SDR_OK; }
 
 uint32_t clamp32(uint64_t v) { return v > 0xFFFFFFFFULL ? 0xFFFFFFFFu : static_cast<uint32_t>(v); }
 
@@ -70,6 +72,9 @@ void forward_requests(pluto_sdr_handle_t h, uint32_t* last_rate, uint32_t* last_
   }
   if (q.gain_kind == 1) pluto_sdr_set_gain_auto(h);
   else if (q.gain_kind == 2) pluto_sdr_set_gain_manual(h, q.gain_value);
+  else if (q.gain_kind == 5) pluto_sdr_set_freq_correction(h, q.gain_value * 1000);  // whole ppm from the console's ppm request
+  else if (q.gain_kind == 7) pluto_sdr_set_freq_correction(h, q.gain_value);        // thousandths of a ppm
+  else if (q.gain_kind == 6) pluto_sdr_set_rf_bandwidth(h, static_cast<uint32_t>(q.gain_value));  // 0 = automatic
   // The device's own answer to the last retune goes back to the console, once per change.
   uint64_t hz = 0;
   int err = 0;
@@ -175,6 +180,8 @@ void task(void*) {
     vTaskDelete(nullptr);
     return;
   }
+  g_handle = h;
+  radio::ext::set_rate_quantizer(kRx, quantize);
   ESP_LOGI(TAG, "PlutoSDR source ready (esp-pluto-sdr %s, receive only)", pluto_sdr_get_version_string());
   for (;;) {
     vTaskDelay(pdMS_TO_TICKS(1000));
@@ -194,12 +201,79 @@ void task(void*) {
 }  // namespace
 
 bool start() { return xTaskCreatePinnedToCore(task, "pluto", 8192, nullptr, 5, nullptr, 0) == pdPASS; }
+
+Snapshot snapshot() {
+  Snapshot s;
+  s.compiled = true;
+  std::snprintf(s.version, sizeof(s.version), "%s", pluto_sdr_get_version_string());
+  pluto_sdr_handle_t h = g_handle;
+  if (!h) {
+    std::snprintf(s.state, sizeof(s.state), "NOT_STARTED");
+    return s;
+  }
+  std::snprintf(s.state, sizeof(s.state), "%s", pluto_sdr_state_to_name(pluto_sdr_get_state(h)));
+  s.present = pluto_sdr_device_present(h);
+  pluto_sdr_info_t info;
+  pluto_sdr_caps_t c;
+  pluto_sdr_controls_t k;
+  pluto_sdr_metrics_t m;
+  pluto_sdr_get_device_info(h, &info);
+  pluto_sdr_get_capabilities(h, &c);
+  pluto_sdr_get_controls(h, &k);
+  pluto_sdr_get_metrics(h, &m);
+  std::snprintf(s.device, sizeof(s.device), "%s", info.product);
+  std::snprintf(s.serial, sizeof(s.serial), "%s", info.serial);
+  s.high_speed = info.high_speed;
+  s.caps_valid = c.valid;
+  s.hardware_tx = c.hardware_tx;
+  s.tx_enabled = c.tx_enabled;
+  s.tune_min_hz = c.tune_min_hz;
+  s.tune_max_hz = c.tune_max_hz;
+  s.rate_min_sps = c.rate_min_sps;
+  s.rate_max_sps = c.rate_max_sps;
+  s.rate_link_max_sps = c.rate_link_max_sps;
+  s.bw_min_hz = c.bw_min_hz;
+  s.bw_max_hz = c.bw_max_hz;
+  s.gain_min_db10 = c.gain_min_db10;
+  s.gain_max_db10 = c.gain_max_db10;
+  s.ppm_min_milli = c.ppm_min_milli;
+  s.ppm_max_milli = c.ppm_max_milli;
+  s.adc_bits = c.adc_bits;
+  s.rx_channels = c.rx_channels;
+  s.controls_valid = k.valid;
+  s.center_requested_hz = k.center_requested_hz;
+  s.center_actual_hz = k.center_actual_hz;
+  s.center_error_hz = k.center_error_hz;
+  s.rate_requested = k.rate_requested_sps;
+  s.rate_out = k.rate_out_sps;
+  s.rate_converter = k.rate_converter_sps;
+  s.decimation = k.decimation;
+  s.bandwidth_hz = k.bandwidth_hz;
+  s.gain_manual = k.gain_manual;
+  s.gain_db10 = k.gain_db10;
+  s.rssi_db10 = k.rssi_db10;
+  s.ppm_milli = k.ppm_milli;
+  s.xo_hz = k.xo_hz;
+  s.dc_rf = k.dc_tracking_rf;
+  s.dc_bb = k.dc_tracking_bb;
+  s.quad = k.quadrature_tracking;
+  s.samples_received = m.samples_received;
+  s.samples_delivered = m.samples_delivered;
+  s.source_drops = m.source_drops;
+  s.stale_blocks = m.stale_blocks;
+  s.usb_errors = m.usb_errors;
+  s.sessions = m.sessions;
+  s.in_sps = m.effective_in_sps;
+  s.out_sps = m.effective_out_sps;
+  return s;
+}
 }  // namespace orcsdr::pluto
 
 #else  // !CONFIG_ORCSDR_PLUTO_SOURCE
 
 namespace orcsdr::pluto {
 bool start() { return true; }
+Snapshot snapshot() { return Snapshot{}; }
 }  // namespace orcsdr::pluto
 
 #endif

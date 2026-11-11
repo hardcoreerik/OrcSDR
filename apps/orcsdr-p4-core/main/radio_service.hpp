@@ -53,6 +53,10 @@ struct Info {
 };
 Info info();
 void set_ppm(int ppm);
+// Frequency correction in thousandths of a ppm (a dongle takes whole ppm, a PlutoSDR takes 0.025 ppm steps). Positive = the reference runs fast.
+void set_ppm_milli(int rx, int32_t ppm_milli);
+// The output rate receiver `rx` would run for `wanted`: the RTL-SDR driver's own answer, or the external backend's when it holds the receiver.
+bool quantize_sample_rate(int rx, uint32_t wanted, uint32_t* applied);
 void set_tuner_bandwidth(uint32_t hz);
 // A screen that needs a specific supported rate (RF Lab) holds it here; 0 returns to the automatic policy.
 void set_sample_rate_override(uint32_t rate);
@@ -178,5 +182,8 @@ void new_stream(int rx);                           // a start, stop, rate change
 // `rate` and `center_hz` describe exactly these samples (the backend knows what it had configured when it read them); consumers receive
 // them in the IqBlock, so a rate change can never be mislabelled by a status value that has not been published yet.
 void feed(int rx, const uint8_t* cu8, size_t bytes, uint32_t rate, uint32_t center_hz);
+// The backend's own rate planning, used by quantize_sample_rate() while it holds the receiver (null = not provided).
+using RateQuantizer = bool (*)(uint32_t wanted, uint32_t* applied);
+void set_rate_quantizer(int rx, RateQuantizer fn);
 }  // namespace ext
 }

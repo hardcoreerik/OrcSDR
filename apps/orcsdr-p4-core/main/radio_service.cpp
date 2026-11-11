@@ -79,6 +79,7 @@ struct Rx {
   // Who owns this receiver: 0 the RTL-SDR loop, 1 an external backend has asked for it, 2 the RTL loop acknowledged and is idle.
   // Only the RTL task moves 1 -> 2 (or back to 0 when it is streaming and keeps the receiver); only the backend moves 0 -> 1 and 2 -> 0.
   std::atomic<int> own{0};
+  std::atomic<ext::RateQuantizer> quantizer{nullptr};
   std::atomic<uint32_t> ext_min_hz{0}, ext_max_hz{0};
   int64_t ext_last_fft = 0;
 };
@@ -351,6 +352,7 @@ void task(void* arg) {
         } else if (kind == 3) rr = esp_rtl_sdr_set_rtl_agc(sdr, value != 0);
         else if (kind == 4) rr = esp_rtl_sdr_set_bias_tee(sdr, value != 0);
         else if (kind == 5) rr = esp_rtl_sdr_set_freq_correction(sdr, value);
+        else if (kind == 7) rr = esp_rtl_sdr_set_freq_correction(sdr, (value + (value < 0 ? -500 : 500)) / 1000);  // milli-ppm
         else if (kind == 6) rr = esp_rtl_sdr_set_tuner_bandwidth(sdr, static_cast<uint32_t>(value));
         ESP_LOGI(TAG, "GAIN request kind=%d value=%d -> %s", kind, value, esp_rtl_sdr_err_to_name(rr));
         last_gain_poll = 0;
@@ -615,6 +617,20 @@ void set_ppm(int ppm) {
   g_rx[0].gain_req_value = ppm;
   g_rx[0].gain_req_kind = 5;
 }
+void set_ppm_milli(int rx, int32_t ppm_milli) {
+  if (Rx* r = rx_at(rx)) {
+    r->gain_req_value = ppm_milli;
+    r->gain_req_kind = 7;
+  }
+}
+bool quantize_sample_rate(int rx, uint32_t wanted, uint32_t* applied) {
+  Rx* r = rx_at(rx);
+  if (r && r->own.load() == 2) {
+    const ext::RateQuantizer q = r->quantizer.load();
+    return q && q(wanted, applied);
+  }
+  return esp_rtl_sdr_quantize_sample_rate(wanted, applied);
+}
 void set_tuner_bandwidth(uint32_t hz) {
   g_rx[0].gain_req_value = static_cast<int>(hz);
   g_rx[0].gain_req_kind = 6;
@@ -778,6 +794,9 @@ void tune_result(int rx, uint32_t hz, int error) {
     r->tune_err_hz = hz;
     r->tune_err = error;
   }
+}
+void set_rate_quantizer(int rx, RateQuantizer fn) {
+  if (Rx* r = rx_at(rx)) r->quantizer.store(fn);
 }
 void new_stream(int rx) {
   if (Rx* r = rx_at(rx)) r->generation.fetch_add(1);
