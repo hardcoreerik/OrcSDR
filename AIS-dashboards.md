@@ -4,7 +4,7 @@
 > **Community request:** [OrcSDR Issue #234 — AIS vessel decoding](https://github.com/hardcoreerik/OrcSDR/issues/234)  
 > **Scope:** original receive-only C/C++ AIS decoder and seven-panel native M5GFX interface  
 > **Updated:** 2026-11-07  
-> **Status:** **Seven UI surfaces implemented; portable dual-channel GMSK/HDLC/FCS receiver, partial AIS parser and bounded station store pass synthetic-IQ host tests. Receiver is NOT yet connected to live radio, UI, or Tab5 hardware.**  
+> **Status (2026-11-10):** **Wired into the Tab5 application (Home > All Dashboards > AIS) and decoding synthetic AIS IQ replayed over rtl_tcp on a physical Tab5. Not yet tested with real ships, in a sustained USB soak, or against another decoder on identical real IQ.** See [docs/AIS_INTEGRATION_CHECKPOINT.md](docs/AIS_INTEGRATION_CHECKPOINT.md) and [docs/evidence/ais/2026-11-10-tab5-replay.md](docs/evidence/ais/2026-11-10-tab5-replay.md). The earlier note below, written before integration, is kept as history.  
 > **Research separation:** RSA/REA standards/competitor findings stay exclusively in the separate private `REA-Results` workflow, **not in this development branch**.
 
 ## Design commitment

@@ -1,7 +1,7 @@
 # AIS RF receiver acceptance and integration contract
 
 **Development branch:** chatgpt/ais-dashboard-20261106
-**Status:** Synthetic IQ host-test milestone, **not** live SDR / ESP32-P4 acceptance.
+**Status (2026-11-10):** integrated into the Tab5 firmware; synthetic IQ replayed over rtl_tcp decodes on the device (see [evidence](evidence/ais/2026-11-10-tab5-replay.md)). Still **not** live-RF acceptance: no real ship has been received. The "Next integration" list below is historical; items 1, 2 and part of 4 are now done.
 **Scope:** Original receive-only C++17 implementation; research inputs remain in separate RSA/REA branches.
 
 ## Production seam
