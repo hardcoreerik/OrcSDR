@@ -1,10 +1,20 @@
 # DMR / Digital Voice — development tracker
 
-**Status:** planned work; no native DMR or NXDN decoder is claimed. **Created:** 2026-11-11.
+**Status:** F0a host evidence contract implemented (not firmware-integrated); native DMR and NXDN decoders remain planned. **Created:** 2026-11-11.
 **Product requirements:** [VISION.md](VISION.md). **Current implemented truth:** [PROJECT_STATUS.md](../../PROJECT_STATUS.md).
 **Evidence:** [DMR RSA/REA research branch](https://github.com/hardcoreerik/REA-Results/tree/research/dmr-competitor-20261111), plus the older [digital-voice fixture branch](https://github.com/hardcoreerik/REA-Results/tree/chatgpt/digital-voice-rsa-rea-2026-11-01). Both are research artifacts, not implementation acceptance.
 
 > Priority is not completion status. Every item below is **NOT STARTED** unless explicitly marked otherwise. An imported directory hit is never a verified RF decode. No network connection is needed for the promised core workflows.
+
+## Active implementation checkpoint — F0a (2026-11-11)
+
+**Integration branch:** [`feature/dmr-digital-voice-foundation`](https://github.com/hardcoreerik/OrcSDR/tree/feature/dmr-digital-voice-foundation).
+[Parallel workstreams and restart instructions](WORKSTREAMS.md) set exclusive folder ownership for additional AI sessions.
+
+- **Done, host-only:** `components/orcsdr_radio_discovery/` contains the header-only typed `Observation` contract (origin, proof level, protocol identity with known-field flags, receiver location, relative measurement fields) and a bounded `ObservationRing`. Tested locally using CMake/CTest, a Release build with `NDEBUG`, and AddressSanitizer/UndefinedBehaviorSanitizer; the tests passed.
+- **Not done:** SD persistence, profile migration, scanner or tuner wiring, on-device memory testing, native DMR or NXDN decode, RF proof, provider integration. F0 overall remains incomplete.
+- **Next lead checkpoint F0b:** versioned storage schema and content/identity matching, bounded atomic persistence and rollback tests. Preserve P25 v2 profiles and keep directory/user data distinct from RF observations.
+- **Parallel sandbox gates:** D0 DMR constants, host-only offline import preview, and pinned IQ/replay manifest; no overlapping file edits.
 
 ## DX / user-facing priority matrix (owner-approved, 2026-11-11)
 
@@ -42,7 +52,7 @@ The user specifically wants simple import and migration of existing radio data/a
 
 | Gate | Work | Status | Evidence required to close |
 |---|---|---|---|
-| F0 | Common event/profile schema with proof levels, receiver-location semantics and bounded SD index; design cross-protocol API | Not started | Versioned schema, host tests for provenance, malformed imports, dedupe, time-unknown, migration/rollback; P25 behavior preserved |
+| F0 | Common event/profile schema with proof levels, receiver-location semantics and bounded SD index; design cross-protocol API | **In progress: F0a host event contract only** | Versioned schema, host tests for provenance, malformed imports, dedupe, time-unknown, migration/rollback; P25 behavior preserved |
 | D0 | DMR constants/oracle | Not started | Independently generated ETSI sync/CACH/FEC vectors; cross-check published RSA/REA constant conformance; host tests pass |
 | D1 | DMR Tier II metadata decoder | Not started | Host synthetic IQ tests for 4FSK, sync, dual-slot CACH, slot type, FEC, group/source IDs, direct/repeater and late entry; measured memory/alloc bounds |
 | D2 | DX-01 to DX-04 plus offline logbook and CFG-01/02/03/08 | Not started | Single-tuner lifecycle, scan/candidate/save flows, reboot and SD failure tests, no-net integration, P25 regression |
