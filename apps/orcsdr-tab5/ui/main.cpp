@@ -20872,10 +20872,11 @@ void process_command(char* command) {
     Serial.println(line);
     return;
   }
-  // Bench replay marker: every AIS page then says the data is replayed, not live RF. Cleared when the screen is left.
+  // Bench replay marker: every AIS page then says the data is replayed, not live RF. Arm it BEFORE opening AIS and
+  // pointing the receiver at the replay source; it is cleared when the screen is left and by TEST OFF.
   if (strcmp(command, "RTL_AIS TEST ON") == 0 || strcmp(command, "RTL_AIS TEST OFF") == 0) {
     if (!authenticated) { Serial.println("RTL_AIS_TEST_ERR auth_required"); return; }
-    const bool on = command[14] == 'N' && orcsdr::ais_radio::running();
+    const bool on = command[14] == 'N';   // may be sent before AIS opens: the label is armed and applies from the first block
     orcsdr::ais_radio::set_test_replay(on);
     Serial.printf("RTL_AIS_TEST_OK test=%d\n", on ? 1 : 0);
     return;

@@ -124,13 +124,19 @@ def main():
         dev.cmd("RTL_TCP SOURCE remote", "RTL_TCP", 4)
         dev.cmd("RTL_STOP", "RTL_STOP", 12)
         dev.wait(3)
+        # Arm the TEST REPLAY label BEFORE any replayed IQ can reach the receiver (it applies from the first block).
+        marked = dev.first("RTL_AIS TEST ON", "RTL_AIS_TEST")
+        record("test", marked)
+        if "test=1" not in marked:   # the banner is the promise this script makes
+            failures.append("RTL_AIS TEST ON was not acknowledged; replay data would not be labelled")
+            raise RuntimeError("replay labelling is not active")
         record("host", dev.first(f"RTL_TCP HOST {host} {port}", "RTL_TCP HOST"))
         record("open", dev.first("RTL_UI OPEN AIS", "RTL_UI_OPEN"))
         dev.wait(5)
-        marked = dev.first("RTL_AIS TEST ON", "RTL_AIS_TEST")
-        record("test", marked)
-        if "test=1" not in marked:   # the TEST REPLAY banner is the promise this script makes
-            failures.append("RTL_AIS TEST ON was not acknowledged; replay data would not be labelled")
+        armed = dev.first("RTL_AIS STATUS", "RTL_AIS_UI")
+        record("armed", armed)
+        if "test=1" not in armed:
+            failures.append("the AIS screen did not carry the TEST REPLAY label after opening")
             raise RuntimeError("replay labelling is not active")
         dev.wait(a.passes * a.file_seconds)
         status = dev.cmd("RTL_AIS STATUS", "RTL_AIS", 6)

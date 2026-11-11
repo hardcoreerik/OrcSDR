@@ -89,7 +89,8 @@ void service();
 // elapsed_s, test_replay); the caller owns the rest. Returns false when nothing new or the publisher holds the buffer.
 bool copy_feed(ais_ui::Snapshot* out, uint32_t* sequence);
 
-// Marks everything shown as replayed test data. Set only by the bench harness; cleared by stop().
+// Marks everything shown as replayed test data. Set only by the bench harness, and may be armed before start() so no
+// replayed packet is ever shown without the label. Cleared by stop() and by set_test_replay(false).
 void set_test_replay(bool enabled);
 
 Status status();
