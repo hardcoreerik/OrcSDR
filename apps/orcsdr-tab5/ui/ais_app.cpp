@@ -75,7 +75,8 @@ bool refresh_device_fields() {
   const int battery = g_hooks.battery_percent ? g_hooks.battery_percent() : -1;
   const bool sd = g_hooks.sd_available && g_hooks.sd_available();
   const bool remote = g_hooks.remote_source && g_hooks.remote_source();
-  const bool changed = s.receiver != receiver || s.receiver_settled != settled || s.coordinates_valid != located ||
+  const bool test = ais_radio::status().test_replay;
+  const bool changed = s.test_replay != test || s.receiver != receiver || s.receiver_settled != settled || s.coordinates_valid != located ||
                        s.receiver_lat_e7 != lat || s.receiver_lon_e7 != lon || s.battery_percent != battery ||
                        s.sd_available != sd || s.rtl_tcp != remote;
   s.receiver = receiver;
@@ -86,6 +87,7 @@ bool refresh_device_fields() {
   s.battery_percent = battery;
   s.sd_available = sd;
   s.rtl_tcp = remote;
+  s.test_replay = test;
   s.center_hz = ais_radio::kCenterHz;
   if (!settled) s.sample_rate_sps = 0;            // no rate is claimed while nothing is being decoded
   g_state->shown_link = link;

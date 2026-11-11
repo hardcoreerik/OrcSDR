@@ -44,6 +44,23 @@ void on_packet(const ais_rx::Packet& packet, const ais::Message* parsed, void* c
   if (parsed && parsed->has_speed) std::printf(" sog_tenths=%u", static_cast<unsigned>(parsed->speed_tenths_kn));
   if (parsed && parsed->has_course) std::printf(" cog_tenths=%u", static_cast<unsigned>(parsed->course_tenths_deg));
   if (parsed && parsed->has_heading) std::printf(" heading=%u", static_cast<unsigned>(parsed->heading_deg));
+  if (parsed && parsed->has_nav_status) std::printf(" nav=%u", static_cast<unsigned>(parsed->nav_status));
+  if (parsed) {
+    auto text = [](const char* key, const char* value) {   // spaces become '_' so the line stays key=value
+      std::printf(" %s=", key);
+      for (const char* c = value; *c; ++c) std::putchar(*c == ' ' ? '_' : *c);
+    };
+    const ais::VesselStatic& v = parsed->vessel;
+    if (v.has_name) text("name", v.name);
+    if (parsed->coverage == ais::Coverage::aid21 && parsed->aid.name[0]) text("name", parsed->aid.name);
+    if (v.has_callsign) text("callsign", v.callsign);
+    if (v.has_destination) text("dest", v.destination);
+    if (v.has_ship_type) std::printf(" ship_type=%u", static_cast<unsigned>(v.ship_type));
+    if (v.has_dimensions)
+      std::printf(" dims=%u/%u/%u/%u", static_cast<unsigned>(v.to_bow_m), static_cast<unsigned>(v.to_stern_m),
+                  static_cast<unsigned>(v.to_port_m), static_cast<unsigned>(v.to_starboard_m));
+    if (v.imo) std::printf(" imo=%u", static_cast<unsigned>(v.imo));
+  }
   std::printf(" hex=");
   for (size_t i = 0; i < (packet.bit_count + 7u) / 8u; ++i) std::printf("%02X", packet.bytes[i]);
   std::printf("\n");

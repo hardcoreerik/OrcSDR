@@ -56,6 +56,7 @@ def check_host(manifest, path):
     if extra:
         failures.append(f"{extra} decoded packets were never transmitted (false or duplicated frames)")
     field_checks = 0
+    static_checks = [0]
     for key, txs in expected.items():
         fields = txs[0]["fields"]
         for packet in got.get(key, []):
@@ -73,8 +74,24 @@ def check_host(manifest, path):
                     failures.append(f"course mismatch mmsi {fields['mmsi']}: {packet.get('cog_tenths')}")
                 if "heading" in fields and "heading" in packet and int(packet["heading"]) != fields["heading"]:
                     failures.append(f"heading mismatch mmsi {fields['mmsi']}: {packet.get('heading')}")
-    print("host: %d transmitted, %d decoded, %d missing, %d extra, %d position field sets compared, types %s, digest %s" %
-          (len(manifest["tx"]), len(packets), missing, extra, field_checks, summary.get("types"), summary.get("digest")))
+            # Static identity fields, where the parser decodes them (absent keys are simply not compared).
+            for ours, theirs in (("name", "name"), ("callsign", "callsign"), ("destination", "dest")):
+                if ours in fields and theirs in packet:
+                    static_checks[0] += 1
+                    if packet[theirs].replace("_", " ") != fields[ours]:
+                        failures.append(f"{ours} mismatch mmsi {fields['mmsi']}: {packet[theirs]!r} != {fields[ours]!r}")
+            for ours, theirs in (("ship_type", "ship_type"), ("imo", "imo"), ("nav_status", "nav")):
+                if ours in fields and theirs in packet:
+                    static_checks[0] += 1
+                    if int(packet[theirs]) != fields[ours]:
+                        failures.append(f"{ours} mismatch mmsi {fields['mmsi']}: {packet[theirs]} != {fields[ours]}")
+            if "dims" in fields and "dims" in packet:
+                static_checks[0] += 1
+                if [int(v) for v in packet["dims"].split("/")] != fields["dims"]:
+                    failures.append(f"dimensions mismatch mmsi {fields['mmsi']}: {packet['dims']}")
+    print("host: %d transmitted, %d decoded, %d missing, %d extra, %d position field sets and %d static fields compared, "
+          "types %s, digest %s" % (len(manifest["tx"]), len(packets), missing, extra, field_checks, static_checks[0],
+                                   summary.get("types"), summary.get("digest")))
     return failures
 
 

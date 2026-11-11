@@ -8,7 +8,7 @@
 namespace orcsdr::ais {
 
 enum class IdentityKind : uint8_t { mmsi, source_id28 };
-enum class StationKind : uint8_t { class_a, class_b, aid21_physical, aid21_virtual, aid28, long_range };
+enum class StationKind : uint8_t { class_a, class_b, aid21_physical, aid21_virtual, aid28, long_range, base_station, sar_aircraft };
 struct Fix { int32_t lat_e7 = 0, lon_e7 = 0; uint64_t received_ms = 0; };
 
 struct Station {
@@ -21,6 +21,10 @@ struct Station {
   int32_t lat_e7 = 0, lon_e7 = 0;
   uint16_t speed_tenths_kn = 0, course_tenths_deg = 0, heading_deg = 0;
   char name[37]{};
+  // Static identity, from Types 5, 19 and 24. Empty / false until the station has sent it.
+  char callsign[8]{}, destination[21]{};
+  bool has_ship_type = false, has_nav_status = false;
+  uint8_t ship_type = 0, nav_status = 0;
   Aid aid{}; // Type 28 geometric field values remain uninterpreted; not a projected polygon.
   Fix history[8]{};
   uint8_t history_size = 0;

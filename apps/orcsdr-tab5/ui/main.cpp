@@ -20855,6 +20855,13 @@ void process_command(char* command) {
                   rtl_dsp_task_handle ? static_cast<unsigned>(uxTaskGetStackHighWaterMark(rtl_dsp_task_handle)) : 0u);
     return;
   }
+  if (strcmp(command, "RTL_AIS BENCH") == 0) {
+    if (!authenticated) { Serial.println("RTL_AIS_BENCH error=auth_required"); return; }
+    char line[240];
+    orcsdr::ais_radio::bench(line, sizeof(line));
+    Serial.println(line);
+    return;
+  }
   // Bench replay marker: every AIS page then says the data is replayed, not live RF. Cleared when the screen is left.
   if (strcmp(command, "RTL_AIS TEST ON") == 0 || strcmp(command, "RTL_AIS TEST OFF") == 0) {
     if (!authenticated) { Serial.println("RTL_AIS_TEST_ERR auth_required"); return; }

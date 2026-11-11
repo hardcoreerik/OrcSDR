@@ -94,6 +94,9 @@ void set_test_replay(bool enabled);
 
 Status status();
 void format_status(char* out, size_t size);   // one "RTL_AIS_STATUS ..." line
+// Runs one second of noise through a private receiver on the calling task and reports the time taken, plus the same
+// amount of filter and discriminator arithmetic on their own. Blocks for about a second; a measurement aid, not a feature.
+void bench(char* out, size_t size);
 
 // Hash used for Status::packet_digest; a host decoder computes the same value from the same IQ file.
 uint64_t packet_hash(const ais_rx::Packet& packet);

@@ -3,6 +3,7 @@ on:
   push:
     branches:
       - chatgpt/ais-dashboard-20261106
+      - "claude/ais-integration-*"
     paths:
       - "apps/orcsdr-tab5/ui/ais_protocol.*"
       - "apps/orcsdr-tab5/ui/ais_station_store.*"

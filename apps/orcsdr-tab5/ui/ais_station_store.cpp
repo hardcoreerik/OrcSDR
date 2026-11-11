@@ -3,15 +3,20 @@
 
 namespace orcsdr::ais {
 namespace {
-bool position_family(const Message& m) {
-  return m.coverage == Coverage::position || m.coverage == Coverage::aid21 ||
-         m.coverage == Coverage::aid28 || m.coverage == Coverage::long_range27;
+bool static_only(const Message& m) {
+  return m.coverage == Coverage::static_voyage || m.coverage == Coverage::static_b;
+}
+bool position_family(const Message& m) {   // every coverage that describes a station
+  return m.coverage != Coverage::header_only;
 }
 StationKind station_kind(const Message& m) {
   if (m.coverage == Coverage::aid28) return StationKind::aid28;
   if (m.coverage == Coverage::aid21)
     return m.aid.is_virtual ? StationKind::aid21_virtual : StationKind::aid21_physical;
   if (m.coverage == Coverage::long_range27) return StationKind::long_range;
+  if (m.coverage == Coverage::base_station) return StationKind::base_station;
+  if (m.coverage == Coverage::sar_aircraft) return StationKind::sar_aircraft;
+  if (m.coverage == Coverage::static_b) return StationKind::class_b;   // only Class B sends Type 24
   return m.type == 18 || m.type == 19 ? StationKind::class_b : StationKind::class_a;
 }
 } // namespace
@@ -30,7 +35,8 @@ bool StationStore::ingest(const Message& message, uint64_t received_ms) {
   while (i < size_ && !(stations_[i].identity == message.source_id &&
                         stations_[i].identity_kind == identity_kind)) ++i;
   if (i < size_ && received_ms < stations_[i].last_rx_ms) return false;
-  if (i == size_) {
+  const bool created = i == size_;
+  if (created) {
     if (size_ == kCapacity) return false; // No silent eviction or invented persistence.
     stations_[size_++] = Station{};
     stations_[i].identity = message.source_id;
@@ -39,9 +45,25 @@ bool StationStore::ingest(const Message& message, uint64_t received_ms) {
   Station& station = stations_[i];
   station.last_type = message.type;
   station.last_rx_ms = received_ms;
-  // Long-range reports do not erase a more specific known Class A/B identity.
-  if (message.coverage != Coverage::long_range27 || station.history_size == 0)
+  // Long-range reports do not erase a more specific known Class A/B identity, and a static report
+  // never changes the class a position report established.
+  if (created || (!static_only(message) &&
+                  (message.coverage != Coverage::long_range27 || station.history_size == 0)))
     station.kind = station_kind(message);
+  // Static identity is kept until the station sends a different value; an absent field never clears a known one.
+  const VesselStatic& v = message.vessel;
+  if (v.has_name) {
+    std::memset(station.name,0,sizeof(station.name));
+    std::memcpy(station.name,v.name,sizeof(v.name));
+    station.last_static_ms = received_ms;
+  }
+  if (v.has_callsign) { std::memcpy(station.callsign,v.callsign,sizeof(station.callsign)); station.last_static_ms = received_ms; }
+  if (v.has_destination) {
+    std::memcpy(station.destination,v.destination,sizeof(station.destination));
+    station.last_static_ms = received_ms;
+  }
+  if (v.has_ship_type) { station.has_ship_type = true; station.ship_type = v.ship_type; }
+  if (message.has_nav_status) { station.has_nav_status = true; station.nav_status = message.nav_status; }
   if (message.coverage == Coverage::aid21 || message.coverage == Coverage::aid28) {
     station.aid = message.aid;
     if (message.coverage == Coverage::aid21 && message.aid.name[0]) {

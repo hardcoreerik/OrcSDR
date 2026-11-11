@@ -74,6 +74,18 @@ void motion(const Bits& b, size_t sog, size_t cog, size_t heading, Message* out)
     out->has_heading = true; out->heading_deg = static_cast<uint16_t>(value);
   }
 }
+void dimensions(const Bits& b, size_t at, VesselStatic* out) {
+  uint32_t bow = 0, stern = 0, port = 0, starboard = 0;
+  if (!b.get(at,9,&bow) || !b.get(at+9,9,&stern) || !b.get(at+18,6,&port) || !b.get(at+24,6,&starboard)) return;
+  if (!bow && !stern && !port && !starboard) return;   // all zero = not available
+  out->has_dimensions = true;
+  out->to_bow_m = static_cast<uint16_t>(bow); out->to_stern_m = static_cast<uint16_t>(stern);
+  out->to_port_m = static_cast<uint8_t>(port); out->to_starboard_m = static_cast<uint8_t>(starboard);
+}
+void ship_type(const Bits& b, size_t at, VesselStatic* out) {
+  uint32_t value = 0;
+  if (b.get(at,8,&value) && value != 0) { out->has_ship_type = true; out->ship_type = static_cast<uint8_t>(value); }
+}
 } // namespace
 
 TypeLength type_length(uint8_t type) {
@@ -100,12 +112,64 @@ ParseStatus parse(const uint8_t* bytes, size_t bit_count, Message* result) {
       m.coverage = Coverage::position;
       position(b,61,28,89,27,600000,&m);
       motion(b,50,116,128,&m);
+      if (b.get(38,4,&value) && value != 15) { m.has_nav_status = true; m.nav_status = static_cast<uint8_t>(value); }
+      break;
+    case 4:   // Base station report: UTC date and time (not decoded), then accuracy, longitude, latitude.
+      m.coverage = Coverage::base_station;
+      position(b,79,28,107,27,600000,&m);
+      break;
+    case 5:   // Static and voyage related data.
+      m.coverage = Coverage::static_voyage;
+      b.get(40,30,&m.vessel.imo);
+      b.text(70,7,m.vessel.callsign,sizeof(m.vessel.callsign));
+      b.text(112,20,m.vessel.name,sizeof(m.vessel.name));
+      ship_type(b,232,&m.vessel);
+      dimensions(b,240,&m.vessel);
+      b.text(302,20,m.vessel.destination,sizeof(m.vessel.destination));
+      m.vessel.has_callsign = m.vessel.callsign[0] != 0;
+      m.vessel.has_name = m.vessel.name[0] != 0;
+      m.vessel.has_destination = m.vessel.destination[0] != 0;
+      break;
+    case 9:   // Standard SAR aircraft position report. Speed is in whole knots here (1023 = not available).
+      m.coverage = Coverage::sar_aircraft;
+      position(b,61,28,89,27,600000,&m);
+      if (b.get(50,10,&value) && value != 1023) {
+        m.has_speed = true; m.speed_tenths_kn = static_cast<uint16_t>(value * 10);
+      }
+      if (b.get(116,12,&value) && value < 3600) {
+        m.has_course = true; m.course_tenths_deg = static_cast<uint16_t>(value);
+      }
       break;
     case 18: case 19:
       m.coverage = Coverage::position;
       position(b,57,28,85,27,600000,&m);
       motion(b,46,112,124,&m);
+      if (type == 19) {   // Extended Class B report also carries name, ship type and dimensions.
+        b.text(143,20,m.vessel.name,sizeof(m.vessel.name));
+        m.vessel.has_name = m.vessel.name[0] != 0;
+        ship_type(b,263,&m.vessel);
+        dimensions(b,271,&m.vessel);
+      }
       break;
+    case 24: {   // Static data report in two parts.
+      uint32_t part = 0;
+      b.get(38,2,&part);
+      if (part == 0 && bit_count >= 160) {
+        m.coverage = Coverage::static_b;
+        m.vessel.part = 0;
+        b.text(40,20,m.vessel.name,sizeof(m.vessel.name));
+        m.vessel.has_name = m.vessel.name[0] != 0;
+      } else if (part == 1 && bit_count >= 168) {
+        m.coverage = Coverage::static_b;
+        m.vessel.part = 1;
+        ship_type(b,40,&m.vessel);
+        b.text(90,7,m.vessel.callsign,sizeof(m.vessel.callsign));
+        m.vessel.has_callsign = m.vessel.callsign[0] != 0;
+        // An auxiliary craft (MMSI 98xxxxxxx) sends its mother ship's MMSI in these 30 bits, not dimensions.
+        if (m.source_id / 10000000u != 98u) dimensions(b,132,&m.vessel);
+      }
+      break;   // parts 2 and 3 are not defined: header only
+    }
     case 21: {
       m.coverage = Coverage::aid21;
       b.get(38,5,&value); m.aid.aid_type = static_cast<uint8_t>(value);

@@ -245,9 +245,9 @@ def moved(lat, lon, sog_kn, cog_deg, seconds):
     return lat + dlat, lon + dlon
 
 
-def build_schedule(seconds):
+def build_schedule(seconds, origin=ORIGIN):
     """Returns transmissions sorted by time. Every station alternates between the two channels."""
-    lat0, lon0 = ORIGIN
+    lat0, lon0 = origin
     tx = []
 
     def add(t, station, msg_type, payload, fields):
@@ -352,9 +352,12 @@ def main():
     p.add_argument("--seed", type=int, default=162)
     p.add_argument("--offset-scale", type=float, default=1.0,
                    help="multiplies every station's carrier offset (1 = up to +/-400 Hz); raise it to test offset tolerance")
+    p.add_argument("--origin", default="%g,%g" % ORIGIN,
+                   help="LAT,LON the synthetic tracks are laid out around (to put them on a map near a bench receiver)")
     p.add_argument("--list", action="store_true", help="print each transmission and exit")
     a = p.parse_args()
-    tx = build_schedule(a.seconds)
+    origin = tuple(float(v) for v in a.origin.split(","))
+    tx = build_schedule(a.seconds, origin)
     if a.list:
         for item in tx:
             print("%6.2f s ch%d type %2d mmsi %09d %s" % (item["t"], item["channel"], item["type"], item["station"],
@@ -381,7 +384,7 @@ def main():
         by_channel[item["channel"]] += 1
     manifest = {"generator": "tools/ais_make_iq.py", "profile": "fleet-v1", "synthetic": True, "center_hz": CENTER_HZ,
                 "sample_rate": RATE, "format": "cu8", "seconds": a.seconds, "noise_sigma": a.noise, "seed": a.seed,
-                "offset_scale": a.offset_scale, "sha256": digest, "bytes": int(data.size),
+                "offset_scale": a.offset_scale, "origin": list(origin), "sha256": digest, "bytes": int(data.size),
                 "transmissions": len(tx), "by_type": {str(k): v for k, v in sorted(by_type.items())},
                 "by_channel": {str(k): v for k, v in by_channel.items()},
                 "stations": sorted({item["station"] for item in tx}), "tx": manifest_tx}

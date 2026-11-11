@@ -1,6 +1,7 @@
 #include "ais_snapshot_adapter.hpp"
 #include <algorithm>
 #include <cstdint>
+#include <cstdio>
 #include <cstring>
 #include <limits>
 
@@ -19,8 +20,18 @@ Station to_ui_station(ais::StationKind kind) {
     case ais::StationKind::aid21_virtual: return Station::aid_virtual;
     case ais::StationKind::aid28: return Station::aid_2026;
     case ais::StationKind::long_range: return Station::other;
+    case ais::StationKind::base_station: return Station::base_station;
+    case ais::StationKind::sar_aircraft: return Station::sar_aircraft;
   }
   return Station::other;
+}
+// ITU-R M.1371 navigational status, shortened to the 19 characters the dashboard field holds.
+// 9-13 are reserved and 15 is "not defined": shown as nothing rather than as a status.
+const char* nav_status_text(uint8_t status) {
+  static const char* const kText[] = {
+    "UNDER WAY ENGINE", "AT ANCHOR", "NOT UNDER COMMAND", "RESTRICTED MANOEUV.", "CONSTR. BY DRAUGHT", "MOORED",
+    "AGROUND", "FISHING", "UNDER WAY SAILING", "", "", "", "", "", "SART / MOB / EPIRB", ""};
+  return status < 16 ? kText[status] : "";
 }
 bool before(const ais::Station& left,const ais::Station& right) {
   if(left.last_rx_ms!=right.last_rx_ms)return left.last_rx_ms>right.last_rx_ms;
@@ -39,6 +50,10 @@ void fill(const ais::Station& source,const ais::StationStore& store,
   t.last_type=source.last_type;
   std::memcpy(t.name,source.name,sizeof(t.name)-1);
   t.name[sizeof(t.name)-1]='\0';
+  std::snprintf(t.callsign,sizeof(t.callsign),"%s",source.callsign);
+  std::snprintf(t.destination,sizeof(t.destination),"%s",source.destination);
+  if(source.has_nav_status)std::snprintf(t.nav_status,sizeof(t.nav_status),"%s",nav_status_text(source.nav_status));
+  if(source.has_ship_type)std::snprintf(t.description,sizeof(t.description),"SHIP TYPE %u",static_cast<unsigned>(source.ship_type));
   t.has_position=source.has_position;
   t.position_stale=store.position_stale(source,now_ms,stale_after_ms);
   if(t.has_position) {

@@ -8,6 +8,8 @@ namespace {
 constexpr float kPi = 3.14159265358979323846f;
 constexpr uint16_t kFcsResidue = 0xf0b8;
 constexpr uint8_t kFlag = 0x7e;
+constexpr float kTrackRelease = 0.004f;   // per 48 kS/s sample, as a fraction of the envelope span
+constexpr float kTrackClamp = 0.6f;     // rad per sample either side of the midpoint (deviation is 0.31)
 constexpr uint32_t kDuplicateWindow = 3840; // 80 ms at 48 kHz; one packet from adjacent timing hypotheses.
 uint16_t fcs_bit(uint16_t crc, bool bit) {
   const bool mix = ((crc & 1u) != 0) != bit;
@@ -111,6 +113,7 @@ void Receiver::reset() {
       osc_[channel][index] = {std::cos(phase),std::sin(phase)};
     }
     for (auto& h : channels_[channel].hypotheses) h.reset();
+    for (auto& h : channels_[channel].offset_hypotheses) h.reset();
   }
   callback_ = nullptr; context_ = nullptr;
 }
@@ -121,16 +124,18 @@ void Receiver::discontinuity() {
     for (auto& v : ch.fir_q) v = 0;
     ch.fir_pos = 0; ch.hypothesis = 0; ch.prev = {}; ch.have_prev = false;
     ch.dc = 0; ch.smooth[0]=ch.smooth[1]=ch.smooth[2]=0; ch.smooth_pos=0;
+    ch.track_hi = ch.track_lo = 0;
     ch.output_index = 0; ch.have_hash = false;
-    for (auto& h : ch.hypotheses) {
-      const auto& observed = h.stats();
+    for (Hdlc* h = ch.hypotheses; h < ch.offset_hypotheses + kPhases; ++h) {
+      if (h == ch.hypotheses + kPhases) h = ch.offset_hypotheses;
+      const auto& observed = h->stats();
       ch.aggregate.candidate_frames += observed.candidate_frames;
       ch.aggregate.crc_ok += observed.crc_ok;
       ch.aggregate.crc_failed += observed.crc_failed;
       ch.aggregate.bad_stuffing += observed.bad_stuffing;
       ch.aggregate.invalid_length += observed.invalid_length;
       ch.aggregate.overflow += observed.overflow;
-      h.reset();
+      h->reset();
     }
   }
   osc_phase_ = decim_phase_ = 0;
@@ -141,11 +146,24 @@ void Receiver::demodulate(unsigned c) {
   // fir_pos is the next write slot, so the newest sample is at fir_pos - 1 (+ kTaps in the mirrored half).
   const float* newest_i = &ch.fir_i[ch.fir_pos + kTaps - 1];
   const float* newest_q = &ch.fir_q[ch.fir_pos + kTaps - 1];
-  Complex out{};
-  for (size_t tap = 0; tap < kTaps; ++tap) {
-    out.i += taps_[tap]*newest_i[-static_cast<ptrdiff_t>(tap)];
-    out.q += taps_[tap]*newest_q[-static_cast<ptrdiff_t>(tap)];
+  // Four partial sums per rail: a single running sum makes every addition wait for the previous one, which is
+  // what bounds this loop on the ESP32-P4 (measured: the filter was three quarters of the receiver's time).
+  const float* xi = newest_i - (kTaps - 1);          // oldest sample; xi[k] pairs with taps_[kTaps-1-k]
+  const float* xq = newest_q - (kTaps - 1);
+  const float* h = &taps_[kTaps - 1];
+  float i0 = 0, i1 = 0, i2 = 0, i3 = 0, q0 = 0, q1 = 0, q2 = 0, q3 = 0;
+  size_t k = 0;
+  for (; k + 4 <= kTaps; k += 4) {
+    const float h0 = h[-static_cast<ptrdiff_t>(k)], h1 = h[-static_cast<ptrdiff_t>(k) - 1],
+                h2 = h[-static_cast<ptrdiff_t>(k) - 2], h3 = h[-static_cast<ptrdiff_t>(k) - 3];
+    i0 += h0*xi[k]; i1 += h1*xi[k+1]; i2 += h2*xi[k+2]; i3 += h3*xi[k+3];
+    q0 += h0*xq[k]; q1 += h1*xq[k+1]; q2 += h2*xq[k+2]; q3 += h3*xq[k+3];
   }
+  for (; k < kTaps; ++k) {
+    i0 += h[-static_cast<ptrdiff_t>(k)]*xi[k];
+    q0 += h[-static_cast<ptrdiff_t>(k)]*xq[k];
+  }
+  Complex out{(i0 + i1) + (i2 + i3), (q0 + q1) + (q2 + q3)};
   if (!ch.have_prev) { ch.prev=out; ch.have_prev=true; return; }
   const float cross = ch.prev.i*out.q - ch.prev.q*out.i;
   const float dot = ch.prev.i*out.i + ch.prev.q*out.q;
@@ -154,14 +172,27 @@ void Receiver::demodulate(unsigned c) {
   const float angle = std::atan2(cross,dot);
   // Slow DC tracking rejects remaining CFO without removing symbol-level shifts.
   ch.dc += 0.00012f * (angle - ch.dc);
-  ch.smooth[ch.smooth_pos] = angle - ch.dc;
+  ch.smooth[ch.smooth_pos] = angle;
   if (++ch.smooth_pos == 3) ch.smooth_pos = 0;
-  const float soft = (ch.smooth[0]+ch.smooth[1]+ch.smooth[2]) * (1.f/3.f);
+  const float raw = (ch.smooth[0]+ch.smooth[1]+ch.smooth[2]) * (1.f/3.f);
+  const float soft = raw - ch.dc;
+  // Per-burst carrier offset. A burst lasts 27 ms, far too short for the slow mean above, and a transmitter plus a
+  // receiver crystal can be kilohertz apart. The discriminator output of a GMSK burst swings equally either side of
+  // its offset, so the midpoint of a fast-attack, slow-release envelope is that offset within the training sequence.
+  // The input is limited around the current midpoint so noise clicks (full-scale phase jumps) cannot drag it.
+  const float mid = 0.5f * (ch.track_hi + ch.track_lo);
+  float limited = raw;
+  if (limited > mid + kTrackClamp) limited = mid + kTrackClamp;
+  else if (limited < mid - kTrackClamp) limited = mid - kTrackClamp;
+  const float release = kTrackRelease * (ch.track_hi - ch.track_lo);
+  if (limited > ch.track_hi) ch.track_hi = limited; else ch.track_hi -= release;
+  if (limited < ch.track_lo) ch.track_lo = limited; else ch.track_lo += release;
   const unsigned phase = ch.hypothesis;
   if (++ch.hypothesis == kPhases) ch.hypothesis = 0;
   // Parallel fixed-phase clock hypotheses: a 9600 Bd burst spans only ~270 ms,
   // so oscillator error <50ppm causes much less than one bit of drift.
   ch.hypotheses[phase].process_level(soft >= 0,static_cast<uint8_t>(c+1),on_packet,&call_context_[c]);
+  ch.offset_hypotheses[phase].process_level(raw >= mid,static_cast<uint8_t>(c+1),on_packet,&call_context_[c]);
   ++ch.output_index;
 }
 void Receiver::on_packet(const Packet& packet, void* context) {
@@ -214,8 +245,8 @@ Stats Receiver::stats() const {
   result.bad_blocks=bad_blocks_;
   for(unsigned c=0;c<2;++c) {
     ChannelStats s=channels_[c].aggregate;
-    for(const auto& h:channels_[c].hypotheses) {
-      const ChannelStats& hs=h.stats();
+    for(unsigned n=0;n<2*kPhases;++n) {
+      const ChannelStats& hs=(n<kPhases?channels_[c].hypotheses[n]:channels_[c].offset_hypotheses[n-kPhases]).stats();
       s.candidate_frames+=hs.candidate_frames;
       s.crc_ok+=hs.crc_ok;
       s.crc_failed+=hs.crc_failed;

@@ -28,6 +28,8 @@ constexpr uint16_t kBg=TFT_BLACK,kPanel=0x0841,kEdge=0x2945,kCyan=0x2e7f,kGreen=
 constexpr int kBodyHeight=522; // y114..635, does not touch header or bottom tab strip
 constexpr int kFullThreshold=55;
 constexpr size_t kPushRectCapacity=64;
+constexpr size_t kMessageRows=8;   // rows that fit above the UP / DOWN buttons
+constexpr int kProtocolRows=9;
 static constexpr const char* kTabs[]={"LIVE MAP","TARGETS","MESSAGES","PROTOCOL","SIGNAL","EVENTS","SETUP"};
 static constexpr const char* kTypes[]={
   "Class A position (scheduled)","Class A position (assigned)","Class A position (response)",
@@ -246,8 +248,11 @@ void targets_page() {
     std::snprintf(buf,sizeof(buf),"%.5f, %.5f",t->lat_e7/1e7,t->lon_e7/1e7);
     detailrow("POSITION",buf,770,430,916);
   } else detailrow("POSITION","NOT TRANSMITTED",770,430,916);
-  if(t->has_course)std::snprintf(buf,sizeof(buf),"%u.%u deg",t->course_tenths_deg/10,t->course_tenths_deg%10);
-  detailrow("COURSE",t->has_course?buf:"--",770,471,970);
+  char speed[20]="--";
+  if(t->has_speed)std::snprintf(speed,sizeof(speed),"%u.%u kn",t->speed_tenths_kn/10,t->speed_tenths_kn%10);
+  if(t->has_course)std::snprintf(buf,sizeof(buf),"%u.%u deg / %s",t->course_tenths_deg/10,t->course_tenths_deg%10,speed);
+  else std::snprintf(buf,sizeof(buf),"-- / %s",speed);
+  detailrow("COURSE / SPEED",buf,770,471,970);
   detailrow("DEST",t->destination[0]?t->destination:"--",770,512,970);
   if(!t->has_position)
     std::snprintf(buf,sizeof(buf),"%lus (NO POSITION)",static_cast<unsigned long>(t->heard_age_s));
@@ -262,7 +267,7 @@ void messages_page() {
   title("LIVE AIS MESSAGE JOURNAL",38,186);
   label("AGE",38,220);label("CH",140,220);label("TYPE",214,220);label("ID",346,220);
   label("DECODED SUMMARY",502,220);d.hline(32,241,798,kEdge);
-  for(size_t j=0;j<9;++j) {
+  for(size_t j=0;j<kMessageRows;++j) {
     size_t i=g_message_offset+j;if(i>=bounded_messages())break;
     const Message& m=g_data->messages[i];int y=265+static_cast<int>(j)*38;
     if(i==g_selected_message)d.fillround(30,y-17,800,34,4,0x1062);
@@ -297,7 +302,7 @@ void protocol_page() {
   card(protocolIndex);card(protocolDetail);
   title("ALL 28 AIS MESSAGE TYPES",38,187);
   label("ITU-R M.1371-6 (02/2026)",38,217);
-  for(int j=0;j<10;++j) {
+  for(int j=0;j<kProtocolRows;++j) {
     int type=g_protocol_offset+j+1;if(type>28)break;int y=257+j*35;
     if(type==g_protocol)d.fillround(32,y-16,462,33,4,0x1062);
     char buf[54];std::snprintf(buf,sizeof(buf),"%02d  %.32s",type,kTypes[type-1]);
@@ -590,24 +595,24 @@ Action handle_touch(int32_t x,int32_t y){
     if(hit({170,574,126,44},x,y)&&g_target_offset+8<bounded_targets())++g_target_offset;
     paint();
   } else if(g_view==View::messages){
-    for(size_t j=0;j<9;++j){
+    for(size_t j=0;j<kMessageRows;++j){
       const size_t i=g_message_offset+j;
       if(i<bounded_messages()&&hit({30,246+static_cast<int>(j)*38,800,37},x,y)){
         g_selected_message=static_cast<uint8_t>(i);paint();return {ActionKind::message_selected,static_cast<uint32_t>(i)};
       }
     }
     if(hit({36,579,118,44},x,y)&&g_message_offset>0)--g_message_offset;
-    if(hit({164,579,125,44},x,y)&&g_message_offset+9<bounded_messages())++g_message_offset;
+    if(hit({164,579,125,44},x,y)&&g_message_offset+kMessageRows<bounded_messages())++g_message_offset;
     paint();
   } else if(g_view==View::protocol){
-    for(int j=0;j<10;++j){
+    for(int j=0;j<kProtocolRows;++j){
       const int type=g_protocol_offset+j+1;
       if(type<=28&&hit({32,241+j*35,464,34},x,y)){
         g_protocol=static_cast<uint8_t>(type);paint();return {ActionKind::set_message_type,g_protocol};
       }
     }
     if(hit({44,578,113,44},x,y)&&g_protocol_offset>0)--g_protocol_offset;
-    if(hit({169,578,124,44},x,y)&&g_protocol_offset<18)++g_protocol_offset;
+    if(hit({169,578,124,44},x,y)&&g_protocol_offset<28-kProtocolRows)++g_protocol_offset;
     paint();
   } else if(g_view==View::events){
     if(hit({40,578,120,44},x,y)&&g_event_offset>0)--g_event_offset;

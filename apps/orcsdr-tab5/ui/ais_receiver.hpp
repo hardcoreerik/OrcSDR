@@ -85,7 +85,10 @@ class Receiver {
     float dc = 0;
     float smooth[3]{};
     unsigned smooth_pos = 0;
-    Hdlc hypotheses[kPhases]{};
+    // Envelope of the smoothed discriminator output; their midpoint is the burst's carrier offset.
+    float track_hi = 0, track_lo = 0;
+    Hdlc hypotheses[kPhases]{};          // sliced around the slow mean (best at small offsets and low SNR)
+    Hdlc offset_hypotheses[kPhases]{};   // sliced around the tracked midpoint (bursts up to a few kHz off)
     uint64_t output_index = 0;
     uint64_t last_packet_index = 0;
     uint32_t last_hash = 0;

@@ -27,7 +27,7 @@ enum class Id : uint8_t {
   sstv,
   acars,
   dead_air,
-  ais,   // appended: stored recent-dashboard ids keep their meaning
+  ais,
   count,
 };
 

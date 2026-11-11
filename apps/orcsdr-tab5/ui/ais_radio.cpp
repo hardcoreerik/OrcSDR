@@ -1,6 +1,7 @@
 #include "ais_radio.hpp"
 
 #include <atomic>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -112,10 +113,19 @@ void on_packet(const ais_rx::Packet& packet, const ais::Message* parsed, void* c
       char where[40];
       format_position(where, sizeof(where), parsed->latitude_e7, parsed->longitude_e7);
       if (parsed->has_speed)
-        std::snprintf(m.summary, sizeof(m.summary), "POSITION %s %u.%ukn", where,
+        std::snprintf(m.summary, sizeof(m.summary), "%s %u.%ukn", where,
                       static_cast<unsigned>(parsed->speed_tenths_kn / 10), static_cast<unsigned>(parsed->speed_tenths_kn % 10));
       else
-        std::snprintf(m.summary, sizeof(m.summary), "POSITION %s", where);
+        std::snprintf(m.summary, sizeof(m.summary), "%s", where);
+    } else if (parsed->coverage == ais::Coverage::static_voyage) {
+      std::snprintf(m.summary, sizeof(m.summary), "%s / %s", parsed->vessel.has_name ? parsed->vessel.name : "NO NAME",
+                    parsed->vessel.has_destination ? parsed->vessel.destination : "NO DESTINATION");
+    } else if (parsed->coverage == ais::Coverage::static_b) {
+      if (parsed->vessel.part == 0)
+        std::snprintf(m.summary, sizeof(m.summary), "PART A %s", parsed->vessel.has_name ? parsed->vessel.name : "NO NAME");
+      else
+        std::snprintf(m.summary, sizeof(m.summary), "PART B CALL %s",
+                      parsed->vessel.has_callsign ? parsed->vessel.callsign : "NOT SENT");
     } else if (parsed->coverage == ais::Coverage::header_only) {
       std::snprintf(m.summary, sizeof(m.summary), "%u BITS / FIELDS NOT DECODED", static_cast<unsigned>(packet.bit_count));
     } else {
@@ -416,6 +426,52 @@ Status status() {
     unlock_feed();
   }
   return s;
+}
+
+void bench(char* out, size_t size) {
+  if (!out || size == 0) return;
+  if (!g_hooks.micros) { std::snprintf(out, size, "RTL_AIS_BENCH error=no_clock"); return; }
+  constexpr size_t kBlock = 48000;                       // 0.1 s of IQ
+  constexpr unsigned kBlocks = 10;                       // 1 s in total
+  void* memory = allocate(sizeof(ais_rx::Receiver) + kBlock);
+  if (!memory) { std::snprintf(out, size, "RTL_AIS_BENCH error=no_memory"); return; }
+  ais_rx::Receiver* receiver = new (memory) ais_rx::Receiver();
+  uint8_t* iq = static_cast<uint8_t*>(memory) + sizeof(ais_rx::Receiver);
+  uint32_t seed = 0x13579bdfu;
+  for (size_t i = 0; i < kBlock; ++i) {                  // receiver noise: a few LSB around mid-scale
+    seed ^= seed << 13; seed ^= seed >> 17; seed ^= seed << 5;
+    iq[i] = static_cast<uint8_t>(120u + (seed & 15u));
+  }
+  const uint32_t t0 = g_hooks.micros();
+  for (unsigned i = 0; i < kBlocks; ++i) (void)receiver->process_cu8(iq, kBlock, kStreamRate, nullptr, nullptr);
+  const uint32_t whole_us = g_hooks.micros() - t0;
+  const ais_rx::Stats stats = receiver->stats();
+  // The same amount of the two heaviest operations on their own, to show where the time goes.
+  float taps[63], line[126];
+  for (unsigned i = 0; i < 63; ++i) taps[i] = 1.f / 63.f;
+  for (unsigned i = 0; i < 126; ++i) line[i] = static_cast<float>(iq[i]) * (1.f / 128.f) - 1.f;
+  volatile float sink = 0;
+  const uint32_t t1 = g_hooks.micros();
+  for (unsigned n = 0; n < 2u * 2u * 48000u; ++n) {      // 2 channels x (I and Q) x 48 kS/s
+    const float* x = &line[n % 63u];
+    float acc = 0;
+    for (unsigned tap = 0; tap < 63; ++tap) acc += taps[tap] * x[62 - tap];
+    sink = sink + acc;
+  }
+  const uint32_t fir_us = g_hooks.micros() - t1;
+  const uint32_t t2 = g_hooks.micros();
+  for (unsigned n = 0; n < 2u * 48000u; ++n)
+    sink = sink + std::atan2(line[n % 126u], line[(n + 31u) % 126u]);
+  const uint32_t atan_us = g_hooks.micros() - t2;
+  receiver->~Receiver();
+  release_memory(memory);
+  std::snprintf(out, size,
+                "RTL_AIS_BENCH iq_seconds=1 receiver_us=%u duty_pct=%u.%u fir_only_us=%u atan2_only_us=%u samples=%llu "
+                "candidate_frames=%llu",
+                static_cast<unsigned>(whole_us), static_cast<unsigned>(whole_us / 10000u),
+                static_cast<unsigned>((whole_us / 1000u) % 10u), static_cast<unsigned>(fir_us), static_cast<unsigned>(atan_us),
+                static_cast<unsigned long long>(stats.iq_samples),
+                static_cast<unsigned long long>(stats.channels[0].candidate_frames + stats.channels[1].candidate_frames));
 }
 
 void format_status(char* out, size_t size) {

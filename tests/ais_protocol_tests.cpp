@@ -147,8 +147,86 @@ void station_store() {
   Fixture x;x.header(1,333333333);
   assert(parse(x.bytes,168,&m)==ParseStatus::ok && !store.ingest(m,99999));
 }
+// Payloads below were produced by tools/ais_make_iq.py, an encoder written separately from this parser from the
+// ITU-R M.1371-5 field tables, and its output was decoded field for field by the third-party pyais 2.9.4. They are
+// therefore an independent check of the offsets used in ais_protocol.cpp, unlike the Fixture cases above.
+size_t from_hex(const char* hex,uint8_t* out,size_t capacity) {
+  size_t n=0;
+  auto nibble=[](char c){return static_cast<uint8_t>(c<='9'?c-'0':c-'A'+10);};
+  for(;hex[0]&&hex[1]&&n<capacity;hex+=2)out[n++]=static_cast<uint8_t>((nibble(hex[0])<<4)|nibble(hex[1]));
+  return n;
+}
+void independent_fixtures() {
+  uint8_t p[kMaxMessageBytes]{};
+  Message m{};
+  // Type 1, under way using engine, 12.3 kn, course and heading 090.
+  size_t n=from_hex("0417D784040007BDC9039C9A728203842D00000000",p,sizeof(p));
+  assert(n==21 && parse(p,168,&m)==ParseStatus::ok);
+  assert(m.type==1 && m.source_id==100000001 && m.has_position && m.latitude_e7==462200000);
+  assert(m.has_nav_status && m.nav_status==0 && m.has_speed && m.speed_tenths_kn==123);
+  assert(m.has_course && m.course_tenths_deg==900 && m.has_heading && m.heading_deg==90);
+  // Type 2, at anchor: speed 0.0 is a value, not "unavailable".
+  n=from_hex("0817D7840C40000DC99BE81A76E700000004000000",p,sizeof(p));
+  assert(parse(p,168,&m)==ParseStatus::ok && m.type==2 && m.source_id==100000003);
+  assert(m.has_nav_status && m.nav_status==1 && m.has_speed && m.speed_tenths_kn==0);
+  assert(m.latitude_e7==462500000 && m.longitude_e7==-1237300000);
+  // Type 4 base station report.
+  n=from_hex("10003D09047EAB530013724F8A069ED301C0000000",p,sizeof(p));
+  assert(parse(p,168,&m)==ParseStatus::ok && m.type==4 && m.source_id==1000001);
+  assert(m.coverage==Coverage::base_station && m.has_position);
+  assert(m.latitude_e7==462800000 && m.longitude_e7==-1238100000 && !m.has_speed && !m.has_nav_status);
+  // Type 5 static and voyage data.
+  n=from_hex("1417D78404022B6B854153501C403D20D3112814153520071000000000462D078A286D887901415352040F4940"
+             "0000000000000000",p,sizeof(p));
+  assert(n==53 && parse(p,424,&m)==ParseStatus::ok && m.type==5 && m.source_id==100000001);
+  assert(m.coverage==Coverage::static_voyage && !m.has_position);
+  assert(m.vessel.imo==9100001 && m.vessel.has_callsign && !std::strcmp(m.vessel.callsign,"TESTA1"));
+  assert(m.vessel.has_name && !std::strcmp(m.vessel.name,"ORCSDR TEST A1"));
+  assert(m.vessel.has_ship_type && m.vessel.ship_type==70 && m.vessel.has_dimensions);
+  assert(m.vessel.to_bow_m==90 && m.vessel.to_stern_m==30 && m.vessel.to_port_m==10 && m.vessel.to_starboard_m==10);
+  assert(m.vessel.has_destination && !std::strcmp(m.vessel.destination,"TEST PORT"));
+  assert(parse(p,416,&m)==ParseStatus::invalid_length);   // a truncated Type 5 is refused, not half-read
+  uint8_t type5[kMaxMessageBytes];std::memcpy(type5,p,sizeof(type5));
+  // Type 24 part A (name) and part B (ship type, call sign, dimensions).
+  uint8_t part_a[kMaxMessageBytes]{},part_b[kMaxMessageBytes]{};
+  n=from_hex("6017D7842C3D20D31128141535200B1000000000",part_a,sizeof(part_a));
+  assert(n==20 && parse(part_a,160,&m)==ParseStatus::ok && m.coverage==Coverage::static_b && m.vessel.part==0);
+  assert(m.source_id==100000011 && m.vessel.has_name && !std::strcmp(m.vessel.name,"ORCSDR TEST B1") && !m.vessel.has_callsign);
+  n=from_hex("6017D7842D253D20D4153514153502C400281C2084",part_b,sizeof(part_b));
+  assert(n==21 && parse(part_b,168,&m)==ParseStatus::ok && m.coverage==Coverage::static_b && m.vessel.part==1);
+  assert(m.vessel.has_ship_type && m.vessel.ship_type==37 && m.vessel.has_callsign && !std::strcmp(m.vessel.callsign,"TESTB1"));
+  assert(m.vessel.has_dimensions && m.vessel.to_bow_m==5 && m.vessel.to_stern_m==7 && m.vessel.to_port_m==2 && m.vessel.to_starboard_m==2);
+  assert(!m.vessel.has_name);
+  // Malformed: part B cut to the part A length, and an undefined part number, decode no static field.
+  assert(parse(part_b,160,&m)==ParseStatus::ok && m.coverage==Coverage::header_only && !m.vessel.has_callsign);
+  uint8_t bad[kMaxMessageBytes];std::memcpy(bad,part_a,sizeof(bad));bad[4]|=0x02;   // part number 2
+  assert(parse(bad,160,&m)==ParseStatus::ok && m.coverage==Coverage::header_only && !m.vessel.has_name);
+  // An all-'@' name is "not available", never an empty name presented as a value.
+  uint8_t blank[kMaxMessageBytes]{};blank[0]=24<<2;blank[1]=0x17;blank[2]=0xD7;blank[3]=0x84;blank[4]=0x2C;
+  assert(parse(blank,160,&m)==ParseStatus::ok && m.coverage==Coverage::static_b && !m.vessel.has_name);
+
+  // Station state: static data creates and completes a station; it never invents a position or changes its class.
+  static StationStore store;store.clear();
+  assert(parse(type5,424,&m)==ParseStatus::ok && store.ingest(m,1000));
+  const Station* s=store.find(100000001);
+  assert(s && s->kind==StationKind::class_a && !s->has_position && !std::strcmp(s->name,"ORCSDR TEST A1"));
+  assert(!std::strcmp(s->callsign,"TESTA1") && !std::strcmp(s->destination,"TEST PORT") && s->has_ship_type && s->ship_type==70);
+  from_hex("0417D784040007BDC9039C9A728203842D00000000",p,sizeof(p));
+  assert(parse(p,168,&m)==ParseStatus::ok && store.ingest(m,2000));
+  s=store.find(100000001);
+  assert(s && s->has_position && s->has_nav_status && s->nav_status==0 && !std::strcmp(s->name,"ORCSDR TEST A1"));
+  assert(parse(part_a,160,&m)==ParseStatus::ok && store.ingest(m,3000));
+  assert(parse(part_b,168,&m)==ParseStatus::ok && store.ingest(m,3400));
+  s=store.find(100000011);
+  assert(s && s->kind==StationKind::class_b && !std::strcmp(s->name,"ORCSDR TEST B1") && !std::strcmp(s->callsign,"TESTB1"));
+  assert(s->ship_type==37 && !s->has_position && s->destination[0]==0);
+  from_hex("10003D09047EAB530013724F8A069ED301C0000000",p,sizeof(p));
+  assert(parse(p,168,&m)==ParseStatus::ok && store.ingest(m,4000));
+  s=store.find(1000001);assert(s && s->kind==StationKind::base_station && s->has_position && store.size()==3);
+  store.clear();
+}
 }
 int main() {
-  coverage_and_bounds();class_a_and_class_b();aid21_extended_name();long_range27();type28_field_map();station_store();
+  coverage_and_bounds();class_a_and_class_b();aid21_extended_name();long_range27();type28_field_map();station_store();independent_fixtures();
   std::puts("AIS portable protocol and bounded station tests passed (synthetic fixtures only)");
 }
