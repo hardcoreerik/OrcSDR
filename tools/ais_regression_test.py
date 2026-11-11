@@ -349,8 +349,9 @@ def test_d(dev, args):
 # ---------------------------------------------------------------- E
 def test_e(args):
     sweep_out = os.path.join(args.out, "sweep")
-    r = subprocess.run([sys.executable, os.path.join(HERE, "tab5_ui_drive.py"), "--port", args.port, "sweep", "--out", sweep_out,
-                        "--dwell", "6"], capture_output=True, text=True, timeout=3600)
+    key_args = ["--key", args.key] if args.key else []   # the sweep must use the same pairing key as tests A to D
+    r = subprocess.run([sys.executable, os.path.join(HERE, "tab5_ui_drive.py"), "--port", args.port, *key_args, "sweep", "--out",
+                        sweep_out, "--dwell", "6"], capture_output=True, text=True, timeout=3600)
     lines = [ln for ln in r.stdout.splitlines() if ln.startswith("{")]
     summary = json.loads(lines[-1]) if lines and '"summary"' in lines[-1] else {}
     bad = summary.get("not_ok", ["no summary"])
@@ -404,7 +405,7 @@ def main():
                 dev.reopen()
             restore_step("dashboard sweep", sweep)
         restore_step("receiver source", lambda: dev.set_source(original.get("mode") or "remote"))
-        if original.get("server"):
+        if original.get("server") and not original["server"].startswith("("):   # "(none):1234" = no server was ever set
             host, _, port = original["server"].rpartition(":")
             restore_step("rtl_tcp server", lambda: dev.cmd(f"RTL_TCP HOST {host} {port}", "RTL_TCP HOST", 4))
         restore_step("listen", dev.listen_fm)
@@ -415,7 +416,7 @@ def main():
             print("restored:", now.get("mode"), now.get("server"), now.get("state"), flush=True)
             if original.get("mode") and now.get("mode") != original.get("mode"):
                 raise RuntimeError(f"the source is {now.get('mode')}, it was {original.get('mode')}")
-            if original.get("server") and now.get("server") != original.get("server"):
+            if original.get("server") and not original["server"].startswith("(") and now.get("server") != original.get("server"):
                 raise RuntimeError(f"the server is {now.get('server')}, it was {original.get('server')}")
         restore_step("verify restore", verify)
         restore_step("splash gate", lambda: dev.cmd("RTL_SPLASH_GATE ON", "RTL_SPLASH_GATE", 4))

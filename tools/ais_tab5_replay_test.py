@@ -101,6 +101,8 @@ def main():
     p.add_argument("--file-seconds", type=float, default=62.0, help="one pass including the server's gaps")
     p.add_argument("--no-shots", action="store_true")
     p.add_argument("--keep-server", action="store_true", help="do not restore the previous rtl_tcp server afterwards")
+    p.add_argument("--allow-unrestorable-server", action="store_true",
+                   help="run even though the Tab5 has no rtl_tcp server saved (the replay address stays saved afterwards)")
     a = p.parse_args()
     os.makedirs(a.out, exist_ok=True)
     host, _, port = a.server.rpartition(":")
@@ -117,6 +119,12 @@ def main():
     before = dev.first("RTL_TCP STATUS", "RTL_TCP mode")
     record("before", before)
     previous = dev.kv(before)
+    if (not previous.get("server") or previous["server"].startswith("(")) and not a.allow_unrestorable_server:
+        # There is no command to clear the saved rtl_tcp server, so a unit with none configured cannot be put back.
+        print("REFUSED: this Tab5 has no rtl_tcp server configured, and the replay server address could not be removed "
+              "afterwards. Configure a server first, or pass --allow-unrestorable-server.")
+        dev.close()
+        return 2
     record("before", dev.first("RTL_HEALTH", "RTL_HEALTH_STATUS"))
     failures = []
     try:
@@ -150,6 +158,7 @@ def main():
         record("health", dev.first("RTL_HEALTH", "RTL_HEALTH_STATUS"))
         record("screen", dev.first("RTL_SCREEN_STATUS", "RTL_SCREEN_STATUS"))
         record("dsp", dev.cmd("RTL_DSP STATS", "RTL_DSP", 4))
+        tcp_line = dev.first("RTL_TCP STATUS", "RTL_TCP mode")
         with open(os.path.join(a.out, "device_status.txt"), "w", encoding="utf-8", newline="\n") as f:
             f.write("\n".join(status) + "\n")
         if not a.no_shots:
@@ -183,7 +192,7 @@ def main():
             dev.wait(3)
             record("restore", dev.first(f"RTL_TCP HOST {old_host} {old_port}", "RTL_TCP HOST"))
             if previous.get("mode") and previous["mode"] != "remote":
-                record("restore", dev.first("RTL_TCP SOURCE usb", "RTL_TCP"))
+                record("restore", dev.first(f"RTL_TCP SOURCE {previous['mode']}", "RTL_TCP"))
         dev.close()
         log.close()
     print("RESULT " + ("FAIL: " + "; ".join(failures) if failures else "PASS"))

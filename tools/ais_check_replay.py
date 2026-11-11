@@ -131,6 +131,11 @@ def check_device(manifest, host_path, device_path, min_passes=1.0, allow_loss=Fa
         failures.append(f"only {passes:.2f} passes of the file were seen, at least {min_passes:.2f} were expected")
     if not allow_loss and (int(status.get("lost_samples", 0)) != 0 or int(status.get("loss_events", 0)) != 0):
         failures.append("the device reports lost IQ (lost_samples=%s loss_events=%s)" % (status.get("lost_samples"), status.get("loss_events")))
+    transport = [l for l in text.splitlines() if l.startswith("RTL_TCP mode")]
+    if transport and not allow_loss:   # bytes the rtl_tcp session dropped before they reached the AIS pipeline
+        dropped = dict(part.split("=", 1) for part in transport[-1].split() if "=" in part).get("dropped", "0")
+        if dropped.isdigit() and int(dropped) != 0:
+            failures.append(f"the rtl_tcp session dropped {dropped} bytes")
     if int(status.get("test", 0)) != 1:
         failures.append("the device was not marked as a test replay (test=%s)" % status.get("test"))
     for msg_type, count in host_types.items():

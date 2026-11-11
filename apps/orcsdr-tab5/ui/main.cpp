@@ -15062,6 +15062,7 @@ orcsdr::acars_receiver::Hooks acars_receiver_hooks() {
                            rtl_ui_band == RtlBand::browse && rtl_active_sample_rate_sps.load(std::memory_order_acquire) == rate;
     const bool accepted = streaming ? request_hot_retune(center_hz) : queue_local_rtl_listen(RtlBand::browse, center_hz, false);
     if (!accepted) rtl_rate_override_sps.store(previous_override, std::memory_order_release);   // a refused request must not strand the rate
+    if (accepted) g_ft8_rate_owned = false;   // this receiver now holds the rate; a later FT8 release must not clear it
     return accepted;
   };
   hooks.release = [] {
@@ -15259,6 +15260,12 @@ void open_dashboard(orcsdr::dashboards::Id id) {
   // Settings can return to it. Everything else below closes AIS.
   if (id == Id::settings && orcsdr::ais_app::active()) {
     open_global_settings(orcsdr::settings::Section::system);
+    return;
+  }
+  if (id == Id::rf_lab && orcsdr::ais_app::active()) {   // RF Lab returns to AIS (close_rf_lab), so AIS must stay open
+    persist_dashboard_open(id);
+    orcsdr::rf24::leave();
+    open_rf_lab();
     return;
   }
   if (id != Id::dead_air) orcsdr::dead_air_app::close();

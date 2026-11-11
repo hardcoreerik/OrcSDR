@@ -48,11 +48,11 @@ EXPECTED_SCREEN = {  # RTL_SCREEN_STATUS active= value that a successful open sh
 
 
 class Drive:
-    def __init__(self, port):
+    def __init__(self, port, key_file=None):
         self.port = port
         self.dev = t.Tab5(port)
         self.key = t.find_key(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", ".orclink", "ui-doc.key")) \
-            if False else t.find_key(r"F:\Ai\OrcSDR\.orclink\ui-doc.key")
+            if False else t.find_key(key_file or r"F:\Ai\OrcSDR\.orclink\ui-doc.key")
         self.last = 0.0
         self.shot_py = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tab5_ft8_shot.py")
 
@@ -132,7 +132,7 @@ class Drive:
 
 def sweep(a):
     os.makedirs(a.out, exist_ok=True)
-    d = Drive(a.port)
+    d = Drive(a.port, getattr(a, "key", None))
     if a.source in ("remote", "usb"):
         d.cmd(f"RTL_TCP SOURCE {a.source}", ("RTL_TCP SOURCE",), 4)
         d.cmd("RTL_STOP", ("RTL_STOP_RESULT",), 12); time.sleep(2)   # the new source only applies on the next start
@@ -179,6 +179,7 @@ def main():
     sub = p.add_subparsers(dest="what", required=True)
     sub.add_parser("list")
     tp = sub.add_parser("tap"); tp.add_argument("x", type=int); tp.add_argument("y", type=int)
+    p.add_argument("--key", help="pairing key file (default: the usual locations)")
     sw = sub.add_parser("sweep"); sw.add_argument("--out", required=True); sw.add_argument("--names")
     sw.add_argument("--dwell", type=float, default=8.0); sw.add_argument("--source", default="keep", choices=("remote", "usb", "keep"))
     a = p.parse_args()
