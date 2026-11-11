@@ -36,6 +36,14 @@ class Pipeline {
   void set_binary_observer(BinaryObserver cb,void* context) {
     binary_observer_=cb;binary_observer_ctx_=context;
   }
+  using PacketObserver = void (*)(const Packet&, const ais::Message* parsed, void*);
+  // Inline on the owning DSP task for every CRC-valid packet. parsed is null when the
+  // field parser refused the payload. Same rules as the binary observer.
+  void set_packet_observer(PacketObserver cb,void* context) {
+    packet_observer_=cb;packet_observer_ctx_=context;
+  }
+  // Forget stations not heard for max_idle_ms so a full store can accept new ones. DSP task only.
+  void prune(uint64_t now_ms,uint64_t max_idle_ms) { stations_.prune(now_ms,max_idle_ms); }
   // Only feed blocks belonging to the active 162MHz/240kS/s radio session.
   // Explicit generation is checked to avoid decoding old blocks after retune.
   bool offer(const uint8_t* cu8, size_t bytes, uint32_t sample_rate,
@@ -55,5 +63,7 @@ class Pipeline {
   PipelineStats counters_{};
   BinaryObserver binary_observer_=nullptr;
   void* binary_observer_ctx_=nullptr;
+  PacketObserver packet_observer_=nullptr;
+  void* packet_observer_ctx_=nullptr;
 };
 } // namespace orcsdr::ais_rx

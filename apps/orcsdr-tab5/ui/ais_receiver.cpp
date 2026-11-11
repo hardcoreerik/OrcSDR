@@ -1,4 +1,5 @@
 #include "ais_receiver.hpp"
+#include <new>
 #include <cmath>
 #include <cstring>
 
@@ -89,7 +90,8 @@ void Hdlc::process_level(bool level, uint8_t channel, PacketCallback callback, v
 
 Receiver::Receiver() { reset(); }
 void Receiver::reset() {
-  bad_blocks_ = sample_index_ = phase_index_ = 0;
+  bad_blocks_ = sample_index_ = 0;
+  osc_phase_ = decim_phase_ = 0;
   const float cutoff = 10500.f / static_cast<float>(kInputRateHz); // 10.5kHz baseband.
   float gain = 0;
   for (size_t i = 0; i < kTaps; ++i) {
@@ -101,7 +103,7 @@ void Receiver::reset() {
   }
   for (auto& tap : taps_) tap /= gain;
   for (unsigned channel = 0; channel < 2; ++channel) {
-    channels_[channel] = Channel{};
+    new (&channels_[channel]) Channel();   // in place: a Channel temporary is ~8 KB of stack
     call_context_[channel] = {this, channel};
     const float channel_hz = channel ? 25000.f : -25000.f;
     for (unsigned index = 0; index < 48; ++index) {
@@ -115,8 +117,9 @@ void Receiver::reset() {
 void Receiver::discontinuity() {
   // Does not erase cumulative counters or the user's configured callback.
   for (auto& ch : channels_) {
-    for (auto& v : ch.fir) v = {};
-    ch.fir_pos = 0; ch.prev = {}; ch.have_prev = false;
+    for (auto& v : ch.fir_i) v = 0;
+    for (auto& v : ch.fir_q) v = 0;
+    ch.fir_pos = 0; ch.hypothesis = 0; ch.prev = {}; ch.have_prev = false;
     ch.dc = 0; ch.smooth[0]=ch.smooth[1]=ch.smooth[2]=0; ch.smooth_pos=0;
     ch.output_index = 0; ch.have_hash = false;
     for (auto& h : ch.hypotheses) {
@@ -130,21 +133,18 @@ void Receiver::discontinuity() {
       h.reset();
     }
   }
-  phase_index_ = 0;
+  osc_phase_ = decim_phase_ = 0;
 }
-void Receiver::process_channel_sample(unsigned c, Complex v) {
+// FIR, decimation and demodulation: once per 5 source samples (48 kS/s per channel).
+void Receiver::demodulate(unsigned c) {
   Channel& ch = channels_[c];
-  ch.fir[ch.fir_pos] = v;
-  ch.fir_pos = (ch.fir_pos + 1) % kTaps;
-  if ((phase_index_ % 5u) != 4u) return;
+  // fir_pos is the next write slot, so the newest sample is at fir_pos - 1 (+ kTaps in the mirrored half).
+  const float* newest_i = &ch.fir_i[ch.fir_pos + kTaps - 1];
+  const float* newest_q = &ch.fir_q[ch.fir_pos + kTaps - 1];
   Complex out{};
-  // FIR and decimation run only once per 5 source samples (48 kS/s per channel).
-  size_t pos = ch.fir_pos;
   for (size_t tap = 0; tap < kTaps; ++tap) {
-    if (!pos) pos = kTaps;
-    --pos;
-    out.i += taps_[tap]*ch.fir[pos].i;
-    out.q += taps_[tap]*ch.fir[pos].q;
+    out.i += taps_[tap]*newest_i[-static_cast<ptrdiff_t>(tap)];
+    out.q += taps_[tap]*newest_q[-static_cast<ptrdiff_t>(tap)];
   }
   if (!ch.have_prev) { ch.prev=out; ch.have_prev=true; return; }
   const float cross = ch.prev.i*out.q - ch.prev.q*out.i;
@@ -155,9 +155,10 @@ void Receiver::process_channel_sample(unsigned c, Complex v) {
   // Slow DC tracking rejects remaining CFO without removing symbol-level shifts.
   ch.dc += 0.00012f * (angle - ch.dc);
   ch.smooth[ch.smooth_pos] = angle - ch.dc;
-  ch.smooth_pos = (ch.smooth_pos+1) % 3;
+  if (++ch.smooth_pos == 3) ch.smooth_pos = 0;
   const float soft = (ch.smooth[0]+ch.smooth[1]+ch.smooth[2]) * (1.f/3.f);
-  const unsigned phase = static_cast<unsigned>(ch.output_index % kPhases);
+  const unsigned phase = ch.hypothesis;
+  if (++ch.hypothesis == kPhases) ch.hypothesis = 0;
   // Parallel fixed-phase clock hypotheses: a 9600 Bd burst spans only ~270 ms,
   // so oscillator error <50ppm causes much less than one bit of drift.
   ch.hypotheses[phase].process_level(soft >= 0,static_cast<uint8_t>(c+1),on_packet,&call_context_[c]);
@@ -189,14 +190,22 @@ bool Receiver::process_cu8(const uint8_t* bytes, size_t length,uint32_t sample_r
   for (size_t i=0;i<length;i+=2) {
     const float in_i = (static_cast<float>(bytes[i])-127.5f)*(1.f/128.f);
     const float in_q = (static_cast<float>(bytes[i+1])-127.5f)*(1.f/128.f);
-    const unsigned osc_index = static_cast<unsigned>(phase_index_%48);
     for (unsigned c=0;c<2;++c) {
-      const Complex rot=osc_[c][osc_index];
-      process_channel_sample(c,{in_i*rot.i-in_q*rot.q,in_i*rot.q+in_q*rot.i});
+      const Complex rot=osc_[c][osc_phase_];
+      Channel& ch=channels_[c];
+      const float mixed_i=in_i*rot.i-in_q*rot.q, mixed_q=in_i*rot.q+in_q*rot.i;
+      ch.fir_i[ch.fir_pos]=ch.fir_i[ch.fir_pos+kTaps]=mixed_i;
+      ch.fir_q[ch.fir_pos]=ch.fir_q[ch.fir_pos+kTaps]=mixed_q;
+      if (++ch.fir_pos == kTaps) ch.fir_pos = 0;
     }
-    ++sample_index_;
-    ++phase_index_;
+    if (++osc_phase_ == 48) osc_phase_ = 0;
+    if (++decim_phase_ == 5) {
+      decim_phase_ = 0;
+      demodulate(0);
+      demodulate(1);
+    }
   }
+  sample_index_ += length/2;
   return true;
 }
 Stats Receiver::stats() const {

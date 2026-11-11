@@ -74,8 +74,12 @@ class Receiver {
   static constexpr size_t kPhases = 5;
   struct Complex { float i = 0, q = 0; };
   struct Channel {
-    Complex fir[kTaps]{};
+    // Each sample is stored twice, kTaps apart, so the newest kTaps samples are always contiguous
+    // and the filter runs as a plain dot product with no wrap test per tap.
+    float fir_i[2*kTaps]{};
+    float fir_q[2*kTaps]{};
     unsigned fir_pos = 0;
+    unsigned hypothesis = 0;   // output_index % kPhases, kept as a small counter (no 64-bit division per sample)
     Complex prev{};
     bool have_prev = false;
     float dc = 0;
@@ -91,11 +95,13 @@ class Receiver {
   Channel channels_[2]{};
   float taps_[kTaps]{};
   Complex osc_[2][48]{};
-  uint64_t sample_index_ = 0, phase_index_ = 0, bad_blocks_ = 0;
+  uint64_t sample_index_ = 0, bad_blocks_ = 0;
+  unsigned osc_phase_ = 0;     // input sample index modulo 48 (the mixer table period)
+  unsigned decim_phase_ = 0;   // input sample index modulo 5 (240 kS/s -> 48 kS/s)
   PacketCallback callback_ = nullptr;
   void* context_ = nullptr;
   struct CallContext { Receiver* owner; unsigned channel; } call_context_[2]{};
-  void process_channel_sample(unsigned channel, Complex sample);
+  void demodulate(unsigned channel);
   static void on_packet(const Packet& packet, void* context);
   void accepted(unsigned channel, const Packet& packet);
 };

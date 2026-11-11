@@ -174,6 +174,8 @@ idf_component_register(
         "../ui/ais_receive_pipeline.cpp"
         "../ui/ais_binary_app.cpp"
         "../ui/ais_snapshot_adapter.cpp"
+        "../ui/ais_radio.cpp"
+        "../ui/ais_app.cpp"
         "../ui/acars_dashboard_layout.cpp"
         "../ui/acars_dirty_rects.cpp"
         "../ui/acars_dashboard_model.cpp"

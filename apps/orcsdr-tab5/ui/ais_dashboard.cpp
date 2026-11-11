@@ -9,6 +9,7 @@
 #include "acars_dirty_rects.hpp"
 #if defined(ESP_PLATFORM)
 #include "map_view.hpp"
+#include <esp_attr.h>
 #include <esp_heap_caps.h>
 #endif
 #include <M5Unified.h>
@@ -71,7 +72,7 @@ uint16_t g_range_nm=25;
 uint8_t g_target_offset=0,g_message_offset=0,g_event_offset=0,g_protocol_offset=0;
 uint32_t g_last_revision=0;
 #if defined(ESP_PLATFORM)
-maps::RegionalView g_last_map{};
+EXT_RAM_BSS_ATTR maps::RegionalView g_last_map;   // ~0.5 KB: PSRAM, the internal boot pool is nearly full
 int g_last_map_screen_offset=0;
 #endif
 
@@ -151,7 +152,8 @@ void detailrow(const char* key,const char* value,int x,int y,int xval) {
 void titlebar(const char* name,const char* sub) {
   d.fillround(20,114,1240,34,6,kPanel);
   d.text(name,34,131,kGreen,2);
-  d.text(sub,260,131,kMuted,2);
+  if(g_data&&g_data->test_replay)d.text("TEST REPLAY DATA - NOT LIVE RF",260,131,kAmber,2);
+  else d.text(sub,260,131,kMuted,2);
 }
 void map_page() {
   const Snapshot& s=*g_data;

@@ -48,6 +48,8 @@ struct Snapshot {
   bool receiver_settled=false, coordinates_valid=false;
   bool ais1_enabled=true,ais2_enabled=true,long_range=false,nmea_output=false,logging=false;
   bool sd_available=false,rtl_tcp=false;
+  // Set only by the bench replay harness. Every page then says the data is replayed, not live RF.
+  bool test_replay=false;
   bool spectrum_valid[2]{false,false};
   int battery_percent=-1;
   uint32_t center_hz=162000000,sample_rate_sps=0;

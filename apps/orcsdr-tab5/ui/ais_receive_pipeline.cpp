@@ -9,9 +9,11 @@ void Pipeline::accept(const Packet& packet) {
   ais::Message message{};
   if (ais::parse(packet.bytes,packet.bit_count,&message) != ais::ParseStatus::ok) {
     ++counters_.parse_rejected;
+    if(packet_observer_)packet_observer_(packet,nullptr,packet_observer_ctx_);
     return;
   }
   ++counters_.messages_decoded;
+  if(packet_observer_)packet_observer_(packet,&message,packet_observer_ctx_);
   if (message.type==6||message.type==8||message.type==25||message.type==26) {
     ais::app::Result app{};
     const auto status=ais::app::decode(packet.bytes,packet.bit_count,&app);
@@ -68,6 +70,7 @@ void Pipeline::clear() {
   last_input_ms_ = block_time_ms_ = 0;
   counters_ = {};
   binary_observer_=nullptr;binary_observer_ctx_=nullptr;
+  packet_observer_=nullptr;packet_observer_ctx_=nullptr;
 }
 PipelineStats Pipeline::stats() const {
   PipelineStats s = counters_;
