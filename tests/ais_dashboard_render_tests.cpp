@@ -80,7 +80,8 @@ int main(){
   switch_to(ais::View::signal,"RECEPTION DIAGNOSTICS");
   assert(has_text("NO MEASURED FFT DATA"));
   switch_to(ais::View::events,"MARITIME ACTIVITY");
-  assert(has_text("NO EVENTS OBSERVED"));
+  assert(has_text("EVENT COLLECTION NOT AVAILABLE"));   // no event source is connected: never claim "none observed"
+  assert(!has_text("NO EVENTS OBSERVED"));
   switch_to(ais::View::setup,"RECEIVER / RF");
   assert(ais::handle_touch(85,243).kind==ais::ActionKind::toggle_ais1);
   assert(ais::handle_touch(85,306).kind==ais::ActionKind::toggle_ais2);

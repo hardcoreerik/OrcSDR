@@ -396,7 +396,10 @@ void events_page() {
     d.text(short_title,133,y,e.safety_related?kAmber:kWhite,2);
     d.hline(38,y+20,710,kEdge);
   }
-  if(!bounded_events())label("NO EVENTS OBSERVED",45,279);
+  if(!bounded_events()) {
+    if(g_data->events_collected)label("NO EVENTS OBSERVED",45,279);
+    else {label("EVENT COLLECTION NOT AVAILABLE",45,279,kAmber);label("IN THIS BUILD. MESSAGES SHOWS ALL PACKETS.",45,320,kMuted);}
+  }
   button("UP",{40,578,120,44});button("DOWN",{172,578,128,44});
   title("EVENT CLASSIFICATION",802,187);
   label("SAFETY / DISTRESS TEXT",802,247,kAmber);
@@ -421,7 +424,7 @@ void setup_page() {
   toggle_row("LONG RANGE - CH 75/76",g_data->long_range?"ON":"OFF",42,369);
   toggle_row("INPUT",g_data->rtl_tcp?"RTL_TCP":"LOCAL USB",42,431);
   label("LONG RANGE REQUIRES A NEW TUNE OR RADIO",42,486,kAmber);
-  label("LINK / RF SETTINGS APPLY ONLY AFTER APP ACK",42,537);
+  label("DISPLAY ONLY: THESE SETTINGS ARE FIXED",42,537);
   title("DATA & STORAGE",658,186);
   toggle_row("NMEA AIVDM OUTPUT",g_data->nmea_output?"ON":"OFF",662,245);
   toggle_row("MESSAGE JOURNAL",g_data->logging?"SAVING":"OFF",662,307,g_data->sd_available);
@@ -429,7 +432,7 @@ void setup_page() {
   toggle_row("AIS STANDARD","M.1371-6",662,431);
   label("RECEIVE ONLY / NO AIS TRANSMISSIONS",662,504,kCyan);
   label("NO PUBLIC UPLOAD WITHOUT USER OPT-IN",662,543);
-  label("CONTROLS RETURN ACTIONS FOR APP TO APPLY",662,580);
+  label("TAPS ARE NOT APPLIED IN THIS BUILD",662,580);
 }
 void paint_page() {
   if(!g_data)return;
@@ -508,8 +511,8 @@ void chrome() {
 }
 void select_page(View v) {if(g_view==v)return;g_view=v;focus_nav::clear();nav();paint(true);}
 } // namespace
-void enter(const Snapshot& snapshot){
-  if(!screens::is_active(screens::Id::ais))return;
+bool enter(const Snapshot& snapshot){
+  if(!screens::is_active(screens::Id::ais))return false;
   if(!g_data) {
 #if defined(ESP_PLATFORM)
     void* memory=heap_caps_malloc(sizeof(Snapshot), MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
@@ -518,13 +521,14 @@ void enter(const Snapshot& snapshot){
     g_data=new(std::nothrow) Snapshot();
 #endif
   }
-  if(!g_data)return;
+  if(!g_data)return false;
   *g_data=snapshot;g_active=true;g_view=View::map;g_selected_id=0;
   g_selected_kind=IdentityKind::mmsi;g_selected_valid=false;
   g_anchor_id=0;g_anchor_kind=IdentityKind::mmsi;g_anchor_valid=false;
   g_selected_message=0;g_protocol=1;g_target_offset=g_message_offset=g_event_offset=g_protocol_offset=0;
   g_last_revision=snapshot.revision;g_range_nm=25;
   chrome();paint(true);
+  return true;
 }
 void update(const Snapshot& snapshot){
   if(!g_active||!g_data||!screens::owns(screens::Id::ais)||g_last_revision==snapshot.revision)return;

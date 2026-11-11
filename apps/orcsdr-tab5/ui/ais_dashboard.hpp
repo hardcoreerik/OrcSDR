@@ -50,6 +50,9 @@ struct Snapshot {
   bool sd_available=false,rtl_tcp=false;
   // Set only by the bench replay harness. Every page then says the data is replayed, not live RF.
   bool test_replay=false;
+  // True only when the app actually collects maritime events. Until then the Events page says it is unavailable
+  // instead of claiming nothing was observed.
+  bool events_collected=false;
   bool spectrum_valid[2]{false,false};
   int battery_percent=-1;
   uint32_t center_hz=162000000,sample_rate_sps=0;
@@ -72,7 +75,8 @@ struct Action { ActionKind kind=ActionKind::none; uint32_t value=0;
 };
 // Only call enter() after screen_controller has granted screens::Id::ais.
 // All rendering/touches occur on the UI task, never from the receiver callback.
-void enter(const Snapshot& snapshot);
+// Returns false when the screen could not be drawn (not the active screen, or no memory); the caller must then leave AIS.
+bool enter(const Snapshot& snapshot);
 void update(const Snapshot& snapshot);
 void leave();
 bool active();

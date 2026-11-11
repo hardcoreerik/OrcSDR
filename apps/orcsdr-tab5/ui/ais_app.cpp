@@ -108,12 +108,13 @@ void open() {
   (void)refresh_device_fields();
   g_state->snapshot.revision = 1;
   screens::begin_transition(screens::Id::ais, now_ms());
-  ais_ui::enter(g_state->snapshot);
-  if (g_hooks.header_controls) g_hooks.header_controls();
+  const bool drawn = ais_ui::enter(g_state->snapshot);
+  if (drawn && g_hooks.header_controls) g_hooks.header_controls();
   screens::finish_transition();
-  if (!ais_ui::active()) {                        // the dashboard could not allocate: do not leave the radio held
+  if (!drawn) {                                   // the dashboard could not allocate: release the radio and leave the screen
     ++g_open_failed;
-    ais_radio::stop();
+    close();
+    if (g_hooks.go_home) g_hooks.go_home();
   }
 }
 
@@ -143,7 +144,12 @@ void tick() {
 void draw(bool static_panel) {
   if (!g_state) return;
   if (static_panel) {                             // full redraw after Settings / Visualizer (returns to the first page)
-    ais_ui::enter(g_state->snapshot);
+    if (!ais_ui::enter(g_state->snapshot)) {
+      ++g_open_failed;
+      close();
+      if (g_hooks.go_home) g_hooks.go_home();
+      return;
+    }
     if (g_hooks.header_controls) g_hooks.header_controls();
     return;
   }

@@ -375,6 +375,17 @@ def main():
     original = dev.tcp()
     print("original receiver setup:", original.get("mode"), original.get("server"), flush=True)
     dev.cmd("RTL_SPLASH_GATE OFF", "RTL_SPLASH_GATE", 4)
+    restore_failures = []
+
+    def restore_step(label, action):   # every step runs even if an earlier one failed, and failures count as test failures
+        try:
+            action()
+        except Exception as exc:
+            restore_failures.append(f"{label}: {type(exc).__name__}: {exc}")
+            try:
+                dev.reopen()
+            except Exception:
+                pass
     try:
         for name, fn in (("A", lambda: test_a(dev)), ("B", lambda: test_b(dev)), ("C", lambda: test_c(dev)),
                          ("D", lambda: test_d(dev, a))):
@@ -386,22 +397,30 @@ def main():
                     dev.reopen()
         dev.open("HOME", 1)
     finally:
-        try:
-            if "E" not in skip:
+        if "E" not in skip:
+            def sweep():
                 dev.dev.s.close()
                 test_e(a)
                 dev.reopen()
-            mode = original.get("mode") or "remote"
-            dev.set_source(mode)
-            if original.get("server"):
-                host, _, port = original["server"].rpartition(":")
-                dev.cmd(f"RTL_TCP HOST {host} {port}", "RTL_TCP HOST", 4)
-            dev.listen_fm()
-            time.sleep(8)
-            print("restored:", dev.tcp().get("mode"), dev.tcp().get("server"), dev.tcp().get("state"), flush=True)
-            dev.cmd("RTL_SPLASH_GATE ON", "RTL_SPLASH_GATE", 4)
-        except Exception as exc:
-            print("restore problem:", exc, flush=True)
+            restore_step("dashboard sweep", sweep)
+        restore_step("receiver source", lambda: dev.set_source(original.get("mode") or "remote"))
+        if original.get("server"):
+            host, _, port = original["server"].rpartition(":")
+            restore_step("rtl_tcp server", lambda: dev.cmd(f"RTL_TCP HOST {host} {port}", "RTL_TCP HOST", 4))
+        restore_step("listen", dev.listen_fm)
+        time.sleep(8)
+
+        def verify():
+            now = dev.tcp()
+            print("restored:", now.get("mode"), now.get("server"), now.get("state"), flush=True)
+            if original.get("mode") and now.get("mode") != original.get("mode"):
+                raise RuntimeError(f"the source is {now.get('mode')}, it was {original.get('mode')}")
+            if original.get("server") and now.get("server") != original.get("server"):
+                raise RuntimeError(f"the server is {now.get('server')}, it was {original.get('server')}")
+        restore_step("verify restore", verify)
+        restore_step("splash gate", lambda: dev.cmd("RTL_SPLASH_GATE ON", "RTL_SPLASH_GATE", 4))
+        for problem in restore_failures:
+            record("restore", "FAIL", problem)
     with open(os.path.join(a.out, "regression_results.json"), "w") as f:
         json.dump(RESULTS, f, indent=1)
     print("\nSUMMARY")

@@ -62,6 +62,8 @@ def check_host(manifest, path):
         for packet in got.get(key, []):
             if int(packet["type"]) != txs[0]["type"] or int(packet["id"]) != txs[0]["mmsi"]:
                 failures.append(f"type/id mismatch for {key[1][:16]}...: {packet['type']}/{packet['id']}")
+            if "lat" in fields and "lat_e7" not in packet:
+                failures.append(f"type {txs[0]['type']} mmsi {fields['mmsi']}: the decoder exposed no position")
             if "lat" in fields and "lat_e7" in packet:
                 field_checks += 1
                 # The air interface carries 1/10000 minute (about 1.7e-6 degrees); allow one unit of that.
@@ -75,6 +77,10 @@ def check_host(manifest, path):
                 if "heading" in fields and "heading" in packet and int(packet["heading"]) != fields["heading"]:
                     failures.append(f"heading mismatch mmsi {fields['mmsi']}: {packet.get('heading')}")
             # Static identity fields, where the parser decodes them (absent keys are simply not compared).
+            for ours, theirs in (("name", "name"), ("callsign", "callsign"), ("destination", "dest"),
+                                 ("ship_type", "ship_type"), ("imo", "imo"), ("nav_status", "nav"), ("dims", "dims")):
+                if ours in fields and theirs not in packet:   # a field the generator encoded must reach the decoder output
+                    failures.append(f"type {txs[0]['type']} mmsi {fields['mmsi']}: the decoder exposed no {ours}")
             for ours, theirs in (("name", "name"), ("callsign", "callsign"), ("destination", "dest")):
                 if ours in fields and theirs in packet:
                     static_checks[0] += 1
@@ -104,7 +110,7 @@ def parse_types(text):
     return out
 
 
-def check_device(manifest, host_path, device_path):
+def check_device(manifest, host_path, device_path, min_passes=1.0, allow_loss=False):
     _, summary = load_host(host_path)
     text = open(device_path, encoding="utf-8", errors="replace").read()
     lines = [line for line in text.splitlines() if "RTL_AIS_STATUS" in line]
@@ -121,6 +127,12 @@ def check_device(manifest, host_path, device_path):
            status.get("lost_samples"), status.get("loss_events"), status.get("link"), status.get("source")))
     if device_total < host_total:
         failures.append("the device has not completed one pass of the file")
+    if passes < min_passes:
+        failures.append(f"only {passes:.2f} passes of the file were seen, at least {min_passes:.2f} were expected")
+    if not allow_loss and (int(status.get("lost_samples", 0)) != 0 or int(status.get("loss_events", 0)) != 0):
+        failures.append("the device reports lost IQ (lost_samples=%s loss_events=%s)" % (status.get("lost_samples"), status.get("loss_events")))
+    if int(status.get("test", 0)) != 1:
+        failures.append("the device was not marked as a test replay (test=%s)" % status.get("test"))
     for msg_type, count in host_types.items():
         seen = device_types.get(msg_type, 0)
         if not (lo * count <= seen <= hi * count):
@@ -184,6 +196,8 @@ def main():
     p.add_argument("--host")
     p.add_argument("--device")
     p.add_argument("--pyais", action="store_true")
+    p.add_argument("--min-passes", type=float, default=1.0, help="fewest whole passes of the file the device must have seen")
+    p.add_argument("--allow-loss", action="store_true", help="do not fail on lost_samples / loss_events")
     a = p.parse_args()
     manifest = json.load(open(a.manifest))
     failures = []
@@ -192,7 +206,7 @@ def main():
     if a.device:
         if not a.host:
             sys.exit("--device needs --host")
-        failures += check_device(manifest, a.host, a.device)
+        failures += check_device(manifest, a.host, a.device, a.min_passes, a.allow_loss)
     if a.pyais:
         failures += check_pyais(manifest)
     for failure in failures:

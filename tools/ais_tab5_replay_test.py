@@ -127,7 +127,11 @@ def main():
         record("host", dev.first(f"RTL_TCP HOST {host} {port}", "RTL_TCP HOST"))
         record("open", dev.first("RTL_UI OPEN AIS", "RTL_UI_OPEN"))
         dev.wait(5)
-        record("test", dev.first("RTL_AIS TEST ON", "RTL_AIS_TEST"))
+        marked = dev.first("RTL_AIS TEST ON", "RTL_AIS_TEST")
+        record("test", marked)
+        if "test=1" not in marked:   # the TEST REPLAY banner is the promise this script makes
+            failures.append("RTL_AIS TEST ON was not acknowledged; replay data would not be labelled")
+            raise RuntimeError("replay labelling is not active")
         dev.wait(a.passes * a.file_seconds)
         status = dev.cmd("RTL_AIS STATUS", "RTL_AIS", 6)
         record("status", status)
@@ -149,10 +153,13 @@ def main():
                 if not ok:
                     failures.append(f"screenshot of {name} failed")
         check = subprocess.run([sys.executable, os.path.join(HERE, "ais_check_replay.py"), a.manifest, "--host", a.host,
-                                "--device", os.path.join(a.out, "device_status.txt")], capture_output=True, text=True)
+                                "--device", os.path.join(a.out, "device_status.txt"),
+                                "--min-passes", f"{max(1.0, a.passes - 0.3):.2f}"], capture_output=True, text=True)
         record("check", check.stdout.strip().splitlines())
         if check.returncode != 0:
             failures.append("device / host comparison failed")
+    except RuntimeError as exc:
+        failures.append(str(exc))
     finally:
         dev.cmd("RTL_AIS TEST OFF", "RTL_AIS_TEST", 3)
         dev.cmd("RTL_UI OPEN HOME", "RTL_UI_OPEN")

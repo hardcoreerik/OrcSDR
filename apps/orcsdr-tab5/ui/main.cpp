@@ -7445,6 +7445,9 @@ void close_rf_lab() {
     case orcsdr::screens::Id::p25: orcsdr::p25::draw(); break;
     case orcsdr::screens::Id::adsb: orcsdr::adsb::draw(); break;
     case orcsdr::screens::Id::lora: orcsdr::lora::draw(); break;
+    case orcsdr::screens::Id::ais:   // RF Lab opened from AIS: return to AIS if it is still open, else Home
+      if (orcsdr::ais_app::active()) orcsdr::ais_app::draw(true); else show_home();
+      break;
     case orcsdr::screens::Id::radio:
       draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz,
                       rtl_live_volume.load(std::memory_order_acquire));
@@ -15118,6 +15121,7 @@ void open_ais_dashboard() {
   };
   app.remote_source = radio.remote_source;
   app.now_ms = [] { return static_cast<uint32_t>(millis()); };
+  app.go_home = [] { show_home(); };
   orcsdr::ais_app::install(app);
   orcsdr::ais_app::open();
 }
@@ -15251,6 +15255,12 @@ const orcsdr::sstv_diag::Hooks kSstvDiagHooks = {
 void open_dashboard(orcsdr::dashboards::Id id) {
   using Id = orcsdr::dashboards::Id;
   if (id != Id::settings && orcsdr::settings::active()) close_global_settings();
+  // Settings opened from AIS keeps AIS (and its receiver) alive, as the header Settings button does, so closing
+  // Settings can return to it. Everything else below closes AIS.
+  if (id == Id::settings && orcsdr::ais_app::active()) {
+    open_global_settings(orcsdr::settings::Section::system);
+    return;
+  }
   if (id != Id::dead_air) orcsdr::dead_air_app::close();
   if (id != Id::ais) orcsdr::ais_app::close();
   if (id == Id::dead_air) { open_dead_air_dashboard(); return; }
