@@ -4,7 +4,7 @@
 #include <cstddef>
 #include <cstdio>
 
-#define CHECK(expr) do { if (!(expr)) { std::fprintf(stderr, "CHECK failed: %s at line %d\\n", #expr, __LINE__); std::abort(); } } while (false)
+#define CHECK(expr) do { if (!(expr)) { std::fprintf(stderr, "CHECK failed: %s at line %d\n", #expr, __LINE__); std::abort(); } } while (false)
 
 using namespace orcsdr::radio_discovery;
 
