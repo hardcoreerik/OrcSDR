@@ -2475,6 +2475,19 @@ void adsb_decoder_task(void*) {
 }
 
 void print_adsb_status() {
+  if (orcsdr::rtl_tcp_source::running()) {
+    // A remote stream has no local driver metrics: report the rtl_tcp stream's own counters and the decoder's.
+    const auto remote = orcsdr::rtl_tcp_source::status();
+    const auto& remote_decode = adsb_decoder.stats();
+    Serial.printf("RTL_ADSB_STATUS available=1 source=remote active=%d state=%s rate_sps=%u link=%u bytes=%llu dropped=%llu "
+                  "preambles=%u frames=%u df17=%u crc_ok=%u aircraft=%u messages=%u\n",
+                  g_stream_band == RtlBand::adsb ? 1 : 0, orcsdr::rtl_tcp::state_name(remote.state),
+                  static_cast<unsigned>(remote.sample_rate_sps), static_cast<unsigned>(remote.link_ratio_pct),
+                  static_cast<unsigned long long>(remote.bytes_received), static_cast<unsigned long long>(remote.bytes_dropped),
+                  remote_decode.preambles, remote_decode.frames, remote_decode.df17, remote_decode.crc_ok,
+                  adsb_aircraft_count.load(std::memory_order_relaxed), adsb_total_messages.load(std::memory_order_relaxed));
+    return;
+  }
   esp_rtl_sdr_metrics_t metrics{};
   if (g_rtl == nullptr || esp_rtl_sdr_get_metrics(g_rtl, &metrics) != ESP_OK) {
     Serial.println("RTL_ADSB_STATUS available=0");
@@ -11111,12 +11124,11 @@ void poll_wifi() {
   else if (down_since_ms == 0) down_since_ms = millis() | 1u;
   if (remote_may_need_wifi && millis() - last_health_ms >= 60000u) {
     last_health_ms = millis();
-    Serial.printf("RTL_WIFI_HEALTH connected=%d ready=%d link_failed=%d reconnect_attempts=%u recoveries=%u down_s=%lu rssi=%d "
+    Serial.printf("RTL_WIFI_HEALTH connected=%d ready=%d link_failed=%d reconnect_attempts=%u recoveries=%u down_s=%lu "
                   "dma_free=%lu stream=%s\n",
                   wifi_connected ? 1 : 0, wifi_station_ready ? 1 : 0, orcsdr::wifi::link_failed() ? 1 : 0,
                   static_cast<unsigned>(wifi_reconnect_attempts), static_cast<unsigned>(wifi_link_recoveries),
                   static_cast<unsigned long>(down_since_ms ? (millis() - down_since_ms) / 1000u : 0u),
-                  wifi_connected ? static_cast<int>(orcsdr::wifi::rssi()) : 0,
                   static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)),
                   orcsdr::rtl_tcp::state_name(orcsdr::rtl_tcp_source::state()));
   }

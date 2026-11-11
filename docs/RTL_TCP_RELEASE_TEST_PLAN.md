@@ -431,6 +431,13 @@ Added `RTL_WIFI_OUTAGE <seconds>` and `tools/rtl_tcp_wifi_outage_test.py` (detai
 - A server name that does not resolve now shows as `name not found` instead of `connect failed` (host test with a `.invalid` name; on the device `RTL_TCP STATUS last="name not found"`). Matters for a server on a dynamic DNS name.
 - A queued command is replaced by a newer one of the same kind, so a burst of retunes or gain steps can no longer fill the 16-slot queue and lose the last one. Built and flashed with FT8 still decoding (1.7 per slot on a quiet 40 m, 98% link, 0 dropped); the queue-full case itself has no test.
 
+### Iteration 53 (2026-11-10): small review items, known limits, follow-up issues
+
+- `RTL_ADSB STATUS` now works on a remote stream (it printed `available=0` with no local dongle): it reports the stream state, rate, link, bytes and the decoder's counters. Checked on the device against the real Pi stream (`source=remote active=1 state=streaming rate_sps=2048000 link=99`, 0 aircraft: no 1090 MHz antenna on the Pi).
+- The `RTL_WIFI_HEALTH` log line no longer carries `rssi=` (it always read 0).
+- `docs/RTL_TCP_CONTROL_SURFACE.md` has a "Known limits at release" section; the remaining review items are filed as issues 243 (review items and untested paths) and 244 (the C6 channel hang). Deliberately not changed for the release: the stale-IQ flush, the 2 KB stall drain, socket keep-alive, the server items (untestable here, no dongle), and the FM gain label and Airband default (the owner's call).
+- Final state before merge: all CI jobs on the previous push passed (including the new Tab5 firmware build, 10 m 45 s); this push re-runs them.
+
 ## 6. Next iterations (in order)
 
 1. Fix the retune detector and repeat at all rates and at `-b 2`; add a Tab5-side check of what FM seek dwell is.

@@ -113,6 +113,20 @@ This branch changed shared network settings; the web server uses the same Wi-Fi 
 
 Open: memory right-sizing of these buffers is planned (see `docs/RTL_TCP_INTEROP.md`); nothing here is web-specific.
 
+## Known limits at release (2026-11-10)
+
+Found in code review or testing and deliberately left for after release; none is known to lose data or affect safety. Tracked in GitHub issues 243 (review items) and 244 (the C6 channel).
+
+- **ADS-B** needs about 4.1 MB/s. Wi-Fi carries less, so remote ADS-B on Wi-Fi runs behind real time (the screen says so); a faster link carries it. The decoder is not run at a lower rate.
+- **RF Lab** works with a local dongle only: frequency correction does nothing there and its rate action restarts the stream on a remote receiver.
+- **Stale IQ after a command:** the first few milliseconds after a retune or gain change can still carry the old setting.
+- **Stall drain:** after a DSP stall longer than 250 ms the client drains the socket 2 KB at a time. Read from the code, never reproduced; it could matter only on wide dashboards near the link limit.
+- **Sockets:** no TCP keep-alive on the receive socket (a dead path is found by the 3 s no-data stall instead), and a name lookup has no timeout of its own.
+- **Source switch:** `RTL_TCP SOURCE usb` while a remote stream runs leaves audio muted until the next start; a USB hot-plug during a remote stream resets the rate override.
+- **Server (off by default):** no on-screen indicator while a client owns the dongle; a Wi-Fi address change can leave the old listening socket until the next restart; a failed restart after a client's rate change leaves that session without data until it disconnects; the greeting names only the V4 and E4000 tuners.
+- **C6 channel:** the firmware has no detection for the ESP-Hosted channel to the C6 ceasing to answer (seen once in an unfaithful simulation); only a hardware reset recovers it.
+- **Cosmetic:** the FM dashboard's GAIN label overlaps "SMART 0.0", and Airband opens in manual 40.2 dB (an existing default).
+
 ## Ownership decision (2026-11-07, owner)
 
 The rtl_tcp code on `claude/orcsdr-rtl-tcp-interop-f12b5d` is canonical. The copy of `components/esp_rtl_tcp` (6 files) and
