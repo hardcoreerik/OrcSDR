@@ -13,6 +13,7 @@
 #include <mbedtls/sha256.h>
 #include <cJSON.h>
 
+#include <atomic>
 #include <cstring>
 #include <algorithm>
 
@@ -60,6 +61,8 @@ orcsdr::storage::FileSystem* g_fs = nullptr;
 uint64_t g_free_bytes = 0;
 portMUX_TYPE g_lock = portMUX_INITIALIZER_UNLOCKED;
 TaskHandle_t g_worker = nullptr;
+// Set by the worker as its last act before it parks itself; reap() then deletes it by handle (see worker()).
+std::atomic<bool> g_worker_done{false};
 Operation g_requested = Operation::none;
 uint8_t g_requested_pack = 0;
 
@@ -696,9 +699,23 @@ void worker(void*) {
   if (signature) heap_caps_free(signature);
   set_busy(Operation::none, ok ? 100 : 0);
   g_requested = Operation::none;
-  g_worker = nullptr;
-  vTaskDelete(nullptr);
+  // Do not delete ourselves: on ESP-IDF 5.5.4 a self-deleting WithCaps task needs a temporary cleanup task from internal RAM and
+  // abort()s when that allocation fails. Park instead; reap() deletes this task by handle from the application loop.
+  g_worker_done.store(true, std::memory_order_release);
+  vTaskSuspend(nullptr);
 }
+
+}  // namespace
+
+void reap() {
+  if (g_worker != nullptr && g_worker_done.load(std::memory_order_acquire)) {
+    vTaskDeleteWithCaps(g_worker);   // suspends it (already parked) and frees its PSRAM stack and control block
+    g_worker = nullptr;
+    g_worker_done.store(false, std::memory_order_release);
+  }
+}
+
+namespace {
 
 bool request(Operation operation, uint8_t pack_index) {
   if(operation!=Operation::check && (pack_index>=kPackCount || pack_index==kRetiredLegacyMapIndex)) {
@@ -709,6 +726,7 @@ bool request(Operation operation, uint8_t pack_index) {
     set_message("SD storage unavailable");
     return false;
   }
+  reap();   // a finished worker is parked until reaped; it must not block the next request
   if (g_worker != nullptr) {
     set_message("Catalog operation already running");
     return false;

@@ -23,6 +23,7 @@ namespace {
 bool g_started = false;
 std::atomic<bool> g_connected{false};
 std::atomic<bool> g_failed{false};
+std::atomic<int64_t> g_outage_until_us{0};   // simulate_outage(): connect fails until this esp_timer time
 bool g_versions_match = false;
 char g_c6_version[16]{"unknown"};
 bool g_hosted_transport_ready = false;
@@ -250,6 +251,10 @@ bool start() {
   if (wifi_mode != ESP_OK) { g_failure_stage = "wifi_mode"; g_failure_code = wifi_mode; return false; }
   const esp_err_t wifi_start = esp_wifi_start();
   if (wifi_start != ESP_OK) { g_failure_stage = "wifi_start"; g_failure_code = wifi_start; return false; }
+  // Modem sleep (the default) lets the radio doze between beacons, which throttles sustained
+  // transfers; a failure here only costs speed, never the link.
+  const esp_err_t power_save = esp_wifi_set_ps(WIFI_PS_NONE);
+  if (power_save != ESP_OK) ESP_LOGW("orcsdr_wifi", "esp_wifi_set_ps(NONE) failed: %s", esp_err_to_name(power_save));
   g_started = true;
   return true;
 }
@@ -286,11 +291,27 @@ int scan_results(ScanResult* results, size_t capacity) {
   }
   return received;
 }
+uint32_t outage_remaining_s() {
+  const int64_t left = g_outage_until_us.load(std::memory_order_acquire) - esp_timer_get_time();
+  return left > 0 ? static_cast<uint32_t>((left + 999999) / 1000000) : 0;
+}
+
+void simulate_outage(uint32_t seconds) {
+  g_outage_until_us.store(seconds ? esp_timer_get_time() + static_cast<int64_t>(seconds) * 1000000 : 0, std::memory_order_release);
+  ESP_LOGW("orcsdr_wifi", "RTL_WIFI_OUTAGE seconds=%u", static_cast<unsigned>(seconds));
+  if (seconds && g_started && g_connected.load(std::memory_order_acquire)) esp_wifi_disconnect();   // the access point 'goes away'
+}
+
 bool connect(const char* network, const char* password) {
   if (!g_started || !network || !*network) return false;
   wifi_config_t config{};
-  strlcpy(reinterpret_cast<char*>(config.sta.ssid), network, sizeof(config.sta.ssid));
-  strlcpy(reinterpret_cast<char*>(config.sta.password), password ? password : "", sizeof(config.sta.password));
+  // Simulated outage: ask the C6 for a network that does not exist, so it runs its real scan-and-fail path (reason 201, no AP found)
+  // exactly as when an access point is gone, instead of the app skipping the radio.
+  const bool simulated = outage_remaining_s() != 0;
+  strlcpy(reinterpret_cast<char*>(config.sta.ssid), simulated ? "orcsdr-outage-sim" : network, sizeof(config.sta.ssid));
+  strlcpy(reinterpret_cast<char*>(config.sta.password), simulated || !password ? "" : password, sizeof(config.sta.password));
+  if (simulated)
+    ESP_LOGW("orcsdr_wifi", "simulated outage: connecting to a network that is not there, %u s left", static_cast<unsigned>(outage_remaining_s()));
   g_failed.store(false, std::memory_order_release);
   g_connected.store(false, std::memory_order_release);
   strlcpy(g_ssid, network, sizeof(g_ssid));
@@ -335,6 +356,19 @@ int16_t rssi() {
     mark_link_failed("rpc_timeouts");
   }
   return cached;
+}
+bool link_details(LinkDetails* out) {
+  if (out == nullptr || g_link_failed.load(std::memory_order_acquire) ||
+      !g_connected.load(std::memory_order_acquire)) return false;
+  wifi_ap_record_t ap{};
+  if (esp_wifi_sta_get_ap_info(&ap) != ESP_OK) return false;
+  wifi_ps_type_t ps = WIFI_PS_NONE;
+  wifi_bandwidth_t bandwidth = WIFI_BW_HT20;
+  (void)esp_wifi_get_ps(&ps);
+  (void)esp_wifi_get_bandwidth(WIFI_IF_STA, &bandwidth);
+  *out = {ap.rssi, ap.primary, static_cast<uint8_t>(ap.second), ap.phy_11b != 0, ap.phy_11g != 0,
+          ap.phy_11n != 0, ap.phy_11ax != 0, static_cast<int>(ps), static_cast<int>(bandwidth)};
+  return true;
 }
 bool link_failed() { return g_link_failed.load(std::memory_order_acquire); }
 void note_start_failure() {

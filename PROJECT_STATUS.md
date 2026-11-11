@@ -9,8 +9,8 @@ Current source includes the Stage-1 optimized production DSP path (formerly the 
 `ORCSDR_DSP_LAB=1`, and are not WFM audio integrations. The dated
 [DSP closeout](docs/validation/dsp-stage1-stage2-closeout-2026-09-27.md) records their evidence.
 
-The Tab5 firmware pins `esp_rtl_sdr` at `4bf017195502d1a413e155d5a79aee7cd086035b`, the commit of the published driver release
-**`v0.9.5`** (the driver reports `0.9.5`). It contains the PC-measured V4L/V4/V3c gain, AGC, bias and
+The Tab5 firmware pins `esp_rtl_sdr` at `dabdda1aff6aa196f3c1523d791adf80d2c24ccc`, the commit of the published driver release
+**`v0.9.6`** (the driver reports `0.9.6`). It contains the PC-measured V4L/V4/V3c gain, AGC, bias and
 tuner-bandwidth controls, the V4L HF upconverter route, an optional direct HF route that OrcSDR uses on CB
 for the V4L and V4, and the live tuner-bandwidth fixes documented in
 [`docs/testing/v3c-tuner-bandwidth-transition-2026-09-28.md`](docs/testing/v3c-tuner-bandwidth-transition-2026-09-28.md).
@@ -49,7 +49,7 @@ and the [2026-11-04 documentation audit](docs/DOCUMENTATION_STATUS_AUDIT_2026-11
 | ESP-IDF | 5.5.4 |
 | ESP-Hosted host/C6 | 3.0.6 / 3.0.6 over Tab5 SDIO at the qualified 10 MHz clock |
 | M5Unified / M5GFX | 0.2.20 / 0.2.27 |
-| `esp-rtl-sdr` | published release `v0.9.5` (reports `0.9.5`), immutable pin `4bf017195502d1a413e155d5a79aee7cd086035b` in the manifest and lock file |
+| `esp-rtl-sdr` | published release `v0.9.6` (reports `0.9.6`), immutable pin `dabdda1aff6aa196f3c1523d791adf80d2c24ccc` in the manifest and lock file |
 | USB implementation | Current `esp-rtl-sdr` path; the legacy USB source is compiled out but remains in source. |
 | Radio policy | Receive-only. Transmission is Not Implemented. |
 
