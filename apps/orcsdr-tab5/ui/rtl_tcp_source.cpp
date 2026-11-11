@@ -228,7 +228,7 @@ bool queue_command(Command command, uint32_t parameter) {
 }
 
 uint8_t g_rate_cap = 0;   // see Tuning::rate_cap
-std::atomic<bool> g_wifi_keepalive{false};
+std::atomic<bool> g_wifi_keepalive{true};   // on by default; it only acts while a remote receiver is selected
 
 // The sample rate a stream may ask for under the user's cap. The adapter ladder works on whatever it is given, so the cap is applied first.
 uint32_t capped(uint32_t wanted_sps) {
@@ -271,7 +271,7 @@ void begin(const IqSink& sink) {
     if (g_config.port == 0) g_config.port = rtl_tcp::kDefaultPort;
     g_rate_cap = store.get_u8("cap", 0);
     if (g_rate_cap > 2) g_rate_cap = 0;
-    g_wifi_keepalive.store(store.get_u8("wifikeep", 0) != 0);
+    g_wifi_keepalive.store(store.get_u8("wifikeep", 1) != 0);
     g_desired.ppm_set = store.get_u8("ppm_set", 0) != 0;
     g_desired.ppm = store.get_i32("ppm", 0);
     if (g_desired.ppm < -1000 || g_desired.ppm > 1000) g_desired.ppm_set = false, g_desired.ppm = 0;

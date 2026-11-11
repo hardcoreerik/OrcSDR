@@ -11086,8 +11086,11 @@ void poll_wifi() {
   static uint32_t down_since_ms = 0;
   static uint32_t last_rearm_ms = 0;
   static uint32_t last_health_ms = 0;
-  const bool remote_may_need_wifi = orcsdr::rtl_tcp_source::mode() != orcsdr::source::Mode::local_usb &&
-                                    orcsdr::rtl_tcp_source::configured();
+  const auto source_mode = orcsdr::rtl_tcp_source::mode();
+  const bool remote_may_need_wifi =
+      orcsdr::rtl_tcp_source::configured() &&
+      (source_mode == orcsdr::source::Mode::remote_tcp ||
+       (source_mode == orcsdr::source::Mode::automatic && !rtl_usb_device_ready()));
   if (wifi_connected) down_since_ms = 0;
   else if (down_since_ms == 0) down_since_ms = millis() | 1u;
   if (remote_may_need_wifi && millis() - last_health_ms >= 60000u) {

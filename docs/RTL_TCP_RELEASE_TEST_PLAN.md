@@ -407,6 +407,13 @@ Setup: the Tab5 (COM17) joined the phone hotspot (password typed on the Tab5 by 
 - Added `RTL_RADIO_PAUSE_FAILED` (receiver state when a pause gives up).
 - Not tested: the toggle through a full outage start to finish, and the stream resuming afterwards (the Pi was not on the hotspot).
 
+### Iteration 49 (2026-11-10): Wi-Fi keep-alive on by default; synthetic ADS-B over rtl_tcp
+
+- **Keep Wi-Fi alive is now on by default** and acts only while a remote receiver is selected (source remote, or automatic with no dongle plugged in). Full write-up: [RTL_TCP_WIFI_RECOVERY.md](RTL_TCP_WIFI_RECOVERY.md). Flashed on COM17.
+- **Synthetic ADS-B IQ over rtl_tcp.** New `tools/adsb_make_iq.py` renders valid Mode S frames (DF17 identification, CPR position pairs, velocity, DF11) at 2.048 MS/s with correct CRCs and one carrier phase per frame; new `tools/adsb_decode_cu8.cpp` decodes a CU8 file with the Tab5's own decoder on the host (`g++ -I apps/orcsdr-tab5/ui tools/adsb_decode_cu8.cpp apps/orcsdr-tab5/ui/adsb_decoder.cpp`). A 60 s file of 722 frames from 6 aircraft decodes to 483 frames on the host (the decoder is strict about preamble shape, so not every synthetic frame decodes). Played by `tools/rtl_tcp_replay_server.py --iq ... --rate 1024000` at half speed (the Wi-Fi link cannot carry 4.1 MB/s), the Tab5 (COM17, source remote, ADS-B dashboard) showed all 6 aircraft with their callsigns (ORC0001 to ORC0006), 484 messages and 0 drops, and the header read `RTL-TCP BEHIND 49%` with 2.048 MSPS and the server address. The server saw the Tab5 send 1090 MHz, AGC and direct sampling off. This proves the decoder, the protocol path and the dashboard over a remote stream; it does not prove real-time operation (half speed) or sensitivity. The screenshot was not kept because the map shows the receiver's location.
+- **Gap found:** `RTL_ADSB_STATUS` reports `available=0` on a remote stream with no local dongle (it reads the local driver's metrics); the dashboard itself is correct.
+- **Not run:** real over-the-air ADS-B on the remote stream (needs a 1090 MHz antenna on the Pi's dongle).
+
 ## 6. Next iterations (in order)
 
 1. Fix the retune detector and repeat at all rates and at `-b 2`; add a Tab5-side check of what FM seek dwell is.
