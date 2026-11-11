@@ -130,6 +130,11 @@ def main():
         if "test=1" not in marked:   # the banner is the promise this script makes
             failures.append("RTL_AIS TEST ON was not acknowledged; replay data would not be labelled")
             raise RuntimeError("replay labelling is not active")
+        pre = dev.first("RTL_AIS STATUS", "RTL_AIS_STATUS")   # the radio's own status line, before the replay source is selected
+        record("pre", pre)
+        if "test=1" not in pre:
+            failures.append("RTL_AIS_STATUS does not show test=1 before the replay server is selected")
+            raise RuntimeError("replay labelling is not active")
         record("host", dev.first(f"RTL_TCP HOST {host} {port}", "RTL_TCP HOST"))
         record("open", dev.first("RTL_UI OPEN AIS", "RTL_UI_OPEN"))
         dev.wait(5)
