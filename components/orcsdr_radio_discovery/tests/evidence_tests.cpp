@@ -1,8 +1,10 @@
 #include "orcsdr_radio_discovery/evidence.hpp"
 
-#include <cassert>
+#include <cstdlib>
 #include <cstddef>
 #include <cstdio>
+
+#define CHECK(expr) do { if (!(expr)) { std::fprintf(stderr, "CHECK failed: %s at line %d\\n", #expr, __LINE__); std::abort(); } } while (false)
 
 using namespace orcsdr::radio_discovery;
 
@@ -21,34 +23,34 @@ static Observation make_rf() {
 
 static void test_rf_does_not_equal_directory() {
   auto o = make_rf();
-  assert(valid(o));
-  assert(is_rf_proven(o));
+  CHECK(valid(o));
+  CHECK(is_rf_proven(o));
   o.origin = Origin::directory_import;
-  assert(!valid(o));
-  assert(!is_rf_proven(o));
+  CHECK(!valid(o));
+  CHECK(!is_rf_proven(o));
   o.proof = Proof::candidate;
-  assert(valid(o));
+  CHECK(valid(o));
   o.origin = Origin::user_entry;
-  assert(valid(o));
+  CHECK(valid(o));
 }
 
 static void test_identity_and_proof_gates() {
   auto o = make_rf();
   o.identity.slot = 3;
-  assert(!valid(o));
+  CHECK(!valid(o));
   o.identity.slot = 1;
-  assert(valid(o));
+  CHECK(valid(o));
   o.identity.access_code = 16;
-  assert(!valid(o));
+  CHECK(!valid(o));
   o.identity.access_code = 0; // Zero is a valid DMR color code when flagged.
-  assert(valid(o));
+  CHECK(valid(o));
   o.proof = Proof::site_confirmed;
-  assert(!valid(o));
+  CHECK(!valid(o));
   o.identity.known_fields |= site_known;
   o.identity.site_id = 3;
-  assert(valid(o));
+  CHECK(valid(o));
   o.protocol = Protocol::unknown;
-  assert(!valid(o));
+  CHECK(!valid(o));
 }
 
 static void test_location_and_time() {
@@ -56,33 +58,33 @@ static void test_location_and_time() {
   o.receiver_location.known = true;
   o.receiver_location.latitude_e7 = 450000000;
   o.receiver_location.longitude_e7 = -1230000000;
-  assert(valid(o));
+  CHECK(valid(o));
   o.receiver_location.latitude_e7 = 900000001;
-  assert(!valid(o));
+  CHECK(!valid(o));
   o.receiver_location.known = false;
   o.utc_known = true;
-  assert(!valid(o));
+  CHECK(!valid(o));
   o.utc_ms = 1794440000000ULL;
-  assert(valid(o));
+  CHECK(valid(o));
 }
 
 static void test_bounded_order_and_rejection() {
   ObservationRing<2> r;
   auto o = make_rf();
-  assert(r.append(o));
+  CHECK(r.append(o));
   o.frequency_hz = 446600000;
-  assert(r.append(o));
+  CHECK(r.append(o));
   o.frequency_hz = 446700000;
-  assert(r.append(o));
-  assert(r.size() == 2);
-  assert(r.newest(0)->frequency_hz == 446700000);
-  assert(r.newest(1)->frequency_hz == 446600000);
-  assert(r.newest(2) == nullptr);
+  CHECK(r.append(o));
+  CHECK(r.size() == 2);
+  CHECK(r.newest(0)->frequency_hz == 446700000);
+  CHECK(r.newest(1)->frequency_hz == 446600000);
+  CHECK(r.newest(2) == nullptr);
   o.frequency_hz = 0;
-  assert(!r.append(o));
-  assert(r.size() == 2);
+  CHECK(!r.append(o));
+  CHECK(r.size() == 2);
   r.clear();
-  assert(r.size() == 0 && r.newest() == nullptr);
+  CHECK(r.size() == 0 && r.newest() == nullptr);
 }
 
 int main() {
