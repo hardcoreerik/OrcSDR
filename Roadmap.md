@@ -42,6 +42,10 @@ coverage to consistently gate all relevant firmware PR changes rather than
 claim the build does not exist. Hardware, RF, flash, and physical UI acceptance
 remain separate from compilation.
 
+### Build offline-first DMR / Digital Voice discovery and setup
+
+The [DMR and Digital Voice vision](docs/dmr/VISION.md) establishes four product requirements: **discover first, configure second; offline by default; a growing local radio database; and evidence over assumptions**. [DMR implementation tracking](docs/dmr/TRACKING.md) records the owner-approved DX P1–P4 priorities, DMR Tier II metadata-first gates, shared P25/NXDN strategy, and **Bring Your Radio Setup** migration/import flows (SD/CSV/JSON first; provider accounts only when authorized and supported). None of these new DMR/NXDN discovery capabilities are currently implemented; this is future work, not a revision of present decoder status.
+
 ### Finish P25 Phase II receive
 
 Grant transport, sync, complete-burst retention, DUID classification, and
