@@ -1,0 +1,68 @@
+name: AIS international binary applications and independent NMEA corpus
+on:
+  push:
+    branches:
+      - chatgpt/ais-dashboard-20261106
+    paths:
+      - "apps/orcsdr-tab5/ui/ais_binary_app.*"
+      - "apps/orcsdr-tab5/ui/ais_receive_pipeline.*"
+      - "tests/ais_binary_app_tests.cpp"
+      - "tests/ais_binary_corpus_runner.cpp"
+      - "tests/fixtures/ais_international/**"
+      - "tools/ais/**"
+      - "docs/AIS_INTERNATIONAL_VALIDATION.md"
+      - ".github/workflows/ais-international-corpus.yml"
+  pull_request:
+    paths:
+      - "apps/orcsdr-tab5/ui/ais_binary_app.*"
+      - "tests/ais_binary_app_tests.cpp"
+      - "tests/ais_binary_corpus_runner.cpp"
+      - "tests/fixtures/ais_international/**"
+      - "tools/ais/**"
+      - ".github/workflows/ais-international-corpus.yml"
+  workflow_dispatch:
+jobs:
+  spec-fixtures:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and test original DAC/FI implementation with ASan and UBSan
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Iapps/orcsdr-tab5/ui \
+            apps/orcsdr-tab5/ui/ais_binary_app.cpp \
+            tests/ais_binary_app_tests.cpp -o /tmp/ais-binary-app-tests
+          /tmp/ais-binary-app-tests
+      - name: Validate Japanese maritime research excerpts
+        run: |
+          set -euo pipefail
+          python3 tools/ais/validate_nmea_corpus.py \
+            --japan-only --export /tmp/ais-japan-research.tsv
+          g++ -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Iapps/orcsdr-tab5/ui \
+            apps/orcsdr-tab5/ui/ais_binary_app.cpp \
+            apps/orcsdr-tab5/ui/ais_protocol.cpp \
+            tests/ais_binary_corpus_runner.cpp -o /tmp/ais-nmea-corpus-tests
+          /tmp/ais-nmea-corpus-tests /tmp/ais-japan-research.tsv 4
+  worldwide-nmea:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Download independently sourced 2025 AIS Hub snapshots (no repo vendoring)
+        run: |
+          set -euo pipefail
+          python3 tools/ais/validate_nmea_corpus.py --fetch \
+            --cache-dir /tmp/ais-worldwide-2025 --export /tmp/ais-worldwide-2025.tsv
+      - name: Validate original OrcSDR parser against complete NMEA envelopes
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Iapps/orcsdr-tab5/ui \
+            apps/orcsdr-tab5/ui/ais_binary_app.cpp \
+            apps/orcsdr-tab5/ui/ais_protocol.cpp \
+            tests/ais_binary_corpus_runner.cpp -o /tmp/ais-nmea-corpus-tests
+          /tmp/ais-nmea-corpus-tests /tmp/ais-worldwide-2025.tsv

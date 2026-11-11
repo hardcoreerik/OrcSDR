@@ -1,0 +1,59 @@
+name: AIS dashboard host rendering
+on:
+  push:
+    branches:
+      - chatgpt/ais-dashboard-20261106
+    paths:
+      - "apps/orcsdr-tab5/ui/ais_dashboard*"
+      - "apps/orcsdr-tab5/ui/screen_controller*"
+      - "tests/ais_dashboard_render_tests.cpp"
+      - "tests/ais_map_policy_tests.cpp"
+      - "apps/orcsdr-tab5/ui/ais_map_policy.hpp"
+      - "apps/orcsdr-tab5/ui/ais_snapshot_adapter.*"
+      - "tests/ais_snapshot_adapter_tests.cpp"
+      - ".github/workflows/ais-dashboard-host-tests.yml"
+  pull_request:
+    paths:
+      - "apps/orcsdr-tab5/ui/ais_dashboard*"
+      - "apps/orcsdr-tab5/ui/screen_controller*"
+      - "tests/ais_dashboard_render_tests.cpp"
+      - "tests/ais_map_policy_tests.cpp"
+      - "apps/orcsdr-tab5/ui/ais_map_policy.hpp"
+      - "apps/orcsdr-tab5/ui/ais_snapshot_adapter.*"
+      - "tests/ais_snapshot_adapter_tests.cpp"
+  workflow_dispatch:
+jobs:
+  render:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run actual AIS M5GFX renderer with recording display
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O1 -Wall -Wextra -Wpedantic \
+            -Itests/acars_ui_stubs -Iapps/orcsdr-tab5/ui \
+            tests/ais_dashboard_render_tests.cpp \
+            apps/orcsdr-tab5/ui/ais_dashboard.cpp \
+            apps/orcsdr-tab5/ui/acars_dirty_rects.cpp \
+            apps/orcsdr-tab5/ui/screen_controller.cpp \
+            -o /tmp/ais-dashboard-render-tests
+          /tmp/ais-dashboard-render-tests
+      - name: Validate geographic map center and identity collision policy
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Iapps/orcsdr-tab5/ui \
+            tests/ais_map_policy_tests.cpp -o /tmp/ais-map-policy-tests
+          /tmp/ais-map-policy-tests
+      - name: Test decoded AIS station-to-dashboard snapshots with sanitizers
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Iapps/orcsdr-tab5/ui \
+            tests/ais_snapshot_adapter_tests.cpp \
+            apps/orcsdr-tab5/ui/ais_snapshot_adapter.cpp \
+            apps/orcsdr-tab5/ui/ais_station_store.cpp \
+            -o /tmp/ais-snapshot-adapter-tests
+          /tmp/ais-snapshot-adapter-tests

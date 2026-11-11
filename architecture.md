@@ -50,7 +50,7 @@ screen permission to draw while radio/decoder work continues independently.
 `navigation_service` owns Home/Settings handoff mechanics; feature dashboards
 render snapshots rather than owning receiver state.
 
-ScreenController IDs: `none`, `home`, `fm`, `p25`, `adsb`, `lora`, `shortwave`, `radio`, `visualizer`, `rf_lab`, `wifi_analysis`, `pocsag`, `settings`, `am`, `documentation`, `cb`, `airband`, `ft8`, `sstv`, `acars`, `dead_air`, `maps`.
+ScreenController IDs: `none`, `home`, `fm`, `p25`, `adsb`, `lora`, `shortwave`, `radio`, `visualizer`, `rf_lab`, `wifi_analysis`, `pocsag`, `settings`, `am`, `documentation`, `cb`, `airband`, `ft8`, `sstv`, `acars`, `dead_air`, `maps`, `ais`.
 
 Dashboard IDs: `home`, `fm`, `p25`, `adsb`, `shortwave`, `weather`, `cb`, `lora`, `airband`, `marine`, `satellite`, `utilities`, `settings`, `rf_lab`, `wifi_analysis`, `pocsag`, `am`, `ft8`, `sstv`, `acars`, `dead_air`.
 
