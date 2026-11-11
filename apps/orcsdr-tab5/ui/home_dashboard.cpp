@@ -236,8 +236,8 @@ void draw_header_status() {
   // The USB model occupies a bounded 90-pixel slot; long names use the small font.
   text(current.receiver, kHeaderStatusX + 148, y + 17, TFT_WHITE,
        strlen(current.receiver) > 7 ? 1 : 2);
-  text(current.driver_ready ? "READY" : "NOT READY", kHeaderStatusX + 158, y + 38,
-       current.driver_ready ? kCyan : TFT_ORANGE, 1);
+  text(current.link_state[0] ? current.link_state : current.driver_ready ? "READY" : "NOT READY",
+       kHeaderStatusX + 158, y + 38, current.driver_ready ? kCyan : TFT_ORANGE, 1);
   M5.Display.drawFastVLine(kHeaderStatusX + 238, y + 8, kHeaderStatusH - 16, kDim);
   text(current.clock[0] ? current.clock : "--:--", kHeaderStatusX + kHeaderStatusW - 12, y + 17,
        TFT_WHITE, 2, middle_right);

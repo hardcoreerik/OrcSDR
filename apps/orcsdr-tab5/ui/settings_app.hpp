@@ -15,6 +15,7 @@ enum class Section : uint8_t {
   data_maps,
   display_audio,
   radio_defaults,
+  rtl_tcp,
   storage,
   companion,
   system,
@@ -99,6 +100,29 @@ struct State {
   bool rtl_usb_safe_mode = false;
   char default_band[16]{};
   uint32_t fm_frequency_hz = 0;
+  // Receiver source: 0 automatic, 1 local USB, 2 remote rtl_tcp. The status is coarse on
+  // purpose (STREAMING, CONNECTING ...), so the page repaints only when it really changes.
+  uint8_t receiver_source = 0;
+  char remote_server[72]{};   // "host" or "host:port"; empty = not set
+  char remote_status[32]{};
+  // The RTL_TCP page. The live figures are quantised by the glue so the page repaints only when something a person can read changes.
+  uint8_t rt_rate_cap = 0;        // 0 auto (up to 1.44 MS/s), 1 max 0.96, 2 only 0.24
+  int16_t rt_ppm = 0;
+  bool rt_ppm_set = false;
+  uint8_t rt_direct = 0;          // 0 off, 1 I branch, 2 Q branch
+  bool rt_direct_set = false;
+  bool rt_offset_set = false;
+  bool rt_offset_on = false;
+  bool rt_wifi_keep = false;   // keep trying to bring Wi-Fi back while a remote receiver depends on it
+  char rt_state[24]{};            // "STREAMING", "CONNECTING", "RETRYING", "IDLE" ...
+  char rt_reason[28]{};           // why the last connection ended, in plain words; empty when none
+  uint8_t rt_link_pct = 0;        // 0 = not measured; steps of 5
+  uint32_t rt_rate_sps = 0;
+  char rt_tuner[20]{};
+  uint16_t rt_gain_steps = 0;
+  uint32_t rt_received_mb = 0;    // steps of 100 MB
+  uint16_t rt_lost_permille = 0;  // steps of 1 (0.1 %)
+  uint16_t rt_reconnects = 0;
 
   bool sd_ready = false;
   uint64_t sd_total_bytes = 0;
@@ -165,6 +189,13 @@ enum class ActionKind : uint8_t {
   ,catalog_remove
   ,web_console_changed
   ,rtl_usb_safe_mode_reset
+  ,receiver_source_changed  // value = 0 automatic, 1 local USB, 2 remote rtl_tcp
+  ,rtl_rate_cap_changed     // value = 0 auto, 1 max 0.96 MS/s, 2 only 0.24 MS/s
+  ,rtl_ppm_changed          // value = ppm, -1000..1000
+  ,rtl_direct_changed       // value = 0 off, 1 I branch, 2 Q branch
+  ,rtl_offset_changed       // value = 0 or 1
+  ,rtl_wifi_keepalive_changed  // value = 0 or 1
+  ,remote_server_changed    // fetch the text with take_remote_server()
   ,clock_set_utc          // utc = UTC seconds, value = UTC offset in minutes: write the RTC and store the offset
   ,clock_offset_changed   // value = UTC offset in minutes: store it (the time itself was already right)
   ,clock_ntp_sync         // optional: set the RTC from the network (Wi-Fi must already be connected)
@@ -195,6 +226,7 @@ void show_documentation_section(Section section, const State& state,
 bool take_wifi_credentials(char* ssid, size_t ssid_size,
                            char* password, size_t password_size);
 bool take_location_query(char* query, size_t query_size);
+bool take_remote_server(char* server, size_t server_size);
 bool self_check();
 
 }  // namespace orcsdr::settings
