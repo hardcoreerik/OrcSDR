@@ -402,6 +402,16 @@ static void test_nothing_listening() {
   CHECK(stats.reconnects.load() == 3);  // the back-off is bounded
 }
 
+static void test_unresolvable_name_is_reported_as_such() {
+  TestEnv env;
+  Stats stats;
+  auto cfg = fast_config(1234);
+  std::strncpy(cfg.host, "orcsdr-no-such-host.invalid", sizeof(cfg.host) - 1);
+  CHECK(run(cfg, env, stats) == State::failed);
+  CHECK(env.saw_reason(EndReason::dns_failed));          // a name that does not resolve is not "connect failed"
+  CHECK(!env.saw_reason(EndReason::connect_failed));
+}
+
 // G13: with a slow interval the client keeps trying after the fast attempts, and connects as soon as the server is back.
 static void test_keeps_retrying_and_recovers() {
   uint16_t port = 0;
@@ -614,6 +624,7 @@ int main() {
   test_wrong_service_is_refused();
   test_silent_and_truncated_servers();
   test_nothing_listening();
+  test_unresolvable_name_is_reported_as_such();
   test_keeps_retrying_and_recovers();
   test_greeting_without_samples_keeps_backing_off();
   test_reconnect_has_no_stale_samples();

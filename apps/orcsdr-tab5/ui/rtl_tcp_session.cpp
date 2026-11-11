@@ -37,6 +37,8 @@ void set_timeout(int fd, int option, uint32_t ms) {
   setsockopt(fd, SOL_SOCKET, option, &tv, sizeof(tv));
 }
 
+constexpr int kDnsFailed = 0x7D01;   // not an errno: connect_to's way of saying the name did not resolve
+
 // Non-blocking connect that still notices a stop request.
 int connect_to(const SessionConfig& config, Env& env, int* error) {
   addrinfo hints{};
@@ -46,7 +48,7 @@ int connect_to(const SessionConfig& config, Env& env, int* error) {
   std::snprintf(port, sizeof(port), "%u", static_cast<unsigned>(config.port));
   addrinfo* found = nullptr;
   if (getaddrinfo(config.host, port, &hints, &found) != 0 || found == nullptr) {
-    *error = EHOSTUNREACH;
+    *error = kDnsFailed;
     return -1;
   }
   const int fd = socket(found->ai_family, found->ai_socktype, 0);
@@ -169,6 +171,7 @@ const char* end_reason_name(EndReason reason) {
     case EndReason::stalled: return "no data";
     case EndReason::socket_error: return "socket error";
     case EndReason::no_greeting: return "server busy or silent";
+    case EndReason::dns_failed: return "name not found";
     default: return "none";
   }
 }
@@ -179,7 +182,8 @@ EndReason run_connection(const SessionConfig& config, Env& env, Stats& stats) {
   const int fd = connect_to(config, env, &error);
   if (fd < 0) {
     stats.last_errno.store(error, std::memory_order_relaxed);
-    return env.stop_requested() ? EndReason::stopped : EndReason::connect_failed;
+    if (env.stop_requested()) return EndReason::stopped;
+    return error == kDnsFailed ? EndReason::dns_failed : EndReason::connect_failed;
   }
 
   GreetingParser parser;

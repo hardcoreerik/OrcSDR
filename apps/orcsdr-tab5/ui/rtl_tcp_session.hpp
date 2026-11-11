@@ -24,6 +24,7 @@ enum class EndReason : uint8_t {
   stalled,          // connected but no IQ for stall_timeout_ms
   socket_error,
   no_greeting,      // connected, but not one byte arrived: rtl_tcp serves one client at a time and a second one waits in silence
+  dns_failed,       // the server name did not resolve (a typo, a dynamic DNS name that moved, or no DNS reachable): not a refused connection
 };
 
 const char* state_name(State state);

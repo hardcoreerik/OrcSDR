@@ -61,7 +61,7 @@ are saved (so is `WIFIKEEP`); `SOURCE` takes effect on the next start; `HOST` ne
 | States (`state=`) | `idle`, `connecting`, `streaming`, `reconnecting`, `failed`. After a drop: 8 fast attempts (0.5 s doubling to 15 s), then one attempt every 30 s with no limit, so a restarted server is picked up without a reboot. `failed` is a start that could not connect within the wait (up to 12 s, 2 minutes when the server answers but its one client slot is taken); a boot start that failed is retried every 30 s |
 | Errors | `RTL_TCP SOURCE error=use auto, usb or remote`; `RTL_TCP HOST error=need an IPv4 address or host name, a port 1-65535, and no active stream` |
 
-`RTL_TCP STATUS` reply fields: `mode`, `server` (host:port), `state`, `last` (last end reason: `connect failed`, `not an rtl_tcp server`, `closed by server`, `no data`, `socket error`, `server busy or silent`, `stopped`), `tuner`, `gains`, `bytes`
+`RTL_TCP STATUS` reply fields: `mode`, `server` (host:port), `state`, `last` (last end reason: `connect failed`, `not an rtl_tcp server`, `closed by server`, `no data`, `socket error`, `server busy or silent`, `name not found` (the server name did not resolve; `errno` then shows 32001, which is not a system error number), `stopped`), `tuner`, `gains`, `bytes`
 (received), `dropped` (bytes dropped locally), `connections`, `reconnects`, `errno`, `link` (percent of the needed byte rate
 that is arriving; 0 = not measured, below 85 = behind real time).
 

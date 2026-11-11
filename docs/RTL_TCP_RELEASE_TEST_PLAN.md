@@ -425,6 +425,12 @@ Setup: the Tab5 (COM17) joined the phone hotspot (password typed on the Tab5 by 
 
 Added `RTL_WIFI_OUTAGE <seconds>` and `tools/rtl_tcp_wifi_outage_test.py` (details and results in [RTL_TCP_WIFI_RECOVERY.md](RTL_TCP_WIFI_RECOVERY.md)). With keep-alive ON a 360 s outage ends with Wi-Fi back 57 s after the outage and the stream streaming 13 s later (PASS); with keep-alive OFF the Tab5 gives up and stays offline (PASS, the old bug reproduced on demand). Both runs on the final build. Found and fixed: the remote stream stayed idle after Wi-Fi recovered because the radio-resume request was dropped while no source was usable; it now stays pending and restarts when Wi-Fi returns. Found and not fixed: the ESP-Hosted channel to the C6 stopped answering in 2 of 3 runs of an earlier, unfaithful simulation and only a hardware reset recovered it; not reproduced with the faithful simulation (0 of 2), cause unknown, no detection exists for it. Not covered by the test: the C6 link-failure recovery path, a real access point, and long outages beyond 30 minutes.
 
+### Iteration 52 (2026-11-10): main merged; two client robustness fixes
+
+- Main (#241: Kconfig values so esp_hosted 3.1.0 does not break configure) merged into the branch, clean; the merged tree builds, was flashed and decodes (40 m, 2.2 per slot at -13 dBFS; 20 m was closed after dark). CI on the push: all jobs pass except the new Tab5 firmware build, which was still running.
+- A server name that does not resolve now shows as `name not found` instead of `connect failed` (host test with a `.invalid` name; on the device `RTL_TCP STATUS last="name not found"`). Matters for a server on a dynamic DNS name.
+- A queued command is replaced by a newer one of the same kind, so a burst of retunes or gain steps can no longer fill the 16-slot queue and lose the last one. Built and flashed with FT8 still decoding (1.7 per slot on a quiet 40 m, 98% link, 0 dropped); the queue-full case itself has no test.
+
 ## 6. Next iterations (in order)
 
 1. Fix the retune detector and repeat at all rates and at `-b 2`; add a Tab5-side check of what FM seek dwell is.

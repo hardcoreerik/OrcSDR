@@ -222,8 +222,18 @@ void worker(void*) {
 
 bool queue_command(Command command, uint32_t parameter) {
   Lock lock;
+  uint8_t encoded[rtl_tcp::kCommandBytes];
+  rtl_tcp::encode_command(command, parameter, encoded);
+  // Every queued command sets one value, so the newest value of a setting replaces an older one still waiting. A burst of retunes or
+  // gain steps then can never fill the queue and lose the last (the one that matters).
+  for (size_t i = 0; i < g_command_count; ++i) {
+    if (g_commands[i][0] == encoded[0]) {
+      std::memcpy(g_commands[i], encoded, rtl_tcp::kCommandBytes);
+      return true;
+    }
+  }
   if (g_command_count >= kCommandQueueDepth) return false;  // never grow without bound
-  rtl_tcp::encode_command(command, parameter, g_commands[g_command_count++]);
+  std::memcpy(g_commands[g_command_count++], encoded, rtl_tcp::kCommandBytes);
   return true;
 }
 
