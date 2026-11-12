@@ -40,6 +40,7 @@ inline uint16_t text_color = 0xffff;
 inline int direct_ops = 0;               // primitives drawn straight onto the display (not via a sprite)
 inline int pushes = 0;                   // sprite pushes to the display
 inline int full_clears = 0;              // fillScreen() calls on any target
+inline int sprite_alloc_attempts = 0;     // createSprite() calls
 inline bool fail_sprite_alloc = false;   // make createSprite() fail, to exercise the direct-draw fallback
 inline void reset() {
   prims.clear(); clip_on = false; font = nullptr; direct_ops = 0; pushes = 0;
@@ -129,6 +130,7 @@ class M5Canvas : public lgfx::LovyanGFX {
   void setColorDepth(int) {}
   void* getBuffer() { return nullptr; }   // no pixels are modelled: the dashboard then pushes whole frames
   void* createSprite(int w, int h) {
+    ++host_display::sprite_alloc_attempts;
     if (host_display::fail_sprite_alloc) return nullptr;
     w_ = w; h_ = h;
     return this;

@@ -57,6 +57,8 @@ bool g_tray_sprite_valid = false;
 uint8_t g_tray_sprite_volume = 0;
 bool g_tray_sprite_enabled = true;
 uint32_t g_tray_last_push_ms = 0;
+bool g_tray_alloc_failed = false;           // the last sprite allocation failed: retry no more than once per kOverlayRepushMs
+uint32_t g_tray_alloc_failed_ms = 0;
 
 bool hit(int32_t x, int32_t y, int bx, int by, int bw, int bh) {
   return x >= bx && x < bx + bw && y >= by && y < by + bh;
@@ -128,6 +130,7 @@ void draw_volume_slider(lgfx::LovyanGFX& g, int ox, int oy, uint8_t volume, bool
 }
 
 void release_tray_sprite() {
+  g_tray_alloc_failed = false;
   if (g_tray_sprite != nullptr) {
     g_tray_sprite->deleteSprite();
     delete g_tray_sprite;
@@ -138,7 +141,8 @@ void release_tray_sprite() {
 
 // Renders the tray into the sprite (when the volume or mute state changed) and pushes it onto the display.
 void push_tray(uint8_t volume, bool sound_enabled, uint32_t now_ms) {
-  if (g_tray_sprite == nullptr) {
+  const bool retry_allowed = !g_tray_alloc_failed || static_cast<int32_t>(now_ms - g_tray_alloc_failed_ms) >= static_cast<int32_t>(kOverlayRepushMs);
+  if (g_tray_sprite == nullptr && retry_allowed) {
     g_tray_sprite = new (std::nothrow) M5Canvas(&M5.Display);
     if (g_tray_sprite != nullptr) {
       g_tray_sprite->setColorDepth(16);
@@ -146,6 +150,8 @@ void push_tray(uint8_t volume, bool sound_enabled, uint32_t now_ms) {
       if (!g_tray_sprite->createSprite(kTrayW, kTrayH)) release_tray_sprite();
       else g_tray_sprite_valid = false;      // a new sprite has never held the tray: render it even if the state is unchanged
     }
+    g_tray_alloc_failed = g_tray_sprite == nullptr;
+    g_tray_alloc_failed_ms = now_ms;
   }
   if (g_tray_sprite == nullptr) {         // no memory for the sprite: draw straight onto the display
     draw_volume_slider(M5.Display, kTrayX, kTrayY, volume, sound_enabled);

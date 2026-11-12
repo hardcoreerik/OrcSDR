@@ -117,6 +117,10 @@ int main() {
   refresh_tray_overlay(open, 100, true, 20010);
   refresh_tray_overlay(open, 100, true, 20020);
   assert(host_display::direct_ops == direct_first);                // unchanged: not repainted
+  const int allocs = host_display::sprite_alloc_attempts;
+  for (int v = 101; v < 111; ++v) refresh_tray_overlay(open, static_cast<uint8_t>(v), true, 20030 + v);   // rapid changes
+  assert(host_display::direct_ops > direct_first);                 // every change is drawn (directly)...
+  assert(host_display::sprite_alloc_attempts == allocs);           // ...without another allocation attempt inside the interval
   host_display::fail_sprite_alloc = false;                         // allocation recovers: the new sprite must hold the tray
   host_display::prims.clear();
   refresh_tray_overlay(open, 100, true, 20010 + kOverlayRepushMs + 1);
