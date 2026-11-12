@@ -2,13 +2,13 @@
 
 **Integration branch:** `feature/dmr-digital-voice-foundation` (based on `docs/dmr-vision-tracking-20261111`).
 **Source of scope:** [VISION.md](VISION.md) and [TRACKING.md](TRACKING.md). **As of:** 2026-11-11.
-**Current status:** F0a/F0b host storage established. F0c host microSD adapter and both independent D1 receiver modules are committed. **The D1-A frontend and D1-B protocol stream are not yet connected or validated together**, and ESP32-P4 SD hardware testing and profile import apply remain open. Neither a live DMR receiver nor an on-device discovery system is implemented. See [D1/F0c integration gate](D1_INTEGRATION_GATE_2026-11-11.md).
+**Current status:** F0a/F0b host storage established, F0c SD adapter host source committed. D1-A frontend and D1-B protocol are now connected by **D1-C**, and [Release/ASan synthetic IQ-to-identity tests passed](https://github.com/hardcoreerik/OrcSDR/actions/runs/43156539511). **Real-air IQ, first-acquired-burst decoding, ESP32-P4 SD hardware and profile migration remain open.** Neither a live DMR receiver nor an on-device discovery system is implemented. See [D1/F0c integration gate](D1_INTEGRATION_GATE_2026-11-11.md).
 
 ## One shared branch, exclusive folders
 
 | Owner | Exclusively owned path | Task | Integration gate |
 |---|---|---|---|
-| Lead / ChatGPT | `components/orcsdr_radio_discovery/**`, `docs/dmr/TRACKING.md`, `docs/dmr/WORKSTREAMS.md` | F0 typed event/proof model, bounded storage design, phase integration | Host tests then later P25/SD/hardware regression |
+| Lead / ChatGPT | `components/orcsdr_radio_discovery/**` (excluding agent-owned `esp_idf/**`), `components/orcsdr_dmr/d1_integration/**`, `docs/dmr/{TRACKING,WORKSTREAMS,D1_INTEGRATION_GATE_2026-11-11}.md`, `.github/workflows/dmr-d1-integration.yml` | F0a/b storage, D1-C integration, verification and phase tracking | Real D0+D1 end-to-end host CI then private IQ/device gates |
 | Sandbox A | `components/orcsdr_dmr/**` | D0 standards-derived DMR constants, CACH, sync/FEC test oracles | Host tests, ETSI citations, no copied competitor source |
 | Sandbox B | `tools/radio_profile_import/**` | CFG-01/03 portable CSV/JSON preview, validation and duplicate/conflict tests | Offline command-line examples and safe no-write dry-run |
 | Sandbox C | `tests/digital_voice_replay/**` | Reproducible IQ fixture manifest/converters and host verification harness | Verify encoding, hashes, ground truth; no sensitive IQ committed |
@@ -37,7 +37,7 @@ On this **one shared branch**, each agent must `git fetch`, check out `feature/d
 - **F0b — Host implementation and recovery tests completed:** bounded three-provenance library, explicit `ORAD` v1 snapshot, two-slot CRC journal, known-field identity matching, conservative conflict handling and explicit keep-separate for incomplete identities. Debug, Release and ASan/UBSan host suites pass, including a POSIX file-backed `fsync` restart; see [validation evidence](F0B_HOST_VALIDATION_2026-11-11.md). **This does not establish a working Tab5 SD backend.**
 - **F0c — Host adapter delivered:** `esp_idf/**` implements opt-in `SlotIO` and host fault tests. **Device compile, actual FAT/microSD power interruption, RAM/stack and P25 v2 compatibility remain unverified.** Do not add another radio owner.
 - **D0 — Sandbox A:** ETSI-derived constants and host test source delivered in `components/orcsdr_dmr/**`; independent run and acceptance remain open.
-- **D1 — Two independent modules delivered:** `d1_frontend/**` accepts 48 kS/s complex float IQ, `d1_protocol/**` accepts contiguous DMR dibits. **Blocking mismatch:** frontend emits only after acquisition SYNC, while protocol needs a complete burst with 54 dibits before the 24-dibit SYNC. Build/test a truthful alignment/acquisition bridge, then replay verified private IQ. No dashboard before end-to-end host acceptance.
+- **D1 — Integrated synthetic host checkpoint:** `d1_frontend/**` and `d1_protocol/**` now run through `d1_integration/**` with eight CRC/RS-gated group identity events from nine synthesized full-LC bursts. [CI Release + ASan](https://github.com/hardcoreerik/OrcSDR/actions/runs/43156539511) passed. **Acquisition still loses the first burst**, and pinned real-air IQ, ETSI Golay ambiguity and device profiling remain unresolved. Agent 1 owns independent fixture replay acceptance, Agent 2 independent protocol conformance, Agent 3 non-destructive P25 migration; their assigned new folders do not overlap this integration work.
 - **D2 — After D1 acceptance:** radio ownership, location-based scan, last-heard log, import migration, UI, and no-network acceptance. Separate firmware build and physical RF gates.
 - **D3+:** offline indexes, recorder/replay, NXDN, weak-signal survey and trunking in tracked order.
 
