@@ -203,6 +203,20 @@ unsigned identities(const Capture& cap){
                 CHECK(e.decoded.cach_confidence==d1::CachConfidence::cadence_validated);
                 CHECK(e.decoded.cach_cadence_bursts>=4);
             } else {
+                if (e.decoded.slot!=0) {
+                    std::fprintf(stderr,
+                        "SYNC PROVENANCE DIAGNOSTIC start=%llu kind=%u "
+                        "sync_bit_errors=%u slot=%u cach=%u confidence=%u "
+                        "candidate_slot=%u cadence=%u\\n",
+                        static_cast<unsigned long long>(e.decoded.burst_start_dibit),
+                        static_cast<unsigned>(e.decoded.sync),
+                        static_cast<unsigned>(e.decoded.sync_bit_errors),
+                        static_cast<unsigned>(e.decoded.slot),
+                        e.decoded.slot_from_cach ? 1U : 0U,
+                        static_cast<unsigned>(e.decoded.cach_confidence),
+                        static_cast<unsigned>(e.decoded.cach_candidate_slot),
+                        static_cast<unsigned>(e.decoded.cach_cadence_bursts));
+                }
                 CHECK(e.decoded.slot==0);
                 CHECK(!e.decoded.cach_present);
             }
