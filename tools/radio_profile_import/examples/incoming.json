@@ -1,0 +1,15 @@
+{
+  "schema": "orcsdr.radio-profiles",
+  "version": 1,
+  "source": {
+    "name": "manual-user-export",
+    "url": "https://example.invalid/user-export",
+    "license": "user-supplied; verify provider terms",
+    "retrieved_at": "2026-11-11"
+  },
+  "profiles": [
+    {"frequency_hz": 145500000, "protocol": "DMR", "role": "repeater", "site_id": "North", "region": "OR", "color_code": 3, "slot": 1, "name": "Imported alternate label"},
+    {"frequency_hz": 145500000, "protocol": "DMR", "role": "repeater", "site_id": "South", "region": "OR", "color_code": 3, "slot": 1, "name": "Different site"},
+    {"frequency_hz": 460000000, "protocol": "P25", "role": "control", "nac": 293, "name": "Example only"}
+  ]
+}

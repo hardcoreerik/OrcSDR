@@ -1,0 +1,8 @@
+{
+  "schema": "orcsdr.radio-profiles",
+  "version": 1,
+  "source": {"name": "existing-user-backup", "license": "user-owned"},
+  "profiles": [
+    {"frequency_hz": 145500000, "protocol": "DMR", "role": "repeater", "site_id": "North", "region": "OR", "color_code": 3, "slot": 1, "name": "My personal label"}
+  ]
+}

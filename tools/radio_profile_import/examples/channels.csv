@@ -1,0 +1,4 @@
+Frequency,Mode,Name,Role,CC,Time Slot,Site,Location,Notes
+145.500,DMR,Example A,repeater,3,1,North,OR,User-supplied candidate only
+145.500,DMR,Example B,repeater,3,1,South,OR,Different site on same carrier
+462.5625,NFM,Local analog,simplex,,,,OR,Sample analog channel
