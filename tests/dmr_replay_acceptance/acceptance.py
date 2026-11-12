@@ -140,7 +140,7 @@ def aggregate_events(lines: list[str], samples: int, *, negative: bool, upstream
     """Validate bridge claims without elevating sync/uncorrected frames to RF identity."""
     summary: dict[str, Any] = {
         "sync": {name: 0 for name in sorted(SYNC_PATTERNS)}, "sync_total": 0,
-        "bursts": 0, "fec": {name: 0 for name in sorted(STATES)},
+        "bursts": 0, "emitted_rejected_bursts": 0, "fec": {name: 0 for name in sorted(STATES)},
         "check": {name: 0 for name in sorted(STATES)},
         "crc": {name: 0 for name in sorted(STATES)},
         "rs": {name: 0 for name in sorted(STATES)},
@@ -198,6 +198,10 @@ def aggregate_events(lines: list[str], samples: int, *, negative: bool, upstream
             if color is not None:
                 _u32(color, "color_code", 15)
             summary["bursts"] += 1
+            # Count only FAILED burst events that were actually emitted by the bridge.
+            # Decoder-internal discarded candidates are not observable in JSONL v1.
+            if event["fec"] == "fail" or event["check"] == "fail":
+                summary["emitted_rejected_bursts"] += 1
             summary["fec"][event["fec"]] += 1
             summary["check"][event["check"]] += 1
             if event["check_kind"] == "none" and event["check"] != "unknown":

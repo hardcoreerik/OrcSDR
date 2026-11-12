@@ -106,3 +106,19 @@ The existing D1 `Frontend::process()` accepts chunked CF32 complex IQ and return
 - The exact private REA raw IQ corpus is **not present in this sandbox**. Its repository metadata and path/byte pins were checked read-only, but no real-capture hash pass, synchronization count, D1 CRC, recovered color/slot, source/talkgroup or false-positive rate has been measured here.
 - The real D1 front-end and Tier II protocol decoder are not yet integrated as a host CLI. Nonzero report status is a gate failure, but zero means only the driver/bridge *reported* bounded evidence. Real acceptance still requires independent receiver audits, direct-mode playback, multiple chunks, negative-control playback and reconciled expected results.
 - JSON report is explicitly forbidden inside OrcSDR; use `/tmp` (or another **external** folder). Raw IQ and generated recordings belong only in the private research checkout / local private folders. Never commit or distribute them from OrcSDR.
+
+## Phase D1-N: exact synthetic controls and native four-fixture matrix
+
+The native `dmr_d1_replay_bridge` is now implemented under the read-only
+`components/orcsdr_dmr/d1_integration/` component. Phase D1-N adds
+[`negative_control_repro.py`](negative_control_repro.py) to regenerate the
+**exact** manifest-pinned REA noise/AM streams (with SHA-1 **and** SHA-256
+checks), and [`d1n_matrix.py`](d1n_matrix.py) to run the original bridge
+at five input chunk sizes in distinct Release and ASan/UBSan modes.
+
+See [`D1N_RUNBOOK.md`](D1N_RUNBOOK.md), [`D1N_REPORT.md`](D1N_REPORT.md),
+and [`D1N_MATRIX.json`](D1N_MATRIX.json). The exact negative hashes pass
+independent byte-for-byte regeneration; the **current complete four-fixture
+native decoder acceptance is BLOCKED**, not a proven zero false-identity count.
+Only the original native bridge's integrity-gated fields may support future
+RF identity results, and binary IQ/logs must never be checked in.

@@ -1,0 +1,440 @@
+{
+  "build_modes": [
+    "release",
+    "asan_ubsan"
+  ],
+  "builds": {},
+  "chunk_sizes": [
+    1,
+    7,
+    257,
+    1024,
+    4096
+  ],
+  "evidence_class": "current native sandbox local preflight; NOT decoded IQ",
+  "expected_recovered_identity_from_prior_public_real_iq_ci": {
+    "color_code": 1,
+    "evidence_origin": "previous separate public native CI; not a measurement in this run",
+    "source_id": 3024109,
+    "talkgroup": 99
+  },
+  "fixture_order": [
+    "dmr-directmode-keyup",
+    "dmr-directmode-second-ptt",
+    "auto-negative-noise",
+    "auto-negative-am"
+  ],
+  "generated_controls_only": "two pinned controls regenerated; positive IQ and native bridge not mounted",
+  "limitations": [
+    "Metadata expectations are independent from actual OrcSDR decoded outputs",
+    "JSONL v1 lacks a counter for all internally rejected sync/burst candidates",
+    "Host decoder does not establish ESP32-P4 RF or memory performance"
+  ],
+  "measurement_class": "preflight_only",
+  "metric_null_meaning": "NOT MEASURED; null never equals zero false-positive results",
+  "native_replay_matrix": [
+    {
+      "build": "release",
+      "chunk_samples": 1,
+      "fixture": "dmr-directmode-keyup",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "release",
+      "chunk_samples": 7,
+      "fixture": "dmr-directmode-keyup",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "release",
+      "chunk_samples": 257,
+      "fixture": "dmr-directmode-keyup",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "release",
+      "chunk_samples": 1024,
+      "fixture": "dmr-directmode-keyup",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "release",
+      "chunk_samples": 4096,
+      "fixture": "dmr-directmode-keyup",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "asan_ubsan",
+      "chunk_samples": 1,
+      "fixture": "dmr-directmode-keyup",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "asan_ubsan",
+      "chunk_samples": 7,
+      "fixture": "dmr-directmode-keyup",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "asan_ubsan",
+      "chunk_samples": 257,
+      "fixture": "dmr-directmode-keyup",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "asan_ubsan",
+      "chunk_samples": 1024,
+      "fixture": "dmr-directmode-keyup",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "asan_ubsan",
+      "chunk_samples": 4096,
+      "fixture": "dmr-directmode-keyup",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "release",
+      "chunk_samples": 1,
+      "fixture": "dmr-directmode-second-ptt",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "release",
+      "chunk_samples": 7,
+      "fixture": "dmr-directmode-second-ptt",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "release",
+      "chunk_samples": 257,
+      "fixture": "dmr-directmode-second-ptt",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "release",
+      "chunk_samples": 1024,
+      "fixture": "dmr-directmode-second-ptt",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "release",
+      "chunk_samples": 4096,
+      "fixture": "dmr-directmode-second-ptt",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "asan_ubsan",
+      "chunk_samples": 1,
+      "fixture": "dmr-directmode-second-ptt",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "asan_ubsan",
+      "chunk_samples": 7,
+      "fixture": "dmr-directmode-second-ptt",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "asan_ubsan",
+      "chunk_samples": 257,
+      "fixture": "dmr-directmode-second-ptt",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "asan_ubsan",
+      "chunk_samples": 1024,
+      "fixture": "dmr-directmode-second-ptt",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "asan_ubsan",
+      "chunk_samples": 4096,
+      "fixture": "dmr-directmode-second-ptt",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "release",
+      "chunk_samples": 1,
+      "fixture": "auto-negative-noise",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "release",
+      "chunk_samples": 7,
+      "fixture": "auto-negative-noise",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "release",
+      "chunk_samples": 257,
+      "fixture": "auto-negative-noise",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "release",
+      "chunk_samples": 1024,
+      "fixture": "auto-negative-noise",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "release",
+      "chunk_samples": 4096,
+      "fixture": "auto-negative-noise",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "asan_ubsan",
+      "chunk_samples": 1,
+      "fixture": "auto-negative-noise",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "asan_ubsan",
+      "chunk_samples": 7,
+      "fixture": "auto-negative-noise",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "asan_ubsan",
+      "chunk_samples": 257,
+      "fixture": "auto-negative-noise",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "asan_ubsan",
+      "chunk_samples": 1024,
+      "fixture": "auto-negative-noise",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "asan_ubsan",
+      "chunk_samples": 4096,
+      "fixture": "auto-negative-noise",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "release",
+      "chunk_samples": 1,
+      "fixture": "auto-negative-am",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "release",
+      "chunk_samples": 7,
+      "fixture": "auto-negative-am",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "release",
+      "chunk_samples": 257,
+      "fixture": "auto-negative-am",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "release",
+      "chunk_samples": 1024,
+      "fixture": "auto-negative-am",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "release",
+      "chunk_samples": 4096,
+      "fixture": "auto-negative-am",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "asan_ubsan",
+      "chunk_samples": 1,
+      "fixture": "auto-negative-am",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "asan_ubsan",
+      "chunk_samples": 7,
+      "fixture": "auto-negative-am",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "asan_ubsan",
+      "chunk_samples": 257,
+      "fixture": "auto-negative-am",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "asan_ubsan",
+      "chunk_samples": 1024,
+      "fixture": "auto-negative-am",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    },
+    {
+      "build": "asan_ubsan",
+      "chunk_samples": 4096,
+      "fixture": "auto-negative-am",
+      "metrics": null,
+      "reason": "D1-R host module unavailable; no native decoder started",
+      "status": "BLOCKED"
+    }
+  ],
+  "negative_reproduction": {
+    "fixtures": [
+      {
+        "external_source_comparison": "not_requested",
+        "id": "auto-negative-noise",
+        "path": "AUTO/auto_noise_seed13579bdf_48k_cs16.cs16",
+        "pinned_git_blob_sha1": "3d872e2afb5aa8759520657c2c1c25fbd03acab7",
+        "pinned_sha256": "ae4f5f6d0ab0f3b8aec9a94cfed8dbadbbc13f94db8758fc2c5bd03b1bdcef71",
+        "regenerated": {
+          "bytes": 384000,
+          "git_blob_sha1": "3d872e2afb5aa8759520657c2c1c25fbd03acab7",
+          "samples": 96000,
+          "sha256": "ae4f5f6d0ab0f3b8aec9a94cfed8dbadbbc13f94db8758fc2c5bd03b1bdcef71"
+        },
+        "regenerated_hashes_match": true
+      },
+      {
+        "external_source_comparison": "not_requested",
+        "id": "auto-negative-am",
+        "path": "AUTO/auto_am_envelope_200hz_48k_cs16.cs16",
+        "pinned_git_blob_sha1": "f8873579fe47229866fb2b1576726a22bfc4aa5d",
+        "pinned_sha256": "32d7ea0c83f7ca4168337c90c06e491f1a259dce8241fd8d4b1c5839986aa87e",
+        "regenerated": {
+          "bytes": 384000,
+          "git_blob_sha1": "f8873579fe47229866fb2b1576726a22bfc4aa5d",
+          "samples": 96000,
+          "sha256": "32d7ea0c83f7ca4168337c90c06e491f1a259dce8241fd8d4b1c5839986aa87e"
+        },
+        "regenerated_hashes_match": true
+      }
+    ],
+    "schema": "orcsdr-dmr-d1n-negative-reproduction-v1",
+    "source_recipe": {
+      "branch": "chatgpt/digital-voice-rsa-rea-2026-11-01",
+      "path": "inbox/fixtures/digital-voice/AUTO/generate_controls.py",
+      "repository": "hardcoreerik/REA-Results"
+    },
+    "status": "PASS"
+  },
+  "prior_positive_native_evidence_reference": "docs/dmr/REAL_IQ_PUBLIC_CAPTURE_ACCEPTANCE_2026-11-11.md (separate previous CI, not this run)",
+  "reason": "D1-R Python module not mounted; source preflight performed, native replay not run",
+  "schema": "orcsdr-dmr-d1n-four-fixture-matrix-v1",
+  "source_integrity": [
+    {
+      "id": "dmr-directmode-keyup",
+      "reason": "local private IQ not mounted",
+      "status": "missing"
+    },
+    {
+      "id": "dmr-directmode-second-ptt",
+      "reason": "local private IQ not mounted",
+      "status": "missing"
+    },
+    {
+      "id": "auto-negative-noise",
+      "observed_git_blob_sha1": "3d872e2afb5aa8759520657c2c1c25fbd03acab7",
+      "observed_sha256": "ae4f5f6d0ab0f3b8aec9a94cfed8dbadbbc13f94db8758fc2c5bd03b1bdcef71",
+      "samples": 96000,
+      "status": "verified"
+    },
+    {
+      "id": "auto-negative-am",
+      "observed_git_blob_sha1": "f8873579fe47229866fb2b1576726a22bfc4aa5d",
+      "observed_sha256": "32d7ea0c83f7ca4168337c90c06e491f1a259dce8241fd8d4b1c5839986aa87e",
+      "samples": 96000,
+      "status": "verified"
+    }
+  ],
+  "source_pin_status": "not_checked",
+  "source_provenance": {
+    "branch": "chatgpt/digital-voice-rsa-rea-2026-11-01",
+    "repository": "hardcoreerik/REA-Results",
+    "source_commit": "f06bfff493f47fdeb69807c8b08b2b32a253839f"
+  },
+  "status": "BLOCKED",
+  "test_run": {
+    "native_asan_ubsan": "NOT RUN",
+    "native_release": "NOT RUN",
+    "passed": 23,
+    "python_discovered": 24,
+    "reason_for_skip": "original acceptance.py unavailable in local isolated sandbox",
+    "skipped": 1
+  }
+}

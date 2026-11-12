@@ -136,3 +136,20 @@ RF or ESP32-P4 behavior all require separate evidence. The existing D1-C
 component reports synthetic host CI coverage; that is not recorded-IQ
 validation. Never label this D1-R gate complete before the external private
 captures have actually been decoded by native OrcSDR and the report archived.
+
+## Phase D1-N update: pinned negatives and five-size matrix
+
+Phase D1-N extends this original D1-R runbook without modifying native D1 code. See
+[`D1N_RUNBOOK.md`](D1N_RUNBOOK.md) for the exact read-only REA control recipe,
+source-pin verification, Release and ASan/UBSan instructions, and required
+chunk sizes **1, 7, 257, 1024, 4096**. The source-safe
+[`D1N_MATRIX.json`](D1N_MATRIX.json) records 40 requested combinations;
+[`D1N_REPORT.md`](D1N_REPORT.md) separately distinguishes measured hashes,
+previous public real-air CI and unavailable native results. **BLOCKED** is not
+an all-four-fixture pass. D1-P now implements bounded acquisition pre-roll;
+the earlier paragraph in this historical runbook describing its absence refers
+to the original D1-C baseline, not the subsequent integrated D1-P work.
+
+The updated `acceptance.aggregate_events` reports `emitted_rejected_bursts`
+(counting only emitted burst JSONL events with `fec=fail` or `check=fail`).
+It does not measure candidates discarded internally before any event.
