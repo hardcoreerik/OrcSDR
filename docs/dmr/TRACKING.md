@@ -1,6 +1,6 @@
 # DMR / Digital Voice — development tracker
 
-**Status:** F0a/F0b host-validated; F0c microSD adapter and D1-A/D1-B decoder modules committed as host-only work. End-to-end IQ, ESP32-P4 hardware, and migration gates remain open. **Created:** 2026-11-11. **Created:** 2026-11-11.
+**Status:** F0a/F0b host-validated; F0c microSD adapter and D1-A/D1-B decoder modules committed as host-only work. End-to-end IQ, ESP32-P4 hardware, and migration gates remain open. **Created:** 2026-11-11.
 **Product requirements:** [VISION.md](VISION.md). **Current implemented truth:** [PROJECT_STATUS.md](../../PROJECT_STATUS.md).
 **Evidence:** [DMR RSA/REA research branch](https://github.com/hardcoreerik/REA-Results/tree/research/dmr-competitor-20261111), plus the older [digital-voice fixture branch](https://github.com/hardcoreerik/REA-Results/tree/chatgpt/digital-voice-rsa-rea-2026-11-01). Both are research artifacts, not implementation acceptance.
 
