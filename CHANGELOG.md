@@ -2,6 +2,11 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Map catalog holds up to 64 packs — 2026-11-12
+
+- **Maps:** the signed catalog may now list up to 64 packs (was 32), so a 50-state catalog (51 archives, Alaska is two) is accepted. One shared constant, `catalog::kMaximumPacks`, drives the schema check and the Downloads list; the JSON node limit is 8192 and the delimiter limit 16384 (was 4096/8192) to leave room for larger manifests. The 128 KiB catalog size limit is unchanged (about 1.5 KB per pack, so 64 packs is roughly 95 KB). Owned packs stay capped at 16.
+- **Verified:** signed host cases `catalog-51-packs`, `catalog-64-packs` (accepted) and `catalog-65-packs` (rejected as schema); 48 catalog cases pass. Not flashed. The Downloads list still scrolls one row at a time, which is slow for 51 rows; a faster state picker is a follow-up.
+
 ## Unreleased — Volume tray redesign, Visualizer entry — 2026-11-11
 
 - **Volume tray:** now 840x280 (3:1, twice the previous size), centred just below the status bar, drawn as the top item: it is composited from a sprite, and the dashboards (scopes, waterfalls, FT8 waterfall) hold still while it is open. The tray reads touch itself; dashboards see no touch until the finger is up and 250 ms have passed, so a tap that opens, adjusts or dismisses the tray never reaches "touch to tune". Only the slider reacts to a held finger; mute fires once per press and the second tap of a double tap on the speaker does not mute.
