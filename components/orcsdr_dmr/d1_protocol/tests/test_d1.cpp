@@ -241,9 +241,15 @@ bool test_errors() {
   CHECK(d.dibits_consumed()==0);
   CHECK(d.feed(good.data(),good.size(),collect,&events));CHECK(events.size()==1);
   d.reset();CHECK(d.dibits_consumed()==0);
-  // Any sync corruption must not yield a decoded identity.
+  // One-bit sync corruption is now a *candidate* data burst, but only
+  // independent Golay, BPTC and RS/CRC may promote its identity.
   good[54]^=1;events.clear();CHECK(d.feed(good.data(),good.size(),collect,&events));
-  CHECK(events.empty());
+  CHECK(events.size()==1 && events[0].integrity_valid &&
+        events[0].evidence==Evidence::identity_valid &&
+        events[0].sync_bit_errors==1);
+  good[54]^=3;events.clear();d.reset();
+  CHECK(d.feed(good.data(),good.size(),collect,&events));
+  CHECK(events.empty()); // Two bad sync bits are never accepted.
   // A syntactically valid FEC block with a deliberately corrupted RS parity
   // must not become validated identity despite a genuine data sync.
   auto tampered=make_lc(99,3024109);tampered[6]^=0x01;
@@ -261,6 +267,50 @@ bool test_errors() {
   events=run(bad);CHECK(events.size()==1);
   CHECK(events[0].integrity_valid&&events[0].evidence==Evidence::check_valid);
   CHECK(events[0].identity==IdentityKind::none);
+  return true;
+}
+bool test_payload_verified_sync_tolerance() {
+  // Independently generated, complete Full-LC vectors. All 48 positions
+  // are tested without modifying/dressing up the actual received dibits.
+  const auto lc=make_lc(99,3024109);
+  for (const SyncKind kind: {SyncKind::bs_data,SyncKind::ms_data,
+                              SyncKind::direct_ts1_data,SyncKind::direct_ts2_data}) {
+    const auto original=to_vec(make_burst(lc,kind,1,1));
+    const auto exact=run(original,1);
+    CHECK(exact.size()==1&&exact[0].sync_bit_errors==0);
+    for(unsigned b=0;b<48;++b) {
+      auto changed=original;
+      changed[54+b/2U]^=static_cast<std::uint8_t>(b%2U ? 1U : 2U);
+      const auto measured=run(changed,b%2U ? 1U : 13U);
+      CHECK(measured.size()==1);
+      CHECK(measured[0].sync==kind&&measured[0].sync_bit_errors==1);
+      CHECK(measured[0].integrity_valid &&
+            measured[0].evidence==Evidence::identity_valid);
+      CHECK(measured[0].source_id==3024109&&measured[0].destination_id==99);
+      CHECK(measured[0].colour_code==1);
+      if(kind==SyncKind::direct_ts1_data)CHECK(measured[0].slot==1);
+      if(kind==SyncKind::direct_ts2_data)CHECK(measured[0].slot==2);
+    }
+    // Two bit errors must not fall through and become a trusted event.
+    for(unsigned p: {0U,8U,23U}) {
+      auto changed=original;
+      changed[54+p]^=3U;
+      CHECK(run(changed,7).empty());
+    }
+    // Valid BPTC, deliberately broken RS: fuzzy sync cannot publish even
+    // a sync-only event, confidence level, talkgroup or CACH slot.
+    auto corrupt_lc=lc;
+    corrupt_lc[6]^=1U;
+    auto invalid=to_vec(make_burst(corrupt_lc,kind,1,1));
+    invalid[60]^=1U;
+    CHECK(run(invalid,1).empty());
+  }
+  // Voice SYNC has no independent packet CRC/RS proof in this path:
+  // exact match remains diagnostic, fuzzy match must not emit anything.
+  auto voice=to_vec(voice_sync(SyncKind::direct_ts1_voice));
+  CHECK(run(voice,1).size()==1);
+  voice[54]^=1U;
+  CHECK(run(voice,1).empty());
   return true;
 }
 std::array<std::uint8_t, 128> embedded_payload(const Bytes12& full) {
@@ -315,7 +365,7 @@ int main(){
   struct T {const char* name;bool (*fn)();};
   constexpr T tests[]={{"golay_matrix",test_golay_matrix},{"rs_and_parsing",test_rs_and_parsing},
     {"bptc",test_bptc},{"crc_blocks",test_crc_blocks},{"dual_slot_chunk",test_stream},{"corruption",test_errors},
-    {"late_entry",test_late_entry}};
+    {"late_entry",test_late_entry},{"payload_verified_sync_tolerance",test_payload_verified_sync_tolerance}};
   unsigned pass=0;
   for(const auto& t:tests){if(!t.fn()){std::fprintf(stderr,"FAILED: %s\n",t.name);return 1;}
     std::printf("PASS %s\n",t.name);++pass;}
