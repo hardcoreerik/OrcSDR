@@ -2,7 +2,7 @@
 
 **Integration branch:** `feature/dmr-digital-voice-foundation` (based on `docs/dmr-vision-tracking-20261111`).
 **Source of scope:** [VISION.md](VISION.md) and [TRACKING.md](TRACKING.md). **As of:** 2026-11-11.
-**Current status:** F0a host-only discovery evidence contract committed; F0b persistence/import migration and D0 decoder constants remain open. Neither a live DMR receiver nor an on-device discovery system is implemented.
+**Current status:** F0a event model and **F0b host-only two-slot storage** committed and locally tested. D0 protocol primitive source/tests committed; F0c on-device SD adapter, D1 DMR decoder, and import-apply integration remain open. Neither a live DMR receiver nor an on-device discovery system is implemented.
 
 ## One shared branch, exclusive folders
 
@@ -34,8 +34,8 @@ On this **one shared branch**, each agent must `git fetch`, check out `feature/d
 ## Lead phase checkpoints
 
 - **F0a — Implemented, host-tested only:** `components/orcsdr_radio_discovery/` exports typed `Observation`, `Origin`, `Proof`, protocol identity with explicit validity flags, receiver-location vs site identity separation, and `ObservationRing<Capacity>` with no post-init allocation. Host CMake test passed; release/NDEBUG test passed; ASan/UBSan local test passed. Not wired into firmware or SD.
-- **F0b — Next lead task:** schema version, site/observation/annotation separation, deterministic identity+content-key strategy, bounded SD persistence and atomic/recovery test seam. Don't replace existing P25 v2 profiles or assume directory entries are RF observations.
-- **D0 — Sandbox A:** ETSI-derived constants and host oracle, with measured test output.
+- **F0b — Host implementation and recovery tests completed:** bounded three-provenance library, explicit `ORAD` v1 snapshot, two-slot CRC journal, known-field identity matching, conservative conflict handling and explicit keep-separate for incomplete identities. Debug, Release and ASan/UBSan host suites pass, including a POSIX file-backed `fsync` restart; see [validation evidence](F0B_HOST_VALIDATION_2026-11-11.md). **This does not establish a working Tab5 SD backend.**\n- **F0c — Next lead task:** qualify ESP-IDF SD `SlotIO` adapter, test power-loss recovery, measure internal RAM/PSRAM/stack and preserve P25 v2 compatibility. Do not add another radio owner.
+- **D0 — Sandbox A:** ETSI-derived constants and host test source delivered in `components/orcsdr_dmr/**`; independent run and acceptance remain open.
 - **D1 — After D0 acceptance:** standalone DMR Tier II 4FSK demod/framer and metadata on synthetic + appropriately pinned recorded IQ; no dashboard before host evidence.
 - **D2 — After D1 acceptance:** radio ownership, location-based scan, last-heard log, import migration, UI, and no-network acceptance. Separate firmware build and physical RF gates.
 - **D3+:** offline indexes, recorder/replay, NXDN, weak-signal survey and trunking in tracked order.
