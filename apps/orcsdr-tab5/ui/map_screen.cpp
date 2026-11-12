@@ -226,6 +226,8 @@ void draw_downloads() {
   button("INSTALLED",32,520,270,56);
   if(maps::downloads::can_check(g_downloads))
     button("CHECK CATALOG",320,520,310,56);
+  else if(maps::downloads::can_reset(g_downloads))
+    button("RESET STUCK",320,520,310,56);
   if(download_busy())button("STOP TRANSFER",930,520,320,56);
   else if(maps::downloads::can_install(g_downloads,g_download_index)) {
     maps::downloads::Entry pack;
@@ -574,6 +576,7 @@ void touch(int x,int y,bool pressed,bool new_press) {
         if(hit(x,y,930,520,320,56)){maps::downloads::cancel();acted=true;}
       } else {
         if(hit(x,y,320,520,310,56)&&maps::downloads::can_check(g_downloads)){(void)maps::downloads::check_catalog();acted=true;}
+        else if(hit(x,y,320,520,310,56)&&maps::downloads::can_reset(g_downloads)){(void)maps::downloads::reset_pending();acted=true;}
         else if(hit(x,y,1038,520,210,56)&&maps::downloads::can_retry(g_downloads))
           {(void)maps::downloads::retry();acted=true;}
         else if(hit(x,y,650,520,370,56)&&maps::downloads::can_install(g_downloads,g_download_index)) {

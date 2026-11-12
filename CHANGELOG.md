@@ -2,6 +2,12 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Map install recovery (stuck MAP ERROR) — 2026-11-12
+
+- **Bug:** an interrupted map download left a saved-install record in NVS. If the SD files were then deleted, boot recovery failed on every start, the Maps header showed MAP ERROR, and Check catalog and Download stayed blocked. Only a reflash or NVS erase cleared it.
+- **Fix:** recovery now drops a saved install whose files are all gone. Maps > Downloads shows RESET STUCK (and `RTL_MAP DOWNLOAD RESET`) for any other stuck install; it forgets the saved intent only and never deletes map files.
+- **Verified:** host tests `map_transfer` (new missing-files case) and `map_download_actions`. Not yet flashed. The first-install failure that started this was not reproduced on COM39 (a clean install worked), so its cause is unknown.
+
 ## Unreleased â€” Volume tray redesign, Visualizer entry â€” 2026-11-11
 
 - **Volume tray:** now 840x280 (3:1, twice the previous size), centred just below the status bar, drawn as the top item: it is composited from a sprite, and the dashboards (scopes, waterfalls, FT8 waterfall) hold still while it is open. The tray reads touch itself; dashboards see no touch until the finger is up and 250 ms have passed, so a tap that opens, adjusts or dismisses the tray never reaches "touch to tune". Only the slider reacts to a held finger; mute fires once per press and the second tap of a double tap on the speaker does not mute.
