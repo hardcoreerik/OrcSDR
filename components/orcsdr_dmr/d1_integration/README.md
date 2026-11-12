@@ -1,0 +1,46 @@
+# D1-C — DMR 4FSK to Tier II burst integration (host first)
+
+**Scope:** `components/orcsdr_dmr/d1_integration/**` only. This is a fixed-memory host-oriented bridge between the independently authored D1-A 48 kS/s 4FSK receiver and D1-B hard-dibit Tier II protocol decoder. No firmware, M5GFX, tuner, P25, SD or DX discovery integration is claimed.
+
+## Why the bridge exists
+
+`d1_frontend::Frontend` detects a 24-dibit DMR synchronization pattern but **does not emit that acquisition sync or the earlier 54 payload dibits**. `d1_protocol::Decoder` expects complete 132-dibit bursts with sync in the middle. Feeding output directly and claiming the *first* acquired burst works would be false. This bridge deliberately accepts that the initial acquired burst is unavailable; after a continuous lock, subsequent complete transmitted bursts (including the next sync) can reach the protocol decoder intact. It never fabricates an acquisition packet, grants proof from sync alone, or invents source/talkgroup IDs.
+
+For field DX and short key-up calls, first-burst loss is a serious limitation. Pre-roll acquisition, with enough buffered demodulated history to reproduce at least the missing 54 payload dibits plus sync (and any preceding CACH), is a **separate mandatory acceptance gate** before broad release claims.
+
+## Contract
+
+- `orcsdr::dmr::d1::integration::Receiver` accepts caller-owned `ComplexSample` arrays at exactly 48,000 sample/s. It holds a `Frontend`, a `Decoder` and a fixed 256-entry sample-index map; there is no heap allocation or queue in the integration core. The output is a synchronous callback with a copy of the protocol `Event`, an optional *relative* first-dibit sample index and an explicit discontinuity epoch. That index is not UTC or calibrated RF time.
+- Input is processed in at-most-eight-sample steps with a single-symbol output buffer, preserving frontend backpressure and avoiding mixed old/new lock epochs in a batch. The integrator resets protocol state when frontend locks, loses lock or receives an explicit `discontinuity()`. It does not stitch bursts across gaps or retunes. Explicit reset also clears the epoch and statistics.
+- `Receiver::stats()` separates observed acquisition counts, initial bursts unavailable, forwarded dibits, protocol events, and integrity-validated identities. Neither the acquisition count nor decoder correlation may be represented as a confirmed site or speech decode. An event is an identity only when `event.integrity_valid` and `event.evidence == identity_valid`.
+- The integration is a *single 12.5 kHz channel*: observing both DMR slots in one carrier is distinct from following two unrelated RF frequencies.
+- Callback must not recursively call `Receiver::process()`, block the SDR task, or retain transient pointers (the event itself is copied). Frame/event ownership should later pass to bounded queues outside the DSP callback.
+
+## Reproduce host tests using the real D0, D1-A and D1-B sources
+
+From the OrcSDR repository root:
+
+```bash
+cmake -S components/orcsdr_dmr/d1_integration -B build/dmr-d1-integration -DCMAKE_BUILD_TYPE=Release
+cmake --build build/dmr-d1-integration --parallel
+ctest --test-dir build/dmr-d1-integration --output-on-failure
+
+cmake -S components/orcsdr_dmr/d1_integration -B build/dmr-d1-integration-asan \
+  -DCMAKE_BUILD_TYPE=Debug -DDMR_D1_INTEGRATION_SANITIZE=ON
+cmake --build build/dmr-d1-integration-asan --parallel
+ctest --test-dir build/dmr-d1-integration-asan --output-on-failure
+```
+
+`test_d1_bridge.cpp` constructs valid, independently generated ETSI-style full-LC frames with CACH alternating TS1 and TS2, BPTC, Golay, RS-parity and repeated BS data SYNC. It synthesizes SRRC-filtered four-level instantaneous frequency into complex IQ at 48 kS/s. The test feeds the **real** frontend and decoder, expects integrity-gated group/source metadata after the acquisition burst, compares whole-buffer and single-sample chunking, verifies discontinuity and lock reacquisition, rejects null-input mistakes and checks silent IQ for false events. This is synthetic waveform evidence only; controlled real-air IQ acceptance is separate.
+
+**Local development verification on 2026-11-11:** integration `.cpp` and test `.cpp` each compile with GCC C++17 and `-Wall -Wextra -Wpedantic -Werror` against minimal API-compatible declarations. This is a **syntax/API smoke check only**; it does *not* run or link the real D0/D1 implementations. Do not mark the full CTest suite `PASS` until CI or an independent checked-out build executes it. This limitation is intentional and recorded.
+
+## Open gates
+
+1. Execute Release/ASan end-to-end host builds against real D0, front-end and protocol source. Investigate any real-loop failure rather than weakening evidence requirements.
+2. Verify first-burst behavior and measure how many successive valid DMR bursts are needed before complete metadata is available. Implement and test bounded pre-roll for short calls, if feasible within ESP32-P4 RAM and CPU budgets.
+3. Replay pinned private DMR direct-mode IQ from REA-Results, then additional Tier II frames and negative controls; report actual source, sample format and ground truth. Do not check in private IQ.
+4. Resolve D1-B ETSI Golay generator table-extraction ambiguity using the rendered specification and real on-air vectors.
+5. Measure CPU, heap, internal RAM/PSRAM, stack and drop counters on an actual ESP32-P4 before firmware integration. No production P25 source, current radio owner, or display route was modified here.
+
+Current project truth: `docs/dmr/TRACKING.md`, `docs/dmr/D1_INTEGRATION_GATE_2026-11-11.md`.
