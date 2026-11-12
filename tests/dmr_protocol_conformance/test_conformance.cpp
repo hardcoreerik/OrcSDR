@@ -466,7 +466,7 @@ bool stream_test() {
             sync_damaged[0].evidence==Evidence::identity_valid);
     REQUIRE(sync_damaged[0].source_id==456 && sync_damaged[0].destination_id==123);
     // Two sync bit errors remain rejected, even with intact LC bytes.
-    bad_sync[54] ^= 3U;
+    bad_sync[54] ^= 2U; // Add a second bit error to the existing first.
     REQUIRE(decode_stream({bad_sync.begin(),bad_sync.end()},13).empty());
     // Invalid RS must not produce an event when sync is only approximate.
     auto invalid_lc=reference_lc(123,456);
