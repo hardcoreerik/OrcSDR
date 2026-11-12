@@ -56,16 +56,22 @@ None of the proxies substitutes for pinned real IQ or pinned synthetic AM/noise.
 | Rendered ETSI Table 9.2 and Fig. 6.5 | Verified | Source is authoritative ETSI PDF |
 | Python sync geometry | PASS (5/5) | GCC-independent Python 3 reference; 0/250,000 random 48-bit candidates |
 | C++ strict syntax on temporary ABI-compatible headers | PASS | GCC 14.2 `-Wall -Wextra -Wpedantic -Werror`, **not** linked execution |
-| Source-linked Release against actual D0/D1 | Pending CI result | GitHub Actions triggered by push; do not misrepresent syntax as linked result |
-| Source-linked ASan/UBSan | Pending CI result | Same GitHub Actions workflow, separate matrix job |
-| Recorded IQ, device and pinned D1-N negatives | NOT RUN | Separate acceptance workstream |
+| Source-linked Release against actual D0/D1 | **PASS: 7/7 CTest** | GCC 13.3.0; 0.075295 s for adversarial executable |
+| Source-linked Debug ASan/UBSan | **PASS: 7/7 CTest** | GCC 13.3.0; 0.786366 s for adversarial executable |
+| Native D1 protocol tests in same CI jobs | **PASS: 3/3 CTest each** | Separate production D1 unit/CACH gates, no decoder edits |
+| Recorded IQ, device and pinned D1-N negatives | NOT RUN here | Separate acceptance workstream; no claim of on-air negative-control pass |
 
-The C++ executable prints `RESULT examined_bits=... candidates=...
-events=... tentative=... verified_identities=... false_identities=...
-seconds=...` and compiler/source SHA. Once the source-linked GitHub CI
-matrix runs, cite **its exact run URL and SHA**, with observed numbers, in
-a follow-up report. The presence of correct source plus a test file alone is
-not an execution result.
+### Recorded source-linked run (GitHub Actions)
+
+- [CI run 43180888644](https://github.com/hardcoreerik/OrcSDR/actions/runs/43180888644), **all three jobs passed**, UTC 2026-11-12, workflow `DMR Protocol and Migration Host Gates`.
+- Exact checked-out source and compiled test SHA: **`9f3dec34614ac8e3e0334121167f892a4249cea3`**; both protocol matrix jobs printed that SHA, compiler **GCC 13.3.0** and `seed=0xd1f20261111`.
+- Total independently constructed / mutated candidate cases: **74,972**; input bit exposures across repeated test executions: **21,613,846** bits (**not** independent RF bits). One-bit valid DATA syncs **960/960** recovered with unchanged packet identity/fields; two-bit **4,512/4,512** and three-bit **69,184/69,184** rejected without any event; **24** four-or-more-bit cases rejected.
+- **100** candidates with valid-looking fuzzy sync but incorrect RS/CRC, reserved BPTC or invalid Golay produced **zero events**. **192** one-bit VOICE candidates produced **zero events**. Pairwise DATA sync minimum distance **10 bits**, radius-one overlaps **0**, so an ambiguous radius-one DATA candidate is geometrically unavailable with the four current ETSI DATA words.
+- Uniform random hard dibits: **300,000 dibits, 0 events / 0 identities**; AM-envelope-like hard-dibit proxy: **300,000 dibits, 0 events / 0 identities**. In **300,000 dibits** with **301 deliberately planted** DATA sync patterns, **151 exact-sync tentative events**, **zero fuzzy events** without CRC/RS and **zero verified identities**. These 151 events are *expected unverified diagnostics*, not validated packet/identity false positives.
+- **Aggregate for complete suite:** `events=1188`, `tentative=759`, `verified_identities=429`, **`false_identities=0`**. The 429 are from deliberately valid fixture payloads; **none** from random, AM-like, corrupted or planted-sync-only negative controls.
+- Measured adversarial executable wall time: **0.075295 s Release**, **0.786366 s sanitizer Debug**. Python CTest five geometry oracle cases passed in each matrix; the workflow Python job independently passed existing **13/13** ETSI oracle tests. The Python geometry oracle run separately in the sandbox also passed **5/5**.
+
+These are deterministic *synthetic hard-dibit* observations, not a statistical estimate of real-RF false alarm probability, and no native RF hardware or real captured AM-IQ was measured. All CI results are directly reproducible using `README_D1F.md`.
 
 ## Preliminary engineering judgment
 

@@ -117,3 +117,20 @@ whether *unsupported* evidence is promoted; it does not claim security
 against a transmitter deliberately sending valid but deceptive protocol data.
 
 See `FALSE_POSITIVE_ENGINEERING_REPORT.md` and `DEFECT_LEDGER_D1F.md`.
+
+## Verified CI result (2026-11-12 UTC)
+
+GitHub [run 43180888644](https://github.com/hardcoreerik/OrcSDR/actions/runs/43180888644)
+executed on checked-out source SHA
+`9f3dec34614ac8e3e0334121167f892a4249cea3` with GCC 13.3.0:
+**7/7 conformance CTests PASS** in Release and **7/7 PASS** under
+ASan/UBSan; both jobs also passed **3/3** native D1 CTests. Adversarial
+executable measured 21,613,846 repeated-input bit exposures, 74,972
+constructed candidates, 0 false identities, and elapsed 0.075295 s
+Release / 0.786366 s sanitizer Debug. The source-independent Python
+geometry oracle passed 5/5 in each CTest matrix and locally. The existing
+13-test ETSI Python oracle in the workflow also passed.
+
+For full metrics and the distinction between intentionally tentative
+SYNC-only diagnostics and CRC/RS-backed identities, see
+`FALSE_POSITIVE_ENGINEERING_REPORT.md`.
