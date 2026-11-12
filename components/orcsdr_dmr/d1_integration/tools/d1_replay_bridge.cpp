@@ -186,7 +186,7 @@ int main(int argc, char** argv) {
         const std::size_t have = carried + got;
         const std::size_t samples = have / 8U;
         if (samples == 0 && eof) {
-            if (carried != 0U) return fail("trailing partial IQ sample");
+            if (have != 0U) return fail("trailing partial IQ sample");
             break;
         }
         if (consumed + samples > kMaxSamples) return fail("sample count exceeds JSONL v1 maximum");
