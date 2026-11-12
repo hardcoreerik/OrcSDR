@@ -78,6 +78,8 @@
 #include "ft8_dial_delivery.hpp"
 #include "ft8_runtime.hpp"
 #include "memory_reclaim.hpp"
+#include "memory_ledger.hpp"
+#include "esp_memory_utils.h"
 #include "shortwave_model.hpp"
 #include "shortwave_audio_dsp.hpp"
 #include "shortwave_dashboard.hpp"
@@ -4582,6 +4584,37 @@ bool iq_rec_ensure_buffer() {
 // left the FT8 decoder (about 4 MB) unable to start after a long session. They are registered as reclaimable: given back on request
 // (the FT8 screen's FREE MEMORY, RTL_MEM RECLAIM) when nothing is using them, and re-allocated by lora_iq_ensure_buffers() the next
 // time LoRa opens.
+// RTL_MEM BUFFERS: the large on-demand buffers, whether each is allocated and where it landed, and the lowest free
+// memory seen since boot. Read-only; the table is constant data and nothing here allocates or frees.
+static void print_memory_buffers() {
+  using orcsdr::memory_ledger::Buffer;
+  static const Buffer kBuffers[] = {
+      {"audio_rec", []() -> const void* { return g_audio_rec_buf; },
+       []() -> size_t { return g_audio_rec_capacity * sizeof(int16_t); }},
+      {"rds_capture", []() -> const void* { return g_rds_capture_buf; },
+       []() -> size_t { return kRdsCaptureSamples * sizeof(int16_t); }},
+      {"iq_capture", []() -> const void* { return g_iq_rec_buf; }, []() -> size_t { return kIqRecMaxBytes; }},
+      {"lora_decode", []() -> const void* { return g_lora_decode_buf; }, []() -> size_t { return kIqRecMaxBytes; }},
+      {"lora_pre_roll", []() -> const void* { return g_lora_pre_roll_buf; },
+       []() -> size_t { return kLoraPreRollBytes; }},
+  };
+  const auto in_psram = [](const void* pointer) -> bool { return esp_ptr_external_ram(pointer); };
+  char line[96];
+  for (const Buffer& buffer : kBuffers) {
+    if (orcsdr::memory_ledger::format_line(line, sizeof(line), orcsdr::memory_ledger::describe(buffer, in_psram)) > 0) {
+      Serial.println(line);
+    }
+  }
+  if (orcsdr::memory_ledger::format_totals(
+          line, sizeof(line), orcsdr::memory_ledger::summarize(kBuffers, std::size(kBuffers), in_psram)) > 0) {
+    Serial.println(line);
+  }
+  Serial.printf("RTL_MEM_MIN psram_min=%u internal_min=%u dma_min=%u\n",
+                (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM),
+                (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
+                (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA));
+}
+
 size_t lora_iq_held_bytes() {
   return (g_iq_rec_buf ? kIqRecMaxBytes : 0u) + (g_lora_decode_buf ? kIqRecMaxBytes : 0u) +
          (g_lora_pre_roll_buf ? kLoraPreRollBytes : 0u) + orcsdr::lora_native::capture_workspace_bytes();
@@ -20339,6 +20372,10 @@ void process_command(char* command) {
     Serial.printf("RTL_MEM_FT8 active=%d last_failure=%s needed=%u failures=%u\n",orcsdr::ft8_runtime::active()?1:0,
                   report.failure==orcsdr::ft8_runtime::StartFailure::memory?"memory":report.failure==orcsdr::ft8_runtime::StartFailure::backend?"backend":"none",
                   (unsigned)report.requested_bytes,(unsigned)report.failures);
+    return;
+  }
+  if(!strcmp(command,"RTL_MEM BUFFERS")) {
+    print_memory_buffers();
     return;
   }
   if(!strncmp(command,"RTL_MEM HOG ",12)) {   // bench aid: RTL_MEM HOG <kib to leave free>; undone by RTL_MEM RECLAIM
