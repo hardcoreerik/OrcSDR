@@ -102,7 +102,9 @@ struct Output {
             }
         }
         const bool eligible = e.integrity_valid && e.evidence == d1::Evidence::identity_valid &&
-                              e.identity != d1::IdentityKind::none;
+                              e.identity != d1::IdentityKind::none &&
+                              e.source_id != 0U &&
+                              (e.identity != d1::IdentityKind::group || e.destination_id != 0U);
         const bool data = sync_is_data(e.sync) && !e.late_entry;
         const char* frame_kind = !data ? "voice" : (e.data_type == 3U ? "control" : "data");
         const char* fec = (e.bptc_valid || (e.late_entry && e.integrity_valid)) ? "pass" :
@@ -183,7 +185,10 @@ int main(int argc, char** argv) {
         eof = std::feof(stdin) != 0;
         const std::size_t have = carried + got;
         const std::size_t samples = have / 8U;
-        if (samples == 0 && eof) return fail("input is empty or has incomplete CF32 sample");
+        if (samples == 0 && eof) {
+            if (carried != 0U) return fail("trailing partial IQ sample");
+            break;
+        }
         if (consumed + samples > kMaxSamples) return fail("sample count exceeds JSONL v1 maximum");
         for (std::size_t i = 0; i < samples; ++i) {
             iq[i].re = float_le(raw.data() + 8U*i);
