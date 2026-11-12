@@ -73,6 +73,18 @@ Result resume(storage::FileSystem& fs,delivery::Store& store,uint8_t* buffer,siz
     if(finalized.error!=Error::none||state.pending.product.empty())return finalized;
     const auto dir=directory(state.pending.manifest);
     if(dir.empty())return {Error::input};
+    {
+      // The user (or a reformat) removed everything the interrupted install had
+      // written. Nothing is left to finish, so drop the stale intent instead of
+      // failing recovery on every boot. A fresh download can then start.
+      const auto active=fs.status((dir+"/activation.manifest").c_str());
+      const auto staged=fs.status((dir+"/pack.manifest.json").c_str());
+      if(active==storage::EntryStatus::missing&&staged==storage::EntryStatus::missing) {
+        state.pending={};
+        const auto saved=delivery::save(store,state);
+        return saved==delivery::Error::none?Result{}:state_error(saved);
+      }
+    }
     const auto recovered=activation::recover(fs,dir);
     if(recovered!=activation::Error::none)return activation_error(recovered);
     auto source=dir+"/activation.manifest";

@@ -420,6 +420,13 @@ int main(int argc,char** argv){
   uncertain_plan.fail_at=0;
   check(install::resume(fs,uncertain_plan,buffer.data(),buffer.size(),{}).error==install::Error::none&&
         fs.exists(target.c_str()),"offline resume uses staging when activation never started");
+  reset();DeliveryStore wiped;trusted(wiped);
+  check(delivery::load(wiped,&state)==delivery::Error::none&&
+        delivery::plan_install(state,accepted.packs[0].product_id,target,false)==delivery::Error::none&&
+        delivery::save(wiped,state)==delivery::Error::none,"pending intent saved before the card is wiped");
+  check(install::resume(fs,wiped,buffer.data(),buffer.size(),{}).error==install::Error::none&&
+        delivery::load(wiped,&state)==delivery::Error::none&&state.pending.product.empty(),
+        "pending install with every file deleted is abandoned, not an eternal error");
   for(int point=1;point<=4;++point) {
     reset();DeliveryStore powered;trusted(powered);Stream prepared;
     check(run(prepared)==t::Error::none,"installer power fixture staged");

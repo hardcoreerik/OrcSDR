@@ -31,6 +31,11 @@ inline bool can_install(const Snapshot& s,size_t index) {
 inline bool can_retry(const Snapshot& s) {
   return !s.busy&&(s.phase==Phase::failed||s.phase==Phase::cancelled);
 }
+// A saved install that cannot finish blocks Check/Install. This lets the user
+// forget that intent without reflashing or erasing NVS; files are not deleted.
+inline bool can_reset(const Snapshot& s) {
+  return !s.busy&&s.pending;
+}
 void begin();
 bool snapshot(Snapshot*);
 bool entry(size_t index,Entry*);
@@ -38,6 +43,7 @@ bool check_catalog();
 bool request_install(size_t index);
 bool retry();
 bool retry_recovery();
+bool reset_pending();
 void cancel();
 // Consumed on the UI loop: SNTP state and RTC writes retain their existing owner.
 bool take_time_sync_request();

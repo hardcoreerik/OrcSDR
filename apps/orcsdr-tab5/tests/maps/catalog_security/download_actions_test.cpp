@@ -14,5 +14,8 @@ int main() {
  s.sd_available=false;check(!d::can_install(s,0),"missing SD disables installation");
  s.busy=true;check(!d::can_check(s)&&!d::can_install(s,0),"active job excludes other commands");
  s={};s.phase=d::Phase::complete;check(!d::can_retry(s),"success does not offer retry");
+ s={};s.phase=d::Phase::failed;s.pending=true;check(d::can_reset(s),"stuck saved install can be reset");
+ s.busy=true;check(!d::can_reset(s),"reset not offered during an active job");
+ s={};s.phase=d::Phase::failed;check(!d::can_reset(s),"nothing to reset without a saved install");
  std::printf("RESULT: download actions %s\n",failures?"FAIL":"PASS");return failures?1:0;
 }

@@ -21,7 +21,7 @@
 
 namespace orcsdr::maps::downloads {
 namespace {
-constexpr uint32_t kRecover=1,kCheck=2,kInstall=256;
+constexpr uint32_t kRecover=1,kCheck=2,kReset=3,kInstall=256;
 EXT_RAM_BSS_ATTR Snapshot g_snapshot;
 EXT_RAM_BSS_ATTR Entry g_entries[32];
 EXT_RAM_BSS_ATTR catalog::Catalog g_catalog;
@@ -227,6 +227,10 @@ bool retry() {
 bool retry_recovery() {
   Snapshot s;snapshot(&s);return s.pending&&queue(kRecover,Phase::verifying,"Recovering saved map installation...");
 }
+bool reset_pending() {
+  Snapshot s;snapshot(&s);
+  return can_reset(s)&&queue(kReset,Phase::verifying,"Clearing the saved install...");
+}
 void cancel(){g_cancel.store(true);}
 bool take_time_sync_request(){return g_time_sync_requested.exchange(false);}
 bool work_pending(){return g_command.load(std::memory_order_acquire)!=0;}
@@ -244,6 +248,16 @@ bool service(storage::FileSystem* fs) {
     delivery::NvsStateStore store;delivery::State state;
     if(delivery::load(store,&state)!=delivery::Error::none) {
       finish(Phase::failed,true,"Map state unreadable; files retained.");return true;
+    }
+    if(command==kReset) {
+      // Escape hatch for any stuck install: forget only the saved intent. Map
+      // files on the SD card and installed ownership are left untouched.
+      state.pending={};
+      if(delivery::save(store,state)==delivery::Error::none) {
+        invalidate_catalog();
+        finish(Phase::idle,false,"Saved install cleared. Check the catalog to download again.");
+      } else finish(Phase::failed,true,"Could not clear the saved install. Try again.");
+      return true;
     }
     const bool pending=!state.pending.product.empty();
     if(command==kRecover&&!fs) {
