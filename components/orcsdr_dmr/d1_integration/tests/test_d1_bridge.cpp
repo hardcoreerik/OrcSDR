@@ -195,13 +195,43 @@ unsigned identities(const Capture& cap){
             CHECK(e.decoded.destination_id==99);
             CHECK(e.decoded.source_id==3024109);
             CHECK(e.decoded.colour_code==1);
-            CHECK(e.decoded.slot==1 || e.decoded.slot==2);
-            CHECK(e.decoded.slot_from_cach);
+            // D1-S intentionally leaves the first three BS CACH slots
+            // unknown. Identity may be independently RS-verified.
+            if (e.decoded.slot_from_cach) {
+                CHECK(e.decoded.slot==1 || e.decoded.slot==2);
+                CHECK(e.decoded.cach_present);
+                CHECK(e.decoded.cach_confidence==d1::CachConfidence::cadence_validated);
+                CHECK(e.decoded.cach_cadence_bursts>=4);
+            } else {
+                CHECK(e.decoded.slot==0);
+                CHECK(!e.decoded.cach_present);
+            }
             CHECK(e.sample_time_known);
             ++count;
         }
     }
     return count;
+}
+void test_first_burst_recovery(){
+    const auto bits=make_stream(1);
+    const auto iq=synthesize(bits);
+    const auto one=run(iq,1);
+    const auto bulk=run(iq,iq.size());
+    CHECK(one.bridge_stats.acquisitions==1);
+    CHECK(one.frontend_stats.full_preroll_acquisitions==1);
+    CHECK(one.bridge_stats.acquisition_prerolls==1);
+    CHECK(one.bridge_stats.acquisition_bursts_missed==0);
+    CHECK(one.frontend_stats.preroll_symbols==78);
+    CHECK(one.events.size()==1 && bulk.events.size()==1);
+    CHECK(identities(one)==1);
+    CHECK(one.events[0].decoded.slot==0); // No CACH cadence from one BS burst.
+    CHECK(one.events[0].decoded.cach_confidence==d1::CachConfidence::tentative ||
+          one.events[0].decoded.cach_confidence==d1::CachConfidence::none);
+    CHECK(one.events[0].decoded.burst_start_dibit==0);
+    CHECK(one.events[0].sample_time_known);
+    CHECK(one.events[0].burst_start_sample==bulk.events[0].burst_start_sample);
+    CHECK(one.events[0].decoded.source_id==bulk.events[0].decoded.source_id);
+    std::puts("synthetic first complete DMR burst: valid ID, unknown BS slot");
 }
 void test_stream_alignment(){
     const auto bits=make_stream();
@@ -210,8 +240,10 @@ void test_stream_alignment(){
     const auto single=run(iq,1);
     CHECK(full.frontend_stats.locks>=1);
     CHECK(full.bridge_stats.acquisitions>=1);
-    CHECK(full.bridge_stats.acquisition_bursts_missed>=1);
-    CHECK(identities(full)>=3); // First acquired burst intentionally unavailable.
+    CHECK(full.bridge_stats.acquisition_prerolls>=1);
+    CHECK(full.bridge_stats.acquisition_bursts_missed==0);
+    CHECK(identities(full)>=8); // Measured first-burst payload is now forwarded.
+    CHECK(full.events.front().decoded.burst_start_dibit==0);
     CHECK(full.bridge_stats.validated_identities==identities(full));
     CHECK(full.events.size()==single.events.size());
     CHECK(full.bridge_stats.dibits_sent==single.bridge_stats.dibits_sent);
@@ -265,6 +297,7 @@ void test_noise_and_empty(){
 
 int main(){
     CHECK(bridge::Receiver::static_storage_bytes()<8192U);
+    test_first_burst_recovery();
     test_stream_alignment();
     test_reset_and_discontinuity();
     test_noise_and_empty();
