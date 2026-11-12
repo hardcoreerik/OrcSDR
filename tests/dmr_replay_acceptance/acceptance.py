@@ -159,6 +159,7 @@ def aggregate_events(lines: list[str], samples: int, *, negative: bool, upstream
     talkgroups: set[int] = set()
     previous = -1
     summary_seen = False
+    event_trace = hashlib.sha256()  # canonical, ordered per-event evidence across IQ chunking
     for line_number, raw in enumerate(lines, 1):
         if not raw.strip():
             continue
@@ -243,8 +244,13 @@ def aggregate_events(lines: list[str], samples: int, *, negative: bool, upstream
             raise AcceptanceError(f"unknown bridge event type {kind!r}")
         if line_number > 200000:
             raise AcceptanceError("too many bridge events")
+        # Fingerprint the complete validated event stream, including sample offsets.
+        # Counts alone can hide event-level chunk-boundary differences.
+        event_trace.update(json.dumps(event, sort_keys=True, separators=(",", ":")).encode("utf-8"))
+        event_trace.update(b"\n")
     if not summary_seen:
         raise AcceptanceError("bridge missing end-of-stream sample count acknowledgment")
+    summary["event_trace_sha256"] = event_trace.hexdigest()
     summary["slots_observed"] = sorted(seen_slots)
     summary["slots_check_fec_bursts"] = sorted(valid_slots)
     summary["color_codes"] = sorted(colors)
