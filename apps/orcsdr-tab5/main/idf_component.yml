@@ -13,6 +13,10 @@ dependencies:
     git: https://github.com/hardcoreerik/esp-rtl-sdr.git
     # esp_rtl_sdr v0.9.6 (published release, exact tagged source)
     version: dabdda1aff6aa196f3c1523d791adf80d2c24ccc
+  esp-pluto-sdr:
+    git: https://github.com/hardcoreerik/esp-pluto-sdr.git
+    # Standalone PlutoSDR driver, pinned and compiled but not yet called by the Tab5 app (no Pluto source in ui/main.cpp).
+    version: ca88e3702078c2f3868669edec41bcf205e7096d
   orcmaps:
     git: https://github.com/hardcoreerik/OrcMaps.git
     # Development candidate: offscreen feature rejection; native timing pending.

@@ -252,6 +252,7 @@ idf_component_register(
         mbelib
         nvs_flash
         esp_rtl_sdr
+        esp-pluto-sdr
         orcmaps
         esp_driver_usb_serial_jtag
         esp_driver_i2c

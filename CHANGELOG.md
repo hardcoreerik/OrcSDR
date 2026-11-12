@@ -2,6 +2,12 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — esp-pluto-sdr pinned in the Tab5 app — 2026-11-12
+
+- **Dependency only:** `apps/orcsdr-tab5` now pins the standalone PlutoSDR driver esp-pluto-sdr at `ca88e37` (includes the libiio `CLOSE_PIPE` fix) and compiles it. The app does not call it yet: there is no Pluto source in `ui/main.cpp`, so behaviour is unchanged.
+- **Verified:** full `build-tab5-idf.ps1` build links; binary 5,592,896 bytes (11% of the app partition free). Not flashed, not run on a Tab5 in this form.
+- **Driver evidence:** the driver ran on the Tab5 (COM39) in a separate standalone test, 43 of 43 checks, and streamed 2.4 MS/s with 0 drops in a headless P4 Core build.
+
 ## Unreleased — Volume tray redesign, Visualizer entry — 2026-11-11
 
 - **Volume tray:** now 840x280 (3:1, twice the previous size), centred just below the status bar, drawn as the top item: it is composited from a sprite, and the dashboards (scopes, waterfalls, FT8 waterfall) hold still while it is open. The tray reads touch itself; dashboards see no touch until the finger is up and 250 ms have passed, so a tap that opens, adjusts or dismisses the tray never reaches "touch to tune". Only the slider reacts to a held finger; mute fires once per press and the second tap of a double tap on the speaker does not mute.
