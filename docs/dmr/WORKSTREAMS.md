@@ -2,7 +2,7 @@
 
 **Integration branch:** `feature/dmr-digital-voice-foundation` (based on `docs/dmr-vision-tracking-20261111`).
 **Source of scope:** [VISION.md](VISION.md) and [TRACKING.md](TRACKING.md). **As of:** 2026-11-11.
-**Current status:** F0a event model and **F0b host-only two-slot storage** committed and locally tested. D0 protocol primitive source/tests committed; F0c on-device SD adapter, D1 DMR decoder, and import-apply integration remain open. Neither a live DMR receiver nor an on-device discovery system is implemented.
+**Current status:** F0a/F0b host storage established. F0c host microSD adapter and both independent D1 receiver modules are committed. **The D1-A frontend and D1-B protocol stream are not yet connected or validated together**, and ESP32-P4 SD hardware testing and profile import apply remain open. Neither a live DMR receiver nor an on-device discovery system is implemented. See [D1/F0c integration gate](D1_INTEGRATION_GATE_2026-11-11.md).
 
 ## One shared branch, exclusive folders
 
@@ -35,9 +35,9 @@ On this **one shared branch**, each agent must `git fetch`, check out `feature/d
 
 - **F0a — Implemented, host-tested only:** `components/orcsdr_radio_discovery/` exports typed `Observation`, `Origin`, `Proof`, protocol identity with explicit validity flags, receiver-location vs site identity separation, and `ObservationRing<Capacity>` with no post-init allocation. Host CMake test passed; release/NDEBUG test passed; ASan/UBSan local test passed. Not wired into firmware or SD.
 - **F0b — Host implementation and recovery tests completed:** bounded three-provenance library, explicit `ORAD` v1 snapshot, two-slot CRC journal, known-field identity matching, conservative conflict handling and explicit keep-separate for incomplete identities. Debug, Release and ASan/UBSan host suites pass, including a POSIX file-backed `fsync` restart; see [validation evidence](F0B_HOST_VALIDATION_2026-11-11.md). **This does not establish a working Tab5 SD backend.**
-- **F0c — Next lead task:** qualify ESP-IDF SD `SlotIO` adapter, test power-loss recovery, measure internal RAM/PSRAM/stack and preserve P25 v2 compatibility. Do not add another radio owner.
+- **F0c — Host adapter delivered:** `esp_idf/**` implements opt-in `SlotIO` and host fault tests. **Device compile, actual FAT/microSD power interruption, RAM/stack and P25 v2 compatibility remain unverified.** Do not add another radio owner.
 - **D0 — Sandbox A:** ETSI-derived constants and host test source delivered in `components/orcsdr_dmr/**`; independent run and acceptance remain open.
-- **D1 — After D0 acceptance:** standalone DMR Tier II 4FSK demod/framer and metadata on synthetic + appropriately pinned recorded IQ; no dashboard before host evidence.
+- **D1 — Two independent modules delivered:** `d1_frontend/**` accepts 48 kS/s complex float IQ, `d1_protocol/**` accepts contiguous DMR dibits. **Blocking mismatch:** frontend emits only after acquisition SYNC, while protocol needs a complete burst with 54 dibits before the 24-dibit SYNC. Build/test a truthful alignment/acquisition bridge, then replay verified private IQ. No dashboard before end-to-end host acceptance.
 - **D2 — After D1 acceptance:** radio ownership, location-based scan, last-heard log, import migration, UI, and no-network acceptance. Separate firmware build and physical RF gates.
 - **D3+:** offline indexes, recorder/replay, NXDN, weak-signal survey and trunking in tracked order.
 
