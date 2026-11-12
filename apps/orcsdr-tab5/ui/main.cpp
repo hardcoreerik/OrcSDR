@@ -2857,7 +2857,9 @@ bool rtl_frequency_supported(uint32_t frequency_hz) {
   if (rtl_pluto_active() || (!rtl_usb_device_ready() && orcsdr::pluto_source::ready())) {
     // A PlutoSDR states its own range (70 MHz to 6 GHz); this console's frequency type stops at 32 bits.
     const auto pluto = orcsdr::pluto_source::status();
-    return pluto.tune_max_hz != 0 && frequency_hz >= pluto.tune_min_hz && frequency_hz <= pluto.tune_max_hz;
+    // The range is only known after the device has been read once; until then the driver decides when the stream starts.
+    if (pluto.tune_max_hz == 0) return true;
+    return frequency_hz >= pluto.tune_min_hz && frequency_hz <= pluto.tune_max_hz;
   }
   if (rtl_remote_tuning_selected()) return true;
   if (rtl_is_e4000()) return rtl_e4000_frequency_supported(frequency_hz);
