@@ -7,6 +7,12 @@
 
 This report is a source/interface review and integration contract, not a new benchmark or independent execution of the agent tests. No production P25/firmware files were changed.
 
+## D1-C synthetic integration acceptance — verified 2026-11-11 PST
+
+[GitHub Actions run 43156539511](https://github.com/hardcoreerik/OrcSDR/actions/runs/43156539511) independently built actual D0, D1-A, D1-B and the new `d1_integration/**` bridge with C++17 warnings-as-errors in **Release and ASan/UBSan**. Both jobs passed (1/1 CTest each). The synthesized 48 kS/s 4FSK stream contained nine repeated BS data bursts with CACH, full LC, BPTC, Golay and RS. The real integration acquired once and reported **eight subsequent complete bursts, eight integrity-validated source/talkgroup identities, color code 1 and alternating TS1/TS2**. Chunk-by-chunk (including one IQ sample per call), discontinuity and silence tests passed. This is **not** a measured decode of a real-air recording.
+
+**Resolution of the cold-start mismatch:** `d1_integration::Receiver` intentionally starts forwarding the *post-acquisition* dibits only. Once the next full burst reaches the protocol parser, identity validation works. The first acquired burst cannot be recovered from these inputs; the module counts it as unavailable rather than fabricating bitstream history. This is a functional synthetic end-to-end milestone **with a first-burst/short-PTT limitation**, not full D1 acceptance. Pre-roll recovery and verified REA IQ replay are the next decoder gates. The older mismatch analysis below remains the design rationale.
+
 ## Deliveries and boundaries
 
 | Area | Location | Handoff | Gate status |
