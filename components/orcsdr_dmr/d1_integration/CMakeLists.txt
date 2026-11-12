@@ -26,3 +26,17 @@ if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
     target_compile_options(dmr_d1_integration_tests PRIVATE -Wall -Wextra -Wpedantic -Werror)
 endif()
 add_test(NAME dmr_d1_integration_tests COMMAND dmr_d1_integration_tests)
+
+# Real host-IQ acceptance adapter. Reads CF32-LE from stdin and emits JSONL v1.
+# This is a host command, never an ESP-IDF task or an on-device decoder owner.
+add_executable(dmr_d1_replay_bridge tools/d1_replay_bridge.cpp)
+target_link_libraries(dmr_d1_replay_bridge PRIVATE orcsdr_dmr_d1_integration)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+    target_compile_options(dmr_d1_replay_bridge PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+find_package(Python3 COMPONENTS Interpreter)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME dmr_d1_replay_bridge_cli
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_LIST_DIR}/tests/test_replay_cli.py"
+                "$<TARGET_FILE:dmr_d1_replay_bridge>")
+endif()
