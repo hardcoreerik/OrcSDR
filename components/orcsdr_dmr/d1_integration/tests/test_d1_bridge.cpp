@@ -213,8 +213,10 @@ unsigned identities(const Capture& cap){
     return count;
 }
 void test_first_burst_recovery(){
-    const auto bits=make_stream(1);
-    // Separate cleaner first-burst proof from an impaired sync-error case.
+    // One complete direct-mode burst with no preceding BS CACH; the measured
+    // acquisition payload must produce independent full-LC identity evidence.
+    const auto burst=make_burst(make_lc(99,3024109),SyncKind::direct_ts1_data,1,1);
+    const std::vector<std::uint8_t> bits(burst.begin(),burst.end());
     const auto iq=synthesize(bits,320.,.001);
     const auto one=run(iq,1);
     const auto bulk=run(iq,iq.size());
@@ -264,9 +266,9 @@ void test_first_burst_recovery(){
     }
     CHECK(one.events.size()==1 && bulk.events.size()==1);
     CHECK(identities(one)==1);
-    CHECK(one.events[0].decoded.slot==0); // No CACH cadence from one BS burst.
-    CHECK(one.events[0].decoded.cach_confidence==d1::CachConfidence::tentative ||
-          one.events[0].decoded.cach_confidence==d1::CachConfidence::none);
+    CHECK(one.events[0].decoded.slot==1); // Explicit direct-mode TS1 sync.
+    CHECK(!one.events[0].decoded.slot_from_cach);
+    CHECK(one.events[0].decoded.cach_confidence==d1::CachConfidence::none);
     CHECK(one.events[0].decoded.burst_start_dibit==0);
     CHECK(one.events[0].sample_time_known);
     CHECK(one.events[0].burst_start_sample==bulk.events[0].burst_start_sample);
