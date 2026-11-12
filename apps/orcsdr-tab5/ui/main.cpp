@@ -80,6 +80,7 @@
 #include "memory_reclaim.hpp"
 #include "memory_ledger.hpp"
 #include "serial_help.hpp"
+#include "serial_memory.hpp"
 #include "esp_memory_utils.h"
 #include "shortwave_model.hpp"
 #include "shortwave_audio_dsp.hpp"
@@ -4585,36 +4586,18 @@ bool iq_rec_ensure_buffer() {
 // left the FT8 decoder (about 4 MB) unable to start after a long session. They are registered as reclaimable: given back on request
 // (the FT8 screen's FREE MEMORY, RTL_MEM RECLAIM) when nothing is using them, and re-allocated by lora_iq_ensure_buffers() the next
 // time LoRa opens.
-// RTL_MEM BUFFERS: the large on-demand buffers, whether each is allocated and where it landed, and the lowest free
-// memory seen since boot. Read-only; the table is constant data and nothing here allocates or frees.
-static void print_memory_buffers() {
-  using orcsdr::memory_ledger::Buffer;
-  static const Buffer kBuffers[] = {
-      {"audio_rec", []() -> const void* { return g_audio_rec_buf; },
-       []() -> size_t { return g_audio_rec_capacity * sizeof(int16_t); }},
-      {"rds_capture", []() -> const void* { return g_rds_capture_buf; },
-       []() -> size_t { return kRdsCaptureSamples * sizeof(int16_t); }},
-      {"iq_capture", []() -> const void* { return g_iq_rec_buf; }, []() -> size_t { return kIqRecMaxBytes; }},
-      {"lora_decode", []() -> const void* { return g_lora_decode_buf; }, []() -> size_t { return kIqRecMaxBytes; }},
-      {"lora_pre_roll", []() -> const void* { return g_lora_pre_roll_buf; },
-       []() -> size_t { return kLoraPreRollBytes; }},
-  };
-  const auto in_psram = [](const void* pointer) -> bool { return esp_ptr_external_ram(pointer); };
-  char line[96];
-  for (const Buffer& buffer : kBuffers) {
-    if (orcsdr::memory_ledger::format_line(line, sizeof(line), orcsdr::memory_ledger::describe(buffer, in_psram)) > 0) {
-      Serial.println(line);
-    }
-  }
-  if (orcsdr::memory_ledger::format_totals(
-          line, sizeof(line), orcsdr::memory_ledger::summarize(kBuffers, std::size(kBuffers), in_psram)) > 0) {
-    Serial.println(line);
-  }
-  Serial.printf("RTL_MEM_MIN psram_min=%u internal_min=%u dma_min=%u\n",
-                (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_SPIRAM),
-                (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL),
-                (unsigned)heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA));
-}
+// The large on-demand buffers reported by RTL_MEM BUFFERS (serial_memory.cpp). Constant data: nothing here
+// allocates or frees.
+static constexpr orcsdr::memory_ledger::Buffer kMemoryBuffers[] = {
+    {"audio_rec", []() -> const void* { return g_audio_rec_buf; },
+     []() -> size_t { return g_audio_rec_capacity * sizeof(int16_t); }},
+    {"rds_capture", []() -> const void* { return g_rds_capture_buf; },
+     []() -> size_t { return kRdsCaptureSamples * sizeof(int16_t); }},
+    {"iq_capture", []() -> const void* { return g_iq_rec_buf; }, []() -> size_t { return kIqRecMaxBytes; }},
+    {"lora_decode", []() -> const void* { return g_lora_decode_buf; }, []() -> size_t { return kIqRecMaxBytes; }},
+    {"lora_pre_roll", []() -> const void* { return g_lora_pre_roll_buf; },
+     []() -> size_t { return kLoraPreRollBytes; }},
+};
 
 size_t lora_iq_held_bytes() {
   return (g_iq_rec_buf ? kIqRecMaxBytes : 0u) + (g_lora_decode_buf ? kIqRecMaxBytes : 0u) +
@@ -19861,6 +19844,44 @@ static constexpr orcsdr::serial_help::Hooks kSerialHelpHooks{
 #endif
 };
 
+// The RTL_MEM commands live in serial_memory.cpp; these are the device facts they read.
+static constexpr uint32_t serial_memory_caps(orcsdr::serial_memory::Region region) {
+  return region == orcsdr::serial_memory::Region::psram      ? MALLOC_CAP_SPIRAM
+         : region == orcsdr::serial_memory::Region::internal ? MALLOC_CAP_INTERNAL
+                                                             : (MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA);
+}
+static constexpr orcsdr::serial_memory::Hooks kSerialMemoryHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    [](orcsdr::serial_memory::Region region) -> uint32_t { return heap_caps_get_free_size(serial_memory_caps(region)); },
+    [](orcsdr::serial_memory::Region region) -> uint32_t {
+      return heap_caps_get_largest_free_block(serial_memory_caps(region));
+    },
+    [](orcsdr::serial_memory::Region region) -> uint32_t {
+      return heap_caps_get_minimum_free_size(serial_memory_caps(region));
+    },
+#if ORCSDR_ORCDIAL
+    []() -> orcsdr::serial_memory::OrcDial {
+      return {orcdial_transport_ready, static_cast<uint32_t>(orcdial_secure.stack_free_min())};
+    },
+#else
+    nullptr,
+#endif
+    []() -> orcsdr::serial_memory::Ft8 {
+      const auto report = orcsdr::ft8_runtime::last_start_report();
+      return {orcsdr::ft8_runtime::active(),
+              report.failure == orcsdr::ft8_runtime::StartFailure::memory    ? "memory"
+              : report.failure == orcsdr::ft8_runtime::StartFailure::backend ? "backend"
+                                                                             : "none",
+              report.requested_bytes, report.failures};
+    },
+    kMemoryBuffers,
+    std::size(kMemoryBuffers),
+    [](const void* pointer) -> bool { return esp_ptr_external_ram(pointer); },
+    mem_hog_fill,
+    ft8_free_memory_and_retry,
+};
+
 void process_command(char* command) {
   if (strncmp(command, "JS8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
     process_js8_command(command + 3);
@@ -20365,47 +20386,7 @@ void process_command(char* command) {
     Serial.printf("RTL_RF24_PAGE_OK page=%u\n", page);
     return;
   }
-  if(!strcmp(command,"RTL_MEM STATUS")) {
-    // What is free and which features hold memory they could give up (largest first), plus why the FT8 decoder last failed to start.
-    Serial.printf("RTL_MEM psram_free=%u psram_largest=%u internal_free=%u internal_largest=%u\n",
-                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),(unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM),
-                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL),(unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL));
-    // Internal RAM that DMA can use (Wi-Fi/C6 link, USB host, SD card, I2S) is the scarce one: the figures that predict a Wi-Fi failure.
-    Serial.printf("RTL_MEM_DMA dma_free=%u dma_largest=%u\n",
-                  (unsigned)heap_caps_get_free_size(MALLOC_CAP_INTERNAL|MALLOC_CAP_DMA),
-                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL|MALLOC_CAP_DMA));
-#if ORCSDR_ORCDIAL
-    Serial.printf("RTL_MEM_ORCDIAL bridge=%d secure_stack_free_min=%u\n",orcdial_transport_ready?1:0,(unsigned)orcdial_secure.stack_free_min());
-#endif
-    orcsdr::memory_reclaim::Report holders[orcsdr::memory_reclaim::kMaxHolders];
-    const size_t n=orcsdr::memory_reclaim::list(holders,orcsdr::memory_reclaim::kMaxHolders);
-    for(size_t i=0;i<n;++i)Serial.printf("RTL_MEM_HOLDER %s bytes=%u\n",holders[i].name,(unsigned)holders[i].held);
-    const auto report=orcsdr::ft8_runtime::last_start_report();
-    Serial.printf("RTL_MEM_FT8 active=%d last_failure=%s needed=%u failures=%u\n",orcsdr::ft8_runtime::active()?1:0,
-                  report.failure==orcsdr::ft8_runtime::StartFailure::memory?"memory":report.failure==orcsdr::ft8_runtime::StartFailure::backend?"backend":"none",
-                  (unsigned)report.requested_bytes,(unsigned)report.failures);
-    return;
-  }
-  if(!strcmp(command,"RTL_MEM BUFFERS")) {
-    print_memory_buffers();
-    return;
-  }
-  if(!strncmp(command,"RTL_MEM HOG ",12)) {   // bench aid: RTL_MEM HOG <kib to leave free>; undone by RTL_MEM RECLAIM
-    if(!authenticated){Serial.println("RTL_MEM_ERROR auth_required");return;}
-    const unsigned long leave_kib=strtoul(command+12,nullptr,10);
-    if(leave_kib<64||leave_kib>32768){Serial.println("RTL_MEM_ERROR use=RTL_MEM HOG <64..32768 KiB to leave free>");return;}
-    const size_t held=mem_hog_fill(static_cast<size_t>(leave_kib)*1024u);
-    Serial.printf("RTL_MEM_OK held=%u psram_free=%u psram_largest=%u\n",(unsigned)held,(unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
-                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
-    return;
-  }
-  if(!strcmp(command,"RTL_MEM RECLAIM")) {
-    if(!authenticated){Serial.println("RTL_MEM_ERROR auth_required");return;}
-    ft8_free_memory_and_retry();   // releases every registered holder and lets the FT8 screen try to start again at once
-    Serial.printf("RTL_MEM_OK psram_free=%u psram_largest=%u\n",(unsigned)heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
-                  (unsigned)heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
-    return;
-  }
+  if (orcsdr::serial_memory::handle_command(command, authenticated, kSerialMemoryHooks)) return;
 #if ORCSDR_ORCDIAL
   if(!strcmp(command,"RTL_ORCDIAL_STATUS")||!strcmp(command,"RTL_ORCDIAL_PROBE")) {
     const auto state=orcdial_secure.status();

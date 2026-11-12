@@ -25,6 +25,7 @@ on:
       - 'tools/tab5_serial_golden.py'
       - 'tests/serial_command_routes_test.py'
       - 'tests/serial_help_tests.cpp'
+      - 'tests/serial_memory_tests.cpp'
       - 'tests/memory_ledger_tests.cpp'
       - 'tests/data/serial_help_golden.txt'
       - 'tests/data/serial_help_golden_orcdial.txt'

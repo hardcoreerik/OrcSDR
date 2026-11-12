@@ -16,6 +16,7 @@ run waterfall_style tests/waterfall_style_tests.cpp "$ui/waterfall_style.cpp"
 run lora_history tests/lora_history_tests.cpp "$ui/lora_history.cpp" "$ui/lora_packet_log.cpp"
 run memory_ledger tests/memory_ledger_tests.cpp "$ui/memory_ledger.cpp"
 run serial_help tests/serial_help_tests.cpp "$ui/serial_help.cpp"
+run serial_memory tests/serial_memory_tests.cpp "$ui/serial_memory.cpp" "$ui/memory_ledger.cpp" "$ui/memory_reclaim.cpp"
 
 # Focused release-review lifecycle regressions exercise the production routines.
 python3 tests/setup_navigation_pause_test.py
