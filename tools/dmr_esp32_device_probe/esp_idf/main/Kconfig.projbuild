@@ -1,0 +1,24 @@
+menu "DMR device probe (standalone only)"
+    config DMR_PROBE_SECONDS
+        int "Synthetic 48 kS/s processing run duration, seconds"
+        range 5 120
+        default 30
+        help
+            No radio or USB driver is initialized. The worker benchmarks
+            only synthetic precomputed IQ via the actual D1 portable receiver.
+
+    config DMR_PROBE_PSRAM
+        bool "Allocate probe receiver, SPSC queue and IQ stimulus in PSRAM"
+        default y
+        help
+            Prevent synthetic probe buffers from consuming the scarce DMA-
+            capable internal heap. For internal-only comparison, explicitly
+            disable this and verify free internal RAM before starting.
+
+    config DMR_PROBE_FORCE_OVERLOAD
+        bool "Intentionally pause probe worker for 100 ms at midpoint"
+        default n
+        help
+            Generates measured queue drops; MUST NOT be used to claim normal
+            sustained 48 kS/s acceptance.
+endmenu

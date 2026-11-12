@@ -1,0 +1,16 @@
+# Local-only profiler artifacts; never commit actual IQ, serial logs or binaries.
+build/
+*.log
+*.bin
+*.elf
+*.map
+sdkconfig
+sdkconfig.old
+managed_components/
+dependencies.lock
+*.orciq
+*.iq
+*.cfile
+*.cs16
+*.cf32
+__pycache__/
