@@ -117,10 +117,14 @@ struct Output {
         const char* check = std::strcmp(check_kind, "none") == 0 ? "unknown" :
                             e.integrity_valid ? "pass" :
                             (std::strcmp(fec, "pass") == 0 ? "fail" : "unknown");
-        // Raw CACH before a single BS sync is a Hamming-inferred slot, not
-        // verified to be CACH. JSONL v1 lacks a "candidate" slot field.
-        // Report unknown until a separate cadence-verification gate exists.
-        const bool known_slot = e.slot >= 1U && e.slot <= 2U && !e.slot_from_cach;
+        // D1-S publishes BS slot only after four-burst cadence or validated
+        // embedded-LC provenance. Tentative Hamming prefixes stay null:
+        // JSONL v1 has no separate "candidate slot" field.
+        const bool trusted_cach_slot = e.slot_from_cach &&
+            (e.cach_confidence == d1::CachConfidence::cadence_validated ||
+             e.cach_confidence == d1::CachConfidence::embedded_lc_validated);
+        const bool known_slot = e.slot >= 1U && e.slot <= 2U &&
+                                (!e.slot_from_cach || trusted_cach_slot);
         const bool known_cc = (e.golay_valid && data) || (e.late_entry && eligible);
         if (std::printf("{\"schema\":\"%s\",\"type\":\"burst\",\"sample_offset\":%llu,"
             "\"kind\":\"%s\",\"slot\":", kSchema, offset, frame_kind) < 0) {
