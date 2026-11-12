@@ -297,7 +297,7 @@ void test_stream_alignment(){
     // The first BS burst has a measured pre-roll, but this particular
     // synthetic waveform may lose its exact SYNC match by one dibit.
     // The subsequent eight bursts must still provide valid LC evidence.
-    CHECK(full.events.front().decoded.burst_start_dibit>=0);
+    CHECK(full.events.front().decoded.burst_start_dibit<=144U);
     CHECK(full.bridge_stats.validated_identities==identities(full));
     CHECK(full.events.size()==single.events.size());
     CHECK(full.bridge_stats.dibits_sent==single.bridge_stats.dibits_sent);
