@@ -203,21 +203,15 @@ unsigned identities(const Capture& cap){
                 CHECK(e.decoded.cach_confidence==d1::CachConfidence::cadence_validated);
                 CHECK(e.decoded.cach_cadence_bursts>=4);
             } else {
-                if (e.decoded.slot!=0) {
-                    std::fprintf(stderr,
-                        "SYNC PROVENANCE DIAGNOSTIC start=%llu kind=%u "
-                        "sync_bit_errors=%u slot=%u cach=%u confidence=%u "
-                        "candidate_slot=%u cadence=%u\\n",
-                        static_cast<unsigned long long>(e.decoded.burst_start_dibit),
-                        static_cast<unsigned>(e.decoded.sync),
-                        static_cast<unsigned>(e.decoded.sync_bit_errors),
-                        static_cast<unsigned>(e.decoded.slot),
-                        e.decoded.slot_from_cach ? 1U : 0U,
-                        static_cast<unsigned>(e.decoded.cach_confidence),
-                        static_cast<unsigned>(e.decoded.cach_candidate_slot),
-                        static_cast<unsigned>(e.decoded.cach_cadence_bursts));
+                // TS1/TS2 is explicit in a verified direct-mode sync, while
+                // a base-station data burst requires corroborated CACH cadence.
+                const auto kind=static_cast<unsigned>(e.decoded.sync);
+                if (kind>=4U && kind<=7U) {
+                    CHECK(e.decoded.slot==(kind<=5U ? 1U : 2U));
+                    CHECK(e.decoded.cach_confidence==d1::CachConfidence::none);
+                } else {
+                    CHECK(e.decoded.slot==0);
                 }
-                CHECK(e.decoded.slot==0);
                 CHECK(!e.decoded.cach_present);
             }
             CHECK(e.sample_time_known);
@@ -240,63 +234,22 @@ void test_first_burst_recovery(){
     CHECK(one.bridge_stats.acquisition_prerolls==1);
     CHECK(one.bridge_stats.acquisition_bursts_missed==0);
     CHECK(one.frontend_stats.preroll_symbols==78);
-    std::fprintf(stderr,
-        "FIRST BURST DIAGNOSTIC one=%zu bulk=%zu dibits=%llu "
-        "locks=%llu loss=%llu prerolls=%llu pre_syms=%llu "
-        "statAcq=%llu statMiss=%llu\n",
-        one.events.size(), bulk.events.size(),
-        static_cast<unsigned long long>(one.bridge_stats.dibits_sent),
-        static_cast<unsigned long long>(one.frontend_stats.locks),
-        static_cast<unsigned long long>(one.frontend_stats.lost_locks),
-        static_cast<unsigned long long>(one.frontend_stats.full_preroll_acquisitions),
-        static_cast<unsigned long long>(one.frontend_stats.preroll_symbols),
-        static_cast<unsigned long long>(one.bridge_stats.acquisitions),
-        static_cast<unsigned long long>(one.bridge_stats.acquisition_bursts_missed));
-    if (one.events.empty() || bulk.events.empty()) {
-        d1::Frontend raw_front;
-        std::vector<std::uint8_t> decisions;
-        for (std::size_t p=0;p<iq.size();) {
-            d1::Symbol sy{};
-            const auto step=raw_front.process(iq.data()+p,
-                std::min<std::size_t>(8,iq.size()-p),&sy,1);
-            CHECK(step.consumed>0);
-            p+=step.consumed;
-            if(step.produced) decisions.push_back(sy.dibit);
-        }
-        std::size_t sync_bad=0;
-        std::uint64_t sync_wire=0;
-        for(std::size_t k=54;k<78 && k<decisions.size();++k) {
-            if (decisions[k]!=bits[k]) ++sync_bad;
-            sync_wire=(sync_wire<<2U)|decisions[k];
-        }
-        std::size_t full_bad=0;
-        for(std::size_t k=0;k<132 && k<decisions.size();++k)
-            if(decisions[k]!=bits[k]) ++full_bad;
-        std::fprintf(stderr,
-            "FIRST BURST DIBIT DIAGNOSTIC count=%zu mismatch=%zu sync_bad=%zu "
-            "wire=%012llx expected=%012llx\n",
-            decisions.size(),full_bad,sync_bad,
-            static_cast<unsigned long long>(sync_wire),
-            static_cast<unsigned long long>(sync_word(SyncKind::direct_ts1_data)));
-        CHECK(one.events.size()==bulk.events.size());
-        // This is a documented, measured single-sync-dibit failure on the
-        // D1-P pre-roll; it is NOT successful first-burst D1 acceptance.
-        CHECK(decisions.size()>=132 && sync_bad==1);
-        CHECK(full_bad==1);
-        std::puts("KNOWN D1 limitation: one measured sync dibit error drops single-burst identity");
-    }
-    if (!one.events.empty()) {
-        CHECK(one.events.size()==1 && bulk.events.size()==1);
-        CHECK(identities(one)==1);
-        CHECK(one.events[0].decoded.slot==1); // Explicit direct-mode TS1 sync.
-        CHECK(!one.events[0].decoded.slot_from_cach);
-        CHECK(one.events[0].decoded.cach_confidence==d1::CachConfidence::none);
-        CHECK(one.events[0].decoded.burst_start_dibit==0);
-        CHECK(one.events[0].sample_time_known);
-        CHECK(one.events[0].burst_start_sample==bulk.events[0].burst_start_sample);
-        CHECK(one.events[0].decoded.source_id==bulk.events[0].decoded.source_id);
-        std::puts("synthetic first complete DMR burst: validated direct-mode ID");
-    }
+    // The isolated single-burst data sync had a genuine one-bit slicer
+    // error before D1 tolerance. Now its measured 132 dibits must yield
+    // a full RS-backed identity, NOT just a pre-roll lock.
+    CHECK(one.events.size()==1 && bulk.events.size()==1);
+    CHECK(identities(one)==1);
+    CHECK(one.events[0].decoded.sync==SyncKind::direct_ts1_data);
+    CHECK(one.events[0].decoded.sync_bit_errors==1);
+    CHECK(one.events[0].decoded.slot==1);
+    CHECK(!one.events[0].decoded.slot_from_cach);
+    CHECK(one.events[0].decoded.cach_confidence==d1::CachConfidence::none);
+    CHECK(one.events[0].decoded.burst_start_dibit==0);
+    CHECK(one.events[0].sample_time_known);
+    CHECK(one.events[0].burst_start_sample==bulk.events[0].burst_start_sample);
+    CHECK(one.events[0].decoded.source_id==bulk.events[0].decoded.source_id);
+    CHECK(one.events[0].decoded.destination_id==99);
+    std::puts("PASS isolated one-burst: measured pre-roll + one-bit sync + RS-verified DMR identity");
 }
 void test_stream_alignment(){
     const auto bits=make_stream();
