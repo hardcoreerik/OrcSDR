@@ -24,7 +24,8 @@ struct Stats {
     std::uint64_t protocol_events = 0;
     std::uint64_t validated_identities = 0;
     std::uint64_t acquisitions = 0;
-    std::uint64_t acquisition_bursts_missed = 0;
+    std::uint64_t acquisition_bursts_missed = 0; // known acquired sync without full measured pre-roll
+    std::uint64_t acquisition_prerolls = 0; // measured 78-dibit pre-roll, NOT necessarily valid LC
     std::uint64_t lost_locks = 0;
     std::uint64_t invalid_calls = 0;
     std::uint32_t stream_epoch = 0;
@@ -38,12 +39,11 @@ struct Result {
 // Host-portable, callback-only receiver. Caller retains IQ memory and event
 // data; neither module queues caller-owned pointers. Callers serialize access.
 //
-// IMPORTANT: The existing frontend starts after its *acquisition* SYNC. It
-// cannot recover the 54 pre-sync payload dibits in that burst. This bridge
-// does not invent those missing symbols. The protocol decoder may decode
-// subsequent *complete* bursts after continuous lock, but initial short
-// transmissions can be missed. An eventual pre-roll extension needs a
-// separate measured acceptance gate.
+// D1-P now emits 54 payload + 24 sync dibits from MEASURED, retained
+// samples when acquisition history is complete. The bridge forwards those
+// samples without stitching unrelated locks or inventing missing bits.
+// A complete pre-roll does NOT guarantee complete trailing payload or valid LC.
+// A capture beginning mid-burst can still be rejected by the frontend.
 class Receiver final {
 public:
     Receiver() noexcept = default;
@@ -71,6 +71,7 @@ private:
     std::array<std::uint64_t, kSampleHistory> sample_history_{};
     std::uint64_t prior_locks_ = 0;
     std::uint64_t prior_losses_ = 0;
+    std::uint64_t prior_prerolls_ = 0;
     Stats stats_{};
     EventSink active_callback_ = nullptr;
     void* active_user_ = nullptr;
