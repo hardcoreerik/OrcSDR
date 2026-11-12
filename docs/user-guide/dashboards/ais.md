@@ -65,7 +65,7 @@ Shows the fixed configuration: both channels on, the input source, and what is n
 
 ## Test replay mode
 
-For development and these screenshots, the firmware can mark a session as a test replay. Every page then shows **TEST REPLAY DATA – NOT LIVE RF**. The label is armed before any replayed samples arrive and is switched on only by an authenticated serial command (see the [serial reference](../../API_SERIAL_CLI.md)). It never turns itself on, and live data never carries it.
+For development and these screenshots, the firmware can mark a session as a test replay. Every page then shows **TEST REPLAY DATA – NOT LIVE RF**. The label is armed before any replayed samples arrive and is switched on only by an authenticated serial command (see the [serial reference](https://github.com/hardcoreerik/OrcSDR/blob/main/docs/API_SERIAL_CLI.md)). It never turns itself on, and live data never carries it.
 
 ## Troubleshooting
 
