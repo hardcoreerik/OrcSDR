@@ -99,6 +99,44 @@ jobs:
                   f.write("| "+" | ".join(map(str,row))+" |\n")
               f.write("\nThe workflow passing means byte verification and replay/chunk invariance passed. It does **not** by itself mean the DMR Tier III signaling or voice traffic was decoded. Any recovered CRC/RS, source ID and talkgroup shown are actual native results; upstream expectations are intentionally not used as pass criteria.\n")
           PY
+      - name: Investigate voice-terminator acquisition using IQ statistics and polarity inversion
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,math,os,struct,subprocess
+          from pathlib import Path
+          base=Path(os.environ["RUNNER_TEMP"])/"dmr-other-modes"/"DMR"
+          bridge=Path(os.environ["GITHUB_WORKSPACE"])/"build/dmr-other-real-iq"/"dmr_d1_replay_bridge"
+          for name in ("dmr-t3-cc.cfile","dmr-voice-term.cfile"):
+              raw=(base/name).read_bytes()
+              pairs=list(struct.iter_unpack("<ff",raw))
+              signal=sum(re*re+im*im for re,im in pairs)/len(pairs)
+              power=math.sqrt(signal)
+              peak=max(math.hypot(re,im) for re,im in pairs)
+              phase=[]
+              for (pr,pi),(re,im) in zip(pairs,pairs[1:]):
+                  if pr*pr+pi*pi<1e-14 or re*re+im*im<1e-14: continue
+                  phase.append(math.atan2(pr*im-pi*re,pr*re+pi*im))
+              mean_discr=sum(phase)/len(phase)*48000/(2*math.pi) if phase else float("nan")
+              print("SIGNAL",name,"iq_samples",len(pairs),"rms",round(power,5),
+                    "peak",round(peak,5),"mean_phase_difference_hz",round(mean_discr,2))
+              # This is a DIAGNOSTIC transformation, NOT another hash-pinned
+              # real-IQ fixture and NOT a valid D1-R acceptance case.
+              transformed=b"".join(struct.pack("<ff",re,-im) for re,im in pairs)
+              cmd=[str(bridge),"--input-format","cf32-le","--sample-rate-hz","48000",
+                   "--fixture-id","diagnostic-conjugated-iq"]
+              proc=subprocess.run(cmd,input=transformed,capture_output=True,timeout=60)
+              if proc.returncode:
+                  raise SystemExit(f"conjugation diagnostic bridge failed {name}: {proc.stderr[:200]!r}")
+              events=[json.loads(line) for line in proc.stdout.splitlines() if line.strip()]
+              sync=sum(e["type"]=="sync" for e in events)
+              bursts=[e for e in events if e["type"]=="burst"]
+              checked=sum(e["fec"]=="pass" and e["check"]=="pass" for e in bursts)
+              identities=[e["identity"] for e in bursts if e["identity_valid"]]
+              print("POLARITY_DIAGNOSTIC_CONJUGATED",name,"sync",sync,
+                    "bursts",len(bursts),"checked",checked,
+                    "validated_identifiers",identities[:6])
+          PY
       - name: Upload JSON metrics only, never IQ
         uses: actions/upload-artifact@v4
         if: always()
