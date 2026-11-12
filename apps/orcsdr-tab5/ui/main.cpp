@@ -79,6 +79,7 @@
 #include "ft8_runtime.hpp"
 #include "memory_reclaim.hpp"
 #include "memory_ledger.hpp"
+#include "serial_help.hpp"
 #include "esp_memory_utils.h"
 #include "shortwave_model.hpp"
 #include "shortwave_audio_dsp.hpp"
@@ -19849,6 +19850,17 @@ const orcsdr::lora_diag::Hooks kLoraDiagHooks{
     lora_diag_adapter::request_relearn, lora_diag_adapter::set_preamble_mode,
     lora_diag_adapter::select_channel,  lora_diag_adapter::recent_packets};
 
+// RTL_HELP lives in serial_help.cpp. The dispatcher calls it where its route used to be;
+// tools/serial_command_routes.py follows the call and checks the routing is unchanged.
+static constexpr orcsdr::serial_help::Hooks kSerialHelpHooks{
+    [](const char* text) { Serial.println(text); },
+#if ORCSDR_ORCDIAL
+    true,
+#else
+    false,
+#endif
+};
+
 void process_command(char* command) {
   if (strncmp(command, "JS8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
     process_js8_command(command + 3);
@@ -21798,100 +21810,7 @@ void process_command(char* command) {
     Serial.printf("RTL_SPLASH_GATE enabled=%d\n", preferences.getBool("splash_gate", true) ? 1 : 0);
     return;
   }
-  if (strcmp(command, "RTL_HELP") == 0) {
-    Serial.println("RTL_HELP_BEGIN");
-    Serial.println("RTL_STATUS                    - device connection info");
-    Serial.println("RTL_HOTPLUG_STATUS            - receiver replacement and resume state");
-    Serial.println("RTL_ADSB STATUS               - ADS-B stream, queue and decoder counters");
-    Serial.println("RTL_DRIVER STATUS|SELF_CHECK  - driver capabilities, shadows and stream metrics");
-    Serial.println("RTL_DRIVER OFFSET ON|OFF     - hardware center correction, radio stopped; default ON when supported");
-    Serial.println("RTL_DRIVER GAINMODE AUTO|MANUAL | GAIN <-10..496> | RTLAGC ON|OFF | BIAS ON|OFF (auth)");
-    Serial.println("RTL_HEALTH                    - heap, task and reset diagnostics");
-    Serial.println("RTL_SD_SELF_CHECK             - authenticated file semantics check");
-    Serial.println("RTL_SD_BENCH [4..64]          - authenticated temporary-file SD write benchmark");
-    Serial.println("RTL_SPLASH_GATE [ON|OFF]      - boot splash waits for the OrcSDR button (set: auth)");
-    Serial.println("RTL_RESET                     - authenticated software reset");
-    Serial.println("RTL_USB_SAFE_MODE_STATUS      - USB crash-guard state");
-    Serial.println("RTL_USB_SAFE_MODE_RESET CONFIRM - unplug receiver, then clear guard and restart (auth)");
-    Serial.println("RTL_SERIAL VERBOSITY [QUIET|NORMAL|DEBUG|TRACE] - query/set persistent logging (set auth)");
-    Serial.println("RTL_SCREEN_STATUS             - active screen ownership diagnostics");
-    Serial.println("RTL_UI_REGRESSION CHECK|RUN   - passive checks or Home->screen restore test");
-    Serial.println("RTL_UI STATUS                  - current screen/dashboard state");
-    Serial.println("RTL_UI OPEN <HOME|FM|AM|P25|ADSB|LORA|RF_LAB|WIFI_ANALYSIS|SETTINGS> - open dashboard (auth)");
-    Serial.println("RTL_LORA_DETECTOR STATUS|RELEARN|MODE <PREAMBLE|ENERGY> - LoRa burst detector (preamble dechirp default, energy legacy); floor, trigger, re-learns (RELEARN, MODE: auth)");
-    Serial.println("RTL_LORA_DECODER STATUS|SEARCH_PAD <1|4>|TIMING_BIAS <-4..4> - preamble search width (1 fast default, 4 legacy) and diagnostic timing shift (auth)");
-    Serial.println("RTL_IQ_RETRIEVE_END - release a retained manual capture so live detection resumes");
-    Serial.println("RTL_LORA_STATS [RESET] - LoRa events, decodes, failures, drops (RESET: auth)");
-    Serial.println("RTL_LORA_PLAN SET <region code|index> [slot] - choose Meshtastic region and slot (auth)");
-    Serial.println("RTL_LAB OPEN|CLOSE|STATUS|PAGE|GET|SET|ACTION|SELF_CHECK - RF Lab UI/control");
-    Serial.println("RTL_LAB REFERENCE|SNAPSHOT|RUN|RECIPE|RECORDS - RF Lab evidence workflow (mutations auth)");
-    Serial.println("RTL_UI ACTION <domain> <action> [value] - mirror FM/AM/CB/P25/LoRa/Settings touch action (auth)");
-#if ORCSDR_ORCDIAL
-    Serial.println("RTL_ORCDIAL_STATUS | RTL_ORCDIAL_PAIR START/CANCEL/CONFIRM <code> | RTL_ORCDIAL_CONNECT | RTL_ORCDIAL_DISCONNECT | RTL_ORCDIAL_FORGET");
-    Serial.println("RTL_ORCDIAL_PROBE - alias for read-only OrcDial status");
-    Serial.println("RTL_ORCDIAL_C6_UPDATE CONFIRM - install paired accessory C6 image (auth)");
-#endif
-    Serial.println("RTL_UI ACTION LORA DETAILS|FILTER|EXPORT|CLEAR - Traffic toolbar actions (auth)");
-    Serial.println("RTL_WIFI_STATUS|C6_STATUS|COEX_STATUS|SCAN|RESULTS|PROFILES - Wi-Fi and radio coexistence state");
-    Serial.println("RTL_WIFI_CHANNEL - actual C6 primary channel and associated network");
-    Serial.println("RTL_WIFI_C6_UPDATE CONFIRM - authenticated explicit in-app C6 update");
-    Serial.println("RTL_WIFI_CONNECT_SAVED [PAUSE]|DISCONNECT - connect profile 0 with a temporary SDR pause");
-    Serial.println("SET_WIFI <ssid_hex> <pass_hex> <hmac> - signed slot-0 provisioning (auth)");
-    Serial.println("RTL_TUNE <BAND> <HZ>           - tune band+freq (auth) BAND=FM|AM|WX|CB|LORA|BROWSE|ADSB|P25");
-    Serial.println("RTL_FREQ                       - query current band/frequency/mode");
-    Serial.println("RTL_FREQ <HZ>                  - hot-retune within current band (auth)");
-    Serial.println("RTL_VOLUME                     - query current volume");
-    Serial.println("RTL_VOLUME <0-32>              - set volume (auth)");
-    Serial.println("RTL_SOUND                      - query audio-enabled state");
-    Serial.println("RTL_SOUND ON|OFF                - enable/disable audio+demod pipeline (no auth)");
-    Serial.println("RTL_AUDIO_TEST STATUS|TONE|FM|STOP - audio output validation (no auth)");
-    Serial.println("RTL_SIGNAL                     - signal dBFS, stereo lock, L/R levels");
-    Serial.println("RTL_PRESET_SCAN                - start FM band scan for presets (auth, FM only)");
-    Serial.println("RTL_PRESET_LIST                - list current FM presets");
-    Serial.println("RTL_PRESET_TUNE <n>            - tune to preset n, 1-based (auth, FM only)");
-    Serial.println("RTL_RDS_STATUS                 - on-demand RDS Stage1/2 diagnostic dump");
-    Serial.println("RTL_RDS_CAPTURE_START/STOP/STATUS - capture FM MPX to SD for replay");
-    Serial.println("RTL_RDS_REPLAY <path.s16>       - replay captured MPX while radio is stopped");
-    Serial.println("RTL_P25_STATUS                 - profile, decoder, voice and memory diagnostics");
-    Serial.println("RTL_P25_PHASE2_STATUS          - TDMA grant mapping and burst-sync diagnostics");
-    Serial.println("RTL_P25_PHASE2_TRACE ON|OFF    - authenticated one-call transport probe");
-    Serial.println("RTL_P25_PROFILE_LIST           - list installed P25 system profiles");
-    Serial.println("RTL_P25_PROFILE_SELECT <id>    - select a P25 system profile (auth)");
-    Serial.println("RTL_P25_PROFILE_IMPORT <path> <id> - import and select a profile (auth)");
-    Serial.println("RTL_P25_PROFILE_EXPORT <id> <path> - export a profile (auth)");
-    Serial.println("RTL_P25_PROFILE_RENAME <id> <name> - rename a profile (auth)");
-    Serial.println("RTL_P25_PROFILE_DELETE <id> CONFIRM - delete a profile (auth)");
-    Serial.println("RTL_P25_MODULATION [AUTO|C4FM|CQPSK] - query/set Phase I demodulator (set auth)");
-    Serial.println("RTL_P25_ENCRYPTION_STATUS      - last LDU2 encryption and mute/return counters");
-    Serial.println("RTL_P25_SCAN                   - survey configured control-channel candidates (auth)");
-    Serial.println("RTL_P25_IQ_START|STOP|STATUS   - bounded control-channel IQ capture (mutations auth)");
-    Serial.println("RTL_IQ_DIAG_START <transition>|STATUS - one-second pre-DSP CU8 capture (start auth)");
-    Serial.println("RTL_P25_REPLAY <path.orciq>    - replay a stopped-radio P25 capture (auth)");
-    Serial.println("RTL_LORA_REPLAY_*              - replay host IQ from PSRAM (auth, stopped)");
-    Serial.println("RTL_REC_START/STOP/STATUS/SAVE - audio capture-to-WAV control");
-    Serial.println("RTL_TOOL [RADIO|SCOPE|CAPTURE] - query/switch active tool tab");
-    Serial.println("RTL_CAPTURE|RTL_LISTEN [FM|AM|WX|LORA] - one-shot/continuous band capture (auth)");
-    Serial.println("RTL_STOP                       - stop active capture (auth)");
-    Serial.println("RTL_WEB                        - query LAN web console");
-    Serial.println("RTL_WEB ON|OFF                 - enable LAN read-only console (auth)");
-    Serial.println("RTL_WEB_STATUS                 - enabled/listening/url");
-    Serial.println("RTL_WEB_AUDIO_STATUS           - sample-count diagnostics for WebUI audio");
-    Serial.println("RTL_CATALOG_STATUS|LIST        - signed catalog and pack state");
-    Serial.println("RTL_CATALOG_FETCH              - fetch+verify signed catalog (Wi-Fi required)");
-    Serial.println("RTL_CATALOG_INSTALL <id>       - fetch+verify+activate data/map pack");
-    Serial.println("RTL_CATALOG_REMOVE <id> CONFIRM - remove installed pack (SD only)");
-    Serial.println("RTL_CATALOG packs: faa_aircraft|faa_aviation|noaa_weather|fcc_broadcast");
-    Serial.println("RTL_LOCATION STATUS|IP|LOOKUP <zip/address>|CONFIRM - resolve and save receiver location");
-    Serial.println("RTL_MAP HELP - named setup, picker, labels, pack and download controls (mutations require auth)");
-    Serial.println("RTL_ADSB_RANGE [10|25|50|100] - query/set map radius in nautical miles (set requires auth)");
-    Serial.println("RTL_LORA_MAP HELP - map pan/zoom, receiver/node centering and follow (mutations require auth)");
-    Serial.println("ORC_RTC_STATUS                 - trusted hardware UTC clock status");
-    Serial.println("ORC_RTC_SET <unix_utc>         - establish hardware UTC clock (auth)");
-    Serial.println("ORC_TZ_SET <minutes>           - UTC offset in minutes east of UTC, -720..840 (auth)");
-    Serial.println("SD_LIST/SD_GET_*/SD_PUT_*      - SD card file transfer (see copy_to_tab5_sd.ps1)");
-    Serial.println("RTL_HELP_END");
-    return;
-  }
+  if (orcsdr::serial_help::handle_command(command, authenticated, kSerialHelpHooks)) return;
   if (strcmp(command, "ORC_RTC_STATUS") == 0) {
     const auto clock = orcsdr::time_service::now();
     Serial.printf("ORC_RTC_STATUS valid=%d utc=%lu source=%s offset_min=%ld\n",

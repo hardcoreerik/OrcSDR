@@ -73,6 +73,37 @@ assert routes.golden_rows(found) == [], "a guarded route (#if) must not produce 
 unguarded = routes.extract(SAMPLE.replace("#if ORCSDR_ORCDIAL\n", "").replace("#endif\n", ""))
 assert routes.golden_rows(unguarded) == [("DIAL_FORGET", "DIAL_ERROR auth_required")]
 
+# A family moved out of the dispatcher reads as if its routes were still written at the call site: same rows, same
+# order, the call site's build-flag guard carried over. This is what lets an extraction keep the recorded table.
+FAMILY = r'''
+bool handle_command(const char* command, bool authenticated, const Hooks& hooks) {
+  (void)hooks;
+  if (!strcmp(command, "DIAL_FORGET")) {
+    if (!authenticated) { hooks.write_line("DIAL_ERROR auth_required"); return true; }
+    forget();
+    return true;
+  }
+  return false;
+}
+'''
+MOVED = SAMPLE.replace('''  if (!strcmp(command, "DIAL_FORGET")) {
+    if (!authenticated) { Serial.println("DIAL_ERROR auth_required"); return; }
+    forget();
+    return;
+  }
+''', "  if (orcsdr::dial::handle_command(command, authenticated, kDialHooks)) return;\n")
+assert MOVED != SAMPLE
+moved = routes.extract(MOVED, families={"orcsdr::dial": FAMILY})
+assert [(r["guard"], r["match"], r["auth"], r["deny"]) for r in moved] == EXPECTED
+# An unregistered call is not followed: it stays a visible row, so a move cannot hide routes by accident.
+unknown = routes.extract(MOVED, families={})
+assert ("#if ORCSDR_ORCDIAL", "if:orcsdr::dial::handle_command(command, authenticated, kDialHooks)", "condition",
+        "-") in [(r["guard"], r["match"], r["auth"], r["deny"]) for r in unknown]
+# A family that reorders, drops or loosens a route is caught.
+loosened = FAMILY.replace('if (!authenticated) { hooks.write_line("DIAL_ERROR auth_required"); return true; }', "")
+assert [(r["match"], r["auth"]) for r in routes.extract(MOVED, families={"orcsdr::dial": loosened})] != \
+    [(m, a) for _, m, a, _ in EXPECTED]
+
 # CRLF checkouts give the same table.
 assert [r["match"] for r in routes.extract(SAMPLE.replace("\n", "\r\n"))] == [r["match"] for r in found]
 

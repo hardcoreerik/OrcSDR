@@ -40,7 +40,17 @@ SIGNATURE = "void process_command(char* command) {"
 COMPARE = re.compile(
     r'(?P<neg>!\s*)?(?P<fn>strn?cmp|strn?casecmp)\(\s*command\s*(?P<off>\+\s*\d+)?\s*,\s*'
     r'"(?P<lit>(?:[^"\\]|\\.)*)"\s*(?:,\s*(?P<len>\d+)\s*)?\)')
-DENY = re.compile(r'Serial\.(?:println|printf|print)\(\s*"((?:[^"\\]|\\.)*)"')
+DENY = re.compile(r'(?:Serial\.(?:println|printf|print)|hooks\.write_line)\(\s*"((?:[^"\\]|\\.)*)"')
+
+# Command families moved out of process_command(). Each is called from the dispatcher as
+#   if (<namespace>::handle_command(command, authenticated, <hooks>)) return;
+# and its own top-level routes are read from FAMILY_SIGNATURE in the file named here.
+FAMILIES = {
+    "orcsdr::serial_help": "apps/orcsdr-tab5/ui/serial_help.cpp",
+}
+FAMILY_SIGNATURE = "bool handle_command(const char* command, bool authenticated, const Hooks& hooks) {"
+FAMILY_CALL = re.compile(r"([\w:]+)::handle_command\(command, authenticated, \w+\)")
+FAMILY_PLUMBING = re.compile(r"return false;|\(void\)\w+;")
 
 
 def blank_comments_and_strings(text: str, keep_strings: bool) -> str:
@@ -104,14 +114,26 @@ def describe_matches(condition: str) -> list[str]:
     return found
 
 
-def extract(source_text: str) -> list[dict]:
+def read_family(namespace: str) -> str:
+    return (ROOT / FAMILIES[namespace]).read_text(encoding="utf-8", errors="replace")
+
+
+def extract(source_text: str, families=None) -> list[dict]:
+    """The dispatcher's ordered top-level statements, with every registered family's routes spliced in where the
+    dispatcher calls it. `families` maps a namespace to that family's source text (tests); default: read FAMILIES."""
+    load = (lambda ns: families[ns]) if families is not None else read_family
+    known = families if families is not None else FAMILIES
+    return extract_function(source_text, SIGNATURE, False, known, load)
+
+
+def extract_function(source_text: str, signature: str, is_family: bool, known, load) -> list[dict]:
     text = source_text.replace("\r\n", "\n")
-    start = text.find(SIGNATURE)
-    if start < 0 or text.find(SIGNATURE, start + 1) >= 0:
-        raise SystemExit("process_command definition not found exactly once")
+    start = text.find(signature)
+    if start < 0 or text.find(signature, start + 1) >= 0:
+        raise SystemExit(f"definition not found exactly once: {signature}")
     code = blank_comments_and_strings(text, keep_strings=False)   # structure only
     readable = blank_comments_and_strings(text, keep_strings=True)  # literals kept, comments gone
-    body_open = start + len(SIGNATURE) - 1
+    body_open = start + len(signature) - 1
     body_close = matching(code, body_open, "{", "}")
 
     routes: list[dict] = []
@@ -151,6 +173,17 @@ def extract(source_text: str) -> list[dict]:
                 body_code = code[j:body_end + 1]
             condition = readable[cond_open + 1:cond_close]
             matches = describe_matches(condition)
+            call = FAMILY_CALL.fullmatch(squeeze(condition))
+            if call and call[1] in known and not is_family:
+                # A family moved out of the dispatcher: its routes count as if they were still written here.
+                if squeeze(body) != "return;":
+                    raise SystemExit(f"family call {call[1]} must be followed by a bare 'return;'")
+                for r in extract_function(load(call[1]), FAMILY_SIGNATURE, True, known, load):
+                    here = list(guards) + ([r["guard"]] if r["guard"] != "-" else [])
+                    routes.append(dict(r, guard=" && ".join(here) if here else "-",
+                                       line=text.count("\n", 0, i) + 1))
+                i = body_end + 1
+                continue
             auth, deny = classify(condition, body, body_code)
             routes.append({
                 "guard": " && ".join(guards) if guards else "-",
@@ -170,6 +203,9 @@ def extract(source_text: str) -> list[dict]:
             brace = code.find("{", i)
             end = matching(code, brace, "{", "}") if 0 <= brace < semi else semi
         statement = readable[i:end + 1]
+        if is_family and FAMILY_PLUMBING.fullmatch(squeeze(statement)):
+            i = end + 1   # not routing: the family's "not mine" result and unused-parameter marks
+            continue
         routes.append({
             "guard": " && ".join(guards) if guards else "-",
             "match": "stmt:" + squeeze(statement),
@@ -198,7 +234,8 @@ def classify(condition: str, body: str, body_code: str) -> tuple[str, str]:
                 k += 1
             end = matching(body_code, k, "{", "}") if body_code[k] == "{" else body_code.find(";", body_code.find(";", k) + 1)
             branch = body[k:end + 1]
-            if re.search(r"\breturn\s*;", blank_comments_and_strings(branch, keep_strings=False)):
+            # `return;` in the dispatcher, `return true;` in a family: both end the route with the line consumed.
+            if re.search(r"\breturn(\s+true)?\s*;", blank_comments_and_strings(branch, keep_strings=False)):
                 reply = DENY.search(branch)
                 return "gate-first", (reply[1] if reply else "-")
     return "inside", "-"

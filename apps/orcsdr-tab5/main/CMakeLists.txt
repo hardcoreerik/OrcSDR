@@ -77,6 +77,7 @@ idf_component_register(
         "../ui/wwv_tick.cpp"
         "../ui/memory_reclaim.cpp"
         "../ui/memory_ledger.cpp"
+        "../ui/serial_help.cpp"
         "../ui/ft8_hunter.cpp"
         "../ui/ft8_dashboard.cpp"
         "../ui/ft8_map_source.cpp"
