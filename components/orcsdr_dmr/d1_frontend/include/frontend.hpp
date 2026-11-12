@@ -40,12 +40,20 @@ struct Stats {
     float rms_iq = 0.0F; // relative to input scaling; not calibrated dBm
     float decision_rms_hz = 0.0F; // smoothed error to nearest of 4 levels
     float timing_step_samples = 10.0F;
+    // Phase D1-P: only physically measured pre-sync/24-sync decisions count.
+    std::uint64_t preroll_symbols = 0;
+    std::uint64_t full_preroll_acquisitions = 0;
+    std::uint64_t incomplete_preroll_rejections = 0;
 };
 
-// No dynamic allocation or hidden output queue. If output fills, consume only
-// samples through the last emitted symbol and return counts for caller replay.
-// A sync-qualified acquisition begins emitting at the NEXT symbol; the 24
-// acquisition sync dibits themselves are not backfilled.
+// No dynamic allocation or hidden caller buffers. When sync is acquired, the
+// receiver replays the 54 payload + 24 sync dibits from measured discriminator
+// samples before streaming later dibits. It does NOT synthesize missing samples
+// at a stream start: incomplete pre-roll is rejected until a later sync.
+//
+// Existing bridge compatibility: every produced symbol consumes >=1 IQ sample,
+// even during pre-roll replay; caller must retry the unconsumed IQ tail. With
+// insufficient output capacity process returns as soon as the output is full.
 class Frontend final {
 public:
     Frontend() noexcept;
@@ -60,13 +68,16 @@ public:
 
 private:
     static constexpr std::size_t kPulseTaps = 61;
-    static constexpr std::size_t kHistory = 512;
+    static constexpr std::size_t kHistory = 1024;
+    static constexpr std::size_t kBurstStartToSyncEndSymbols = 77;
+    static constexpr std::size_t kPrerollSymbols = 78;
     void reset_tracking() noexcept;
     void consume_one(const ComplexSample& sample) noexcept;
     void try_acquire() noexcept;
     [[nodiscard]] float filtered_at(std::uint64_t i) const noexcept;
     [[nodiscard]] float interpolate(double i) const noexcept;
     bool decide(Symbol& out) noexcept;
+    bool replay_preroll(Symbol& out) noexcept;
 
     std::array<float, kPulseTaps> taps_{};
     std::array<float, kPulseTaps> discr_history_{};
@@ -85,6 +96,10 @@ private:
     float decision_mse_ = 0.0F;
     std::uint32_t bad_symbols_ = 0;
     float iq_power_ = 0.0F;
+    // A replay cursor, NOT a fabricated dibit buffer: each Symbol is sliced
+    // from the measured, retained, filtered IQ discriminator history.
+    std::uint64_t preroll_first_center_ = 0;
+    std::uint8_t preroll_cursor_ = 0;
     Stats stats_{};
 };
 

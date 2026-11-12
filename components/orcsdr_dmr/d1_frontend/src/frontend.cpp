@@ -63,6 +63,8 @@ void Frontend::reset_tracking() noexcept {
     decision_mse_ = 0.0F;
     bad_symbols_ = 0;
     iq_power_ = 0.0F;
+    preroll_first_center_ = 0;
+    preroll_cursor_ = static_cast<std::uint8_t>(kPrerollSymbols);
     stats_.locked = false;
     stats_.sync_kind = 255U;
     stats_.sync_correlation = 0.0F;
@@ -86,11 +88,12 @@ float Frontend::filtered_at(std::uint64_t i) const noexcept {
     return filtered_history_[static_cast<std::size_t>(i) % kHistory];
 }
 float Frontend::interpolate(double t) const noexcept {
-    // t is always in [processed_-history, processed_-1].
     const double lo = std::floor(t);
     const auto n = static_cast<std::uint64_t>(lo);
     const float a = filtered_at(n);
-    return a + static_cast<float>(t - lo) * (filtered_at(n+1) - a);
+    const double fractional = t - lo;
+    if (fractional <= 0.0) return a;
+    return a + static_cast<float>(fractional) * (filtered_at(n + 1) - a);
 }
 
 void Frontend::consume_one(const ComplexSample& sample) noexcept {
@@ -122,7 +125,7 @@ void Frontend::consume_one(const ComplexSample& sample) noexcept {
     discr_history_[discr_head_] = hz;
     float filt = 0.0F;
     // Circular convolution; 61 constant taps, no buffers or allocation.
-    for (std::size_t j=0; j<kPulseTaps; ++j) {
+    for (std::size_t j = 0; j < kPulseTaps; ++j) {
         const auto index = (discr_head_ + kPulseTaps - j) % kPulseTaps;
         filt += taps_[j] * discr_history_[index];
     }
@@ -172,10 +175,23 @@ void Frontend::try_acquire() noexcept {
         }
     }
     if(best<kMinimumSyncCorrelation) return;
+    // The first burst starts 54 payload symbols before its 24-symbol sync.
+    // A claimed pre-roll requires all 78 measured discriminator symbol centers
+    // plus a complete 61-tap FIR history for the EARLIEST symbol. Reject a
+    // sync if the original IQ began mid-burst; never zero-fill missing payload.
+    constexpr std::uint64_t distance = kBurstStartToSyncEndSymbols * kSamplesPerSymbol;
+    static_assert(kHistory >= distance + kPrerollSymbols + kPulseTaps,
+                  "History must survive one-symbol backpressure replay");
+    if (processed_ <= distance + kPulseTaps) {
+        ++stats_.incomplete_preroll_rejections;
+        return;
+    }
     locked_=true;
     cfo_hz_=best_offset;
     level_hz_=best_level;
     // This sample is the detected end-sync center in *filtered* time.
+    preroll_first_center_ = processed_-1-distance;
+    preroll_cursor_ = 0;
     next_center_=static_cast<double>(processed_-1)+10.0;
     timing_step_=10.0;
     have_prev_level_=true;
@@ -189,6 +205,33 @@ void Frontend::try_acquire() noexcept {
     stats_.carrier_offset_hz=cfo_hz_;
     stats_.deviation_per_level_hz=level_hz_;
     ++stats_.locks;
+    ++stats_.full_preroll_acquisitions;
+}
+
+bool Frontend::replay_preroll(Symbol& out) noexcept {
+    if (!locked_ || preroll_cursor_ >= kPrerollSymbols) return false;
+    const std::uint64_t center = preroll_first_center_ +
+        static_cast<std::uint64_t>(preroll_cursor_) * kSamplesPerSymbol;
+    // Defensive guard against an overwritten ring, even if caller violates
+    // expected producer/consumer cadence. Do not issue stale/fake decisions.
+    if (center >= processed_ || processed_ - center > kHistory - 2) {
+        locked_ = false;
+        stats_.locked = false;
+        stats_.sync_kind = 255U;
+        ++stats_.lost_locks;
+        preroll_cursor_ = static_cast<std::uint8_t>(kPrerollSymbols);
+        return false;
+    }
+    const float observed = filtered_at(center);
+    const float scaled = (observed - cfo_hz_) / level_hz_;
+    const auto dibit = level_dibit(scaled);
+    const float residual = observed - (cfo_hz_ +
+                         level_hz_ * static_cast<float>(dibit_level(dibit)));
+    out = {dibit, residual, center};
+    ++preroll_cursor_;
+    ++stats_.preroll_symbols;
+    ++stats_.symbols;
+    return true;
 }
 
 bool Frontend::decide(Symbol& out) noexcept {
@@ -199,9 +242,7 @@ bool Frontend::decide(Symbol& out) noexcept {
     const float level=static_cast<float>(dibit_level(dibit));
     const float err=observed-(cfo_hz_+level_hz_*level);
     out={dibit,err,static_cast<std::uint64_t>(next_center_+0.5)};
-    // Gardner-like transition-centered timing-error detector. With the
-    // reference centered on a matched pulse, the centered transition error
-    // has zero mean. Integral loop tracks small sample-clock drift.
+    // Gardner-like transition-centered timing-error detector.
     if (have_prev_level_) {
         const float mid=interpolate(next_center_-5.0);
         const float mid_level=(mid-cfo_hz_)/level_hz_;
@@ -215,15 +256,12 @@ bool Frontend::decide(Symbol& out) noexcept {
     }
     prev_level_=level;
     have_prev_level_=true;
-    // Extremely slow carrier tracker. A single wrong decision cannot move
-    // the estimate far enough to hide an absent carrier.
     cfo_hz_=std::clamp(cfo_hz_+0.004F*err,-4000.0F,4000.0F);
     decision_mse_ += 0.01F*(err*err-decision_mse_);
     stats_.decision_rms_hz=std::sqrt(std::max(0.0F,decision_mse_));
     stats_.carrier_offset_hz=cfo_hz_;
     stats_.timing_step_samples=static_cast<float>(timing_step_);
     ++stats_.symbols;
-    // Sustained severe slicer misses -> lose lock, look for next real sync.
     if (std::abs(err)>0.65F*level_hz_) ++bad_symbols_;
     else if (bad_symbols_>0) --bad_symbols_;
     if (bad_symbols_>=20) {
@@ -241,17 +279,15 @@ ProcessResult Frontend::process(const ComplexSample* samples, std::size_t count,
     ProcessResult result{};
     if (!samples && count!=0U) return result;
     if (!output && capacity!=0U) return result;
-    // No consumption with zero output slots: prevents dropping future symbols.
     if(capacity==0U) return result;
     for (std::size_t i=0;i<count;++i) {
         consume_one(samples[i]);
         ++result.consumed;
-        if (locked_ && next_center_ <= static_cast<double>(processed_-1)) {
-            Symbol s{};
-            if (decide(s)) {
-                output[result.produced++]=s;
-                if (result.produced==capacity) break;
-            }
+        Symbol symbol{};
+        if (replay_preroll(symbol) ||
+            (locked_ && decide(symbol))) {
+            output[result.produced++] = symbol;
+            if (result.produced == capacity) break;
         }
     }
     return result;
