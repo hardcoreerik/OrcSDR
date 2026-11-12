@@ -21,6 +21,11 @@ on:
       - 'tools/test_iq_diagnostic_rate_gate.py'
       - 'tools/test_e4000_gain_serial.py'
       - 'tools/tab5_exact_response.py'
+      - 'tools/serial_command_routes.py'
+      - 'tools/tab5_serial_golden.py'
+      - 'tests/serial_command_routes_test.py'
+      - 'tests/data/serial_command_routes.tsv'
+      - 'tests/data/serial_golden_unauthenticated.tsv'
       - '.github/workflows/tab5-cadence-history-tests.yml'
   workflow_dispatch:
 
@@ -42,3 +47,7 @@ jobs:
           python3 tools/test_iq_diagnostic_rate_gate.py
           python3 tools/test_e4000_gain_serial.py --self-check
           python3 tools/tab5_exact_response.py
+      - name: Verify the serial dispatcher still matches its recorded route table (no hardware)
+        run: |
+          python3 tests/serial_command_routes_test.py
+          python3 tools/tab5_serial_golden.py --self-check
