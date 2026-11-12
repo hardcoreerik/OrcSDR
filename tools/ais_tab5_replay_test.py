@@ -100,6 +100,8 @@ def main():
     p.add_argument("--passes", type=float, default=2.2, help="how many passes of the file to wait for")
     p.add_argument("--file-seconds", type=float, default=62.0, help="one pass including the server's gaps")
     p.add_argument("--no-shots", action="store_true")
+    p.add_argument("--map-range-taps", type=int, default=0,
+                   help="tap the map's range (+) button this many times before the screenshots (25 -> 50 -> 100 NM)")
     p.add_argument("--keep-server", action="store_true", help="do not restore the previous rtl_tcp server afterwards")
     p.add_argument("--allow-unrestorable-server", action="store_true",
                    help="run even though the Tab5 has no rtl_tcp server saved (the replay address stays saved afterwards)")
@@ -162,6 +164,9 @@ def main():
         with open(os.path.join(a.out, "device_status.txt"), "w", encoding="utf-8", newline="\n") as f:
             f.write("\n".join(status + [tcp_line]) + "\n")
         if not a.no_shots:
+            for _ in range(a.map_range_taps):
+                dev.cmd("UI_TAP 793 188", "UI_TAP", 4)       # the range button on the map page
+                dev.wait(1.2)
             for index, name in enumerate(TABS):
                 dev.cmd(f"UI_TAP {104 + 178 * index} {TAB_Y}", "UI_TAP", 4)
                 dev.wait(1.5)
