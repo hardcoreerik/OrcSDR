@@ -22,7 +22,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tab5_ft8 as t  # noqa: E402
 
-HOME_BTN = (1068, 38)
+HOME_BTN = (1087, 38)
 ALL_DASH = (150, 610)
 NEXT = (738, 671)
 BACK_BTN = (68, 38)   # RF Lab's BACK button
@@ -38,12 +38,12 @@ TILES = {
     "ft8": (1, 0, 3), "acars": (1, 1, 3), "airband": (1, 2, 3),
     "marine": (2, 0, 0), "satellite": (2, 1, 0), "sstv": (2, 2, 0),
     "deadair": (2, 0, 1), "rflab": (2, 1, 1), "wifi": (2, 2, 1), "settings": (2, 0, 2),
-    "ais": (2, 1, 2),
+    "ais": (2, 1, 2), "visualizer": (2, 2, 2),
 }
 EXPECTED_SCREEN = {  # RTL_SCREEN_STATUS active= value that a successful open should show (None = not checked)
     "fm": "fm", "p25": "p25", "adsb": "adsb", "shortwave": "shortwave", "am": "am", "cb": "cb", "lora": "lora",
     "pocsag": "pocsag", "ft8": "ft8", "acars": "acars", "airband": "airband", "sstv": "sstv", "deadair": "dead_air",
-    "rflab": "rf_lab", "wifi": "wifi_analysis", "settings": "settings", "ais": "ais", "weather": None, "marine": None, "satellite": None,
+    "rflab": "rf_lab", "wifi": "wifi_analysis", "settings": "settings", "ais": "ais", "visualizer": "visualizer", "weather": None, "marine": None, "satellite": None,
 }
 
 

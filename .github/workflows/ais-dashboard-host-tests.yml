@@ -12,6 +12,8 @@ on:
       - "apps/orcsdr-tab5/ui/ais_map_policy.hpp"
       - "apps/orcsdr-tab5/ui/ais_snapshot_adapter.*"
       - "tests/ais_snapshot_adapter_tests.cpp"
+      - "apps/orcsdr-tab5/ui/dashboard_audio_control.*"
+      - "tests/audio_header_tray_tests.cpp"
       - ".github/workflows/ais-dashboard-host-tests.yml"
   pull_request:
     paths:
@@ -22,6 +24,8 @@ on:
       - "apps/orcsdr-tab5/ui/ais_map_policy.hpp"
       - "apps/orcsdr-tab5/ui/ais_snapshot_adapter.*"
       - "tests/ais_snapshot_adapter_tests.cpp"
+      - "apps/orcsdr-tab5/ui/dashboard_audio_control.*"
+      - "tests/audio_header_tray_tests.cpp"
   workflow_dispatch:
 jobs:
   render:
@@ -58,3 +62,8 @@ jobs:
             apps/orcsdr-tab5/ui/ais_station_store.cpp \
             -o /tmp/ais-snapshot-adapter-tests
           /tmp/ais-snapshot-adapter-tests
+      - name: Shared volume tray geometry, double-tap guard and touch rules
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O1 -g -Wall -Wextra -Wno-format-truncation             -fsanitize=address,undefined -fno-omit-frame-pointer             -Itests/acars_ui_stubs -Iapps/orcsdr-tab5/ui             tests/audio_header_tray_tests.cpp             apps/orcsdr-tab5/ui/dashboard_audio_control.cpp             -o /tmp/audio-header-tray-tests
+          /tmp/audio-header-tray-tests

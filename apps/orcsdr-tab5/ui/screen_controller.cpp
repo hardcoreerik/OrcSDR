@@ -33,7 +33,13 @@ bool owns(Id id) { return !transitioning() && g_status.active == id; }
 
 bool is_active(Id id) { return g_status.active == id; }
 
+namespace {
+bool g_draw_hold = false;
+}
+void set_draw_hold(bool hold) { g_draw_hold = hold; }
+
 bool may_draw(Id id) {
+  if (g_draw_hold && !transitioning() && g_status.active == id) return false;
   if (transitioning() || g_status.active != id) {
     ++g_status.rejected_draws;
     return false;

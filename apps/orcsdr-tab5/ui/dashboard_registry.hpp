@@ -28,6 +28,7 @@ enum class Id : uint8_t {
   acars,
   dead_air,
   ais,
+  visualizer,   // last: the header VIS button was replaced by this entry
   count,
 };
 

@@ -51,10 +51,14 @@ std::atomic<uint64_t> g_last_block_ms{0};
 std::atomic<uint32_t> g_blocks{0}, g_wrong_rate{0}, g_wrong_center{0}, g_settle_skipped{0};
 std::atomic<uint32_t> g_loss_events{0}, g_discontinuities{0}, g_publishes{0}, g_publish_skipped{0};
 std::atomic<uint32_t> g_max_block_us{0};
+std::atomic<uint32_t> g_start_ms{0}, g_tune_ms{0}, g_first_block_ms{0};
 std::atomic<uint64_t> g_total_block_us{0}, g_samples{0}, g_lost_samples{0}, g_digest{0};
 std::atomic<uint32_t> g_type_counts[kTypeSlots];
 std::atomic<uint32_t> g_stations{0};
 std::atomic<bool> g_test_replay{false};
+// CRC-valid frames the field parser then refused (a bad type or length). Over noise a 16-bit CRC passes about one candidate in
+// 65536, and those frames never parse, so they are counted here and kept out of the vessel list, journal and CRC counters.
+std::atomic<uint32_t> g_parse_refused[2];
 // UI-task state.
 Link g_link = Link::stopped;
 bool g_owns_rate = false, g_want_tune = false, g_ever_flowed = false;
@@ -94,6 +98,10 @@ void on_packet(const ais_rx::Packet& packet, const ais::Message* parsed, void* c
   g_digest.fetch_add(packet_hash(packet), std::memory_order_relaxed);
   const uint8_t type = parsed ? parsed->type : 0;
   g_type_counts[type < kTypeSlots ? type : 0].fetch_add(1, std::memory_order_relaxed);
+  if (!parsed) {
+    g_parse_refused[packet.channel == 2 ? 1 : 0].fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
 
   ais_ui::Snapshot& work = state->work;
   const size_t keep = ais_ui::kMessages - 1;
@@ -159,7 +167,9 @@ void publish(State& state, uint64_t now) {
   const ais_rx::PipelineStats stats = state.pipeline.stats();
   for (unsigned channel = 0; channel < 2; ++channel) {
     work.frames[channel] = clamp32(stats.rf.channels[channel].candidate_frames);
-    work.crc_ok[channel] = clamp32(stats.rf.channels[channel].crc_ok);
+    const uint64_t refused = g_parse_refused[channel].load(std::memory_order_relaxed);
+    const uint64_t ok = stats.rf.channels[channel].crc_ok;
+    work.crc_ok[channel] = clamp32(ok > refused ? ok - refused : 0);   // CRC-valid AND parsed as an AIS message
     work.crc_failed[channel] = clamp32(stats.rf.channels[channel].crc_failed);
   }
   work.iq_drops = clamp32(g_lost_samples.load(std::memory_order_relaxed));
@@ -186,6 +196,7 @@ void try_tune(uint64_t now) {
   g_settle_until_ms.store(now + kSettleMs, std::memory_order_release);
   const bool accepted = g_hooks.tune && g_hooks.tune(kCenterHz, kStreamRate);
   if (accepted) {
+    g_tune_ms.store(static_cast<uint32_t>(now), std::memory_order_relaxed);
     g_epoch.fetch_add(1, std::memory_order_release);     // nothing decoded before this tune may join what follows
     g_owns_rate = true;
     g_want_tune = false;
@@ -202,6 +213,7 @@ void reset_counters() {
   g_max_block_us = 0; g_total_block_us = 0; g_samples = 0; g_lost_samples = 0; g_digest = 0;
   for (auto& count : g_type_counts) count = 0;
   g_stations = 0; g_last_block_ms = 0; g_feed_sequence = 0;
+  g_parse_refused[0] = 0; g_parse_refused[1] = 0;
   g_tune_calls = g_tune_refused = g_refused_seen = 0;
   g_stuck_since_ms = 0; g_ever_flowed = false;
 }
@@ -261,6 +273,8 @@ bool start() {
   g_state->pipeline.clear();
   g_state->pipeline.set_packet_observer(on_packet, g_state);   // clear() drops observers: set them after it
   g_state->started_ms = now;
+  g_start_ms.store(static_cast<uint32_t>(now), std::memory_order_relaxed);
+  g_first_block_ms.store(0, std::memory_order_relaxed);
   g_break_pending.store(false, std::memory_order_relaxed);
   g_link = Link::tuning;
   g_running.store(true, std::memory_order_release);
@@ -328,6 +342,7 @@ void offer_iq(const uint8_t* cu8, size_t bytes, uint32_t sample_rate) {
   state.offered_epoch = epoch;
   (void)state.pipeline.offer(cu8, bytes, sample_rate, kCenterHz, epoch, now);
   g_last_block_ms.store(now, std::memory_order_release);
+  if (g_blocks.load(std::memory_order_relaxed) == 0) g_first_block_ms.store(static_cast<uint32_t>(now), std::memory_order_relaxed);
   g_blocks.fetch_add(1, std::memory_order_relaxed);
   g_samples.fetch_add(bytes / 2, std::memory_order_relaxed);
   if (now - state.last_publish_ms >= kPublishMs) {
@@ -413,6 +428,9 @@ Status status() {
   s.publishes = g_publishes.load(std::memory_order_relaxed);
   s.publish_skipped = g_publish_skipped.load(std::memory_order_relaxed);
   s.max_block_us = g_max_block_us.load(std::memory_order_relaxed);
+  s.start_ms = g_start_ms.load(std::memory_order_relaxed);
+  s.tune_ms = g_tune_ms.load(std::memory_order_relaxed);
+  s.first_block_ms = g_first_block_ms.load(std::memory_order_relaxed);
   s.avg_block_us = s.blocks ? static_cast<uint32_t>(g_total_block_us.load(std::memory_order_relaxed) / s.blocks) : 0;
   s.samples = g_samples.load(std::memory_order_relaxed);
   s.lost_samples = g_lost_samples.load(std::memory_order_relaxed);
@@ -446,19 +464,69 @@ void bench(char* out, size_t size) {
   for (unsigned i = 0; i < kBlocks; ++i) (void)receiver->process_cu8(iq, kBlock, kStreamRate, nullptr, nullptr);
   const uint32_t whole_us = g_hooks.micros() - t0;
   const ais_rx::Stats stats = receiver->stats();
-  // The same amount of the two heaviest operations on their own, to show where the time goes.
+  // The same amount of each stage on its own (same loop shapes as the receiver), to show where the time goes.
   float taps[63], line[126];
   for (unsigned i = 0; i < 63; ++i) taps[i] = 1.f / 63.f;
   for (unsigned i = 0; i < 126; ++i) line[i] = static_cast<float>(iq[i]) * (1.f / 128.f) - 1.f;
   volatile float sink = 0;
+  // FIR: four partial sums per rail, as in Receiver::demodulate (192,000 outputs of 63 taps).
   const uint32_t t1 = g_hooks.micros();
-  for (unsigned n = 0; n < 2u * 2u * 48000u; ++n) {      // 2 channels x (I and Q) x 48 kS/s
+  for (unsigned n = 0; n < 2u * 2u * 48000u; ++n) {
     const float* x = &line[n % 63u];
-    float acc = 0;
-    for (unsigned tap = 0; tap < 63; ++tap) acc += taps[tap] * x[62 - tap];
-    sink = sink + acc;
+    float a0 = 0, a1 = 0, a2 = 0, a3 = 0;
+    unsigned k = 0;
+    for (; k + 4 <= 63; k += 4) { a0 += taps[k] * x[k]; a1 += taps[k + 1] * x[k + 1]; a2 += taps[k + 2] * x[k + 2]; a3 += taps[k + 3] * x[k + 3]; }
+    for (; k < 63; ++k) a0 += taps[k] * x[k];
+    sink = sink + ((a0 + a1) + (a2 + a3));
   }
   const uint32_t fir_us = g_hooks.micros() - t1;
+  // Candidate replacements for the filter, same 192,000 outputs of 63 taps each.
+  //  symmetric float: the taps are symmetric, so fold the two halves and multiply once per pair
+  const uint32_t t5 = g_hooks.micros();
+  for (unsigned n = 0; n < 2u * 2u * 48000u; ++n) {
+    const float* x = &line[n % 63u];
+    float a0 = 0, a1 = 0;
+    unsigned k = 0;
+    for (; k + 2 <= 31; k += 2) { a0 += taps[k] * (x[k] + x[62 - k]); a1 += taps[k + 1] * (x[k + 1] + x[61 - k]); }
+    for (; k < 31; ++k) a0 += taps[k] * (x[k] + x[62 - k]);
+    sink = sink + (a0 + a1 + taps[31] * x[31]);
+  }
+  const uint32_t fir_sym_us = g_hooks.micros() - t5;
+  //  symmetric int32: 16-bit taps and samples, integer multiply-accumulate
+  int16_t itaps[64], iline[126];
+  for (unsigned i = 0; i < 64; ++i) itaps[i] = static_cast<int16_t>(500 + i);
+  for (unsigned i = 0; i < 126; ++i) iline[i] = static_cast<int16_t>(static_cast<int>(iq[i]) - 128);
+  volatile int32_t isink = 0;
+  const uint32_t t6 = g_hooks.micros();
+  for (unsigned n = 0; n < 2u * 2u * 48000u; ++n) {
+    const int16_t* x = &iline[n % 63u];
+    int32_t a0 = 0, a1 = 0;
+    unsigned k = 0;
+    for (; k + 2 <= 31; k += 2) { a0 += itaps[k] * (x[k] + x[62 - k]); a1 += itaps[k + 1] * (x[k + 1] + x[61 - k]); }
+    for (; k < 31; ++k) a0 += itaps[k] * (x[k] + x[62 - k]);
+    isink = isink + ((a0 + a1 + itaps[31] * x[31]) >> 8);
+  }
+  const uint32_t fir_int_us = g_hooks.micros() - t6;
+  //  fast atan2 (polynomial, about 1e-4 rad)
+  const uint32_t t7 = g_hooks.micros();
+  for (unsigned n = 0; n < 2u * 48000u; ++n) {
+    const float y = line[n % 126u], xx = line[(n + 31u) % 126u];
+    const float ax = std::fabs(xx), ay = std::fabs(y);
+    const float mx = ax > ay ? ax : ay, mn = ax > ay ? ay : ax;
+    float r = 0;
+    if (mx > 0) { const float a = mn / mx, s = a * a; r = ((-0.0464964749f * s + 0.15931422f) * s - 0.327622764f) * s * a + a; }
+    if (ay > ax) r = 1.57079637f - r;
+    if (xx < 0) r = 3.14159274f - r;
+    if (y < 0) r = -r;
+    sink = sink + r;
+  }
+  const uint32_t atan_fast_us = g_hooks.micros() - t7;
+  // HDLC bit processing: 10 slicers x 96,000 outputs per second of IQ.
+  ais_rx::Hdlc hdlc;
+  uint32_t lfsr = 0xace1u;
+  const uint32_t t4 = g_hooks.micros();
+  for (unsigned n = 0; n < 960000u; ++n) { lfsr = (lfsr >> 1) ^ (-(lfsr & 1u) & 0xB400u); hdlc.process_level(lfsr & 1u, 1, nullptr, nullptr); }
+  const uint32_t hdlc_us = g_hooks.micros() - t4;
   const uint32_t t2 = g_hooks.micros();
   for (unsigned n = 0; n < 2u * 48000u; ++n)
     sink = sink + std::atan2(line[n % 126u], line[(n + 31u) % 126u]);
@@ -466,10 +534,11 @@ void bench(char* out, size_t size) {
   receiver->~Receiver();
   release_memory(memory);
   std::snprintf(out, size,
-                "RTL_AIS_BENCH iq_seconds=1 receiver_us=%u duty_pct=%u.%u fir_only_us=%u atan2_only_us=%u samples=%llu "
+                "RTL_AIS_BENCH iq_seconds=1 receiver_us=%u duty_pct=%u.%u fir_us=%u fir_sym_us=%u fir_int_us=%u atan2_us=%u atan2_fast_us=%u hdlc_us=%u samples=%llu "
                 "candidate_frames=%llu",
                 static_cast<unsigned>(whole_us), static_cast<unsigned>(whole_us / 10000u),
-                static_cast<unsigned>((whole_us / 1000u) % 10u), static_cast<unsigned>(fir_us), static_cast<unsigned>(atan_us),
+                static_cast<unsigned>((whole_us / 1000u) % 10u), static_cast<unsigned>(fir_us), static_cast<unsigned>(fir_sym_us),
+                static_cast<unsigned>(fir_int_us), static_cast<unsigned>(atan_us), static_cast<unsigned>(atan_fast_us), static_cast<unsigned>(hdlc_us),
                 static_cast<unsigned long long>(stats.iq_samples),
                 static_cast<unsigned long long>(stats.channels[0].candidate_frames + stats.channels[1].candidate_frames));
 }
@@ -485,7 +554,8 @@ void format_status(char* out, size_t size) {
       "settle_skipped=%u lost_samples=%llu loss_events=%u discontinuities=%u tune_calls=%u tune_refused=%u "
       "ch1_ok=%llu ch1_fail=%llu ch2_ok=%llu ch2_fail=%llu dup=%llu packets=%llu decoded=%llu header_only=%llu parse_rejected=%llu "
       "station_updates=%llu station_rejected=%llu stations=%u gen_changes=%llu iq_gaps=%llu input_refused=%llu "
-      "digest=%016llx publishes=%u publish_skipped=%u avg_block_us=%u max_block_us=%u state_bytes=%u alloc_failed=%u types=",
+      "digest=%016llx publishes=%u publish_skipped=%u avg_block_us=%u max_block_us=%u state_bytes=%u alloc_failed=%u "
+      "start_ms=%u tune_ms=%u first_block_ms=%u types=",
       s.running ? 1 : 0, link_name(s.link), s.remote ? "rtl_tcp" : "usb", s.test_replay ? 1 : 0, static_cast<unsigned>(s.epoch),
       static_cast<unsigned>(s.blocks), static_cast<unsigned long long>(s.samples), static_cast<unsigned>(s.wrong_rate_blocks),
       static_cast<unsigned>(s.wrong_center_blocks), static_cast<unsigned>(s.settle_skipped),
@@ -500,7 +570,8 @@ void format_status(char* out, size_t size) {
       static_cast<unsigned long long>(s.pipeline.generation_changes), static_cast<unsigned long long>(s.pipeline.iq_gaps),
       static_cast<unsigned long long>(s.pipeline.input_refused), static_cast<unsigned long long>(s.packet_digest),
       static_cast<unsigned>(s.publishes), static_cast<unsigned>(s.publish_skipped), static_cast<unsigned>(s.avg_block_us),
-      static_cast<unsigned>(s.max_block_us), static_cast<unsigned>(s.state_bytes), static_cast<unsigned>(s.alloc_failed_bytes));
+      static_cast<unsigned>(s.max_block_us), static_cast<unsigned>(s.state_bytes), static_cast<unsigned>(s.alloc_failed_bytes),
+      static_cast<unsigned>(s.start_ms), static_cast<unsigned>(s.tune_ms), static_cast<unsigned>(s.first_block_ms));
   bool any = false;
   for (uint32_t type = 0; type < kTypeSlots && at > 0 && static_cast<size_t>(at) + 16 < size; ++type) {
     if (!s.type_counts[type]) continue;

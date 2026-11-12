@@ -15,6 +15,7 @@ struct Hooks {
   bool (*sd_available)() = nullptr;
   bool (*remote_source)() = nullptr;        // the receiver source is rtl_tcp
   uint32_t (*now_ms)() = nullptr;
+  bool (*overlay_open)() = nullptr;         // the shared volume tray is open over the content: do not repaint under it
   void (*go_home)() = nullptr;              // used when the dashboard cannot be drawn (no memory): never leave an undrawn screen
 };
 

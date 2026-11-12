@@ -59,6 +59,7 @@ struct Status {
   uint32_t tune_calls = 0, tune_refused = 0;
   uint32_t publishes = 0, publish_skipped = 0;
   uint32_t max_block_us = 0, avg_block_us = 0;
+  uint32_t start_ms = 0, tune_ms = 0, first_block_ms = 0;   // phases of the last start, ms since boot
   uint64_t samples = 0;              // IQ pairs decoded
   uint64_t lost_samples = 0;         // lost-sample counter movement since start
   uint64_t packet_digest = 0;        // order-independent sum of a 64-bit hash of every CRC-valid packet (channel + payload)

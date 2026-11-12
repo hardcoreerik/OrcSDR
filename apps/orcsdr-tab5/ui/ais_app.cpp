@@ -29,6 +29,12 @@ struct State {
 State* g_state = nullptr;
 Hooks g_hooks;
 uint32_t g_open_failed = 0;
+// The radio starts after the first screen has drawn and the map frame has settled (or kStartWaitMaxMs has passed). On a cold
+// boot the first basemap render slows the DSP task enough to drop USB blocks (measured on the Tab5), so the two must not overlap.
+constexpr uint32_t kStartWaitMaxMs = 8000;
+bool g_start_pending = false;
+uint32_t g_start_wait_since_ms = 0, g_last_repaint_ms = 0;
+uint32_t g_t_open_ms = 0, g_t_enter_start_ms = 0, g_t_enter_end_ms = 0;   // phases of the last open, in ms since boot
 
 uint32_t now_ms() { return g_hooks.now_ms ? g_hooks.now_ms() : 0; }
 
@@ -61,6 +67,14 @@ bool refresh_device_fields() {
   const ais_radio::Link link = ais_radio::status().link;
   ais_ui::ReceiveState receiver = ais_ui::ReceiveState::ready;
   bool settled = false;
+  if (g_start_pending) {                          // not started yet: say so, never "disconnected"
+    s.receiver = receiver;
+    s.receiver_settled = false;
+    s.center_hz = ais_radio::kCenterHz;
+    s.sample_rate_sps = 0;
+    g_state->shown_link = link;
+    return false;
+  }
   switch (link) {
     case ais_radio::Link::no_receiver:
     case ais_radio::Link::stopped: receiver = ais_ui::ReceiveState::disconnected; break;
@@ -88,6 +102,8 @@ bool refresh_device_fields() {
   s.sd_available = sd;
   s.rtl_tcp = remote;
   s.test_replay = test;
+  // None of these three exists in this build (issue 249); the Setup page says so instead of showing a state.
+  s.long_range_available = s.nmea_available = s.journal_available = false;
   s.center_hz = ais_radio::kCenterHz;
   if (!settled) s.sample_rate_sps = 0;            // no rate is claimed while nothing is being decoded
   g_state->shown_link = link;
@@ -100,15 +116,20 @@ void install(const Hooks& hooks) { g_hooks = hooks; }
 
 void open() {
   if (!ensure_state()) { ++g_open_failed; return; }
+  g_t_open_ms = now_ms();
   // A fresh visit never shows the previous visit's vessels: the receiver restarts with an empty store.
   g_state->snapshot.~Snapshot();                  // rebuilt in place: a Snapshot temporary is 17 KB of UI-task stack
   new (&g_state->snapshot) ais_ui::Snapshot();
   g_state->feed_sequence = 0;
-  (void)ais_radio::start();                       // without hooks (host tests) the screen stays "disconnected"
+  g_start_pending = true;                         // the radio starts from tick() once the first frame has settled
+  g_start_wait_since_ms = now_ms();
+  g_last_repaint_ms = g_start_wait_since_ms;
   (void)refresh_device_fields();
   g_state->snapshot.revision = 1;
   screens::begin_transition(screens::Id::ais, now_ms());
+  g_t_enter_start_ms = now_ms();
   const bool drawn = ais_ui::enter(g_state->snapshot);
+  g_t_enter_end_ms = now_ms();
   if (drawn && g_hooks.header_controls) g_hooks.header_controls();
   screens::finish_transition();
   if (!drawn) {                                   // the dashboard could not allocate: release the radio and leave the screen
@@ -119,6 +140,7 @@ void open() {
 }
 
 void close() {
+  g_start_pending = false;
   if (!g_state && !ais_ui::active() && !ais_radio::running()) return;
   ais_radio::stop();                              // gives the sample rate back and frees the decoder
   ais_ui::leave();
@@ -127,14 +149,27 @@ void close() {
 
 void tick() {
   if (!g_state || !ais_ui::active()) return;
-  ais_radio::service();
   const uint32_t now = now_ms();
+  if (g_start_pending && screens::owns(screens::Id::ais)) {
+    // Repaint so the map frame state is current, then start the radio once it is no longer pending (or after the cap).
+    if (now - g_last_repaint_ms >= 250) {
+      g_last_repaint_ms = now;
+      ++g_state->snapshot.revision;
+      ais_ui::update(g_state->snapshot);
+    }
+    if (ais_ui::map_settled() || now - g_start_wait_since_ms >= kStartWaitMaxMs) {
+      g_start_pending = false;
+      (void)ais_radio::start();                   // without hooks (host tests) the screen stays "disconnected"
+    }
+  }
+  ais_radio::service();
   bool changed = ais_radio::copy_feed(&g_state->snapshot, &g_state->feed_sequence);
   if (now - g_state->last_refresh_ms >= kRefreshMs) {
     g_state->last_refresh_ms = now;
     changed = refresh_device_fields() || changed;
   }
   if (!changed || !screens::owns(screens::Id::ais)) return;
+  if (g_hooks.overlay_open && g_hooks.overlay_open()) return;   // repaints once the tray closes (the next change repaints)
   ++g_state->snapshot.revision;
   ++g_state->updates;
   screens::note_visible_update(screens::Id::ais);
@@ -154,6 +189,7 @@ void draw(bool static_panel) {
     return;
   }
   if (!ais_ui::active() || !screens::may_draw(screens::Id::ais)) return;
+  if (g_hooks.overlay_open && g_hooks.overlay_open()) return;
   ++g_state->snapshot.revision;
   ais_ui::update(g_state->snapshot);
 }
@@ -178,13 +214,14 @@ void describe(char* out, size_t size) {
   const ais_ui::Snapshot& s = g_state->snapshot;
   std::snprintf(out, size,
                 "RTL_AIS_UI open=%d view=%s link=%s settled=%d test=%d targets=%u messages=%u events=%u ch1_ok=%u ch2_ok=%u "
-                "located=%d remote=%d revision=%u updates=%u snapshot_bytes=%u open_failed=%u",
+                "located=%d remote=%d revision=%u updates=%u snapshot_bytes=%u open_failed=%u open_ms=%u enter_start_ms=%u enter_end_ms=%u",
                 ais_ui::active() ? 1 : 0, view < 7 ? kViews[view] : "?", ais_radio::link_name(g_state->shown_link),
                 s.receiver_settled ? 1 : 0, s.test_replay ? 1 : 0, static_cast<unsigned>(s.target_count),
                 static_cast<unsigned>(s.message_count), static_cast<unsigned>(s.event_count), static_cast<unsigned>(s.crc_ok[0]),
                 static_cast<unsigned>(s.crc_ok[1]), s.coordinates_valid ? 1 : 0, s.rtl_tcp ? 1 : 0,
                 static_cast<unsigned>(s.revision), static_cast<unsigned>(g_state->updates),
-                static_cast<unsigned>(sizeof(State)), static_cast<unsigned>(g_open_failed));
+                static_cast<unsigned>(sizeof(State)), static_cast<unsigned>(g_open_failed), static_cast<unsigned>(g_t_open_ms),
+                static_cast<unsigned>(g_t_enter_start_ms), static_cast<unsigned>(g_t_enter_end_ms));
 }
 
 }  // namespace orcsdr::ais_app

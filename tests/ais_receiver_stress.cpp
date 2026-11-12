@@ -137,6 +137,17 @@ void require(bool condition, const char* what) {
 }  // namespace
 
 int main(int argc, char** argv) {
+  {  // fast_atan2 accuracy against libm over the whole circle, several magnitudes
+    double worst = 0;
+    for (int i = 0; i < 400000; ++i) {
+      const double angle = (i / 400000.0) * 2 * kPi - kPi, scale = std::pow(10.0, (i % 7) - 3);
+      const float y = static_cast<float>(std::sin(angle) * scale), x = static_cast<float>(std::cos(angle) * scale);
+      const double err = std::fabs(static_cast<double>(rx::fast_atan2(y, x)) - std::atan2(static_cast<double>(y), static_cast<double>(x)));
+      worst = err > worst && err < 6.0 ? err : worst;   // a result on the +/-pi seam differs by 2 pi, not by an error
+    }
+    std::printf("fast_atan2 worst error %.2e rad\n", worst);
+    if (worst > 3e-4) { std::puts("FLOOR NOT MET: fast_atan2 error above 3e-4 rad"); ++g_failures; }
+  }
   const int trials = 50;
   std::puts("-- carrier offset, strong signal (amplitude 0.5, noise sigma 0.01), 168-bit payloads, all 25 timing shifts");
   for (double offset : {0., 500., -500., 1000., -1000., 1500., -1500., 2000., -2000., 2500., 3000., -3000., 4000., -4000.}) {

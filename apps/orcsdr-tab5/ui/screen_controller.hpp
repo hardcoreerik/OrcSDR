@@ -29,6 +29,8 @@ bool owns(Id id);
 // True while id is the selected surface, including its one-time transition draw.
 bool is_active(Id id);
 bool may_draw(Id id);
+// While true no screen may draw (a modal overlay such as the volume tray owns the pixels it covers).
+void set_draw_hold(bool hold);
 void note_visible_update(Id id);
 const Status& status();
 const char* name(Id id);

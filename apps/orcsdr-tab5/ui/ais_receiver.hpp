@@ -3,6 +3,7 @@
 // Input: 240 kS/s complex unsigned IQ, tuned to 162.000 MHz. AIS1/2 at +/-25 kHz.
 // The caller owns SDR tuning, session generation, and thread/snapshot handoff.
 // No heap allocation, M5GFX, USB driver, network or ESP-IDF dependencies.
+#include <cmath>
 #include <cstddef>
 #include <cstdint>
 
@@ -14,6 +15,19 @@ constexpr uint32_t kOutputRateHz = 48000;
 constexpr uint32_t kSymbolRate = 9600;
 constexpr size_t kMaxPayloadBits = 1008;
 constexpr size_t kMaxPayloadBytes = 126;
+
+// Polynomial arctangent of y/x, accurate to about 1e-4 rad (tests/ais_receiver_stress.cpp measures it). The discriminator
+// angle only has to place a symbol on one side of a threshold, and this costs about a third of libm's atan2f on the P4.
+inline float fast_atan2(float y, float x) {
+  const float ax = std::fabs(x), ay = std::fabs(y);
+  const float mx = ax > ay ? ax : ay, mn = ax > ay ? ay : ax;
+  if (mx <= 0.f) return 0.f;
+  const float a = mn / mx, s = a * a;
+  float r = ((-0.0464964749f * s + 0.15931422f) * s - 0.327622764f) * s * a + a;
+  if (ay > ax) r = 1.57079637f - r;
+  if (x < 0) r = 3.14159274f - r;
+  return y < 0 ? -r : r;
+}
 
 struct Packet {
   uint8_t channel = 0; // 1 = AIS1 / 161.975 MHz, 2 = AIS2 / 162.025 MHz
@@ -70,7 +84,7 @@ class Receiver {
                    PacketCallback callback, void* context);
   Stats stats() const;
  private:
-  static constexpr size_t kTaps = 63;
+  static constexpr size_t kTaps = 39;   // channel low-pass: 39 taps still rejects the other AIS channel by more than 50 dB, and costs 38% less than 63
   static constexpr size_t kPhases = 5;
   struct Complex { float i = 0, q = 0; };
   struct Channel {

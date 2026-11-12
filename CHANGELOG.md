@@ -2,6 +2,13 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Volume tray redesign, Visualizer entry — 2026-11-11
+
+- **Volume tray:** now 840x280 (3:1, twice the previous size), centred just below the status bar, drawn as the top item: it is composited from a sprite, and the dashboards (scopes, waterfalls, FT8 waterfall) hold still while it is open. The tray reads touch itself; dashboards see no touch until the finger is up and 250 ms have passed, so a tap that opens, adjusts or dismisses the tray never reaches "touch to tune". Only the slider reacts to a held finger; mute fires once per press and the second tap of a double tap on the speaker does not mute.
+- **Header:** the VIS button is gone and Home, speaker and Settings are spaced out. The Visualizer is the last entry in All Dashboards (`RTL_UI OPEN VISUALIZER`). `RTL_UI STATUS` now reports `volume`, `audio_enabled` and `tray`.
+- **Verified:** host test `tests/audio_header_tray_tests.cpp`; hand-tested by the owner on COM17. `tools/tab5_volume_tray_test.py` (on-device) still shows intermittent failures on a few dashboards that are not yet explained (suspected test timing).
+- **Shared code note:** the shared dashboard registry now has a `visualizer` entry and the header geometry changed; P4 Core must treat the entry as unavailable until it has one.
+
 ## Unreleased — AIS receiver and dashboard on the Tab5 — 2026-11-10
 
 **New dashboard (AIS, the 20th All Dashboards entry).** Receives AIS on both channels (161.975 and 162.025 MHz) from one 162.000 MHz / 240 kS/s stream, from the USB dongle or an rtl_tcp server, and shows vessels, base stations and aids to navigation on seven pages. Branch `claude/ais-integration-hardware-79f921`; checkpoint in [docs/AIS_INTEGRATION_CHECKPOINT.md](docs/AIS_INTEGRATION_CHECKPOINT.md), evidence in [docs/evidence/ais/2026-11-10-tab5-replay.md](docs/evidence/ais/2026-11-10-tab5-replay.md).

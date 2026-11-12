@@ -421,13 +421,14 @@ void setup_page() {
   title("RECEIVER / RF CONFIGURATION",38,186);
   toggle_row("AIS 1 - 161.975 MHz",g_data->ais1_enabled?"ON":"OFF",42,245);
   toggle_row("AIS 2 - 162.025 MHz",g_data->ais2_enabled?"ON":"OFF",42,307);
-  toggle_row("LONG RANGE - CH 75/76",g_data->long_range?"ON":"OFF",42,369);
+  toggle_row("LONG RANGE - CH 75/76",g_data->long_range_available?(g_data->long_range?"ON":"OFF"):"NOT AVAILABLE",42,369,g_data->long_range_available);
   toggle_row("INPUT",g_data->rtl_tcp?"RTL_TCP":"LOCAL USB",42,431);
-  label("LONG RANGE REQUIRES A NEW TUNE OR RADIO",42,486,kAmber);
+  label("LONG RANGE (156.8 MHZ) NEEDS A RETUNE OR 2ND RADIO",42,486,kAmber);
   label("DISPLAY ONLY: THESE SETTINGS ARE FIXED",42,537);
   title("DATA & STORAGE",658,186);
-  toggle_row("NMEA AIVDM OUTPUT",g_data->nmea_output?"ON":"OFF",662,245);
-  toggle_row("MESSAGE JOURNAL",g_data->logging?"SAVING":"OFF",662,307,g_data->sd_available);
+  toggle_row("NMEA AIVDM OUTPUT",g_data->nmea_available?(g_data->nmea_output?"ON":"OFF"):"NOT AVAILABLE",662,245,g_data->nmea_available);
+  toggle_row("MESSAGE JOURNAL",g_data->journal_available?(g_data->logging?"SAVING":"OFF"):"NOT AVAILABLE",662,307,
+             g_data->journal_available&&g_data->sd_available);
   toggle_row("SD CARD",g_data->sd_available?"AVAILABLE":"NOT FOUND",662,369,g_data->sd_available);
   toggle_row("AIS STANDARD","M.1371-6",662,431);
   label("RECEIVE ONLY / NO AIS TRANSMISSIONS",662,504,kCyan);
@@ -548,6 +549,13 @@ void leave(){
   g_data=nullptr;
 }
 bool active(){return g_active;}
+bool map_settled(){
+#if defined(ESP_PLATFORM)
+  return !g_active||g_last_map.frame.state!=maps::Frame::pending;
+#else
+  return true;
+#endif
+}
 View view(){return g_view;}
 uint8_t protocol_type(){return g_protocol;}
 void show_preview_view(View v,const Snapshot& snapshot){

@@ -67,6 +67,9 @@ class LovyanGFX {
   void setTextDatum(int d) { host_display::datum = d; }
   void setTextSize(float) {}
   void setTextColor(uint16_t c) { host_display::text_color = c; }
+  void setTextColor(uint16_t c, uint16_t) { host_display::text_color = c; }
+  void drawArc(int x, int y, int r1, int r0, int, int, uint16_t) { add(Prim::circle, x - r1, y - r1, 2 * r1 + 1, 2 * r1 + 1); (void)r0; }
+  void readRect(int, int, int, int, uint16_t*) {}
   void setClipRect(int x, int y, int w, int h) {
     host_display::clip_on = true;
     host_display::clip_x = x; host_display::clip_y = y; host_display::clip_w = w; host_display::clip_h = h;

@@ -53,6 +53,8 @@ struct Snapshot {
   // True only when the app actually collects maritime events. Until then the Events page says it is unavailable
   // instead of claiming nothing was observed.
   bool events_collected=false;
+  // Which Setup features exist in this build. A feature that is not available shows "NOT AVAILABLE", never a state it cannot have.
+  bool long_range_available=false,nmea_available=false,journal_available=false;
   bool spectrum_valid[2]{false,false};
   int battery_percent=-1;
   uint32_t center_hz=162000000,sample_rate_sps=0;
@@ -80,6 +82,9 @@ bool enter(const Snapshot& snapshot);
 void update(const Snapshot& snapshot);
 void leave();
 bool active();
+// False while the map page is waiting for its basemap frame. The app holds the radio start until it is true, so the first
+// render does not compete with live IQ. Always true when there is no map or the map is unavailable.
+bool map_settled();
 View view();
 uint8_t protocol_type(); // selected 1..28
 Action handle_touch(int32_t x,int32_t y);

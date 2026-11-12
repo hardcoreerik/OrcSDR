@@ -169,7 +169,7 @@ void Receiver::demodulate(unsigned c) {
   const float dot = ch.prev.i*out.i + ch.prev.q*out.q;
   ch.prev = out;
   // Exact quadrature discriminator avoids small-angle approximations at low SNR.
-  const float angle = std::atan2(cross,dot);
+  const float angle = fast_atan2(cross,dot);
   // Slow DC tracking rejects remaining CFO without removing symbol-level shifts.
   ch.dc += 0.00012f * (angle - ch.dc);
   ch.smooth[ch.smooth_pos] = angle;
