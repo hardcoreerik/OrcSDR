@@ -2,6 +2,12 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — main.cpp refactor groundwork — 2026-11-12
+
+No behaviour change intended; nothing here was flashed or run on a device.
+
+- **Complexity scans now cover the whole file:** two file-scope `static_assert` comparisons in `apps/orcsdr-tab5/ui/main.cpp` were written with `<`, which made Lizard stop parsing at line 614 (18 of 620 functions). They are now written with `>`; the conditions are the same. A full scan reports `process_command` at 3,012 lines, cyclomatic complexity 1,111.
+
 ## Unreleased — Volume tray redesign, Visualizer entry — 2026-11-11
 
 - **Volume tray:** now 840x280 (3:1, twice the previous size), centred just below the status bar, drawn as the top item: it is composited from a sprite, and the dashboards (scopes, waterfalls, FT8 waterfall) hold still while it is open. The tray reads touch itself; dashboards see no touch until the finger is up and 250 ms have passed, so a tap that opens, adjusts or dismisses the tray never reaches "touch to tune". Only the slider reacts to a held finger; mute fires once per press and the second tap of a double tap on the speaker does not mute.

@@ -618,7 +618,7 @@ void rds_hypothesis_feed(RdsHypothesis& h, bool bit) {
  * Welch multi-window average runs only when GFX is on and audio is not stressed.
  */
 constexpr size_t kRtlSpectrumBins = 2048;
-static_assert(kRtlDashboardSampleRateSps / kRtlSpectrumBins < 1200);
+static_assert(1200 > kRtlDashboardSampleRateSps / kRtlSpectrumBins);
 /** Average this many non-overlapping windows for a quieter, more precise trace. */
 constexpr size_t kRtlSpectrumWelchWindows = 2;
 // Keep scope cadence stable when sound is toggled; only back off if audio drops.
@@ -698,7 +698,7 @@ constexpr uint32_t kRtlScopeSpanMaxHz = kRtlDashboardSampleRateSps;
 constexpr uint32_t kRtlFmFilterDefaultHz = 260000;
 constexpr uint32_t kRtlAmFilterDefaultHz = 10000;
 constexpr uint32_t kRtlWxFilterDefaultHz = 25000;
-static_assert(kRtlScopeSpanMinHz < kRtlScopeSpanMaxHz);
+static_assert(kRtlScopeSpanMaxHz > kRtlScopeSpanMinHz);
 constexpr uint32_t kRtlFmDefaultHz = 96100000;
 constexpr uint32_t kRtlAmMinHz = orcsdr::receiver_bands::kAmBroadcast.min_hz;
 constexpr uint32_t kRtlAmMaxHz = orcsdr::receiver_bands::kAmBroadcast.max_hz;
