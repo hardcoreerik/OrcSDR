@@ -68,11 +68,6 @@ struct Metrics {
 bool getbit(const std::uint8_t* p, unsigned i) {
     return ((p[i/8U] >> (7U-i%8U)) & 1U) != 0U;
 }
-void setbit(std::uint8_t* p, unsigned i, bool v) {
-    const auto m=static_cast<std::uint8_t>(1U << (7U-i%8U));
-    if(v) p[i/8U] |= m;
-    else p[i/8U] &= static_cast<std::uint8_t>(~m);
-}
 unsigned popcount(std::uint64_t x) {
     unsigned n=0;
     for (; x; x &= (x-1U)) ++n;
