@@ -104,7 +104,7 @@ public:
    else {for(size_t i=0;i<dir_count;++i)if(directory[i].id==id)return true;}
    return false;
  }
- Decision observe(const Observation&o,uint32_t*id=nullptr){
+ Decision observe(const Observation&o,uint32_t*id=nullptr,bool keep_separate=false){
    if(!detail::sane(o)||o.origin!=Origin::rf_observation)return Decision::invalid;
    for(size_t i=0;i<rf_count;++i){auto&x=rf[i];if(detail::identity_equal(x.last,o)){
       if(x.encounters==UINT32_MAX)return Decision::full;
@@ -114,7 +114,7 @@ public:
       if(id)*id=x.id;
       return Decision::updated;
    }}
-   for(size_t i=0;i<rf_count;++i)if(detail::overlaps(rf[i].last,o))return Decision::ambiguous;
+   for(size_t i=0;i<rf_count;++i)if(detail::overlaps(rf[i].last,o)&&!keep_separate)return Decision::ambiguous;
    if(rf_count==RF||next_id==UINT32_MAX)return Decision::full;
    const auto assigned=next_id++;rf[rf_count++]={assigned,o,o,1,o.proof};if(id)*id=assigned;return Decision::added;
  }
