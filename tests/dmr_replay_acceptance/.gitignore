@@ -1,0 +1,10 @@
+__pycache__/
+*.py[cod]
+*.cfile
+*.cf32
+*.cs16
+*.iq
+*.bin
+*.wav
+*.jsonl
+*report*.json
