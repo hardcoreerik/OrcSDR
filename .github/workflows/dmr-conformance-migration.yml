@@ -1,0 +1,47 @@
+name: DMR Protocol and Migration Host Gates
+on:
+  push:
+    branches:
+      - feature/dmr-digital-voice-foundation
+    paths:
+      - 'components/orcsdr_dmr/**'
+      - 'tests/dmr_protocol_conformance/**'
+      - 'tests/dmr_replay_acceptance/**'
+      - 'tests/digital_voice_replay/**'
+      - 'tools/p25_discovery_migration/**'
+      - '.github/workflows/dmr-conformance-migration.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  protocol:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [Release, Sanitizers]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build independent tests against production D0 and D1 protocol
+        shell: bash
+        run: |
+          if [ "${{ matrix.config }}" = Sanitizers ]; then
+            cmake -S tests/dmr_protocol_conformance -B build/dmr-conformance-ci \
+              -DCMAKE_BUILD_TYPE=Debug -DDMR_CONFORMANCE_SANITIZERS=ON
+          else
+            cmake -S tests/dmr_protocol_conformance -B build/dmr-conformance-ci \
+              -DCMAKE_BUILD_TYPE=Release
+          fi
+          cmake --build build/dmr-conformance-ci --parallel 2
+      - name: Run five CTest protocol suites
+        run: ctest --test-dir build/dmr-conformance-ci --output-on-failure --verbose
+  python:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run independently derived ETSI oracles
+        run: python3 -m unittest discover -s tests/dmr_protocol_conformance -p test_etsi_oracle.py -v
+      - name: Run replay acceptance harness tests (no private IQ)
+        run: python3 -m unittest discover -s tests/dmr_replay_acceptance -p 'test_*.py' -v
+      - name: Run P25 migration tests (non-destructive)
+        run: python3 -m unittest discover -s tools/p25_discovery_migration/tests -p 'test_*.py' -v
