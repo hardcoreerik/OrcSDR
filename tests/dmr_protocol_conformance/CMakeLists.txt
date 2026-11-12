@@ -43,3 +43,34 @@ enable_testing()
 foreach(suite IN ITEMS golay cach_bptc integrity stream late_entry)
     add_test(NAME dmr_conformance_${suite} COMMAND dmr_protocol_conformance ${suite})
 endforeach()
+
+# D1-F independent adversarial candidate/identity gate. No decoder modifications.
+add_executable(dmr_false_sync_audit test_false_sync.cpp)
+target_link_libraries(dmr_false_sync_audit PRIVATE dmr_conformance_subject)
+target_compile_features(dmr_false_sync_audit PRIVATE cxx_std_17)
+if(MSVC)
+    target_compile_options(dmr_false_sync_audit PRIVATE /W4 /WX)
+else()
+    target_compile_options(dmr_false_sync_audit PRIVATE -Wall -Wextra -Wpedantic -Werror)
+endif()
+# Git HEAD is recorded at configure time in every audit output. A local
+# worktree without git still builds with explicitly labeled unknown provenance.
+execute_process(
+    COMMAND git rev-parse HEAD
+    WORKING_DIRECTORY "${ORC_ROOT}"
+    OUTPUT_VARIABLE DMR_AUDIT_SOURCE_SHA
+    OUTPUT_STRIP_TRAILING_WHITESPACE
+    ERROR_QUIET
+    RESULT_VARIABLE DMR_AUDIT_SHA_RESULT)
+if(NOT DMR_AUDIT_SHA_RESULT EQUAL 0 OR NOT DMR_AUDIT_SOURCE_SHA)
+    set(DMR_AUDIT_SOURCE_SHA "unknown-local")
+endif()
+target_compile_definitions(dmr_false_sync_audit PRIVATE
+    ORC_TEST_SOURCE_SHA="${DMR_AUDIT_SOURCE_SHA}")
+add_test(NAME dmr_false_sync_adversarial COMMAND dmr_false_sync_audit)
+
+find_package(Python3 COMPONENTS Interpreter QUIET)
+if(Python3_Interpreter_FOUND)
+    add_test(NAME dmr_false_sync_geometry
+        COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/test_false_sync_oracle.py" -v)
+endif()
