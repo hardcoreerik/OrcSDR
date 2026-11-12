@@ -397,8 +397,29 @@ bool stream_test() {
     append(stream,reference_cach(true),second);
     const auto baseline=decode_stream(stream,static_cast<unsigned>(stream.size()));
     REQUIRE(baseline.size()==2);
-    REQUIRE(baseline[0].slot==1 && baseline[1].slot==2);
-    REQUIRE(baseline[0].slot_from_cach && baseline[1].slot_from_cach);
+    // D1-S: a valid Hamming word is only a tentative BS CACH hint.
+    // Two bursts cannot corroborate a four-burst alternating cadence.
+    REQUIRE(baseline[0].slot==0 && baseline[1].slot==0);
+    REQUIRE(!baseline[0].slot_from_cach && !baseline[1].slot_from_cach);
+    REQUIRE(!baseline[0].cach_present && !baseline[1].cach_present);
+    REQUIRE(baseline[0].cach_confidence==CachConfidence::tentative);
+    REQUIRE(baseline[1].cach_confidence==CachConfidence::tentative);
+    REQUIRE(baseline[0].cach_candidate_slot==1);
+    REQUIRE(baseline[1].cach_candidate_slot==2);
+    // Independently validated LC identities are still delivered with unknown slot.
+    REQUIRE(baseline[0].integrity_valid && baseline[1].integrity_valid);
+    auto corroborated_stream=stream;
+    append(corroborated_stream,reference_cach(false),first);
+    append(corroborated_stream,reference_cach(true),second);
+    const auto corroborated=decode_stream(corroborated_stream,7);
+    REQUIRE(corroborated.size()==4);
+    for (unsigned i=0;i<3;++i) {
+        REQUIRE(corroborated[i].slot==0 && !corroborated[i].slot_from_cach);
+    }
+    REQUIRE(corroborated[3].slot==2 && corroborated[3].slot_from_cach);
+    REQUIRE(corroborated[3].cach_present);
+    REQUIRE(corroborated[3].cach_confidence==CachConfidence::cadence_validated);
+    REQUIRE(corroborated[3].cach_cadence_bursts==4);
     REQUIRE(baseline[0].identity==IdentityKind::group);
     REQUIRE(baseline[1].identity==IdentityKind::private_call);
     for (unsigned n : {1U,2U,3U,7U,13U,131U,144U}) {
@@ -419,17 +440,17 @@ bool stream_test() {
         if ((index & 1U)==0) REQUIRE(events[0].evidence==Evidence::sync_only);
         REQUIRE(events[0].identity==IdentityKind::none);
     }
-    // KNOWN DEFECT: all-zero non-CACH guard/previous-content decodes as valid
-    // Hamming TACT(7,4). D1 assumes CACH for every BS sync >=12 dibits.
-    // Pin currently observed behavior; corrected behavior requires separate
-    // 'CACH verified by cadence/BS mode' flag, not just Hamming correction.
+    // Regression for resolved D1-CACH-01: a 12-dibit zero guard prefix
+    // can decode as Hamming TACT but cannot be promoted to a BS slot.
     std::vector<std::uint8_t> not_cach(12,0U);
     const auto voice=reference_voice(SyncKind::bs_voice);
     not_cach.insert(not_cach.end(),voice.begin(),voice.end());
     const auto phantom=decode_stream(not_cach,1);
     REQUIRE(phantom.size()==1);
-    REQUIRE(phantom[0].slot==1 && phantom[0].slot_from_cach && phantom[0].cach_present);
-    std::puts("KNOWN DEFECT D1-CACH-01: 12 zero guard dibits are reported as CACH slot 1");
+    REQUIRE(phantom[0].slot==0 && !phantom[0].slot_from_cach && !phantom[0].cach_present);
+    REQUIRE(phantom[0].cach_confidence==CachConfidence::tentative);
+    REQUIRE(phantom[0].cach_tact_decoded && phantom[0].cach_candidate_slot==1);
+    std::puts("PASS D1-CACH-01: zero guard remains tentative, no false BS slot");
     // Independent confirmed severity: zero/noise prefix MUST NOT upgrade
     // sync-only evidence into identity, even if inferred slot is incorrect.
     REQUIRE(phantom[0].evidence==Evidence::sync_only);
