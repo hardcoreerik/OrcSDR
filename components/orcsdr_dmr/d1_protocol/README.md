@@ -18,12 +18,25 @@ IDs. Caller callbacks are responsible for any logging or buffering.
 
 The decoder scans a 132-dibit/264-bit data/voice burst, split as 98-bit
 payload + 10-bit slot type + 48-bit SYNC + 10-bit slot type + 98-bit payload.
-A base-station CACH is 24 bits (12 dibits) preceding its 132-dibit burst;
-D0's CACH mapping/Hamming correction supplies **inferred** BS slot numbers.
-Direct TS1/TS2 sync provides slot attribution without CACH. Other BS/MS
-bursts with no usable preceding CACH keep `slot=0` (unknown). Because CACH
-TACT has only Hamming protection, a CACH-derived slot is **not CRC-confirmed**.
-`slot_from_cach` and `cach_tact_corrections` expose this distinction.
+A base-station CACH is 24 bits (12 dibits) preceding its 132-dibit burst.
+**D1-S safety rule:** a decodable Hamming TACT by itself is only an untrusted
+`CachConfidence::tentative` hint, regardless of whether 0 or 1 bits were
+corrected; it never sets `slot`, `slot_from_cach`, or `cach_present`.
+Four consecutive 144-dibit-spaced BS SYNC bursts with exact (zero-correction)
+TACT and alternating TS1/TS2 are needed for `cadence_validated` slot output.
+Any timing gap, repeated slot, non-BS SYNC, or corrected TACT breaks the streak;
+new data then requires a fresh four-burst lock. The counter saturates at four.
+The 17-bit Short LC is **not** CRC-checked: cadence validates timing/slot
+consistency, not cryptographic CACH authenticity or real RF reception.
+Direct TS1/TS2 sync always provides slot attribution without CACH, unchanged.
+
+`Event::cach_tact_decoded`, `cach_candidate_slot`, and
+`cach_tact_corrections` are diagnostic-only, explicitly untrusted hints.
+`cach_confidence` distinguishes none, tentative, cadence_validated, and
+embedded_lc_validated. `cach_cadence_bursts` reports the evidence count.
+`cach_present` and `slot_from_cach` now mean **corroborated CACH only**;
+the previous behavior that marked one arbitrary prefix as confirmed CACH
+is intentionally removed.
 
 ### Evidence and packet types
 
@@ -52,9 +65,12 @@ payload type is not yet implemented.
 - **Types 3/6/11:** BPTC and masked CRC-16 (`0xA5A5`, `0xCCCC`, `0x3333`)
   checks. CSBK and data payload field decoding are deliberately **not**
   implemented; validated CRC does **not** imply voice identity.
-- **Voice late entry:** An unambiguous BS voice sync/CACH anchor followed by
-  the four matching alternating-slot embedded-LC fragments B–E may produce a
-  validated group/private identity. It validates QR EMB, LCSS order, colour,
+- **Voice late entry:** A tentative *clean* BS CACH/voice-sync anchor is
+  private state only: the initial event keeps `slot=0`. Its four same-slot
+  embedded-LC fragments B–E must recur at exact 288-dibit offsets with
+  individually zero-correction matching CACHs; a complete validated
+  embedded LC then yields a separately marked `embedded_lc_validated`
+  event carrying the slot and group/private identity. It validates QR EMB, LCSS order, colour,
   the BPTC(128,72) parity checks, and checksum before publishing an ID. It
   does not guess LC from voice sync alone and currently rejects rather than
   repairing embedded-LC parity errors. Missing fragments or irregular slot
@@ -82,7 +98,9 @@ codewords and their mutual distance; a pinned Golay vector; all 20 single,
 190 double, and 1,140 triple bit flips on the pinned codeword; quadruple-bit
 rejection; BPTC bit placement/correction; RS and CRC positive/negative
 checks; group/private field IDs; 2-slot CACH and direct-mode slot detection;
-stream chunks (1, 2, 3, 7, 13, 131, 144 dibits); zero false IDs from voice
+stream chunks (1, 2, 3, 7, 13, 131, 144 dibits); 512 arbitrary prefixes,
+four-burst alternating TS1/TS2 lock, damaged TACT, lost cadence, truncated
+bursts and reset; zero false IDs from voice
 sync, invalid input, bad RS, or corrupt embedded LC; valid and corrupted
 four-fragment late entry. These are **synthetic host tests**, not proof of RF
 lock, on-air decoder parity, or audio intelligibility.
@@ -137,3 +155,37 @@ No raw IQ, captured traffic, or binary test fixture is committed by D1.
    encryption handling, or higher-layer sequence/talkgroup context.
 6. No firmware integration, hardware profiling, storage/protocol migrations,
    or changes to D0/shared files. Those require separate phases.
+
+## D1-S finding closure: D1-CACH-01 (2026-11-11)
+
+The independent test report at `tests/dmr_protocol_conformance/FINDINGS.md`
+showed that **all 128 possible TACT patterns are decoded by Hamming(7,4,3)**.
+Previously `12 * 0x00` preceding BS voice SYNC set `slot=1` and
+`cach_present=true`. It now yields an **unconfirmed** event with
+`slot=0`, `slot_from_cach=false`, and `cach_present=false`.
+The candidate can still be seen as a diagnostic hint. The proof gate for
+Full LC / radio ID remains **BPTC and RS** (not CACH); direct-mode sync
+remains the independent explicit slot source.
+
+A late-entry identity may still emerge from a clean tentative BS voice
+anchor **only after** four independent same-slot CACH/EMB stage checks and
+complete embedded-LC checksum/FEC verification. A single damaged TACT
+or missing stage invalidates the hypothesis; raw CACH alone never yields
+an identity. The 144/288-dibit cadence assumes continuous hard-dibit timing:
+lost/inserted symbols, variable burst spacings, mixed repeaters, and
+late-entry mid-capture may delay or prevent slot confirmation.
+
+**Compatibility warning:** `tests/dmr_protocol_conformance/test_conformance.cpp`
+currently pins the old erroneous behavior for a known defect, and its
+two-burst test expects immediate BS CACH slot confirmation. Those assertions
+must be updated by the **owner of that separate folder**; this D1-S commit
+intentionally does not modify that suite. Tests in this directory assert
+the corrected behavior.
+
+Host test commands (also under `How to build and run` above):
+
+```sh
+cmake -S components/orcsdr_dmr/d1_protocol -B /tmp/orcsdr-dmr-d1s -DCMAKE_BUILD_TYPE=Debug
+cmake --build /tmp/orcsdr-dmr-d1s --parallel
+ctest --test-dir /tmp/orcsdr-dmr-d1s --output-on-failure
+```

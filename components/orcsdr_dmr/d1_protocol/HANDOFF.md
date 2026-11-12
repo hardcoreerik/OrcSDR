@@ -26,3 +26,23 @@ parity; BS CACH slot inference is not a CRC-backed identity. Investigate the
 V2.7.1 PDF table extraction anomaly before production signoff; reference
 Golay matrix is confirmed distance eight. Crucially `Evidence::sync_only`
 never authorizes radio identities.
+
+## D1-S CACH confidence correction
+
+Addressed confirmed D1-CACH-01: Hamming can decode any 7-bit TACT,
+so neither a plausible nor an uncorrected prefix confirms that CACH exists.
+`CachCadence` requires four consecutive clean, alternating 144-dibit BS
+sync/candidate windows before publishing TS1/TS2. Per-event
+`CachConfidence` exposes diagnostic tentative versus cadence-validated
+evidence, and the old `cach_present`/`slot_from_cach` API is retained but
+now only set for corroborated CACH. A complete validated embedded-LC chain
+can also confirm a same-slot CACH late-entry hypothesis; corrupted stage
+TACT rejects it. Direct-mode sync remains authoritative for TS1/TS2.
+
+Host-only tests added: standalone cadence model (sanitizer tested);
+stream-level arbitrary-prefix, corruption, cadence, chunk, truncation and
+direct-slot regression (requires D0+D1 build). No firmware/UI or other
+folders changed. **Known external test conflict:** the separate
+`tests/dmr_protocol_conformance` folder still asserts the former
+known-defect result (and immediate 2-burst BS slot). Its owner must revise
+those assertions to reflect D1-S without weakening the new negative tests.

@@ -288,6 +288,7 @@ void Decoder::reset() noexcept {
     history_.fill(0);
     consumed_ = 0;
     late_ = {};
+    cach_cadence_.reset();
 }
 void Decoder::burst_bits(std::uint64_t start, std::uint8_t (&bits)[264]) const noexcept {
     for (unsigned j = 0; j < kBurstDibits; ++j) {
@@ -312,30 +313,60 @@ void Decoder::scan(EventSink sink, void* user) noexcept {
     e.burst_start_dibit = start;
     e.sync = kind;
     e.slot = slot_for_sync(kind);
-    if (start >= kCachDibits && is_bs(kind)) {
-        CachWire cach{};
-        for (unsigned i = 0; i < kCachDibits; ++i) {
-            const auto dibit = at(start - kCachDibits + i);
-            cach[i / 4] = static_cast<std::uint8_t>(cach[i / 4] | (dibit << (6U - 2U * (i % 4U))));
+    if (is_bs(kind)) {
+        CachAssessment assessment{};
+        if (start >= kCachDibits) {
+            CachWire cach{};
+            for (unsigned i = 0; i < kCachDibits; ++i) {
+                const auto dibit = at(start - kCachDibits + i);
+                cach[i / 4] = static_cast<std::uint8_t>(
+                    cach[i / 4] | (dibit << (6U - 2U * (i % 4U))));
+            }
+            CachFields fields{};
+            std::uint8_t corrected = 0;
+            if (unpack_cach(cach, fields, corrected)) {
+                const auto hint = static_cast<std::uint8_t>(fields.tdma_channel ? 2U : 1U);
+                assessment = cach_cadence_.observe(start, true, true, hint, corrected);
+            } else {
+                cach_cadence_.reset();
+            }
+        } else {
+            cach_cadence_.reset();
         }
-        CachFields fields{};
-        std::uint8_t corrected = 0;
-        if (unpack_cach(cach, fields, corrected)) {
+        // All seven-bit Hamming TACT patterns decode. A candidate alone
+        // cannot claim CACH presence, TDMA slot, or radio identity.
+        e.cach_confidence = assessment.confidence;
+        e.cach_tact_decoded = assessment.confidence != CachConfidence::none;
+        e.cach_candidate_slot = assessment.candidate_slot;
+        e.cach_tact_corrections = assessment.corrections;
+        e.cach_cadence_bursts = assessment.cadence_bursts;
+        if (assessment.confidence == CachConfidence::cadence_validated) {
             e.cach_present = true;
             e.slot_from_cach = true;
-            e.cach_tact_corrections = corrected;
-            e.slot = fields.tdma_channel ? 2 : 1;
+            e.slot = assessment.candidate_slot;
         }
+    } else {
+        // MS/direct SYNC does not corroborate a BS/CACH cadence lock.
+        cach_cadence_.reset();
     }
     if (!is_data(kind)) {
         // Only an explicit voice SYNC anchors possible embedded-LC late entry.
         // Do not infer voice metadata from the voice SYNC alone.
-        if (is_bs(kind) && e.slot != 0) {
-            auto& target = late_[e.slot];
-            target = {};
-            target.active = true;
-            target.slot = e.slot;
-            target.base = start;
+        if (is_bs(kind)) {
+            // A clean tentative TACT may seed a PRIVATE late-entry hypothesis,
+            // but does not publish a slot. Four further matching CACHs plus
+            // complete embedded LC are required before an identity event.
+            const auto candidate_slot = e.slot ? e.slot :
+                ((e.cach_tact_decoded && e.cach_tact_corrections == 0)
+                    ? e.cach_candidate_slot : static_cast<std::uint8_t>(0));
+            if (candidate_slot != 0) {
+                auto& target = late_[candidate_slot];
+                target = {};
+                target.active = true;
+                target.slot = candidate_slot;
+                target.base = start;
+                target.cach_checks = 1;
+            }
         }
         if (sink) sink(e, user);
         return;
@@ -386,6 +417,23 @@ void Decoder::scan_embedded(EventSink sink, void* user) noexcept {
         if (delta % (2 * kFrameDibits) != 0) continue;
         const unsigned stage = static_cast<unsigned>(delta / (2 * kFrameDibits));
         if (stage == 0 || stage > 4 || static_cast<unsigned>(state.stage) + 1U != stage) continue;
+        // The same inferred slot must recur at each 288-dibit voice stage.
+        // A repaired/corrupt CACH TACT is insufficient to continue the claim.
+        if (start < kCachDibits) { state.active = false; continue; }
+        CachWire prefix{};
+        for (unsigned i = 0; i < kCachDibits; ++i) {
+            const auto dibit = at(start - kCachDibits + i);
+            prefix[i / 4] = static_cast<std::uint8_t>(
+                prefix[i / 4] | (dibit << (6U - 2U * (i % 4U))));
+        }
+        CachFields tact{};
+        std::uint8_t tact_corrections = 0;
+        if (!unpack_cach(prefix, tact, tact_corrections) ||
+            tact_corrections != 0 ||
+            (tact.tdma_channel ? 2U : 1U) != state.slot) {
+            state.active = false;
+            continue;
+        }
         std::uint8_t bits[264]{};
         burst_bits(start, bits);
         std::uint16_t qr = 0;
@@ -403,13 +451,22 @@ void Decoder::scan_embedded(EventSink sink, void* user) noexcept {
         if (stage == 1) state.colour_code = colour;
         for (unsigned i = 0; i < 32; ++i) state.fragments[(stage - 1) * 32 + i] = bits[116 + i];
         state.stage = static_cast<std::uint8_t>(stage);
+        ++state.cach_checks;
         if (stage == 4) {
             std::array<std::uint8_t, 9> lc{};
-            if (decode_embedded_lc(state.fragments, lc)) {
+            if (state.cach_checks == 5 && decode_embedded_lc(state.fragments, lc)) {
                 Event e{};
                 e.burst_start_dibit = start;
                 e.sync = SyncKind::bs_voice;
                 e.slot = state.slot;
+                e.cach_present = true;
+                e.slot_from_cach = true;
+                e.cach_tact_decoded = true;
+                e.cach_candidate_slot = state.slot;
+                e.cach_cadence_bursts = state.cach_checks;
+                // This path is grounded by complete LC/FEC/checksum and
+                // repeated same-slot CACH; not by the first TACT alone.
+                e.cach_confidence = CachConfidence::embedded_lc_validated;
                 e.colour_code = colour;
                 e.late_entry = true;
                 e.integrity_valid = true; // checksum + both BPTC dimensions verified

@@ -211,8 +211,11 @@ bool test_stream() {
   std::vector<std::uint8_t> wire{3,2,1,1,2,0,1};
   add(wire,cach(1),bs1);add(wire,cach(2),bs2);
   auto ev=run(wire);
-  CHECK(ev.size()==2);CHECK(ev[0].slot==1&&ev[1].slot==2);
-  CHECK(ev[0].slot_from_cach&&ev[1].slot_from_cach);
+  CHECK(ev.size()==2);CHECK(ev[0].slot==0&&ev[1].slot==0);
+  CHECK(!ev[0].slot_from_cach&&!ev[1].slot_from_cach);
+  CHECK(ev[0].cach_confidence==CachConfidence::tentative);
+  CHECK(ev[1].cach_confidence==CachConfidence::tentative);
+  CHECK(ev[0].cach_candidate_slot==1&&ev[1].cach_candidate_slot==2);
   CHECK(ev[0].identity==IdentityKind::group&&ev[0].destination_id==99);
   CHECK(ev[1].identity==IdentityKind::private_call&&ev[1].destination_id==24);
   CHECK(ev[0].evidence==Evidence::identity_valid&&ev[1].evidence==Evidence::identity_valid);
@@ -298,6 +301,10 @@ bool test_late_entry() {
     CHECK(e.slot==1&&e.destination_id==77&&e.source_id==1234567);++identities;
   }
   CHECK(identities==1);
+  // One Hamming-correctable bit in a stage CACH is NOT slot confirmation.
+  auto corrupt_cach=wire;
+  corrupt_cach[144+144]^=2U;events=run(corrupt_cach,1);
+  for(const auto& e:events) CHECK(!e.late_entry);
   // Corrupt embedded payload check while leaving voice sync intact.
   wire[144+144+12+59]^=1U;events=run(wire,17);
   for(const auto& e:events) CHECK(!e.late_entry);

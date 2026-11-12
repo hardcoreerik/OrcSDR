@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 #pragma once
 #include "orcsdr_dmr/d0.hpp"
+#include "orcsdr_dmr/cach_cadence.hpp"
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -23,10 +24,14 @@ struct Event {
     std::uint64_t burst_start_dibit = 0;
     SyncKind sync = SyncKind::bs_data;
     Evidence evidence = Evidence::sync_only;
-    std::uint8_t slot = 0;           // 0 unknown, 1/2 direct sync or CACH-inferred (not CRC backed)
-    bool slot_from_cach = false;     // Corrected TACT is weaker than uncorrected.
-    std::uint8_t cach_tact_corrections = 0;
-    bool cach_present = false;
+    std::uint8_t slot = 0;           // 0 unknown; 1/2 from direct SYNC or corroborated CACH.
+    bool slot_from_cach = false;     // True ONLY after cadence/embedded-LC validation.
+    std::uint8_t cach_tact_corrections = 0; // Tentative TACT Hamming repairs (0 or 1).
+    bool cach_present = false;       // Corroborated CACH, NOT arbitrary Hamming prefix.
+    CachConfidence cach_confidence = CachConfidence::none;
+    bool cach_tact_decoded = false;  // Diagnostic: every 7-bit TACT pattern decodes.
+    std::uint8_t cach_candidate_slot = 0; // Untrusted hint; NEVER a confirmed TS.
+    std::uint8_t cach_cadence_bursts = 0; // Saturates at kConfirmationBursts (or 5 for late LC).
     bool golay_valid = false;
     std::uint8_t golay_corrected_bits = 0;
     std::uint8_t colour_code = 0;
@@ -63,12 +68,14 @@ private:
         std::uint8_t colour_code = 0;
         std::uint64_t base = 0;
         std::uint8_t stage = 0;
+        std::uint8_t cach_checks = 0; // Includes clean anchor; checked at each 288-dibit stage.
         std::array<std::uint8_t, 128> fragments{};
     };
     static constexpr std::size_t kRingCapacity = 256;
     std::array<std::uint8_t, kRingCapacity> history_{};
     std::uint64_t consumed_ = 0;
     std::array<Late, 3> late_{};  // separate unknown, TS1, TS2 collections
+    CachCadence cach_cadence_{};   // one BS channel sequence, no heap or history growth
 
     std::uint8_t at(std::uint64_t index) const noexcept {
         return history_[static_cast<std::size_t>(index % kRingCapacity)];
