@@ -1,0 +1,32 @@
+name: DMR D1 Integration (host-only)
+on:
+  push:
+    branches:
+      - feature/dmr-digital-voice-foundation
+    paths:
+      - 'components/orcsdr_dmr/**'
+      - '.github/workflows/dmr-d1-integration.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  dmr-host:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [Release, Sanitizers]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure integration using actual D0/D1 modules
+        shell: bash
+        run: |
+          if [ "${{ matrix.config }}" = Sanitizers ]; then
+            cmake -S components/orcsdr_dmr/d1_integration -B build/dmr-d1-ci -DCMAKE_BUILD_TYPE=Debug -DDMR_D1_INTEGRATION_SANITIZE=ON
+          else
+            cmake -S components/orcsdr_dmr/d1_integration -B build/dmr-d1-ci -DCMAKE_BUILD_TYPE=Release
+          fi
+      - name: Compile with warnings-as-errors
+        run: cmake --build build/dmr-d1-ci --parallel 2
+      - name: Execute end-to-end synthetic IQ tests
+        run: ctest --test-dir build/dmr-d1-ci --output-on-failure --verbose
