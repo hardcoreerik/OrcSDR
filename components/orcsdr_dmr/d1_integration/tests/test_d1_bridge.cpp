@@ -222,6 +222,18 @@ void test_first_burst_recovery(){
     CHECK(one.bridge_stats.acquisition_prerolls==1);
     CHECK(one.bridge_stats.acquisition_bursts_missed==0);
     CHECK(one.frontend_stats.preroll_symbols==78);
+    std::fprintf(stderr,
+        "FIRST BURST DIAGNOSTIC one=%zu bulk=%zu dibits=%llu "
+        "locks=%llu loss=%llu prerolls=%llu pre_syms=%llu "
+        "statAcq=%llu statMiss=%llu\n",
+        one.events.size(), bulk.events.size(),
+        static_cast<unsigned long long>(one.bridge_stats.dibits_sent),
+        static_cast<unsigned long long>(one.frontend_stats.locks),
+        static_cast<unsigned long long>(one.frontend_stats.lost_locks),
+        static_cast<unsigned long long>(one.frontend_stats.full_preroll_acquisitions),
+        static_cast<unsigned long long>(one.frontend_stats.preroll_symbols),
+        static_cast<unsigned long long>(one.bridge_stats.acquisitions),
+        static_cast<unsigned long long>(one.bridge_stats.acquisition_bursts_missed));
     CHECK(one.events.size()==1 && bulk.events.size()==1);
     CHECK(identities(one)==1);
     CHECK(one.events[0].decoded.slot==0); // No CACH cadence from one BS burst.
