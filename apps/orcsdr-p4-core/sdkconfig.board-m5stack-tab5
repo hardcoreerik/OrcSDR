@@ -1,0 +1,10 @@
+# Build overlay: select the M5Stack Tab5 profile (documented-only; the console has no display backend for it).
+# Build-only check of the profile. The ESP-Hosted pins below are the Tab5 values; do not flash a Tab5 with this build.
+CONFIG_ORCSDR_BOARD_M5STACK_TAB5=y
+CONFIG_ESP_HOSTED_HOST_RESET_GPIO=15
+CONFIG_ESP_HOSTED_HOST_SDIO_PIN_CLK=12
+CONFIG_ESP_HOSTED_HOST_SDIO_PIN_CMD=13
+CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D0=11
+CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D1=10
+CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D2=9
+CONFIG_ESP_HOSTED_HOST_SDIO_PIN_D3=8

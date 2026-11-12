@@ -2,6 +2,16 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased: OrcSDR Web and OrcSDR P4 Core landing branch, in progress — 2026-11-08
+
+**Not a release.** Work on `claude/orcsdr-web-landing`, not on `origin/main`.
+
+- **OrcSDR P4 Core** (`apps/orcsdr-p4-core`): the firmware for ESP32-P4 boards, built from the shared OrcSDR screens, with OrcSDR Web in the image. Built for the Waveshare ESP32-P4-ETH and ESP32-P4-WIFI6-POE-ETH.
+- **OrcSDR Web** (`apps/orcsdr-web`): the browser page, the signed-request login and the port-81 IQ and audio sockets. The page now compiles OrcMaps; no map file is supplied to the browser yet, so maps show "NO BASEMAP".
+- **Waveshare ESP32-P4-ETH (COM29):** health check and the browser protocol tests pass on Ethernet. **Waveshare ESP32-P4-WIFI6-POE-ETH (COM28):** boots and finds its IP101 PHY and the ESP32-C6; link and web tests not yet run.
+- **Browser basemap delivery:** the board serves `/sd/orcmaps/basemap.pmtiles` to the page in signed 32 KiB chunks (`POST /api/v1/map/status` and `/map/read`); the page writes it into the WebAssembly virtual filesystem and rescans, with a status line (no SD card, no file, loading, loaded). Tested on COM28 for the absent path only (`tools/web_maps_test.js`): no board has a card with a basemap, so delivery of real data and the browser rendering of a map are untested.
+- **Not verified:** the P4 map service with a real basemap, browser audio heard by a person, any other board.
+
 ## Unreleased — Volume tray redesign, Visualizer entry — 2026-11-11
 
 - **Volume tray:** now 840x280 (3:1, twice the previous size), centred just below the status bar, drawn as the top item: it is composited from a sprite, and the dashboards (scopes, waterfalls, FT8 waterfall) hold still while it is open. The tray reads touch itself; dashboards see no touch until the finger is up and 250 ms have passed, so a tap that opens, adjusts or dismisses the tray never reaches "touch to tune". Only the slider reacts to a held finger; mute fires once per press and the second tap of a double tap on the speaker does not mute.

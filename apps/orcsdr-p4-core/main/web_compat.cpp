@@ -1,0 +1,232 @@
+#include "web_compat.hpp"
+#include "home_app.hpp"
+#include "web_audio.hpp"
+#include "web_control.hpp"
+#include "web_iq.hpp"
+#include <algorithm>
+#include <cstdarg>
+#include <cstdio>
+#include <cstring>
+#include <ctime>
+#include "esp_heap_caps.h"
+#include "esp_mac.h"
+#include "esp_rtl_sdr.h"
+#include "esp_timer.h"
+#include "eth_app.hpp"
+#include "orcsdr_board_profile.h"
+#include "radio_service.hpp"
+#include "sd_card.hpp"
+#include "wifi_app.hpp"
+
+namespace web_compat {
+namespace {
+constexpr uint32_t kSyncedAfterEpoch = 1700000000u;  // the page treats earlier clocks as unset
+
+struct Out {
+  char* p;
+  size_t cap, len = 0;
+  bool overflow = false;
+  void raw(const char* s) {
+    const size_t n = std::strlen(s);
+    if (len + n + 1 > cap) {
+      overflow = true;
+      return;
+    }
+    std::memcpy(p + len, s, n);
+    len += n;
+    p[len] = '\0';
+  }
+  void fmt(const char* f, ...) __attribute__((format(printf, 2, 3))) {
+    if (overflow) return;
+    va_list ap;
+    va_start(ap, f);
+    const int n = std::vsnprintf(p + len, cap - len, f, ap);
+    va_end(ap);
+    if (n < 0 || static_cast<size_t>(n) + 1 > cap - len) overflow = true;
+    else len += static_cast<size_t>(n);
+  }
+  void str(const char* s) {  // JSON string with escaping
+    raw("\"");
+    for (; s && *s; ++s) {
+      const unsigned char c = static_cast<unsigned char>(*s);
+      if (c == '"' || c == '\\') {
+        const char two[3] = {'\\', static_cast<char>(c), 0};
+        raw(two);
+      } else if (c < 0x20) {
+        fmt("\\u%04x", c);
+      } else {
+        const char one[2] = {static_cast<char>(c), 0};
+        raw(one);
+      }
+    }
+    raw("\"");
+  }
+};
+
+bool clock_synced() { return static_cast<uint32_t>(std::time(nullptr)) > kSyncedAfterEpoch; }
+
+// The page's receiver states: 0 absent, 1 present, 2 claimed, 3 streaming, 4 error. Ours: 0 none, 1 scanning, 2 streaming, 3 error.
+int page_state(int ours) { return ours == 2 ? 3 : ours == 3 ? 4 : 0; }
+
+void receivers(Out& o) {
+  static uint32_t prev_drops[orcsdr::radio::kMaxReceivers];
+  o.raw("{\"receivers\":[");
+  for (int i = 0; i < orcsdr::radio::kMaxReceivers; ++i) {
+    if (i) o.raw(",");
+    orcsdr::radio::ReceiverInfo ri;
+    const bool have = i < orcsdr::radio::max_receivers() && orcsdr::radio::receiver_info(i, &ri);
+    const bool present = have && (ri.state == 2 || ri.state == 3);
+    if (!present) {
+      o.fmt("{\"index\":%d,\"present\":false,\"state\":0}", i);
+      continue;
+    }
+    const uint32_t recent = ri.drops >= prev_drops[i] ? ri.drops - prev_drops[i] : ri.drops;
+    prev_drops[i] = ri.drops;
+    const orcsdr::radio::Gain g = orcsdr::radio::gain(i);
+    o.fmt("{\"index\":%d,\"present\":true,\"state\":%d,\"product\":", i, page_state(ri.state));
+    o.str(ri.device);
+    o.raw(",\"label\":");
+    o.str(ri.device);
+    o.raw(",\"tuner_chip\":\"\",\"scan_profile\":\"\",\"scan_run\":\"idle\",\"scan_baseline_ready\":false,\"serial\":\"\",\"tuner\":\"\",");
+    o.fmt("\"center_hz\":%u,\"sample_rate\":%u,\"usb_bytes_received\":0,\"iq_bytes_delivered\":0,\"iq_bytes_consumed\":0,", unsigned(ri.frequency_hz),
+          unsigned(ri.sample_rate));
+    o.fmt("\"drops\":%u,\"drops_recent\":%u,\"usb_errors\":0,\"usb_addr\":0,\"usb_path\":", unsigned(ri.drops), unsigned(recent));
+    o.str(ri.usb_path);
+    // last_iq_age_ms: the P4 console does not time individual blocks; a streaming receiver reports 0 (fresh).
+    o.fmt(",\"hub_port\":0,\"gain_tenth_db\":%d,\"last_iq_age_ms\":%d,\"last_error\":\"\"}", g.tenth_db, ri.state == 2 ? 0 : -1);
+  }
+  o.raw("]}");
+}
+
+// The page's "FM service" is the node's browser-audio session (web_audio): it owns a receiver while it plays, and the page then shows the station and its audio.
+void fm(Out& o) {
+  const web_audio::Status a = web_audio::status();
+  uint32_t accepted = 0, refused = 0, closed = 0;
+  web_iq::slot_counts(&accepted, &refused, &closed);
+  uint32_t why = 0, last_peer = 0, ticket_peer = 0;
+  web_iq::slot_diag(&why, &last_peer, &ticket_peer);
+  o.fmt("{\"supported\":%s,\"playing\":%s,\"receiver\":%d,\"frequency_hz\":%u,\"input_sps\":%u,\"audio_sps\":48000,\"mode\":\"mono\",\"volume\":%d,"
+        "\"rf_dbfs\":%.1f,\"queue_drops\":%u,\"tx_queue_overflows\":0,\"dsp_us\":%u,\"block_us\":%u,\"audio_rms_dbfs\":-90.0,\"uptime_us\":%llu,"
+        "\"browser_audio\":{\"available\":%s,\"port\":81,\"clients\":%d,\"accepted\":%u,\"refused\":%u,\"closed_early\":%u,\"last_why\":%u,\"last_peer\":\"%08x\",\"ticket_peer\":\"%08x\"}}",
+        web_audio::available() ? "true" : "false", a.playing ? "true" : "false", a.playing ? a.receiver : -1, unsigned(a.station_hz), unsigned(a.input_sps), a.volume,
+        double(a.rf_dbfs), unsigned(a.drops), unsigned(a.dsp_us), unsigned(a.block_us), static_cast<unsigned long long>(esp_timer_get_time()),
+        web_audio::available() ? "true" : "false", a.client ? 1 : 0, unsigned(accepted), unsigned(refused), unsigned(closed), unsigned(why), unsigned(last_peer), unsigned(ticket_peer));
+}
+
+// What Home itself shows for the VFO (the same snapshot the on-device screen is drawn from), so a page can show the real state: step, span, mode (the pinned
+// choice, the one in use and the band's own), the filter bandwidth and whether the step is adjustable on this band.
+void home_vfo(Out& o) {
+  const home_app::Status h = home_app::status();
+  o.fmt("{\"frequency_hz\":%u,\"applied_hz\":%u,\"band\":", unsigned(h.frequency_hz), unsigned(h.applied_hz));
+  o.str(h.band);
+  o.raw(",\"mode\":");
+  o.str(h.mode);
+  o.fmt(",\"step_hz\":%u,\"step_adjustable\":%s,\"span_hz\":%u,\"filter_bandwidth_hz\":%u,\"mode_choice\":%u,\"mode_active\":%u,\"mode_suggested\":%u,\"mode_selectable\":%s}",
+        unsigned(h.step_hz), h.step_adjustable ? "true" : "false", unsigned(h.span_hz), unsigned(h.filter_bandwidth_hz), unsigned(h.mode_choice), unsigned(h.mode_active),
+        unsigned(h.mode_suggested), h.mode_selectable ? "true" : "false");
+}
+
+void report(Out& o) {
+  uint8_t mac[6] = {};
+  esp_efuse_mac_get_default(mac);
+  char node[24];
+  std::snprintf(node, sizeof(node), "orcsdr-p4-%02x%02x%02x", mac[3], mac[4], mac[5]);
+  const wifi_app::Status w = wifi_app::status();
+  const eth_app::Status eth = eth_app::status();
+  const sd_card::Status s = sd_card::status();
+  o.raw("{\"node_id\":");
+  o.str(node);
+  o.raw(",\"firmware\":");
+  char fw[40];
+  std::snprintf(fw, sizeof(fw), "P4 console %s", __DATE__);
+  o.str(fw);
+  o.raw(",\"board\":");
+  o.str(orcsdr_board_profile()->name);
+  o.fmt(",\"uptime_us\":%lld,\"eth\":{\"link\":%s,\"ip\":", static_cast<long long>(esp_timer_get_time()), eth.link_up ? "true" : "false");
+  o.str(eth.ip);
+  o.fmt(",\"speed_mbps\":%d},\"wifi\":{\"started\":%s,\"connected\":%s,\"got_ip\":%s,\"ip\":", eth.speed_mbps,
+        w.started ? "true" : "false", w.connected ? "true" : "false", w.connected && w.ip[0] ? "true" : "false");
+  o.str(w.ip);
+  o.raw(",\"ssid\":");
+  o.str(w.ssid);
+  o.fmt(",\"rssi\":%d,\"err\":\"\"},\"memory\":{\"internal_free\":%u,\"dma_free\":%u,\"psram_free\":%u},", int(w.rssi),
+        unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)), unsigned(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)),
+        unsigned(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
+  o.fmt("\"sd\":{\"mounted\":%s,\"free_bytes\":0,\"writes_ok\":0,\"writes_fail\":0},\"iq\":{\"streaming\":%d,\"drops\":0}}", s.mounted ? "true" : "false",
+        orcsdr::radio::receiver_count());
+}
+
+void tuner(Out& o, int rx) {
+  if (rx < 0 || rx >= orcsdr::radio::max_receivers()) rx = 0;
+  const orcsdr::radio::Gain g = orcsdr::radio::gain(rx);
+  const orcsdr::radio::Info inf = orcsdr::radio::info(rx);
+  const uint32_t min_hz = web_control::tune_min_hz(rx);
+  o.fmt("{\"index\":%d,\"tuner\":\"\",\"tune_min_hz\":%u,\"tune_max_hz\":%u,\"gain_manual\":%s,\"gain_auto\":%s,\"gain_mode\":\"%s\",\"gain_tenth_db\":%d,"
+        "\"rtl_agc_available\":%s,\"rtl_agc\":%s,\"bias_available\":%s,\"bias\":%s,\"clock\":%s,\"caps\":%u,\"gains_tenth_db\":[",
+        rx, unsigned(min_hz), unsigned(ESP_RTL_SDR_FREQ_MAX_HZ), g.available ? "true" : "false", g.auto_available ? "true" : "false",
+        g.auto_mode ? "auto" : "manual", g.tenth_db, g.rtl_agc_available ? "true" : "false", g.rtl_agc ? "true" : "false",
+        g.bias_available ? "true" : "false", g.bias ? "true" : "false", clock_synced() ? "true" : "false", unsigned(inf.caps));
+  for (int i = 0; i < g.step_count; ++i) o.fmt("%s%d", i ? "," : "", g.steps[i]);
+  o.raw("]}");
+}
+
+void time_now(Out& o) {
+  o.fmt("{\"epoch\":%lld,\"synced\":%s}", static_cast<long long>(std::time(nullptr)), clock_synced() ? "true" : "false");
+}
+
+// 532-byte row, little-endian: seq, sweep, start_hz, stop_hz (u32 each), running (u8), 3 reserved, then 512 columns.
+// Our spectrum is 256 relative-intensity bins (not calibrated dBFS); each is shown twice to fill the 512 columns, and 0 ("no data")
+// is raised to 1 while the row is live. The scale therefore differs from the page's -80..-10 dBFS mapping: the shape is right, the level is not.
+constexpr size_t kRowBytes = 532;
+size_t spectrum(char* out, size_t cap, int rx) {
+  if (cap < kRowBytes) return 0;
+  if (rx < 0 || rx >= orcsdr::radio::max_receivers()) rx = 0;
+  static uint8_t last[orcsdr::radio::kMaxReceivers][256];
+  static bool have[orcsdr::radio::kMaxReceivers];
+  static uint32_t seq[orcsdr::radio::kMaxReceivers];
+  // peek, not take: the on-device Home screen consumes the "new data" flag, which would starve this reader.
+  uint8_t fresh[256];
+  uint32_t fft_seq = 0;
+  if (orcsdr::radio::peek_bins(rx, fresh, &fft_seq)) {
+    std::memcpy(last[rx], fresh, sizeof(fresh));
+    have[rx] = true;
+    seq[rx] = fft_seq;
+  }
+  orcsdr::radio::ReceiverInfo ri;
+  const bool live = orcsdr::radio::receiver_info(rx, &ri) && ri.state == 2 && have[rx];
+  const uint32_t center = live ? ri.frequency_hz : 0, half = live ? ri.sample_rate / 2 : 0;
+  const uint32_t start = center > half ? center - half : 0, stop = center + half, sweep = 0;
+  std::memset(out, 0, kRowBytes);
+  std::memcpy(out + 0, &seq[rx], 4);
+  std::memcpy(out + 4, &sweep, 4);
+  std::memcpy(out + 8, &start, 4);
+  std::memcpy(out + 12, &stop, 4);
+  out[16] = live ? 1 : 0;
+  if (live) {
+    for (int j = 0; j < 512; ++j) out[20 + j] = static_cast<char>(std::max<uint8_t>(1, last[rx][j / 2]));
+  }
+  return kRowBytes;
+}
+}  // namespace
+
+bool get(const char* name, int rx, char* out, size_t cap, size_t* len, Kind* kind) {
+  *kind = Kind::json;
+  *len = 0;
+  if (std::strcmp(name, "spectrum") == 0) {
+    *kind = Kind::binary;
+    *len = spectrum(out, cap, rx);
+    return true;
+  }
+  Out o{out, cap};
+  if (cap) out[0] = '\0';
+  if (std::strcmp(name, "receivers") == 0) receivers(o);
+  else if (std::strcmp(name, "fm") == 0) fm(o);
+  else if (std::strcmp(name, "home") == 0) home_vfo(o);
+  else if (std::strcmp(name, "report") == 0) report(o);
+  else if (std::strcmp(name, "tuner") == 0) tuner(o, rx);
+  else if (std::strcmp(name, "time") == 0) time_now(o);
+  else return false;
+  *len = o.overflow ? 0 : o.len;
+  return true;
+}
+}  // namespace web_compat
