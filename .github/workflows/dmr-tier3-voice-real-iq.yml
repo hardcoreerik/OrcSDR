@@ -1,0 +1,109 @@
+name: DMR other-mode real-air IQ exploration (non-gating)
+on:
+  push:
+    branches:
+      - feature/dmr-digital-voice-foundation
+    paths:
+      - '.github/workflows/dmr-tier3-voice-real-iq.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  real-air-exploratory:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the actual native D0 D1-C replay decoder
+        run: |
+          cmake -S components/orcsdr_dmr/d1_integration -B build/dmr-other-real-iq -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/dmr-other-real-iq --parallel 2
+          ctest --test-dir build/dmr-other-real-iq --output-on-failure
+      - name: Download exact pinned Tier III and voice-terminator IQ and verify hashes
+        shell: bash
+        run: |
+          set -euo pipefail
+          root="$RUNNER_TEMP/dmr-other-modes/DMR"
+          mkdir -p "$root"
+          base="https://raw.githubusercontent.com/MattCheramie/GopherTrunk/f06bfff493f47fdeb69807c8b08b2b32a253839f/cmd/gophertrunk/testdata"
+          curl -fsSL --retry 3 --max-time 90 "$base/dmr-t3-cc.cfile" -o "$root/dmr-t3-cc.cfile"
+          curl -fsSL --retry 3 --max-time 90 "$base/dmr-voice-term.cfile" -o "$root/dmr-voice-term.cfile"
+          python3 - <<'PY'
+          import hashlib, os
+          from pathlib import Path
+          root=Path(os.environ["RUNNER_TEMP"])/"dmr-other-modes"/"DMR"
+          pins={
+            "dmr-t3-cc.cfile":(
+              499200,"7a119ec16e5c6412488f2ed112b2c5b85cdd799f",
+              "08d1697bc2c53721be1c3071f34760d03f3274bc1b85432b48273421495ffbf0"),
+            "dmr-voice-term.cfile":(
+              537600,"91620e07e5350af6bce85d75152c23c62bfed253",
+              "5b442ae37a40d1344a7be92130812ae099c9f683a21ee338c70e5d7599efd0c9")
+          }
+          for filename,(length,want_blob,want_sha) in pins.items():
+              data=(root/filename).read_bytes()
+              blob=hashlib.sha1((f"blob {len(data)}\0").encode()+data).hexdigest()
+              sha=hashlib.sha256(data).hexdigest()
+              if (len(data),blob,sha)!=(length,want_blob,want_sha):
+                  raise SystemExit("REFUSE TO REPLAY: fixture integrity mismatch: "+filename)
+              print("VERIFIED",filename,"bytes",length,"git_blob",blob,"sha256",sha)
+          PY
+      - name: Replay both actual RF recordings at 1, 7, 257 and 4096 samples per input chunk
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/dmr-other-reports"
+          for fixture in dmr-tier3-control dmr-tier3-voice-terminator; do
+            for chunk in 1 7 257 4096; do
+              python3 tests/dmr_replay_acceptance/acceptance.py run \
+                --fixtures-root "$RUNNER_TEMP/dmr-other-modes" \
+                --id "$fixture" --chunk-samples "$chunk" --timeout 90 \
+                --bridge-command "$GITHUB_WORKSPACE/build/dmr-other-real-iq/dmr_d1_replay_bridge" \
+                --report "$RUNNER_TEMP/dmr-other-reports/${fixture}-${chunk}.json" > /dev/null
+            done
+          done
+      - name: Report observed results WITHOUT claiming Tier III trunk protocol support
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          root=Path(os.environ["RUNNER_TEMP"])/"dmr-other-reports"
+          fields=("fixture","iq_samples","syncs","bursts","crc_pass","rs_pass",
+                  "fec_and_check_pass","radio_ids","talkgroups","colour_codes","chunk_equal")
+          rows=[]
+          for fid in ("dmr-tier3-control","dmr-tier3-voice-terminator"):
+              entries=[json.loads((root/f"{fid}-{n}.json").read_text())["fixtures"][0] for n in (1,7,257,4096)]
+              metrics=[e["metrics"] for e in entries]
+              same=all(m==metrics[0] for m in metrics[1:])
+              m=metrics[0]
+              row=(fid,entries[0]["iq_samples_streamed"],m["sync_total"],m["bursts"],
+                   m["crc"]["pass"],m["rs"]["pass"],m["check_and_fec_valid"],
+                   ",".join(map(str,m["source_ids"])) or "none",
+                   ",".join(map(str,m["talkgroups"])) or "none",
+                   ",".join(map(str,m["color_codes"])) or "none",
+                   "PASS" if same else "FAIL")
+              rows.append(row)
+              print(dict(zip(fields,row)))
+              if m["unverified_identity_claims"] or m["false_identity_detections"]:
+                  raise SystemExit(f"UNTRUSTED IDENTITY detected in {fid}")
+              if not same:
+                  raise SystemExit(f"Decoder output differs by chunk size: {fid}")
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a",encoding="utf8") as f:
+              f.write("## Independent real-air Tier III and voice terminator IQ probe\n\n")
+              f.write("**Non-gating exploratory run**. Exact hash-pinned public 48-kS/s CF32 recorded IQ. Bridge uses actual native D0/D1, not a third-party decoder. Complete Tier III trunk decoding is NOT implemented.\n\n")
+              f.write("| "+" | ".join(fields)+" |\n")
+              f.write("|"+"|".join("---" for _ in fields)+"|\n")
+              for row in rows:
+                  f.write("| "+" | ".join(map(str,row))+" |\n")
+              f.write("\nThe workflow passing means byte verification and replay/chunk invariance passed. It does **not** by itself mean the DMR Tier III signaling or voice traffic was decoded. Any recovered CRC/RS, source ID and talkgroup shown are actual native results; upstream expectations are intentionally not used as pass criteria.\n")
+          PY
+      - name: Upload JSON metrics only, never IQ
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dmr-tier3-voice-actual-replay-json
+          path: ${{ runner.temp }}/dmr-other-reports/*.json
+          if-no-files-found: ignore
+          retention-days: 14
