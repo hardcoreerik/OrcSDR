@@ -165,7 +165,10 @@ def main():
             f.write("\n".join(status + [tcp_line]) + "\n")
         if not a.no_shots:
             for _ in range(a.map_range_taps):
-                dev.cmd("UI_TAP 793 188", "UI_TAP", 4)       # the range button on the map page
+                tap = dev.first("UI_TAP 793 188", "UI_TAP")      # the range button on the map page
+                record("range_tap", tap)
+                if "DONE" not in tap:
+                    failures.append("a map range tap was not acknowledged; the map range is not what the screenshot says")
                 dev.wait(1.2)
             for index, name in enumerate(TABS):
                 dev.cmd(f"UI_TAP {104 + 178 * index} {TAB_Y}", "UI_TAP", 4)

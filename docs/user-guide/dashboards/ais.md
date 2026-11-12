@@ -7,7 +7,7 @@ The AIS dashboard receives the VHF marine **Automatic Identification System**: s
 
 ## Evidence level: read this first
 
-- **Proven:** deterministic synthetic AIS recordings, replayed over a private network connection, decode on the Tab5 byte for byte (43 of 43 transmitted packets in the documented run, with no lost samples). Every screenshot below comes from that replay and carries the orange **TEST REPLAY DATA – NOT LIVE RF** banner. The positions are invented, laid out off the Oregon coast only so the map has something to show.
+- **Checked:** deterministic synthetic AIS recordings, replayed over a private network connection. On the host, the independent reference decoder recovers all 43 transmitted packets with matching fields. On the Tab5 the replay produced CRC-valid packets on both channels at the expected rate (about 43 per pass) with no lost samples. The Tab5 comparison is by packet counts, not a byte-for-byte comparison of every packet. Every screenshot below comes from a replay and carries the orange **TEST REPLAY DATA – NOT LIVE RF** banner. The positions are invented, laid out off the Oregon coast only so the map has something to show.
 - **Not yet proven:** reception of real ships. The lab receiver has so far heard only noise on these channels, so sensitivity and sustained use are unmeasured. See the [AIS integration checkpoint](https://github.com/hardcoreerik/OrcSDR/blob/main/docs/AIS_INTEGRATION_CHECKPOINT.md) for the exact record.
 
 ## Before you open it
@@ -31,13 +31,13 @@ Vessels, base stations and aids to navigation on an offline map, with live count
 
 ![AIS Targets list and station details](../images/ais/ais_2_targets.png)
 
-Every station heard, newest first, with class, type and age. Tap a row for details: MMSI, call sign, navigation status, position, course and speed, destination and when it was last heard.
+Up to the 32 most recent stations, newest first, with class, type and age. Tap a row for details: MMSI, call sign, navigation status, position, course and speed, destination and when it was last heard.
 
 ### Messages
 
 ![AIS Messages journal with packet inspector](../images/ais/ais_3_messages.png)
 
-A rolling journal of valid packets: age, channel, message type, station ID and a decoded summary. Select a row to see the raw packet hex in the inspector. Use **UP** and **DOWN** to scroll.
+A rolling journal of the last 16 valid packets (older ones scroll off; this page is not a complete log): age, channel, message type, station ID and a decoded summary. Select a row to see the raw packet hex in the inspector. Use **UP** and **DOWN** to scroll.
 
 ### Protocol
 
@@ -55,7 +55,7 @@ Reception diagnostics: IQ sample rate, CRC-valid packets per channel, CRC failur
 
 ![AIS Events page: collection not available](../images/ais/ais_6_events.png)
 
-Safety and activity events are **not available in this build**; the page says so rather than showing an empty list. The Messages page shows every packet.
+Safety and activity events are **not available in this build**; the page says so rather than showing an empty list. The Messages page shows the most recent 16 packets.
 
 ### Setup
 
@@ -65,7 +65,7 @@ Shows the fixed configuration: both channels on, the input source, and what is n
 
 ## Test replay mode
 
-For development and these screenshots, the firmware can mark a session as a test replay. Every page then shows **TEST REPLAY DATA – NOT LIVE RF**. The label is armed before any replayed samples arrive and is switched on only by an authenticated serial command (see the [serial reference](https://github.com/hardcoreerik/OrcSDR/blob/main/docs/API_SERIAL_CLI.md)). It never turns itself on, and live data never carries it.
+For development and these screenshots, the firmware can label a session as a test replay: every page then shows **TEST REPLAY DATA – NOT LIVE RF**. The label is a manual switch set by an authenticated serial command (see the [serial reference](https://github.com/hardcoreerik/OrcSDR/blob/main/docs/API_SERIAL_CLI.md)); it does not detect where the data came from. It is independent of the input source, so check that it is on before trusting replay screenshots and never treat its absence as proof that data is live. It never switches itself on.
 
 ## Troubleshooting
 
