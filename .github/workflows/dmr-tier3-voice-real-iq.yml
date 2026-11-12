@@ -5,6 +5,9 @@ on:
       - feature/dmr-digital-voice-foundation
     paths:
       - '.github/workflows/dmr-tier3-voice-real-iq.yml'
+      - 'components/orcsdr_dmr/d1_frontend/**'
+      - 'components/orcsdr_dmr/d1_protocol/**'
+      - 'components/orcsdr_dmr/d1_integration/**'
   workflow_dispatch:
 permissions:
   contents: read
