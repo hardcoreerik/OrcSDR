@@ -247,7 +247,7 @@ bool test_errors() {
   CHECK(events.size()==1 && events[0].integrity_valid &&
         events[0].evidence==Evidence::identity_valid &&
         events[0].sync_bit_errors==1);
-  good[54]^=3;events.clear();d.reset();
+  good[54]^=2U;events.clear();d.reset(); // Add a SECOND bit error.
   CHECK(d.feed(good.data(),good.size(),collect,&events));
   CHECK(events.empty()); // Two bad sync bits are never accepted.
   // A syntactically valid FEC block with a deliberately corrupted RS parity
