@@ -455,12 +455,25 @@ bool stream_test() {
     // sync-only evidence into identity, even if inferred slot is incorrect.
     REQUIRE(phantom[0].evidence==Evidence::sync_only);
     REQUIRE(!phantom[0].integrity_valid && phantom[0].identity==IdentityKind::none);
-    // A one-bit-corrupted 48-bit SYNC shall not upgrade any event into a
-    // decoded identity, even if the rest of the burst is a valid LC.
+    // A uniquely matched one-bit DATA sync is only accepted after Golay,
+    // BPTC and RS integrity checks, never because of sync alone.
     auto bad_sync=first;
     bad_sync[54] ^= 1U;
     const auto sync_damaged=decode_stream({bad_sync.begin(),bad_sync.end()},13);
-    REQUIRE(sync_damaged.empty());
+    REQUIRE(sync_damaged.size()==1);
+    REQUIRE(sync_damaged[0].sync_bit_errors==1);
+    REQUIRE(sync_damaged[0].integrity_valid &&
+            sync_damaged[0].evidence==Evidence::identity_valid);
+    REQUIRE(sync_damaged[0].source_id==456 && sync_damaged[0].destination_id==123);
+    // Two sync bit errors remain rejected, even with intact LC bytes.
+    bad_sync[54] ^= 3U;
+    REQUIRE(decode_stream({bad_sync.begin(),bad_sync.end()},13).empty());
+    // Invalid RS must not produce an event when sync is only approximate.
+    auto invalid_lc=reference_lc(123,456);
+    invalid_lc[6]^=1U;
+    auto untrusted=reference_burst(SyncKind::bs_data,1,1,invalid_lc);
+    untrusted[54]^=1U;
+    REQUIRE(decode_stream({untrusted.begin(),untrusted.end()},7).empty());
     // Deterministic pseudo-random hard dibits with no deliberately injected
     // sync: cannot manufacture a verified identity from noise.
     std::vector<std::uint8_t> noise(4096);
