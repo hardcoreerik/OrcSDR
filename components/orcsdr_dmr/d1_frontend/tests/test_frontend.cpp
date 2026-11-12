@@ -153,6 +153,27 @@ int main() {
     print_case("clean +950",clean,basic,0.005);
     CHECK(std::abs(basic.stats.carrier_offset_hz-950.0F)<90.0F);
     CHECK(basic.stats.sync_kind<8U && basic.stats.sync_correlation>0.955F);
+    // The phase discriminator must be insensitive to the IQ recorder's
+    // arbitrary amplitude scale. A real-air terminator had peak IQ <0.002;
+    // our former absolute power gate (1e-5) rejected all its samples.
+    for (const auto scale : {1.0e-3F, 1.0e-4F}) {
+        auto quiet_iq=clean.iq;
+        for(auto& z:quiet_iq) { z.re*=scale; z.im*=scale; }
+        const auto quiet=run(quiet_iq,13,1);
+        const auto result=compare(clean,quiet);
+        CHECK(quiet.stats.invalid_iq==0);
+        CHECK(quiet.stats.locks==basic.stats.locks);
+        CHECK(quiet.syms.size()==basic.syms.size());
+        CHECK(result.checked>clean.bits.size()/2);
+        CHECK(result.errors<=result.checked/200);
+        for(std::size_t i=0;i<quiet.syms.size();++i)
+            CHECK(quiet.syms[i].dibit==basic.syms[i].dibit);
+        std::printf("amplitude scale %.4g: locks=%llu IQ-invalid=%llu bits=%zu errors=%zu PASS\\n",
+            static_cast<double>(scale),
+            static_cast<unsigned long long>(quiet.stats.locks),
+            static_cast<unsigned long long>(quiet.stats.invalid_iq),
+            result.checked,result.errors);
+    }
     const auto chunks=run(clean.iq,1,1);
     CHECK(chunks.syms.size()==basic.syms.size());
     for(std::size_t i=0;i<chunks.syms.size();++i) {
