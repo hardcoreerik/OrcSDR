@@ -67,6 +67,58 @@ class Iiod:
         return float(self.read(attr, **kw).split()[0])
 
 
+class ConsoleIio:
+    """Independent readback through the Pluto's own serial console (debug port), using `iio_attr` ON the Pluto against its local iiod. Needs a
+    console that is already logged in (the test never logs in or types a password) and only runs read-only `iio_attr` queries."""
+
+    PROMPT = "root@fishball"
+
+    def __init__(self, port):
+        import re
+        import serial  # pyserial
+        self.re = re
+        self.s = serial.Serial()
+        self.s.port, self.s.baudrate, self.s.timeout = port, 115200, 0.3
+        self.s.dtr = self.s.rts = False
+        self.s.open()
+        self.s.write(b"\n")
+        time.sleep(0.4)
+        first = self.s.read(4096)
+        if b"login:" in first:
+            raise SystemExit("the Pluto console on %s shows a login prompt: log in first (the test does not enter passwords)" % port)
+
+    def _run(self, cmd, timeout=10):
+        self.s.reset_input_buffer()
+        self.s.write(cmd.encode() + b"\n")
+        buf = b""
+        end = time.time() + timeout
+        while time.time() < end:
+            buf += self.s.read(4096)
+            if buf.rstrip().endswith(b"# ") or buf.rstrip().endswith(b"#"):
+                if len(buf) > len(cmd):
+                    break
+        text = self.re.sub(rb"\x1b\[[0-9;?]*[ -/]*[@-~]", b"", buf).decode(errors="replace").replace("\r", "")
+        lines = [l for l in text.split("\n") if l.strip() and cmd not in l and not l.startswith(self.PROMPT)]
+        return lines
+
+    def read(self, attr, dev=PHY, chan=None, out=False):
+        if chan:
+            cmd = "iio_attr -u local: %s -c %s %s %s" % ("-o" if out else "-i", dev, chan, attr)
+        else:
+            cmd = "iio_attr -u local: -d %s %s" % (dev, attr)
+        lines = []
+        for _ in range(3):  # a serial console occasionally drops or mangles a reply; ask again before calling it a failure
+            lines = self._run(cmd)
+            if lines:
+                break
+        if not lines:
+            raise IOError("no answer from the Pluto console for: " + cmd)
+        return lines[-1].strip()  # the value is the last line; the console's echo of a long command can come back garbled above it
+
+    def f(self, attr, **kw):
+        return float(self.read(attr, **kw).split()[0])
+
+
 class BoardView:
     """The same read interface as Iiod, answered from the board's own /api/v1/pluto record (values the driver read back from the device).
     Less independent than a direct read of the Pluto: use it when the Pluto is not reachable on the network. Transmit-side values are not
@@ -127,6 +179,7 @@ def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("ip", help="the OrcSDR P4 Core board")
     ap.add_argument("--pluto-ip", help="the Pluto's own network address, for an independent readback; without it the board's own record is used")
+    ap.add_argument("--pluto-console", help="COM port of the Pluto's debug console (already logged in) for an independent readback without the network")
     ap.add_argument("--password", default="password")
     args = ap.parse_args()
 
@@ -135,9 +188,13 @@ def main():
     if not s:
         print("cannot log in (wait a few seconds after a failed attempt, or check --password):", status, r)
         return 1
-    iio = Iiod(args.pluto_ip) if args.pluto_ip else BoardView(d)
-    independent = bool(args.pluto_ip)
-    print("readback source:", "the Pluto's own iiod over the network (independent)" if independent else "the board's /api/v1/pluto record (driver readback)")
+    if args.pluto_ip:
+        iio, independent, source = Iiod(args.pluto_ip), True, "the Pluto's own iiod over the network (independent)"
+    elif args.pluto_console:
+        iio, independent, source = ConsoleIio(args.pluto_console), True, "iio_attr on the Pluto itself through its debug console (independent)"
+    else:
+        iio, independent, source = BoardView(d), False, "the board's /api/v1/pluto record (driver readback)"
+    print("readback source:", source)
 
     def post(route, **q):
         target = "/api/v1/%s?%s" % (route, "&".join("%s=%s" % kv for kv in q.items()))
