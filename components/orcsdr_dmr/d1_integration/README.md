@@ -35,9 +35,11 @@ ctest --test-dir build/dmr-d1-integration-asan --output-on-failure
 
 **Local development verification on 2026-11-11:** integration `.cpp` and test `.cpp` each compile with GCC C++17 and `-Wall -Wextra -Wpedantic -Werror` against minimal API-compatible declarations. This is a **syntax/API smoke check only**; it does *not* run or link the real D0/D1 implementations. Do not mark the full CTest suite `PASS` until CI or an independent checked-out build executes it. This limitation is intentional and recorded.
 
+**Integrated CI verification (2026-11-11 PST / 2026-11-12 UTC):** [GitHub Actions run 43156539511](https://github.com/hardcoreerik/OrcSDR/actions/runs/43156539511) compiled the **actual** D0, D1-A, D1-B and D1-C sources using strict warnings-as-errors in separate Release and ASan/UBSan jobs. **Both jobs passed (1/1 CTest each)**. The synthetic full-LC stream acquired one 4FSK sync, decoded **eight complete bursts** and emitted **eight integrity-validated radio-identity events** after the intentionally missed acquisition burst. Both chunk-invariance and loss/discontinuity tests passed. This is **synthetic host evidence only**, not measured RF, commercial-vendor parity, calibrated decode sensitivity, device performance, or first-burst recovery.
+
 ## Open gates
 
-1. Execute Release/ASan end-to-end host builds against real D0, front-end and protocol source. Investigate any real-loop failure rather than weakening evidence requirements.
+1. **Completed for synthetic host vectors:** Release and ASan/UBSan integration jobs on the real D0/D1 sources passed. Repeat independently after any decoder or bridge source change.
 2. Verify first-burst behavior and measure how many successive valid DMR bursts are needed before complete metadata is available. Implement and test bounded pre-roll for short calls, if feasible within ESP32-P4 RAM and CPU budgets.
 3. Replay pinned private DMR direct-mode IQ from REA-Results, then additional Tier II frames and negative controls; report actual source, sample format and ground truth. Do not check in private IQ.
 4. Resolve D1-B ETSI Golay generator table-extraction ambiguity using the rendered specification and real on-air vectors.
