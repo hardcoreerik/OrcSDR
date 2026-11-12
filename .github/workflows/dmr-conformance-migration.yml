@@ -33,8 +33,21 @@ jobs:
               -DCMAKE_BUILD_TYPE=Release
           fi
           cmake --build build/dmr-conformance-ci --parallel 2
-      - name: Run five CTest protocol suites
+      - name: Run five independent CTest protocol suites
         run: ctest --test-dir build/dmr-conformance-ci --output-on-failure --verbose
+      - name: Build D1 protocol's own source-linked unit and CACH tests
+        shell: bash
+        run: |
+          if [ "${{ matrix.config }}" = Sanitizers ]; then
+            cmake -S components/orcsdr_dmr/d1_protocol -B build/dmr-d1-protocol-ci \
+              -DCMAKE_BUILD_TYPE=Debug -DORCSDR_D1_SANITIZERS=ON
+          else
+            cmake -S components/orcsdr_dmr/d1_protocol -B build/dmr-d1-protocol-ci \
+              -DCMAKE_BUILD_TYPE=Release
+          fi
+          cmake --build build/dmr-d1-protocol-ci --parallel 2
+      - name: Run native D1 sync, Full-LC and cadence regression tests
+        run: ctest --test-dir build/dmr-d1-protocol-ci --output-on-failure --verbose
   python:
     runs-on: ubuntu-latest
     steps:
