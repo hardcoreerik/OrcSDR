@@ -11,7 +11,7 @@ void Receiver::clear_protocol() noexcept {
 void Receiver::reset() noexcept {
     frontend_.reset();
     clear_protocol();
-    prior_locks_ = prior_losses_ = 0;
+    prior_locks_ = prior_losses_ = prior_prerolls_ = 0;
     stats_ = {};
     active_callback_ = nullptr;
     active_user_ = nullptr;
@@ -23,6 +23,7 @@ void Receiver::discontinuity() noexcept {
     clear_protocol();
     prior_locks_ = frontend_.stats().locks;
     prior_losses_ = frontend_.stats().lost_locks;
+    prior_prerolls_ = frontend_.stats().full_preroll_acquisitions;
     ++stats_.stream_epoch;
 }
 
@@ -88,11 +89,18 @@ Result Receiver::process(const ComplexSample* input, std::size_t count,
                 ++stats_.stream_epoch; // frontend sample indices may restart on IQ loss
             }
             if (acquired) {
-                stats_.acquisitions += fs.locks - prior_locks_;
-                stats_.acquisition_bursts_missed += fs.locks - prior_locks_;
+                const auto new_locks = fs.locks - prior_locks_;
+                const auto new_prerolls = fs.full_preroll_acquisitions - prior_prerolls_;
+                // A measured pre-roll is NOT automatically a decoded burst.
+                // Report missing acquisition history only where that is known.
+                stats_.acquisitions += new_locks;
+                stats_.acquisition_prerolls += new_prerolls;
+                if (new_prerolls < new_locks)
+                    stats_.acquisition_bursts_missed += new_locks - new_prerolls;
             }
             prior_locks_ = fs.locks;
             prior_losses_ = fs.lost_locks;
+            prior_prerolls_ = fs.full_preroll_acquisitions;
         }
         if (step.produced == 1 && fs.locked) {
             const auto index = protocol_.dibits_consumed();
