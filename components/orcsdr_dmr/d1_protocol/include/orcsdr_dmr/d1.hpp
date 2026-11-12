@@ -47,6 +47,10 @@ struct Event {
     std::uint8_t service_options = 0;
     std::uint32_t destination_id = 0;
     std::uint32_t source_id = 0;
+    // 0 = exact ETSI 48-bit sync; 1 = uniquely matched data sync with
+    // independently valid Golay, BPTC and RS/CRC. Never promote a fuzzy
+    // voice-sync-only hit or an unchecked payload into a decoder event.
+    std::uint8_t sync_bit_errors = 0;
 };
 
 using EventSink = void (*)(const Event&, void*) noexcept;
