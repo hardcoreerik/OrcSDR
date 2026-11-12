@@ -2,11 +2,13 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
-## Unreleased — esp-pluto-sdr pinned in the Tab5 app — 2026-11-12
+## Unreleased — PlutoSDR as a local receiver in the Tab5 app — 2026-11-12
 
-- **Dependency only:** `apps/orcsdr-tab5` now pins the standalone PlutoSDR driver esp-pluto-sdr at `ca88e37` (includes the libiio `CLOSE_PIPE` fix) and compiles it. The app does not call it yet: there is no Pluto source in `ui/main.cpp`, so behaviour is unchanged.
-- **Verified:** full `build-tab5-idf.ps1` build links; binary 5,592,896 bytes (11% of the app partition free). Not flashed, not run on a Tab5 in this form.
-- **Driver evidence:** the driver ran on the Tab5 (COM39) in a separate standalone test, 43 of 43 checks, and streamed 2.4 MS/s with 0 drops in a headless P4 Core build.
+- **New receiver class:** a PlutoSDR (AD9361, 70 MHz to 6 GHz) on the Tab5's USB-A port is used like an RTL-SDR dongle. `ui/pluto_source.cpp` adapts the standalone esp-pluto-sdr driver (pinned at `ca88e37`, includes the libiio `CLOSE_PIPE` fix) and feeds the same IQ ring the dongle and rtl_tcp use, so the existing demodulators and screens are shared. Source order is dongle, then Pluto, then remote rtl_tcp (`receiver_source_policy`, host-tested). Gain goes through `rtl_source_routing`. Receive only; the app never writes a transmit setting.
+- **Proven on the Tab5 (COM39):** the Pluto enumerates, the stream starts at 0.96 and 2.4 MS/s, and FM audio plays (owner listened).
+- **Known problem, not fixed:** intermittent boot-time crash. 3 of 4 boots in a 30-minute capture hit `assert failed: usb_dwc_hal_chan_decode_intr (CHHLTD)` in the USB host interrupt, each right after the FM auto-gain wrote a new gain to the Pluto about 1 s after stream start; the device recovers on its own after the reboot. Cause not confirmed. Do not treat the Pluto source as release quality.
+- **Not done:** replug while streaming, long soak, "RTL-SDR" wording on screens, gain/frequency UI checks, TX.
+- **Verified:** full `build-tab5-idf.ps1` build links, 5,616,832 bytes (11% of the app partition free).
 
 ## Unreleased — Volume tray redesign, Visualizer entry — 2026-11-11
 
