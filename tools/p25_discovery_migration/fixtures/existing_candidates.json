@@ -1,0 +1,13 @@
+{
+  "schema": "orcsdr.radio-discovery-candidates",
+  "version": 1,
+  "records": [
+    {
+      "protocol": "p25_phase1",
+      "frequency_hz": 156250000,
+      "identity": {"known_fields": []},
+      "label": "Existing P25 channel",
+      "source_sha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+    }
+  ]
+}
