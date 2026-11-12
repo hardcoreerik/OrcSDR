@@ -234,6 +234,33 @@ void test_first_burst_recovery(){
         static_cast<unsigned long long>(one.frontend_stats.preroll_symbols),
         static_cast<unsigned long long>(one.bridge_stats.acquisitions),
         static_cast<unsigned long long>(one.bridge_stats.acquisition_bursts_missed));
+    if (one.events.empty() || bulk.events.empty()) {
+        d1::Frontend raw_front;
+        std::vector<std::uint8_t> decisions;
+        for (std::size_t p=0;p<iq.size();) {
+            d1::Symbol sy{};
+            const auto step=raw_front.process(iq.data()+p,
+                std::min<std::size_t>(8,iq.size()-p),&sy,1);
+            CHECK(step.consumed>0);
+            p+=step.consumed;
+            if(step.produced) decisions.push_back(sy.dibit);
+        }
+        std::size_t sync_bad=0;
+        std::uint64_t sync_wire=0;
+        for(std::size_t k=54;k<78 && k<decisions.size();++k) {
+            if (decisions[k]!=bits[12+k]) ++sync_bad;
+            sync_wire=(sync_wire<<2U)|decisions[k];
+        }
+        std::size_t full_bad=0;
+        for(std::size_t k=0;k<132 && k<decisions.size();++k)
+            if(decisions[k]!=bits[12+k]) ++full_bad;
+        std::fprintf(stderr,
+            "FIRST BURST DIBIT DIAGNOSTIC count=%zu mismatch=%zu sync_bad=%zu "
+            "wire=%012llx expected=%012llx\n",
+            decisions.size(),full_bad,sync_bad,
+            static_cast<unsigned long long>(sync_wire),
+            static_cast<unsigned long long>(sync_word(SyncKind::bs_data)));
+    }
     CHECK(one.events.size()==1 && bulk.events.size()==1);
     CHECK(identities(one)==1);
     CHECK(one.events[0].decoded.slot==0); // No CACH cadence from one BS burst.
