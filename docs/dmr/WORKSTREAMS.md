@@ -2,21 +2,27 @@
 
 **Integration branch:** `feature/dmr-digital-voice-foundation` (based on `docs/dmr-vision-tracking-20261111`).
 **Source of scope:** [VISION.md](VISION.md) and [TRACKING.md](TRACKING.md). **As of:** 2026-11-11.
-**Current status:** F0a/F0b radio discovery journal host-tested, F0c ESP-IDF SD SlotIO host-delivered, D0 independently ETSI checked, and D1 native frontend/protocol/integration host-tested. **Important NEW evidence:** [public real-air IQ CI 43175761333](https://github.com/hardcoreerik/OrcSDR/actions/runs/43175761333) decoded both source-pinned direct-mode recordings through our own C++ 4FSK+FEC+LC decoder: 11/13 syncs, 9/10 FEC+integrity-valid bursts, radio `3024109`, TG `99`, CC `1`, chunk-invariant. All three D1-R/P/S agent commits are on branch; D1-S CACH cadence and D1-P 78-dibit measured pre-roll are now integrated with Release/sanitizer CI green. **Still open:** source-pinned noise/AM negative controls for full D1-R, exact SYNC single-burst robustness, ESP32-P4 RF/SD/memory, and P25 lossless migration. D2 scanner and M5GFX UI remain deferred.
+**Current status:** Native DMR host successfully decoded two hash-pinned real-air direct-mode IQ recordings. D1-P measured pre-roll and D1-S CACH cadence are integrated. A new unique one-bit DATA sync match gated by Golay+BPTC+RS/CRC now permits a **single synthetic first-burst identity decode**; the first real-air fixture improved from 9 to 10 checked bursts, with intact ID/TG/CC and chunk invariance ([real-air CI](https://github.com/hardcoreerik/OrcSDR/actions/runs/43177469544)). [Native protocol Release/ASan CI](https://github.com/hardcoreerik/OrcSDR/actions/runs/43177580014) and [integration CI](https://github.com/hardcoreerik/OrcSDR/actions/runs/43177469470) passed. **Next proposals (not yet active):** D1-N pinned noise/AM controls, D1-F adversarial sync/CACH tests, D1-H ESP32-P4 optional device profiling. Full four-fixture D1-R, longer field corpus and actual P4 RF/USB/SD remain open; dashboard/M5GFX deferred. [Next workstream plan](NEXT_PHASE_D1_HARDENING.md).
 
 ## One shared branch, exclusive folders
 
-| Owner | Exclusive write directory | Work | Gate |
+| Owner | Exclusive write folder | New assignment (proposed; NOT started) | Acceptance |
 |---|---|---|---|
-| **Lead / integrator** | `components/orcsdr_dmr/d1_integration/**`, `docs/dmr/**`, DMR-specific `.github/workflows/**` | Integrate recovered first burst, trusted slot evidence, real-IQ results, CI and phase tracking | Real DMR IQ → integrity-validated metadata, honest no-sync/no-audio cases, no P25 regressions |
-| **Agent 1 — D1-R** | `tests/dmr_replay_acceptance/**` | Run pinned recorded DMR IQ; refine acceptance harness strictly inside owned folder | Exact fixture SHA/bytes, observed vs upstream claims, negative controls and reproducible replay or BLOCKED |
-| **Agent 2 — D1-P** | `components/orcsdr_dmr/d1_frontend/**` | Fixed-memory pre-acquisition dibit pre-roll API and synthetic first-burst tests | A full true first burst reconstructable with provenance/timestamps; chunk/lock/noise tests |
-| **Agent 3 — D1-S** | `components/orcsdr_dmr/d1_protocol/**` | Cadence-backed CACH presence/slot confidence | D1-CACH-01 no longer promotes arbitrary prefix; dual BS slots and direct-mode regressions pass |
+| **Lead / ChatGPT** | `components/orcsdr_dmr/d1_protocol/**`, `components/orcsdr_dmr/d1_integration/**`, `docs/dmr/**`, DMR GitHub Actions | Implement verified one-bit DATA-sync match and reconcile CI | **Implemented and CI-verified**; preserve no-false-identity guard and public real-air results |
+| **Agent 1 — D1-N** | `tests/dmr_replay_acceptance/**` | Obtain/recreate exact pinned synthetic AM/noise and run all four native D1 fixtures | Byte SHA/lengths, 0 false IDs, 257/4096 and 1/7 chunk invariance, logged real results |
+| **Agent 2 — D1-F** | `tests/dmr_protocol_conformance/**` | Independent adversarial audit of new one-bit sync tolerance, false events and CACH confidence | No uncontrolled identity promotion, strict voice ambiguity handling, Release/ASan and long randomized seeds |
+| **Agent 3 — D1-H** | `tools/dmr_esp32_device_probe/**` | Read-only, opt-in standalone Tab5 ESP32-P4 hardware probe and 48 kS/s DSP budget | Real hardware CPU/heap/stack/PSRAM, capture continuity, no new radio owner; otherwise NOT MEASURED |
+
+**READ ONLY for every agent:** other agent folders, firmware, M5GFX, existing P25 profile/data, radio tuner/USB owner, `main`, docs and DMR integration core. The hardware probe must not claim real device metrics without actually executing on an ESP32-P4.
 
 **READ ONLY for every agent:** other agents' folders, `d1_integration/**`, `docs/dmr/**`, production P25, firmware, `main`, and REA-Results (apart from authorized reads). The lead alone updates the shared tracker and composite D1 bridge.
 **No overlap.** Sandbox agents must not edit `main.cpp`, `Roadmap.md`, `PROJECT_STATUS.md`, other agents' directories, RSA-Sandbox, or REA-Results. Do not merge or force-push. REA research is read-only to all implementation sessions. The lead coordinates later integration into firmware separately.
 
 On this **one shared branch**, each agent must `git fetch`, check out `feature/dmr-digital-voice-foundation`, make small commits containing only its owned folder, `git pull --rebase origin feature/dmr-digital-voice-foundation` immediately before push, then `git push origin feature/dmr-digital-voice-foundation`. If the branch advanced or push is rejected, fetch and rebase again; never force-push. Report commit SHA, files and exact passing/failing tests. No agent may claim that a file in another folder is committed or complete.
+
+## D1 hardening launch boundary
+
+All three **new** assignments are proposed and must be run in separate sandbox sessions. Do not conflate completed D1-R/P/S agent handoffs with the new D1-N/F/H scope. [Complete next-phase acceptance criteria and baseline CI](NEXT_PHASE_D1_HARDENING.md).
 
 ## New D1-R/P/S three-agent completion and lead integration (2026-11-11)
 
