@@ -45,7 +45,9 @@ static void smoke(Db&db){
  CHECK(db.rf[0].first.utc_ms==1000&&db.rf[0].last.utc_ms==2000&&db.rf[0].strongest==Proof::crc_valid_decode);
  x.utc_ms=500;CHECK(db.observe(x)==Decision::updated);CHECK(db.rf[0].first.utc_ms==500&&db.rf[0].last.utc_ms==2000);
  auto unknown=x;unknown.identity.known_fields&=~destination_known;CHECK(db.observe(unknown)==Decision::ambiguous);
- auto another=x;another.identity.destination_id=92;CHECK(db.observe(another)==Decision::added);
+ // Deliberately preserve the partial observation alongside a validated identity, never merge them.
+ CHECK(db.observe(unknown,nullptr,true)==Decision::added);
+ auto another=x;another.identity.destination_id=92;CHECK(db.observe(another,nullptr,true)==Decision::added);
  auto imported=dir();CHECK(db.import_candidate(imported,source(),"Repeater One",false,&id)==Decision::added);
  CHECK(db.import_candidate(imported,source(),"Repeater One")==Decision::duplicate);
  CHECK(db.import_candidate(imported,source(),"Other Label")==Decision::conflict);
@@ -55,7 +57,7 @@ static void smoke(Db&db){
  CHECK(db.annotate(Target::directory,id,"New","Change",true,5000)==Decision::updated);
  CHECK(db.directory[0].label[0]=='R'); // User edit must not alter directory source.
  CHECK(db.annotate(Target::rf,999,"bad","bad",false)==Decision::invalid);
- CHECK(db.rf_count==2&&db.dir_count==2&&db.note_count==1&&db.validate());
+ CHECK(db.rf_count==3&&db.dir_count==2&&db.note_count==1&&db.validate());
 }
 static void roundtrip_and_recovery(){
  Db db{};smoke(db);MemoryIO io;J journal;J::Workspace scratch{};
@@ -63,7 +65,7 @@ static void roundtrip_and_recovery(){
  Db restored{};
  CHECK(journal.load(io,restored,scratch)==LoadState::empty);
  CHECK(journal.save(io,db,scratch)==SaveState::ok&&journal.generation()==1&&journal.active_slot()==0);
- J another;Db loaded{};CHECK(another.load(io,loaded,scratch)==LoadState::ok&&loaded.rf_count==2&&loaded.annotations[0].edited_utc_ms==5000);
+ J another;Db loaded{};CHECK(another.load(io,loaded,scratch)==LoadState::ok&&loaded.rf_count==3&&loaded.annotations[0].edited_utc_ms==5000);
  auto next=loaded;next.rf[0].last.measurements.fec_corrections=4;
  CHECK(another.save(io,next,scratch)==SaveState::ok&&another.generation()==2&&another.active_slot()==1);
  J verify;CHECK(verify.load(io,restored,scratch)==LoadState::ok&&restored.rf[0].last.measurements.fec_corrections==4);
@@ -73,7 +75,7 @@ static void roundtrip_and_recovery(){
  CHECK(recovery.save(io,restored,scratch)==SaveState::ok&&recovery.generation()==2);
  io.write_limit=18;
  auto before=recovery.generation();CHECK(recovery.save(io,restored,scratch)==SaveState::io_error&&recovery.generation()==before);
- J r;CHECK(r.load(io,loaded,scratch)==LoadState::recovered&&loaded.rf_count==2); // Previous remains valid.
+ J r;CHECK(r.load(io,loaded,scratch)==LoadState::recovered&&loaded.rf_count==3); // Previous remains valid.
  io.data[0].clear();io.data[1][10]^=0x80;
  CHECK(r.load(io,loaded,scratch)==LoadState::corrupt);
  CHECK(r.save(io,loaded,scratch)==SaveState::not_loaded); // cannot silently trust corrupt storage
