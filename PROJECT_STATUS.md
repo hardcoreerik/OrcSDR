@@ -1,5 +1,7 @@
 # OrcSDR current project status
 
+Release in preparation: **v0.6.0**, based on main through PR #250. See [release notes](docs/releases/v0.6.0.md). Build, package, installation, and publication gates remain pending. The latest published version below remains unchanged until publication.
+
 Current documentation snapshot: **2026-11-04**, based on the `main` source and dated validation reports.
 
 Latest published versioned release at this review: **[`v0.5.0-beta.1`](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.5.0-beta.1)** (published 2026-10-26 PDT). See [the release notes](docs/releases/v0.5.0-beta.1.md). Source, release asset, nightly and installed hardware have distinct acceptance boundaries; new `main` changes are not automatically proved by a prior tagged package. See [downloads](docs/user-guide/downloads.md) and [version policy](docs/VERSIONING.md).
