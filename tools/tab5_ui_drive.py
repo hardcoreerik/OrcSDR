@@ -22,7 +22,7 @@ import time
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tab5_ft8 as t  # noqa: E402
 
-HOME_BTN = (1068, 38)
+HOME_BTN = (1087, 38)
 ALL_DASH = (150, 610)
 NEXT = (738, 671)
 BACK_BTN = (68, 38)   # RF Lab's BACK button
@@ -38,20 +38,22 @@ TILES = {
     "ft8": (1, 0, 3), "acars": (1, 1, 3), "airband": (1, 2, 3),
     "marine": (2, 0, 0), "satellite": (2, 1, 0), "sstv": (2, 2, 0),
     "deadair": (2, 0, 1), "rflab": (2, 1, 1), "wifi": (2, 2, 1), "settings": (2, 0, 2),
+    "ais": (2, 1, 2), "visualizer": (2, 2, 2),
 }
 EXPECTED_SCREEN = {  # RTL_SCREEN_STATUS active= value that a successful open should show (None = not checked)
     "fm": "fm", "p25": "p25", "adsb": "adsb", "shortwave": "shortwave", "am": "am", "cb": "cb", "lora": "lora",
     "pocsag": "pocsag", "ft8": "ft8", "acars": "acars", "airband": "airband", "sstv": "sstv", "deadair": "dead_air",
-    "rflab": "rf_lab", "wifi": "wifi_analysis", "settings": "settings", "weather": None, "marine": None, "satellite": None,
+    "rflab": "rf_lab", "wifi": "wifi_analysis", "settings": "settings", "ais": "ais", "visualizer": "visualizer", "weather": None, "marine": None, "satellite": None,
 }
 
 
 class Drive:
-    def __init__(self, port):
+    def __init__(self, port, key_file=None):
         self.port = port
+        self.key_file = key_file          # path only; handed to child processes with --key
         self.dev = t.Tab5(port)
         self.key = t.find_key(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", ".orclink", "ui-doc.key")) \
-            if False else t.find_key(r"F:\Ai\OrcSDR\.orclink\ui-doc.key")
+            if False else t.find_key(key_file or r"F:\Ai\OrcSDR\.orclink\ui-doc.key")
         self.last = 0.0
         self.shot_py = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tab5_ft8_shot.py")
 
@@ -98,7 +100,8 @@ class Drive:
 
     def shot(self, path):
         self.close()
-        r = subprocess.run([sys.executable, self.shot_py, "--port", self.port, path[:-4]], capture_output=True, text=True, timeout=120)
+        cmd = [sys.executable, self.shot_py, "--port", self.port] + (["--key", self.key_file] if self.key_file else [])
+        r = subprocess.run(cmd + [path[:-4]], capture_output=True, text=True, timeout=120)
         self.reopen()
         return os.path.exists(path)
 
@@ -131,7 +134,7 @@ class Drive:
 
 def sweep(a):
     os.makedirs(a.out, exist_ok=True)
-    d = Drive(a.port)
+    d = Drive(a.port, getattr(a, "key", None))
     if a.source in ("remote", "usb"):
         d.cmd(f"RTL_TCP SOURCE {a.source}", ("RTL_TCP SOURCE",), 4)
         d.cmd("RTL_STOP", ("RTL_STOP_RESULT",), 12); time.sleep(2)   # the new source only applies on the next start
@@ -178,13 +181,14 @@ def main():
     sub = p.add_subparsers(dest="what", required=True)
     sub.add_parser("list")
     tp = sub.add_parser("tap"); tp.add_argument("x", type=int); tp.add_argument("y", type=int)
+    p.add_argument("--key", help="pairing key file (default: the usual locations)")
     sw = sub.add_parser("sweep"); sw.add_argument("--out", required=True); sw.add_argument("--names")
     sw.add_argument("--dwell", type=float, default=8.0); sw.add_argument("--source", default="keep", choices=("remote", "usb", "keep"))
     a = p.parse_args()
     if a.what == "list":
         print("\n".join(f"{n}: page {v[0]} col {v[1]} row {v[2]}" for n, v in TILES.items())); return 0
     if a.what == "tap":
-        d = Drive(a.port); print("ok" if d.tap(a.x, a.y) else "failed"); return 0
+        d = Drive(a.port, a.key); print("ok" if d.tap(a.x, a.y) else "failed"); return 0
     return sweep(a)
 
 

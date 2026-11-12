@@ -7,7 +7,7 @@ namespace orcsdr::screens {
 // Exactly one surface may own the framebuffer.  Radio/decoder work is not a
 // surface and continues independently of this state.
 enum class Id : uint8_t {
-  none, home, fm, p25, adsb, lora, radio, visualizer, rf_lab, wifi_analysis, pocsag, settings, am, shortwave, documentation, cb, airband, ft8, sstv, acars, dead_air, maps
+  none, home, fm, p25, adsb, lora, radio, visualizer, rf_lab, wifi_analysis, pocsag, settings, am, shortwave, documentation, cb, airband, ft8, sstv, acars, dead_air, maps, ais
 };
 
 struct Status {
@@ -29,6 +29,8 @@ bool owns(Id id);
 // True while id is the selected surface, including its one-time transition draw.
 bool is_active(Id id);
 bool may_draw(Id id);
+// While true no screen may draw (a modal overlay such as the volume tray owns the pixels it covers).
+void set_draw_hold(bool hold);
 void note_visible_update(Id id);
 const Status& status();
 const char* name(Id id);
