@@ -9,12 +9,13 @@
 namespace orcsdr::source {
 
 enum class Mode : uint8_t { automatic, local_usb, remote_tcp };
-enum class Active : uint8_t { none, local_usb, remote_tcp };
+enum class Active : uint8_t { none, local_usb, remote_tcp, local_pluto };  // local_pluto: a PlutoSDR (AD9361) on the USB host, a second class of local receiver
 
 struct Inputs {
   Mode mode = Mode::automatic;
   Active active = Active::none;  // source that is running or starting now
   bool usb_ready = false;        // dongle enumerated and able to stream
+  bool pluto_ready = false;      // PlutoSDR enumerated and able to stream (used when no dongle is ready)
   bool remote_configured = false;
   bool network_up = false;       // Wi-Fi has an address
   uint32_t ms_since_boot = 0;

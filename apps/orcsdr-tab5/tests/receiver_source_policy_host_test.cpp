@@ -26,6 +26,13 @@ static Inputs make(Mode mode, bool usb, bool remote, bool net, uint32_t ms,
 }
 
 int main() {
+  // PlutoSDR: a second class of local receiver. A dongle wins; a Pluto is used when none is ready; remote mode never uses it.
+  { Inputs in = make(Mode::automatic, false, false, false, 0); in.pluto_ready = true; CHECK(choose(in) == Active::local_pluto); }
+  { Inputs in = make(Mode::local_usb, false, false, false, 0); in.pluto_ready = true; CHECK(choose(in) == Active::local_pluto); }
+  { Inputs in = make(Mode::automatic, true, false, false, 0); in.pluto_ready = true; CHECK(choose(in) == Active::local_usb); }
+  { Inputs in = make(Mode::remote_tcp, false, false, true, 0); in.pluto_ready = true; CHECK(choose(in) == Active::none); }
+  { Inputs in = make(Mode::automatic, false, true, true, 20000); in.pluto_ready = true; CHECK(choose(in) == Active::local_pluto); }
+  { Inputs in = make(Mode::automatic, true, false, false, 0, Active::local_pluto); in.pluto_ready = true; CHECK(choose(in) == Active::local_pluto); }
   // Local-only boot: no network at all, USB present.
   CHECK(choose(make(Mode::local_usb, true, false, false, 0)) == Active::local_usb);
   CHECK(choose(make(Mode::automatic, true, false, false, 0)) == Active::local_usb);

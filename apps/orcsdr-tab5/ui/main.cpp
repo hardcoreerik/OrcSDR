@@ -147,6 +147,7 @@
 #include "settings_remote_source.hpp"
 #include "rtl_tcp_server.hpp"
 #include "rtl_tcp_source.hpp"
+#include "pluto_source.hpp"
 #include "source_capabilities.hpp"
 #include "radio_ui_service.hpp"
 #include "receiver_band_plan.hpp"
@@ -1912,6 +1913,7 @@ static inline bool rtl_usb_device_ready() {
 }
 static bool rtl_remote_source_ready();  // rtl_tcp client selected and usable (defined with the IQ sink)
 static bool rtl_remote_active();        // the running stream comes from an rtl_tcp server, not the USB dongle
+static bool rtl_pluto_active();         // the running stream comes from a PlutoSDR on the USB port
 static orcsdr::source::Active rtl_choose_source();  // the receiver source policy (defined with the IQ sink)
 // "The selected receiver source can start": decided by the source policy, so a source set to remote does not start the
 // USB dongle when the network is down (the policy then chooses none), and USB mode never waits on a server.
@@ -2810,6 +2812,9 @@ static_assert(rtl_tuner_gain_available_for_caps(
 // The active source describes itself: the USB dongle through the driver's bits, a remote rtl_tcp server through its greeting
 // (source_capabilities.cpp). With a remote stream running the local driver's bits, if any, belong to a dongle nobody is using.
 uint32_t rtl_device_capabilities() {
+  // A PlutoSDR: wide-band receiver with a tuner gain (manual or its own AGC). No HF path (70 MHz and up), no RTL AGC, no bias tee.
+  if (rtl_pluto_active())
+    return ESP_RTL_SDR_CAP_STREAM | ESP_RTL_SDR_CAP_RETUNE | ESP_RTL_SDR_CAP_GAIN | ESP_RTL_SDR_CAP_GAIN_AUTO;
   if (rtl_remote_active()) {
     const auto status = orcsdr::rtl_tcp_source::status();
     const auto caps = orcsdr::source_caps::remote(status.tuner_type_raw, status.gain_count);
@@ -2849,6 +2854,11 @@ bool rtl_is_e4000() {
 bool rtl_frequency_supported(uint32_t frequency_hz) {
   // The capability bits describe a dongle on the Tab5's own USB port. With a remote rtl_tcp source there
   // may be none, and the server's dongle sets the range: do not refuse here (the server's tuner decides).
+  if (rtl_pluto_active() || (!rtl_usb_device_ready() && orcsdr::pluto_source::ready())) {
+    // A PlutoSDR states its own range (70 MHz to 6 GHz); this console's frequency type stops at 32 bits.
+    const auto pluto = orcsdr::pluto_source::status();
+    return pluto.tune_max_hz != 0 && frequency_hz >= pluto.tune_min_hz && frequency_hz <= pluto.tune_max_hz;
+  }
   if (rtl_remote_tuning_selected()) return true;
   if (rtl_is_e4000()) return rtl_e4000_frequency_supported(frequency_hz);
   return rtl_frequency_supported_for_caps(frequency_hz, rtl_device_capabilities());
@@ -9057,6 +9067,7 @@ __attribute__((noinline)) void demodulate_shortwave_ssb(RtlBand band, const uint
   // A remote stream has no readback: the local driver (idle, often at its last FM tune) must not be asked for the centre.
   // The centre is the last LO sent to the server (a hot retune quantizes it to 5 kHz, so it is not the dial).
   if (rtl_remote_active()) centre_hz = orcsdr::rtl_tcp_source::status().frequency_hz;
+  else if (rtl_pluto_active()) centre_hz = orcsdr::pluto_source::status().frequency_hz;
   else if (g_rtl == nullptr || esp_rtl_sdr_get_center_freq(g_rtl, &centre_hz) != ESP_OK) centre_hz = 0;
   if (centre_hz != 0)
     carrier_offset = std::clamp<int32_t>(static_cast<int32_t>(tuned_hz) - static_cast<int32_t>(centre_hz), -6000, 6000);
@@ -9608,6 +9619,7 @@ static orcsdr::source::Active rtl_choose_source() {
   in.mode = orcsdr::rtl_tcp_source::mode();
   in.active = static_cast<orcsdr::source::Active>(g_rtl_active_source.load(std::memory_order_acquire));
   in.usb_ready = rtl_usb_device_ready();
+  in.pluto_ready = orcsdr::pluto_source::ready();
   in.remote_configured = orcsdr::rtl_tcp_source::configured();
   // A remote stream that is still reconnecting keeps its source through a Wi-Fi blip.
   in.network_up = orcsdr::wifi::connected() ||
@@ -9624,6 +9636,12 @@ static bool rtl_remote_source_ready() {
 static bool rtl_remote_active() {
   return g_rtl_active_source.load(std::memory_order_acquire) ==
          static_cast<uint8_t>(orcsdr::source::Active::remote_tcp);
+}
+
+// The running stream comes from a PlutoSDR on the Tab5's own USB port (esp-pluto-sdr, via pluto_source).
+static bool rtl_pluto_active() {
+  return g_rtl_active_source.load(std::memory_order_acquire) ==
+         static_cast<uint8_t>(orcsdr::source::Active::local_pluto);
 }
 
 static std::atomic<bool> g_tag_in_documentation{false};   // RTL_TAG_DOC: show the RTL-TCP tag on documentation screens
@@ -9709,6 +9727,39 @@ static const orcsdr::rtl_tcp_server::Hooks kRtlTcpServerHooks{
     },
     [] { return orcsdr::wifi::connected(); },
     [] { return orcsdr::wifi::ip(); }};
+
+// A PlutoSDR appearing or leaving is handled like a dongle doing the same (see ESP_RTL_SDR_EVT_READY / DISCONNECTED below).
+// Called from the pluto_source watcher task; only sets flags and state.
+static void on_pluto_attached() {
+  // A dongle or a running remote stream is never taken over.
+  if (rtl_usb_device_ready() || rtl_remote_active()) return;
+  rtl_capture_state.store(RtlCaptureState::ready, std::memory_order_release);
+  set_radio_session_state(orcsdr::radio::ReceiverState::ready);
+  set_rtl_sdr_status("PlutoSDR: ready");
+  if (rtl_boot_complete.load(std::memory_order_acquire))
+    rtl_hotplug_resume_pending.store(true, std::memory_order_release);
+  Serial.printf("PLUTO_ATTACHED resume_pending=%d\n",
+                rtl_hotplug_resume_pending.load(std::memory_order_acquire) ? 1 : 0);
+}
+
+static void on_pluto_detached() {
+  if (!rtl_pluto_active()) {
+    if (!rtl_usb_device_ready() && !rtl_remote_active())
+      rtl_capture_state.store(RtlCaptureState::disconnected, std::memory_order_release);
+    Serial.println("PLUTO_DETACHED idle");
+    return;
+  }
+  const auto previous = rtl_capture_state.exchange(RtlCaptureState::disconnected, std::memory_order_acq_rel);
+  const bool resume = rtl_should_resume_after_disconnect(previous);
+  if (resume) {
+    rtl_hotplug_resume_pending.store(true, std::memory_order_release);
+    rtl_restart_requested.store(false, std::memory_order_release);
+    rtl_stop_requested.store(true, std::memory_order_release);
+  }
+  set_radio_session_state(orcsdr::radio::ReceiverState::disconnected);
+  set_rtl_sdr_status("PlutoSDR: disconnected");
+  Serial.printf("PLUTO_DETACHED previous=%u resume_pending=%d\n", static_cast<unsigned>(previous), resume ? 1 : 0);
+}
 
 static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, void *ctx) {
   (void)ctx;
@@ -10074,7 +10125,9 @@ static void rtl_driver_app_task(void *) {
     if (rtl_device_ready() && !radio_io_paused() &&
         !g_rtl_server_owner.load(std::memory_order_acquire) &&
         rtl_capture_requested.exchange(false, std::memory_order_acq_rel)) {
-      const bool remote = rtl_choose_source() == orcsdr::source::Active::remote_tcp;
+      const orcsdr::source::Active chosen_source = rtl_choose_source();
+      const bool remote = chosen_source == orcsdr::source::Active::remote_tcp;
+      const bool pluto = chosen_source == orcsdr::source::Active::local_pluto;
       g_rtl_remote_narrow.store(remote, std::memory_order_release);  // before any rate is chosen
       rtl_capture_state.store(RtlCaptureState::queued, std::memory_order_release);
       const RtlBand band = rtl_requested_band.load(std::memory_order_acquire);
@@ -10168,7 +10221,7 @@ static void rtl_driver_app_task(void *) {
       // 28.8 MHz upconverter, strong AM stations fold onto 28.8 MHz - f
       // (1600 kHz lands on channel 20). Other bands keep the upconverter.
       if (const auto profile = g_rtl_profile.load(std::memory_order_acquire);
-          !remote && (profile == ESP_RTL_SDR_PROFILE_BLOG_V4L || profile == ESP_RTL_SDR_PROFILE_BLOG_V4)) {
+          !remote && !pluto && (profile == ESP_RTL_SDR_PROFILE_BLOG_V4L || profile == ESP_RTL_SDR_PROFILE_BLOG_V4)) {
         const uint32_t direct_min_hz =
             rtl_hf_direct_override_hz != UINT32_MAX ? rtl_hf_direct_override_hz
             : band == RtlBand::cb                       ? kRtlHfDirectMinHz
@@ -10181,15 +10234,16 @@ static void rtl_driver_app_task(void *) {
       }
       log_dram_budget("rtl_before_start");
       esp_err_t offset_err = ESP_OK;
-      if (!remote && rtl_has_device_capability(ESP_RTL_SDR_CAP_OFFSET_TUNING)) {
+      if (!remote && !pluto && rtl_has_device_capability(ESP_RTL_SDR_CAP_OFFSET_TUNING)) {
         offset_err = esp_rtl_sdr_set_offset_tuning(
             g_rtl, rtl_offset_tuning_enabled.load(std::memory_order_acquire));
         Serial.printf("RTL_OFFSET_CONFIG requested=%d result=%s correction=hardware\n",
                       rtl_offset_tuning_enabled.load(std::memory_order_relaxed) ? 1 : 0,
                       esp_rtl_sdr_err_to_name(offset_err));
       }
-      g_rtl_active_source.store(static_cast<uint8_t>(remote ? orcsdr::source::Active::remote_tcp
-                                                            : orcsdr::source::Active::local_usb),
+      g_rtl_active_source.store(static_cast<uint8_t>(remote  ? orcsdr::source::Active::remote_tcp
+                                                     : pluto ? orcsdr::source::Active::local_pluto
+                                                             : orcsdr::source::Active::local_usb),
                                 std::memory_order_release);
       if (remote) {
         // rtl_tcp keeps its tuner state between clients: a stream for another band must start from a known gain, not from
@@ -10200,7 +10254,11 @@ static void rtl_driver_app_task(void *) {
           last_remote_band = static_cast<int>(band);
         }
       }
-      esp_err_t err = remote ? (orcsdr::rtl_tcp_source::start_and_wait(
+      esp_err_t err = pluto  ? (orcsdr::pluto_source::start_and_wait(
+                                    st.sample_rate_sps, st.frequency_hz, 15000,
+                                    [] { return rtl_stop_requested.load(std::memory_order_acquire); })
+                                    ? ESP_OK : ESP_ERR_TIMEOUT)
+                      : remote ? (orcsdr::rtl_tcp_source::start_and_wait(
                                     st.sample_rate_sps, st.frequency_hz, 12000,
                                     [] { return rtl_stop_requested.load(std::memory_order_acquire); })
                                     ? ESP_OK : ESP_ERR_TIMEOUT)
@@ -10310,8 +10368,9 @@ static void rtl_driver_app_task(void *) {
         orcsdr::rtl_tcp::State last_remote_state = orcsdr::rtl_tcp::State::streaming;
         bool last_remote_behind = false;
         while (!rtl_stop_requested.load(std::memory_order_acquire) &&
-               (remote ? orcsdr::rtl_tcp_source::alive()
-                       : g_rtl_device_ready.load(std::memory_order_acquire))) {
+               (pluto    ? orcsdr::pluto_source::alive()
+                : remote ? orcsdr::rtl_tcp_source::alive()
+                         : g_rtl_device_ready.load(std::memory_order_acquire))) {
           /* Touch + hot retune on this task (not in IQ callback): responsive STOP/FREQ. */
           if (orcsdr::settings::active()) {
             vTaskDelay(pdMS_TO_TICKS(20));
@@ -10384,8 +10443,9 @@ static void rtl_driver_app_task(void *) {
                 desired_lo, 0, std::memory_order_acq_rel);
             rtl_fm_force_lo_apply.store(false, std::memory_order_release);
             // rtl_tcp has no acknowledgement: OK here means the command was queued.
-            esp_err_t te = remote ? (orcsdr::rtl_tcp_source::retune(next) ? ESP_OK : ESP_ERR_NO_MEM)
-                                  : esp_rtl_sdr_retune_hz(g_rtl, next);
+            esp_err_t te = pluto    ? (orcsdr::pluto_source::retune(next) ? ESP_OK : ESP_FAIL)
+                           : remote ? (orcsdr::rtl_tcp_source::retune(next) ? ESP_OK : ESP_ERR_NO_MEM)
+                                    : esp_rtl_sdr_retune_hz(g_rtl, next);
             last_lo_apply_ms = now_retune;
             if (te == ESP_OK) {
               last_lo_applied_hz = next;
@@ -10420,7 +10480,9 @@ static void rtl_driver_app_task(void *) {
           if (now - stream_progress_last_ms >= 2000) {
             stream_progress_last_ms = now;
             esp_rtl_sdr_metrics_t progress{};
-            if (remote) {
+            if (pluto) {
+              // The Pluto source reports a dead stream through alive(), which ends the loop; the USB-dongle stall check below does not apply.
+            } else if (remote) {
               // The rtl_tcp session owns stall detection and bounded reconnect; the
               // USB stall restart below does not apply to a network stream.
               const auto remote_state = orcsdr::rtl_tcp_source::state();
@@ -10566,7 +10628,8 @@ static void rtl_driver_app_task(void *) {
         rtl_auto_fm_active.store(false, std::memory_order_release);
         flush_audio_play_batch(true);
         const esp_err_t stop_err =
-            remote ? (orcsdr::rtl_tcp_source::stop(), ESP_OK) : esp_rtl_sdr_stop(g_rtl, 2000);
+            pluto    ? (orcsdr::pluto_source::stop(), ESP_OK)
+            : remote ? (orcsdr::rtl_tcp_source::stop(), ESP_OK) : esp_rtl_sdr_stop(g_rtl, 2000);
         g_rtl_active_source.store(static_cast<uint8_t>(orcsdr::source::Active::none),
                                   std::memory_order_release);
         g_rtl_remote_narrow.store(false, std::memory_order_release);
@@ -10702,6 +10765,11 @@ void initialize_rtl_sdr_host() {
     set_rtl_sdr_status("RTL-SDR: app task failed");
   }
   Serial.println("RTL_CORE_SPLIT usb=core0 callback=enqueue dsp_audio_ui_hosted=core1");
+  // The PlutoSDR is a second class of local receiver on the same USB host (esp-pluto-sdr). It shares the RTL driver's host library,
+  // so it is installed only after the RTL driver is.
+  Serial.printf("PLUTO_SOURCE install=%d\n",
+                orcsdr::pluto_source::begin({rtl_tcp_sink_acquire, rtl_tcp_sink_submit, rtl_tcp_sink_release, rtl_tcp_sink_discontinuity},
+                                            {on_pluto_attached, on_pluto_detached}) ? 1 : 0);
 }
 #endif /* RTL_USE_LEGACY_USB */
 
@@ -14073,6 +14141,7 @@ float ft8_native_dial_offset_hz() {
   // (a hot retune quantizes that to 5 kHz). The idle local driver's centre is not the stream's.
   if (dial == 0) return 0.0f;
   if (rtl_remote_active()) centre = orcsdr::rtl_tcp_source::status().frequency_hz;
+  else if (rtl_pluto_active()) centre = orcsdr::pluto_source::status().frequency_hz;
   else if (g_rtl == nullptr || esp_rtl_sdr_get_center_freq(g_rtl, &centre) != ESP_OK) centre = 0;
   if (centre == 0) return 0.0f;
   return static_cast<float>(static_cast<int32_t>(dial) - static_cast<int32_t>(centre));

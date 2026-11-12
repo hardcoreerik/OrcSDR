@@ -8,6 +8,7 @@ namespace {
 bool usable(Active source, const Inputs& in) {
   switch (source) {
     case Active::local_usb: return in.usb_ready && in.mode != Mode::remote_tcp;
+    case Active::local_pluto: return in.pluto_ready && in.mode != Mode::remote_tcp;
     case Active::remote_tcp:
       return in.remote_configured && in.network_up && in.mode != Mode::local_usb;
     default: return false;
@@ -19,11 +20,13 @@ bool usable(Active source, const Inputs& in) {
 Active choose(const Inputs& in) {
   if (in.active != Active::none && usable(in.active, in)) return in.active;
   switch (in.mode) {
-    case Mode::local_usb: return in.usb_ready ? Active::local_usb : Active::none;
+    case Mode::local_usb:
+      return in.usb_ready ? Active::local_usb : in.pluto_ready ? Active::local_pluto : Active::none;
     case Mode::remote_tcp:
       return in.remote_configured && in.network_up ? Active::remote_tcp : Active::none;
     case Mode::automatic:
       if (in.usb_ready) return Active::local_usb;
+      if (in.pluto_ready) return Active::local_pluto;
       if (in.remote_configured && in.network_up && in.ms_since_boot >= in.grace_ms)
         return Active::remote_tcp;
       return Active::none;

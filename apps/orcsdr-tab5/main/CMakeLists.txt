@@ -39,6 +39,7 @@ idf_component_register(
         "../ui/rtl_source_routing.cpp"
         "../ui/settings_remote_source.cpp"
         "../ui/rtl_tcp_source.cpp"
+        "../ui/pluto_source.cpp"
         "../ui/receiver_source_policy.cpp"
         "../ui/source_capabilities.cpp"
         "../ui/orcsdr_restart.cpp"
