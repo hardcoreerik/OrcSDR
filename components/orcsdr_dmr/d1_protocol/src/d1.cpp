@@ -304,14 +304,50 @@ void Decoder::scan(EventSink sink, void* user) noexcept {
     std::uint64_t sync = 0;
     for (unsigned i = 54; i < 78; ++i) sync = (sync << 2U) | at(start + i);
     int sync_index = -1;
+    std::uint8_t sync_bit_errors = 0;
     for (std::size_t i = 0; i < kSyncCount; ++i) {
         if (sync == kSyncWords[i]) { sync_index = static_cast<int>(i); break; }
     }
-    if (sync_index < 0) return;
+    if (sync_index < 0) {
+        // Permit exactly one wrong *bit* in the 48-bit data SYNC only.
+        // Do not reconstruct/change the measured sync dibits. A fuzzy
+        // SYNC without an independently valid Golay/BPTC/RS-or-CRC packet
+        // MUST produce no event or CACH cadence state at all.
+        int candidate = -1;
+        for (std::size_t i = 0; i < kSyncCount; ++i) {
+            const auto kind_i = static_cast<SyncKind>(i);
+            if (!is_data(kind_i)) continue; // no independent voice SYNC check
+            const std::uint64_t diff = sync ^ kSyncWords[i];
+            if (diff != 0ULL && (diff & (diff - 1ULL)) == 0ULL) {
+                if (candidate >= 0) return; // ambiguous between sync kinds
+                candidate = static_cast<int>(i);
+            }
+        }
+        if (candidate < 0) return;
+        std::uint8_t bits[264]{};
+        burst_bits(start, bits);
+        std::uint8_t cc = 0, type = 0, corrected = 0;
+        if (!decode_slot_type(bits20(bits), cc, type, corrected)) return;
+        if (type != 1U && type != 2U && type != 3U &&
+            type != 6U && type != 11U) return;
+        BptcWire tx{};
+        for (unsigned i = 0; i < 196U; ++i) {
+            const unsigned pos = i < 98U ? i : i + 68U;
+            set_bit(tx.data(), i, bits[pos] != 0U);
+        }
+        std::array<std::uint8_t, 12> payload{};
+        std::uint16_t repairs = 0;
+        if (!decode_bptc(tx, payload, repairs)) return;
+        if (!(type <= 2U ? check_full_lc(payload, type) :
+                           check_crc16(payload, type))) return;
+        sync_index = candidate;
+        sync_bit_errors = 1;
+    }
     const auto kind = static_cast<SyncKind>(sync_index);
     Event e{};
     e.burst_start_dibit = start;
     e.sync = kind;
+    e.sync_bit_errors = sync_bit_errors;
     e.slot = slot_for_sync(kind);
     if (is_bs(kind)) {
         CachAssessment assessment{};
