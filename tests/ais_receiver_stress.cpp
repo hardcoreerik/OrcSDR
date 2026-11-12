@@ -142,8 +142,12 @@ int main(int argc, char** argv) {
     for (int i = 0; i < 400000; ++i) {
       const double angle = (i / 400000.0) * 2 * kPi - kPi, scale = std::pow(10.0, (i % 7) - 3);
       const float y = static_cast<float>(std::sin(angle) * scale), x = static_cast<float>(std::cos(angle) * scale);
-      const double err = std::fabs(static_cast<double>(rx::fast_atan2(y, x)) - std::atan2(static_cast<double>(y), static_cast<double>(x)));
-      worst = err > worst && err < 6.0 ? err : worst;   // a result on the +/-pi seam differs by 2 pi, not by an error
+      const double got = static_cast<double>(rx::fast_atan2(y, x));
+      if (!std::isfinite(got)) { std::puts("FLOOR NOT MET: fast_atan2 returned a non-finite value"); ++g_failures; break; }
+      double diff = std::fmod(got - std::atan2(static_cast<double>(y), static_cast<double>(x)), 2 * kPi);   // circular error:
+      if (diff > kPi) diff -= 2 * kPi;                                                                      // +pi and -pi are the same angle
+      if (diff < -kPi) diff += 2 * kPi;
+      worst = std::max(worst, std::fabs(diff));
     }
     std::printf("fast_atan2 worst error %.2e rad\n", worst);
     if (worst > 3e-4) { std::puts("FLOOR NOT MET: fast_atan2 error above 3e-4 rad"); ++g_failures; }

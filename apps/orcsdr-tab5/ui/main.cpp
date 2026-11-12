@@ -6906,6 +6906,17 @@ void service_volume_tray_touch() {
   (void)handle_global_header_audio_touch(raw.x, raw.y);
 }
 
+// Closes the volume tray without letting the tap through: used before a full-screen mode (visualizer, RF Lab) takes the display,
+// whose loop never reaches the tray's own timeout or touch service.
+void dismiss_volume_tray() {
+  if (!rtl_header_audio_control.expanded) return;
+  rtl_header_audio_control.expanded = false;
+  rtl_header_audio_control.hide_at_ms = 0;
+  orcsdr::audio_header::restore_volume_background();
+  g_tray_gate.swallow = false;
+  orcsdr::screens::set_draw_hold(false);
+}
+
 bool diagnostic_iq_rec_start(const char* transition) {
   const size_t length = transition == nullptr ? 0 : strlen(transition);
   if (length == 0 || length >= sizeof(g_iq_rec_transition)) {
@@ -7292,6 +7303,7 @@ void acquire_radio_owner(orcsdr::radio::Owner owner) {
 }
 
 void open_visualizer() {
+  dismiss_volume_tray();
   if (rtl_capture_state.load(std::memory_order_acquire) != RtlCaptureState::running) {
     show_visualizer_unavailable();
     return;
@@ -7463,6 +7475,7 @@ void stop_p25_automation() {
 }
 
 void open_rf_lab() {
+  dismiss_volume_tray();
   stop_p25_automation();
   const auto origin = orcsdr::screens::status().active;
   orcsdr::rf_lab::set_runtime(rf_lab_runtime());

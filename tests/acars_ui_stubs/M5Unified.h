@@ -39,6 +39,7 @@ inline int datum = middle_left;
 inline uint16_t text_color = 0xffff;
 inline int direct_ops = 0;               // primitives drawn straight onto the display (not via a sprite)
 inline int pushes = 0;                   // sprite pushes to the display
+inline int full_clears = 0;              // fillScreen() calls on any target
 inline bool fail_sprite_alloc = false;   // make createSprite() fail, to exercise the direct-draw fallback
 inline void reset() {
   prims.clear(); clip_on = false; font = nullptr; direct_ops = 0; pushes = 0;
@@ -101,7 +102,7 @@ class LovyanGFX {
     const int miny = std::min({y0, y1, y2}), maxy = std::max({y0, y1, y2});
     add(Prim::triangle, minx, miny, maxx - minx + 1, maxy - miny + 1);
   }
-  void fillScreen(uint16_t) {}
+  void fillScreen(uint16_t) { ++host_display::full_clears; }
   void drawString(const char* s, int x, int y) {
     const fonts::Font* f = host_display::font ? host_display::font : &fonts::DejaVu18;
     const int w = static_cast<int>(std::strlen(s)) * f->advance;

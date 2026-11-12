@@ -148,6 +148,9 @@ void push_tray(uint8_t volume, bool sound_enabled, uint32_t now_ms) {
   }
   if (g_tray_sprite == nullptr) {         // no memory for the sprite: draw straight onto the display
     draw_volume_slider(M5.Display, kTrayX, kTrayY, volume, sound_enabled);
+    g_tray_sprite_volume = volume;        // remember what is on screen so an unchanged tray is not repainted every loop;
+    g_tray_sprite_enabled = sound_enabled;
+    g_tray_sprite_valid = true;           // the allocation is retried at most once per kOverlayRepushMs
     g_tray_last_push_ms = now_ms;
     return;
   }

@@ -465,26 +465,26 @@ void bench(char* out, size_t size) {
   const uint32_t whole_us = g_hooks.micros() - t0;
   const ais_rx::Stats stats = receiver->stats();
   // The same amount of each stage on its own (same loop shapes as the receiver), to show where the time goes.
-  float taps[63], line[126];
-  for (unsigned i = 0; i < 63; ++i) taps[i] = 1.f / 63.f;
-  for (unsigned i = 0; i < 126; ++i) line[i] = static_cast<float>(iq[i]) * (1.f / 128.f) - 1.f;
+  float taps[39], line[78];
+  for (unsigned i = 0; i < 39; ++i) taps[i] = 1.f / 39.f;
+  for (unsigned i = 0; i < 78; ++i) line[i] = static_cast<float>(iq[i]) * (1.f / 128.f) - 1.f;
   volatile float sink = 0;
-  // FIR: four partial sums per rail, as in Receiver::demodulate (192,000 outputs of 63 taps).
+  // FIR: four partial sums per rail, as in Receiver::demodulate (192,000 outputs of 39 taps).
   const uint32_t t1 = g_hooks.micros();
   for (unsigned n = 0; n < 2u * 2u * 48000u; ++n) {
-    const float* x = &line[n % 63u];
+    const float* x = &line[n % 39u];
     float a0 = 0, a1 = 0, a2 = 0, a3 = 0;
     unsigned k = 0;
-    for (; k + 4 <= 63; k += 4) { a0 += taps[k] * x[k]; a1 += taps[k + 1] * x[k + 1]; a2 += taps[k + 2] * x[k + 2]; a3 += taps[k + 3] * x[k + 3]; }
-    for (; k < 63; ++k) a0 += taps[k] * x[k];
+    for (; k + 4 <= 39; k += 4) { a0 += taps[k] * x[k]; a1 += taps[k + 1] * x[k + 1]; a2 += taps[k + 2] * x[k + 2]; a3 += taps[k + 3] * x[k + 3]; }
+    for (; k < 39; ++k) a0 += taps[k] * x[k];
     sink = sink + ((a0 + a1) + (a2 + a3));
   }
   const uint32_t fir_us = g_hooks.micros() - t1;
-  // Candidate replacements for the filter, same 192,000 outputs of 63 taps each.
+  // Candidate replacements for the filter, same 192,000 outputs of 39 taps each.
   //  symmetric float: the taps are symmetric, so fold the two halves and multiply once per pair
   const uint32_t t5 = g_hooks.micros();
   for (unsigned n = 0; n < 2u * 2u * 48000u; ++n) {
-    const float* x = &line[n % 63u];
+    const float* x = &line[n % 39u];
     float a0 = 0, a1 = 0;
     unsigned k = 0;
     for (; k + 2 <= 31; k += 2) { a0 += taps[k] * (x[k] + x[62 - k]); a1 += taps[k + 1] * (x[k + 1] + x[61 - k]); }
@@ -493,18 +493,18 @@ void bench(char* out, size_t size) {
   }
   const uint32_t fir_sym_us = g_hooks.micros() - t5;
   //  symmetric int32: 16-bit taps and samples, integer multiply-accumulate
-  int16_t itaps[64], iline[126];
+  int16_t itaps[64], iline[78];
   for (unsigned i = 0; i < 64; ++i) itaps[i] = static_cast<int16_t>(500 + i);
-  for (unsigned i = 0; i < 126; ++i) iline[i] = static_cast<int16_t>(static_cast<int>(iq[i]) - 128);
+  for (unsigned i = 0; i < 78; ++i) iline[i] = static_cast<int16_t>(static_cast<int>(iq[i]) - 128);
   volatile int32_t isink = 0;
   const uint32_t t6 = g_hooks.micros();
   for (unsigned n = 0; n < 2u * 2u * 48000u; ++n) {
-    const int16_t* x = &iline[n % 63u];
+    const int16_t* x = &iline[n % 39u];
     int32_t a0 = 0, a1 = 0;
     unsigned k = 0;
-    for (; k + 2 <= 31; k += 2) { a0 += itaps[k] * (x[k] + x[62 - k]); a1 += itaps[k + 1] * (x[k + 1] + x[61 - k]); }
-    for (; k < 31; ++k) a0 += itaps[k] * (x[k] + x[62 - k]);
-    isink = isink + ((a0 + a1 + itaps[31] * x[31]) >> 8);
+    for (; k + 2 <= 19; k += 2) { a0 += itaps[k] * (x[k] + x[38 - k]); a1 += itaps[k + 1] * (x[k + 1] + x[37 - k]); }
+    for (; k < 19; ++k) a0 += itaps[k] * (x[k] + x[38 - k]);
+    isink = isink + ((a0 + a1 + itaps[19] * x[19]) >> 8);
   }
   const uint32_t fir_int_us = g_hooks.micros() - t6;
   //  fast atan2 (polynomial, about 1e-4 rad)
@@ -521,11 +521,11 @@ void bench(char* out, size_t size) {
     sink = sink + r;
   }
   const uint32_t atan_fast_us = g_hooks.micros() - t7;
-  // HDLC bit processing: 10 slicers x 96,000 outputs per second of IQ.
+  // HDLC bit processing: 2 slicer hypotheses x 96,000 channel outputs per second of IQ.
   ais_rx::Hdlc hdlc;
   uint32_t lfsr = 0xace1u;
   const uint32_t t4 = g_hooks.micros();
-  for (unsigned n = 0; n < 960000u; ++n) { lfsr = (lfsr >> 1) ^ (-(lfsr & 1u) & 0xB400u); hdlc.process_level(lfsr & 1u, 1, nullptr, nullptr); }
+  for (unsigned n = 0; n < 192000u; ++n) { lfsr = (lfsr >> 1) ^ (-(lfsr & 1u) & 0xB400u); hdlc.process_level(lfsr & 1u, 1, nullptr, nullptr); }
   const uint32_t hdlc_us = g_hooks.micros() - t4;
   const uint32_t t2 = g_hooks.micros();
   for (unsigned n = 0; n < 2u * 48000u; ++n)

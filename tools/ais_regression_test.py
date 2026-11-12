@@ -369,12 +369,18 @@ def main():
     p.add_argument("--pi-ssh", help="user@host of the server, for the restart step of test D")
     p.add_argument("--pi-service", default="rtl-tcp.service")
     p.add_argument("--skip", default="")
+    p.add_argument("--allow-unrestorable-server", action="store_true",
+                   help="allow --pi-host when no rtl_tcp server was saved before: the test host stays saved afterwards")
     a = p.parse_args()
     os.makedirs(a.out, exist_ok=True)
     skip = {s.strip().upper() for s in a.skip.split(",") if s.strip()}
     dev = Tab5(a.port, a.key)
     original = dev.tcp()
     print("original receiver setup:", original.get("mode"), original.get("server"), flush=True)
+    if a.pi_host and (not original.get("server") or original["server"].startswith("(")) and not a.allow_unrestorable_server             and "D" not in skip:
+        print("No rtl_tcp server was saved on the Tab5, so --pi-host could not be restored afterwards. Configure a server first, "
+              "or pass --allow-unrestorable-server.")
+        return 2
     dev.cmd("RTL_SPLASH_GATE OFF", "RTL_SPLASH_GATE", 4)
     restore_failures = []
 

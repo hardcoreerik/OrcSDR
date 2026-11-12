@@ -77,6 +77,48 @@ int main() {
     if (p.str == "VOLUME") has_label = true;
   }
   assert(has_percent && has_label);
+
+  // Successive redraws: the visible percentage and label follow every volume / mute change, an unchanged tray is not re-pushed
+  // inside the safety interval, a failing sprite allocation is not retried every loop, and nothing ever clears the full screen.
+  auto shows = [](const char* text) {
+    for (const Prim& p : host_display::prims) if (p.str == text) return true;
+    return false;
+  };
+  reset(open);                       // a fresh tray (closes and releases any sprite)
+  open.expanded = true;
+  host_display::reset();
+  uint32_t t = 10000;
+  refresh_tray_overlay(open, 0, true, t);
+  assert(shows("0%") && shows("VOLUME"));
+  host_display::prims.clear();
+  refresh_tray_overlay(open, 255, true, t += 10);
+  assert(shows("100%") && !shows("0%"));
+  host_display::prims.clear();
+  refresh_tray_overlay(open, 255, false, t += 10);                 // mute: label changes, value kept
+  assert(shows("MUTED") && shows("100%"));
+  const int pushes_before = host_display::pushes;
+  refresh_tray_overlay(open, 255, false, t += 10);                 // unchanged, inside kOverlayRepushMs: no push
+  assert(host_display::pushes == pushes_before);
+  refresh_tray_overlay(open, 255, false, t + kOverlayRepushMs + 1);   // safety re-push
+  assert(host_display::pushes == pushes_before + 1);
+  reset(open);                                                     // close, then re-enter: starts clean and shows the new value
+  open.expanded = true;
+  host_display::prims.clear();
+  refresh_tray_overlay(open, 128, true, t + 5000);
+  assert(shows("50%"));
+  // Sprite allocation failure: draws straight onto the display once, not on every loop.
+  reset(open);
+  open.expanded = true;
+  host_display::fail_sprite_alloc = true;
+  host_display::reset();
+  refresh_tray_overlay(open, 100, true, 20000);
+  const int direct_first = host_display::direct_ops;
+  assert(direct_first > 0);
+  refresh_tray_overlay(open, 100, true, 20010);
+  refresh_tray_overlay(open, 100, true, 20020);
+  assert(host_display::direct_ops == direct_first);                // unchanged: not repainted
+  host_display::fail_sprite_alloc = false;
+  assert(host_display::full_clears == 0);                          // no full-screen clear anywhere in the tray's redraws
   std::puts("audio header tray host tests passed");
   return 0;
 }

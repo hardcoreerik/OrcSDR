@@ -17,6 +17,7 @@ import os
 import re
 import subprocess
 import sys
+import atexit
 import time
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
@@ -39,6 +40,7 @@ def kv(line):
 class Dev:
     def __init__(self, port, key):
         self.port, self.key = port, t.find_key(key)
+        self.keyfile = key                      # the path, handed to child processes (never the key itself)
         self.dev = t.Tab5(port)
         self.last = 0.0
 
@@ -90,8 +92,12 @@ class Dev:
         time.sleep(gap)
         self.dev.send(f"UI_TAP {x} {y}")
         self.last = time.time()
-        time.sleep(0.6)
-        self.dev.s.reset_input_buffer()
+        done, end = 0, time.time() + 1.5
+        while time.time() < end and done < 2:
+            raw = self.dev.s.readline()
+            if raw and b"UI_TAP" in raw and b"DONE" in raw:
+                done += 1
+        return done                              # the caller requires 2: a refused ("busy") tap would test nothing
 
     def ensure_tray(self, want):
         """Bring the tray to open/closed using taps that are safe in either state; returns True when it got there."""
@@ -129,10 +135,14 @@ class Dev:
             self.dev.s.close()
         except Exception:
             pass
-        subprocess.run([sys.executable, os.path.join(HERE, "tab5_ft8_shot.py"), "--port", self.port, path[:-4]],
-                       capture_output=True, text=True, timeout=180)
+        if os.path.exists(path):
+            os.remove(path)                     # a stale screenshot from an earlier run must never pass for this capture
+        cmd = [sys.executable, os.path.join(HERE, "tab5_ft8_shot.py"), "--port", self.port]
+        if self.keyfile:
+            cmd += ["--key", self.keyfile]
+        res = subprocess.run(cmd + [path[:-4]], capture_output=True, text=True, timeout=180)
         self.reopen()
-        return os.path.exists(path)
+        return res.returncode == 0 and os.path.exists(path)
 
 
 def tray_drawn(path):
@@ -166,13 +176,31 @@ def main():
 
     d.cmd("RTL_SPLASH_GATE OFF", "RTL_SPLASH_GATE", 4)
     start_volume = d.volume()
+    start_audio = d.full().get("audio_enabled")      # slider touches switch audio on: put it back as found
+    restored = []
+
+    def restore():                                   # also runs when the test dies half way
+        if restored:
+            return
+        restored.append(True)
+        try:
+            d.ensure_tray(False)
+            if start_volume is not None:
+                d.cmd(f"RTL_VOLUME {start_volume}", "RTL_VOLUME", 4)
+            if start_audio in ("0", "1"):
+                d.cmd("RTL_SOUND ON" if start_audio == "1" else "RTL_SOUND OFF", "RTL_SOUND", 4)
+            d.cmd("RTL_SPLASH_GATE ON", "RTL_SPLASH_GATE", 4)
+        except Exception as exc:
+            print("restore failed:", exc, flush=True)
+
+    atexit.register(restore)
     for name in [n.strip().upper() for n in a.names.split(",") if n.strip()]:
         label = name
         d.first(f"RTL_UI OPEN {name}", "RTL_UI_OPEN", 5)
         time.sleep(5)
         before = d.state()
-        if not before["screen"] or before["screen"] == "home" and name != "HOME":
-            check(label, False, f"did not open ({before})")
+        if before["screen"] != name.lower():
+            check(label, False, f"did not open: wanted screen {name.lower()}, got {before}")
             continue
         # 1. open the tray
         d.tap(*SPEAKER, settle=1.2)
@@ -203,8 +231,15 @@ def main():
         muted_before = d.muted()
         d.ensure_tray(False)                       # start from a closed tray
         time.sleep(0.5)
-        d.double_tap(*SPEAKER, gap=0.22)
+        accepted = 0
+        for _ in range(3):
+            accepted = d.double_tap(*SPEAKER, gap=0.22)
+            if accepted == 2:
+                break
+            d.ensure_tray(False)
+            time.sleep(0.6)
         time.sleep(0.8)
+        check(f"{label}: both taps of the double tap were accepted", accepted == 2, f"{accepted} of 2 UI_TAP_DONE")
         muted_after = d.muted()
         check(f"{label}: double tap on the speaker does not mute", muted_before is not None and muted_before == muted_after,
               f"muted {muted_before} -> {muted_after}")
@@ -220,9 +255,7 @@ def main():
             d.tap(*HOME_BTN, settle=2.0)
             screen = d.state()["screen"]
             check(f"{label}: Home button works afterwards", screen == "home", f"screen {screen}")
-    if start_volume is not None:
-        d.cmd(f"RTL_VOLUME {start_volume}", "RTL_VOLUME", 4)
-    d.cmd("RTL_SPLASH_GATE ON", "RTL_SPLASH_GATE", 4)
+    restore()
     bad = [r for r in results if not r[1]]
     print(f"\nSUMMARY {len(results) - len(bad)} passed, {len(bad)} failed")
     for n, _, detail in bad:

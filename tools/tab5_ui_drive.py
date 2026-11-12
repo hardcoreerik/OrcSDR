@@ -186,7 +186,7 @@ def main():
     if a.what == "list":
         print("\n".join(f"{n}: page {v[0]} col {v[1]} row {v[2]}" for n, v in TILES.items())); return 0
     if a.what == "tap":
-        d = Drive(a.port); print("ok" if d.tap(a.x, a.y) else "failed"); return 0
+        d = Drive(a.port, a.key); print("ok" if d.tap(a.x, a.y) else "failed"); return 0
     return sweep(a)
 
 

@@ -160,7 +160,7 @@ def main():
         record("dsp", dev.cmd("RTL_DSP STATS", "RTL_DSP", 4))
         tcp_line = dev.first("RTL_TCP STATUS", "RTL_TCP mode")
         with open(os.path.join(a.out, "device_status.txt"), "w", encoding="utf-8", newline="\n") as f:
-            f.write("\n".join(status) + "\n")
+            f.write("\n".join(status + [tcp_line]) + "\n")
         if not a.no_shots:
             for index, name in enumerate(TABS):
                 dev.cmd(f"UI_TAP {104 + 178 * index} {TAB_Y}", "UI_TAP", 4)

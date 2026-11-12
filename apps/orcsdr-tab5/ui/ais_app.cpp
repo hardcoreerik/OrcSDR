@@ -67,11 +67,16 @@ bool refresh_device_fields() {
   const ais_radio::Link link = ais_radio::status().link;
   ais_ui::ReceiveState receiver = ais_ui::ReceiveState::ready;
   bool settled = false;
-  if (g_start_pending) {                          // not started yet: say so, never "disconnected"
+  if (g_start_pending) {                          // not started yet: say so, never "disconnected"; keep the location current
+    int32_t plat = 0, plon = 0;
+    const bool located = g_hooks.receiver_location && g_hooks.receiver_location(&plat, &plon);
     s.receiver = receiver;
     s.receiver_settled = false;
     s.center_hz = ais_radio::kCenterHz;
     s.sample_rate_sps = 0;
+    s.coordinates_valid = located;                // so the first basemap render is for the right place
+    s.receiver_lat_e7 = located ? plat : 0;
+    s.receiver_lon_e7 = located ? plon : 0;
     g_state->shown_link = link;
     return false;
   }
@@ -152,7 +157,7 @@ void tick() {
   const uint32_t now = now_ms();
   if (g_start_pending && screens::owns(screens::Id::ais)) {
     // Repaint so the map frame state is current, then start the radio once it is no longer pending (or after the cap).
-    if (now - g_last_repaint_ms >= 250) {
+    if (now - g_last_repaint_ms >= 250 && !(g_hooks.overlay_open && g_hooks.overlay_open())) {
       g_last_repaint_ms = now;
       ++g_state->snapshot.revision;
       ais_ui::update(g_state->snapshot);
