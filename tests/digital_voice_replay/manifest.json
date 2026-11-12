@@ -1,0 +1,67 @@
+{
+  "schema": "orcsdr-digital-voice-replay-fixtures-v1",
+  "description": "Private REA-Results IQ fixtures; metadata only. Decoder expectations are upstream assertions, not OrcSDR replay results.",
+  "fixture_repository": "hardcoreerik/REA-Results",
+  "fixture_branch": "chatgpt/digital-voice-rsa-rea-2026-11-01",
+  "fixture_root": "inbox/fixtures/digital-voice",
+  "source_repository": "MattCheramie/GopherTrunk",
+  "source_commit": "f06bfff493f47fdeb69807c8b08b2b32a253839f",
+  "rights": "Private research use only; radio-capture redistribution rights not established.",
+  "files": [
+    {
+      "id": "dmr-tier3-control", "path": "DMR/dmr-t3-cc.cfile", "protocol": "DMR Tier III control", "capture_stage": "channelized_iq", "format": "cf32-le", "sample_rate_hz": 48000, "bytes": 499200,
+      "git_blob_sha1": "7a119ec16e5c6412488f2ed112b2c5b85cdd799f", "sha256": null,
+      "upstream_expected": {"min_locks": 1, "min_csbk_crc_ok": 12, "min_aloha": 8}
+    },
+    {
+      "id": "dmr-tier3-voice-terminator", "path": "DMR/dmr-voice-term.cfile", "protocol": "DMR Tier III voice terminator", "capture_stage": "channelized_iq", "format": "cf32-le", "sample_rate_hz": 48000, "bytes": 537600,
+      "git_blob_sha1": "91620e07e5350af6bce85d75152c23c62bfed253", "sha256": null,
+      "upstream_expected": {"min_rs_valid_flc": 8, "min_calls_matching": 8, "group_id": 24, "source_id": 4209000}
+    },
+    {
+      "id": "dmr-directmode-keyup", "path": "DMR/dmr-directmode-446500-keyup-48k.cs16", "protocol": "DMR direct-mode", "capture_stage": "channelized_iq", "format": "cs16-le", "sample_rate_hz": 48000, "center_frequency_hz": 446500000, "bytes": 345600,
+      "git_blob_sha1": "e305eac29985ff647b8aba0434fee8ab7db81f15", "sha256": null,
+      "upstream_expected": {"group_id": 99, "source_id": 3024109, "color_code": 1, "min_data_sync": 8, "min_voice_sync": 2, "min_superframes": 2}
+    },
+    {
+      "id": "dmr-directmode-second-ptt", "path": "DMR/dmr-directmode-446500-ptt2-48k.cs16", "protocol": "DMR direct-mode", "capture_stage": "channelized_iq", "format": "cs16-le", "sample_rate_hz": 48000, "center_frequency_hz": 446500000, "bytes": 326404,
+      "git_blob_sha1": "b7d91747030e55f68637edb2198476047191d84a", "sha256": null,
+      "upstream_expected": {"note": "second keyup symbol-phase regression"}
+    },
+    {
+      "id": "p25-phase1-city-control", "path": "P25/mmr-city-cc.cfile", "protocol": "P25 Phase I C4FM control", "capture_stage": "channelized_iq", "format": "cf32-le", "sample_rate_hz": 48000, "center_frequency_hz": 420012500, "bytes": 576000,
+      "git_blob_sha1": "94782fe613a4c34311dfdd7dba1be0e6db66a228", "sha256": null,
+      "upstream_expected": {"nac_hex": "0x164", "min_nid_trusted": 12, "min_tsbk_decoded": 40, "max_tsbk_crc_failed": 0}
+    },
+    {
+      "id": "p25-phase1-site9-control", "path": "P25/mmr-s9-cc.cfile", "protocol": "P25 Phase I C4FM marginal control", "capture_stage": "channelized_iq", "format": "cf32-le", "sample_rate_hz": 48000, "center_frequency_hz": 420050000, "bytes": 419432,
+      "git_blob_sha1": "cd803917bcde5f3db397772551ba6d75b1490487", "sha256": null,
+      "upstream_expected": {"nominal_nac_hex": "0x167", "accepted_nac_hex_range": ["0x160", "0x167"], "min_nid_trusted": 8, "min_tsbk_decoded": 24}
+    },
+    {
+      "id": "nxdn48-voice", "path": "NXDN/nxdn48_rdch_voice_447100_16oct_48k.cs16", "protocol": "NXDN48 conventional RDCH voice", "capture_stage": "channelized_iq", "format": "cs16-le", "sample_rate_hz": 48000, "center_frequency_hz": 447100000, "bytes": 230400,
+      "git_blob_sha1": "26aed395774380be0cf6a0ebdf391723a9335e00", "sha256": null,
+      "upstream_expected": {"min_voice_frames": 32, "min_speech_pitch_continuity_fraction": 0.5, "max_golay_corrections_per_frame": 1.0}
+    },
+    {
+      "id": "nxdn96-voice", "path": "NXDN/nxdn96_rdch_voice_447100_15oct_48k.cs16", "protocol": "NXDN96 conventional RDCH voice", "capture_stage": "channelized_iq", "format": "cs16-le", "sample_rate_hz": 48000, "center_frequency_hz": 447100000, "bytes": 153600,
+      "git_blob_sha1": "01845523c82df3a279712b577a0f0180653f981f", "sha256": null,
+      "upstream_expected": {"min_voice_frames": 24, "min_speech_pitch_continuity_fraction": 0.5, "max_golay_corrections_per_frame": 1.0}
+    },
+    {
+      "id": "nxdn96-trunk-control", "path": "NXDN/nxdn96_rcch_cc_453775_19oct_48k.cs16", "protocol": "NXDN96 RCCH control", "capture_stage": "channelized_iq", "format": "cs16-le", "sample_rate_hz": 48000, "center_frequency_hz": 453775000, "bytes": 192000,
+      "git_blob_sha1": "c4a1bdb2fdd36cc316877982781c99bc7043462d", "sha256": null,
+      "upstream_expected": {"min_frames_fsw_lich": 18, "frame_spacing_dibits": 192, "carrier_offset_hz_range": [-750, -550], "cac_crc_verified": false}
+    },
+    {
+      "id": "auto-negative-noise", "path": "AUTO/auto_noise_seed13579bdf_48k_cs16.cs16", "protocol": "UNKNOWN", "capture_stage": "channelized_iq", "origin": "deterministic_synthetic", "format": "cs16-le", "sample_rate_hz": 48000, "bytes": 384000,
+      "git_blob_sha1": "3d872e2afb5aa8759520657c2c1c25fbd03acab7", "sha256": "ae4f5f6d0ab0f3b8aec9a94cfed8dbadbbc13f94db8758fc2c5bd03b1bdcef71",
+      "upstream_expected": {"note": "negative example; no OrcSDR classifier result established"}
+    },
+    {
+      "id": "auto-negative-am", "path": "AUTO/auto_am_envelope_200hz_48k_cs16.cs16", "protocol": "UNKNOWN", "capture_stage": "channelized_iq", "origin": "deterministic_synthetic", "format": "cs16-le", "sample_rate_hz": 48000, "bytes": 384000,
+      "git_blob_sha1": "f8873579fe47229866fb2b1576726a22bfc4aa5d", "sha256": "32d7ea0c83f7ca4168337c90c06e491f1a259dce8241fd8d4b1c5839986aa87e",
+      "upstream_expected": {"note": "negative example; no OrcSDR classifier result established"}
+    }
+  ]
+}

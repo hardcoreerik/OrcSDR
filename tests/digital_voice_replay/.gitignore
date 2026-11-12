@@ -1,0 +1,22 @@
+# This directory is code and metadata only. IQ, audio, logs and binaries stay local.
+*.cfile
+*.cs16
+*.cf32
+*.cu8
+*.iq
+*.raw
+*.bin
+*.wav
+*.pcm
+*.mp3
+*.flac
+*.zip
+*.log
+*.exe
+*.o
+*.pyc
+__pycache__/
+.pytest_cache/
+.tox/
+output/
+artifacts/
