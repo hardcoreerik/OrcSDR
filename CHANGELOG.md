@@ -7,6 +7,9 @@ This is the **project-level release and current-source index**. It links the aut
 No behaviour change intended; nothing here was flashed or run on a device.
 
 - **Complexity scans now cover the whole file:** two file-scope `static_assert` comparisons in `apps/orcsdr-tab5/ui/main.cpp` were written with `<`, which made Lizard stop parsing at line 614 (18 of 620 functions). They are now written with `>`; the conditions are the same. A full scan reports `process_command` at 3,012 lines, cyclomatic complexity 1,111.
+- **Retired USB path deleted:** the legacy RTL USB code in `main.cpp` was already compiled out (`RTL_USE_LEGACY_USB` forced to 0, `#error` if set). Its 676 lines and the 96 `#if`/`#else`/`#endif` lines around it are removed, along with the now-unused `#undef`/`#define`; the `#error` guard stays. `main.cpp` goes from 24,759 to 23,985 lines.
+- **Verified:** firmware built before and after with `tools\build-tab5-idf.ps1 -WithoutC6` (ESP-IDF 5.5.4). The compiled `main.cpp` object has identical section sizes; its only differences are the build-time string and the line numbers passed by two `ESP_ERROR_CHECK` calls. Firmware image size unchanged at 4,458,528 bytes.
+- **Not verified:** nothing was run on hardware. `tests/receiver_start_pause_test.py` and `tools/test_wifi_reconnect_policy.py` fail the same way before and after this change; they are out of date with `main.cpp` and are not run by CI.
 
 ## Unreleased — Volume tray redesign, Visualizer entry — 2026-11-11
 
