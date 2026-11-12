@@ -15357,7 +15357,11 @@ void open_dashboard(orcsdr::dashboards::Id id) {
   }
   if (id == Id::sstv) { open_sstv_dashboard(); return; }
   if (id == Id::acars) { open_acars_dashboard(); return; }
-  if (id == Id::ais) { open_ais_dashboard(); return; }
+  if (id == Id::ais) {
+    orcsdr::rf24::leave();            // RF24 would otherwise intercept AIS taps
+    open_ais_dashboard();
+    return;
+  }
   orcsdr::sstv_app::close();
   orcsdr::acars_app::close();
   rtl_rate_override_sps.store(0, std::memory_order_release);
@@ -19317,6 +19321,15 @@ bool ui_doc_pause_reception() {
         orcsdr::screens::finish_transition();
       } else {
         orcsdr::dead_air_app::open();
+      }
+    } else if (ui_doc.screen == orcsdr::screens::Id::ais) {
+      // AIS rides the browse band too: the fallback below would close it and show Home. Reopen it if documentation closed it.
+      if (orcsdr::ais_app::active()) {
+        orcsdr::screens::begin_transition(orcsdr::screens::Id::ais, millis());
+        orcsdr::ais_app::draw(true);
+        orcsdr::screens::finish_transition();
+      } else {
+        open_ais_dashboard();
       }
     } else if (ui_doc.screen == orcsdr::screens::Id::acars) {
       // ACARS rides the browse band, so the band-based fallback below would close it and show Home. The documentation
@@ -24251,6 +24264,19 @@ void loop() {
   orcsdr::sstv_app::tick();
   orcsdr::acars_app::tick();
   orcsdr::ais_app::tick();
+  if (g_rtl != nullptr && orcsdr::ais_radio::running()) {   // a USB overrun removed IQ before the callback: AIS must not join frames across it
+    static uint32_t s_ais_last_overruns = 0;
+    static uint32_t s_ais_last_check_ms = 0;
+    const uint32_t check_now = millis();
+    if (check_now - s_ais_last_check_ms >= 250) {
+      s_ais_last_check_ms = check_now;
+      esp_rtl_sdr_metrics_t m = {};
+      if (esp_rtl_sdr_get_metrics(g_rtl, &m) == ESP_OK) {
+        if (m.overruns != s_ais_last_overruns) orcsdr::ais_radio::note_discontinuity();
+        s_ais_last_overruns = m.overruns;
+      }
+    }
+  }
   orcsdr::dead_air_app::tick();
   if (rtl_stream_ui_refresh_pending.exchange(false, std::memory_order_acq_rel) &&
       !settings_ui && !home_ui && !visualizer_ui && !rf_lab_ui) {

@@ -117,7 +117,10 @@ int main() {
   refresh_tray_overlay(open, 100, true, 20010);
   refresh_tray_overlay(open, 100, true, 20020);
   assert(host_display::direct_ops == direct_first);                // unchanged: not repainted
-  host_display::fail_sprite_alloc = false;
+  host_display::fail_sprite_alloc = false;                         // allocation recovers: the new sprite must hold the tray
+  host_display::prims.clear();
+  refresh_tray_overlay(open, 100, true, 20010 + kOverlayRepushMs + 1);
+  assert(shows("VOLUME") && shows("39%"));                         // 100 / 255
   assert(host_display::full_clears == 0);                          // no full-screen clear anywhere in the tray's redraws
   std::puts("audio header tray host tests passed");
   return 0;

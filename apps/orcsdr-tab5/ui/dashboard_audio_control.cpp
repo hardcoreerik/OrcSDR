@@ -144,6 +144,7 @@ void push_tray(uint8_t volume, bool sound_enabled, uint32_t now_ms) {
       g_tray_sprite->setColorDepth(16);
       g_tray_sprite->setPsram(true);
       if (!g_tray_sprite->createSprite(kTrayW, kTrayH)) release_tray_sprite();
+      else g_tray_sprite_valid = false;      // a new sprite has never held the tray: render it even if the state is unchanged
     }
   }
   if (g_tray_sprite == nullptr) {         // no memory for the sprite: draw straight onto the display

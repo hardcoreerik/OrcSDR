@@ -179,19 +179,28 @@ def main():
     start_audio = d.full().get("audio_enabled")      # slider touches switch audio on: put it back as found
     restored = []
 
-    def restore():                                   # also runs when the test dies half way
+    restore_failures = []
+
+    def restore():                                   # also runs when the test dies half way; every step runs on its own
         if restored:
             return
-        restored.append(True)
-        try:
-            d.ensure_tray(False)
-            if start_volume is not None:
-                d.cmd(f"RTL_VOLUME {start_volume}", "RTL_VOLUME", 4)
-            if start_audio in ("0", "1"):
-                d.cmd("RTL_SOUND ON" if start_audio == "1" else "RTL_SOUND OFF", "RTL_SOUND", 4)
-            d.cmd("RTL_SPLASH_GATE ON", "RTL_SPLASH_GATE", 4)
-        except Exception as exc:
-            print("restore failed:", exc, flush=True)
+        steps = [("close the tray", lambda: d.ensure_tray(False)),
+                 ("volume", lambda: start_volume is None or d.cmd(f"RTL_VOLUME {start_volume}", "RTL_VOLUME", 4)),
+                 ("audio", lambda: start_audio not in ("0", "1") or
+                  d.cmd("RTL_SOUND ON" if start_audio == "1" else "RTL_SOUND OFF", "RTL_SOUND", 4)),
+                 ("splash gate", lambda: d.cmd("RTL_SPLASH_GATE ON", "RTL_SPLASH_GATE", 4))]
+        for label, action in steps:
+            try:
+                action()
+            except Exception:
+                try:                                 # the serial link may be the problem: reopen once and retry
+                    d.reopen()
+                    action()
+                except Exception as exc:
+                    restore_failures.append(f"restore {label}: {exc}")
+                    print("restore failed:", label, exc, flush=True)
+        if not restore_failures:
+            restored.append(True)
 
     atexit.register(restore)
     for name in [n.strip().upper() for n in a.names.split(",") if n.strip()]:
@@ -256,6 +265,8 @@ def main():
             screen = d.state()["screen"]
             check(f"{label}: Home button works afterwards", screen == "home", f"screen {screen}")
     restore()
+    for problem in restore_failures:
+        results.append(("restore", False, problem))
     bad = [r for r in results if not r[1]]
     print(f"\nSUMMARY {len(results) - len(bad)} passed, {len(bad)} failed")
     for n, _, detail in bad:

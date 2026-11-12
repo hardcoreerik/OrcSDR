@@ -50,6 +50,7 @@ EXPECTED_SCREEN = {  # RTL_SCREEN_STATUS active= value that a successful open sh
 class Drive:
     def __init__(self, port, key_file=None):
         self.port = port
+        self.key_file = key_file          # path only; handed to child processes with --key
         self.dev = t.Tab5(port)
         self.key = t.find_key(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", ".orclink", "ui-doc.key")) \
             if False else t.find_key(key_file or r"F:\Ai\OrcSDR\.orclink\ui-doc.key")
@@ -99,7 +100,8 @@ class Drive:
 
     def shot(self, path):
         self.close()
-        r = subprocess.run([sys.executable, self.shot_py, "--port", self.port, path[:-4]], capture_output=True, text=True, timeout=120)
+        cmd = [sys.executable, self.shot_py, "--port", self.port] + (["--key", self.key_file] if self.key_file else [])
+        r = subprocess.run(cmd + [path[:-4]], capture_output=True, text=True, timeout=120)
         self.reopen()
         return os.path.exists(path)
 

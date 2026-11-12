@@ -487,9 +487,9 @@ void bench(char* out, size_t size) {
     const float* x = &line[n % 39u];
     float a0 = 0, a1 = 0;
     unsigned k = 0;
-    for (; k + 2 <= 31; k += 2) { a0 += taps[k] * (x[k] + x[62 - k]); a1 += taps[k + 1] * (x[k + 1] + x[61 - k]); }
-    for (; k < 31; ++k) a0 += taps[k] * (x[k] + x[62 - k]);
-    sink = sink + (a0 + a1 + taps[31] * x[31]);
+    for (; k + 2 <= 19; k += 2) { a0 += taps[k] * (x[k] + x[38 - k]); a1 += taps[k + 1] * (x[k + 1] + x[37 - k]); }
+    for (; k < 19; ++k) a0 += taps[k] * (x[k] + x[38 - k]);
+    sink = sink + (a0 + a1 + taps[19] * x[19]);
   }
   const uint32_t fir_sym_us = g_hooks.micros() - t5;
   //  symmetric int32: 16-bit taps and samples, integer multiply-accumulate
@@ -510,7 +510,7 @@ void bench(char* out, size_t size) {
   //  fast atan2 (polynomial, about 1e-4 rad)
   const uint32_t t7 = g_hooks.micros();
   for (unsigned n = 0; n < 2u * 48000u; ++n) {
-    const float y = line[n % 126u], xx = line[(n + 31u) % 126u];
+    const float y = line[n % 78u], xx = line[(n + 19u) % 78u];
     const float ax = std::fabs(xx), ay = std::fabs(y);
     const float mx = ax > ay ? ax : ay, mn = ax > ay ? ay : ax;
     float r = 0;
@@ -529,7 +529,7 @@ void bench(char* out, size_t size) {
   const uint32_t hdlc_us = g_hooks.micros() - t4;
   const uint32_t t2 = g_hooks.micros();
   for (unsigned n = 0; n < 2u * 48000u; ++n)
-    sink = sink + std::atan2(line[n % 126u], line[(n + 31u) % 126u]);
+    sink = sink + std::atan2(line[n % 78u], line[(n + 19u) % 78u]);
   const uint32_t atan_us = g_hooks.micros() - t2;
   receiver->~Receiver();
   release_memory(memory);
