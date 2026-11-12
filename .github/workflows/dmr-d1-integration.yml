@@ -30,3 +30,15 @@ jobs:
         run: cmake --build build/dmr-d1-ci --parallel 2
       - name: Execute end-to-end synthetic IQ tests
         run: ctest --test-dir build/dmr-d1-ci --output-on-failure --verbose
+      - name: Build and test standalone 4FSK frontend and pre-roll
+        shell: bash
+        run: |
+          if [ "${{ matrix.config }}" = Sanitizers ]; then
+            cmake -S components/orcsdr_dmr/d1_frontend -B build/dmr-frontend-ci \
+              -DCMAKE_BUILD_TYPE=Debug -DDMR_D1_SANITIZE=ON
+          else
+            cmake -S components/orcsdr_dmr/d1_frontend -B build/dmr-frontend-ci \
+              -DCMAKE_BUILD_TYPE=Release
+          fi
+          cmake --build build/dmr-frontend-ci --parallel 2
+          ctest --test-dir build/dmr-frontend-ci --output-on-failure --verbose
