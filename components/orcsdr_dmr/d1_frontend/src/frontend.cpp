@@ -12,7 +12,12 @@ constexpr double kPi = 3.14159265358979323846;
 constexpr float kToHz = static_cast<float>(kSampleRate / (2.0 * kPi));
 constexpr std::uint64_t kSyncSymbols = 24;
 constexpr float kMinimumSyncCorrelation = 0.955F;
-constexpr float kMinPower = 0.00001F;
+// Only reject effectively-zero complex IQ, not a weak but numerically
+// representable radio capture. The atan2 discriminator divides out the
+// absolute amplitude; a 1e-5 *power* threshold previously discarded every
+// sample of a confirmed real-air voice-terminator recording (peak IQ <0.002).
+// This is a numerical-floor guard, NOT an RF squelch or signal-quality test.
+constexpr float kMinPower = 1.0e-10F;
 constexpr double kRolloff = 0.2;
 
 // A 6-symbol, beta=0.2 root raised cosine for the *demodulated frequency*.
