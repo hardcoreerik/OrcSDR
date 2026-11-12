@@ -1,0 +1,105 @@
+name: DMR public real-air IQ research probe (non-gating)
+on:
+  push:
+    branches:
+      - feature/dmr-digital-voice-foundation
+    paths:
+      - '.github/workflows/dmr-public-real-iq.yml'
+      - 'components/orcsdr_dmr/d1_frontend/**'
+      - 'components/orcsdr_dmr/d1_protocol/**'
+      - 'components/orcsdr_dmr/d1_integration/**'
+      - 'tests/dmr_replay_acceptance/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  public-real-iq:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build real D1 native IQ replay bridge
+        run: |
+          cmake -S components/orcsdr_dmr/d1_integration -B build/dmr-public -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/dmr-public --parallel 2
+      - name: Download only two immutable, public DMR IQ regression slices
+        shell: bash
+        run: |
+          set -euo pipefail
+          dest="$RUNNER_TEMP/orcsdr-public-dmr/DMR"
+          mkdir -p "$dest"
+          base="https://raw.githubusercontent.com/MattCheramie/GopherTrunk/f06bfff493f47fdeb69807c8b08b2b32a253839f/cmd/gophertrunk/testdata"
+          curl -fsSL --retry 3 --max-time 90 "$base/dmr-directmode-446500-keyup-48k.cs16" -o "$dest/dmr-directmode-446500-keyup-48k.cs16"
+          curl -fsSL --retry 3 --max-time 90 "$base/dmr-directmode-446500-ptt2-48k.cs16" -o "$dest/dmr-directmode-446500-ptt2-48k.cs16"
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, os
+          root=Path(os.environ["RUNNER_TEMP"])/"orcsdr-public-dmr"/"DMR"
+          pins={
+              "dmr-directmode-446500-keyup-48k.cs16":(345600,"e305eac29985ff647b8aba0434fee8ab7db81f15"),
+              "dmr-directmode-446500-ptt2-48k.cs16":(326404,"b7d91747030e55f68637edb2198476047191d84a"),
+          }
+          for name,(size,want) in pins.items():
+              data=(root/name).read_bytes()
+              blob=hashlib.sha1(("blob "+str(len(data))+"\0").encode()+data).hexdigest()
+              if len(data)!=size or blob!=want:
+                  raise SystemExit("FAILED immutable Git blob/size pin: "+name)
+              print(f"VERIFIED public real-air IQ: {name} bytes={size} git_blob_sha1={blob} sha256={hashlib.sha256(data).hexdigest()}")
+          PY
+      - name: Replay actual real-air recordings at two IQ chunk sizes
+        shell: bash
+        run: |
+          set -euo pipefail
+          bridge="$GITHUB_WORKSPACE/build/dmr-public/dmr_d1_replay_bridge"
+          root="$RUNNER_TEMP/orcsdr-public-dmr"
+          mkdir -p "$RUNNER_TEMP/orcsdr-public-reports"
+          for id in dmr-directmode-keyup dmr-directmode-second-ptt; do
+            for chunk in 257 4096; do
+              python3 tests/dmr_replay_acceptance/acceptance.py run \
+                --fixtures-root "$root" --id "$id" --bridge-command "$bridge" \
+                --chunk-samples "$chunk" --timeout 45 \
+                --report "$RUNNER_TEMP/orcsdr-public-reports/${id}-${chunk}.json" > /dev/null
+            done
+          done
+      - name: Summarize observed identities, sync, integrity and chunk consistency
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json, os
+          from pathlib import Path
+          base=Path(os.environ["RUNNER_TEMP"])/"orcsdr-public-reports"
+          ids=("dmr-directmode-keyup","dmr-directmode-second-ptt")
+          rows=[]
+          print("=== Actual native OrcSDR recorded-IQ evidence (NOT upstream expectations) ===")
+          for fid in ids:
+              entries=[json.loads((base/f"{fid}-{chunk}.json").read_text())["fixtures"][0] for chunk in (257,4096)]
+              metrics=[e["metrics"] for e in entries]
+              m=metrics[0]
+              consistent=(metrics[0]==metrics[1])
+              trusted=bool(m["check_and_fec_valid"] and m["source_ids"] and m["talkgroups"])
+              verdict="VALIDATED_IDS_OBSERVED" if trusted else "NO_VALIDATED_GROUP_ID_YET"
+              if not consistent: verdict="CHUNK_INCONSISTENT"
+              row=(fid,m["sync_total"],m["bursts"],m["check_and_fec_valid"],
+                   ",".join(map(str,m["source_ids"])) or "none",
+                   ",".join(map(str,m["talkgroups"])) or "none",
+                   ",".join(map(str,m["color_codes"])) or "none",
+                   "YES" if consistent else "NO",verdict)
+              rows.append(row)
+              print(dict(zip(("fixture","sync","bursts","checked","source_ids","talkgroups","color_codes","chunk_invariant","verdict"),row)))
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a",encoding="utf-8") as f:
+              f.write("## Public over-the-air DMR IQ replay — research evidence only\n\n")
+              f.write("Source: pinned GopherTrunk commit `f06bfff493f47fdeb69807c8b08b2b32a253839f`. Actual CF32 replay uses verified public CS16 recordings, **not synthetic IQ**.\n\n")
+              f.write("| Fixture | Sync events | Burst events | FEC + check valid | Source IDs | Talkgroups | Color codes | Chunk invariant | Decoder outcome |\n|---|---:|---:|---:|---|---|---|---|---|\n")
+              for row in rows: f.write("| "+" | ".join(map(str,row))+" |\n")
+              f.write("\n**Not a complete D1-R gate:** separate pinned noise/AM controls unavailable to this public-only run; field sensitivity, first-burst performance and ESP32-P4 unmeasured. Green workflow means the probe ran, **not** that decoding passed.\n")
+          if any(row[-2]=="NO" for row in rows):
+              raise SystemExit("Chunk consistency failure on recorded IQ")
+          PY
+      - name: Preserve only small JSON evidence reports (never raw IQ)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmr-public-real-iq-json-report
+          path: ${{ runner.temp }}/orcsdr-public-reports/*.json
+          if-no-files-found: ignore
+          retention-days: 14
