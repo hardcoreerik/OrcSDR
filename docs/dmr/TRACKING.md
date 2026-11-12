@@ -1,12 +1,12 @@
 # DMR / Digital Voice — development tracker
 
-**Status:** F0a/F0b host-validated; F0c microSD adapter and D1-A/D1-B decoder modules committed as host-only work. End-to-end IQ, ESP32-P4 hardware, and migration gates remain open. **Created:** 2026-11-11.
+**Status:** F0a/F0b host validated; F0c microSD adapter host-delivered; D1-A/B/C integrated and synthetic end-to-end IQ→metadata CI passed. Real-air IQ, first-burst recovery, ESP32-P4 hardware, and migration gates remain open. **Created:** 2026-11-11.
 **Product requirements:** [VISION.md](VISION.md). **Current implemented truth:** [PROJECT_STATUS.md](../../PROJECT_STATUS.md).
 **Evidence:** [DMR RSA/REA research branch](https://github.com/hardcoreerik/REA-Results/tree/research/dmr-competitor-20261111), plus the older [digital-voice fixture branch](https://github.com/hardcoreerik/REA-Results/tree/chatgpt/digital-voice-rsa-rea-2026-11-01). Both are research artifacts, not implementation acceptance.
 
 > Priority is not completion status. Every item below is **NOT STARTED** unless explicitly marked otherwise. An imported directory hit is never a verified RF decode. No network connection is needed for the promised core workflows.
 
-## Active implementation checkpoint — F0c + D1 component handoffs (2026-11-11)
+## Active implementation checkpoint — F0c + D1-C synthetic integration (2026-11-11)
 
 **Integration branch:** [`feature/dmr-digital-voice-foundation`](https://github.com/hardcoreerik/OrcSDR/tree/feature/dmr-digital-voice-foundation).
 [Parallel workstreams and restart instructions](WORKSTREAMS.md) set exclusive folder ownership for additional AI sessions.
@@ -15,7 +15,8 @@
 - **Done, host-only F0b:** `components/orcsdr_radio_discovery/include/orcsdr_radio_discovery/library.hpp` implements separate bounded RF/directory/user records, conservative identity matching and an explicit little-endian two-slot CRC snapshot journal. Simulated corruption/torn-write recovery and Linux POSIX durable-file restart tests pass in Debug, Release and ASan/UBSan builds. [Evidence and limits](F0B_HOST_VALIDATION_2026-11-11.md).
 - **Not done:** ESP32-P4 SD adapter/power-loss qualification, P25 v2 migration, scanner or tuner wiring, on-device memory testing, native DMR or NXDN decoding, RF proof, provider integration. **F0 overall remains incomplete.**
 - **Delivered F0c source, host-only:** `components/orcsdr_radio_discovery/esp_idf/` provides an opt-in microSD `SlotIO`, two dedicated filenames and host fault tests. The author reports host testing; no independent current-branch CI, ESP-IDF compile, hardware SD or power-loss acceptance is established.
-- **Delivered D1-A and D1-B source, separately:** `components/orcsdr_dmr/d1_frontend/` contains the synthetic-verified 4FSK receiver and `components/orcsdr_dmr/d1_protocol/` contains the synthetic-verified burst/FEC/metadata receiver. No combined IQ-to-identity replay has been executed. **Important:** front-end drops acquisition SYNC and pre-sync payload, while protocol expects complete continuous bursts; bridge alignment is a blocking integration gate.
+- **Delivered D1-A and D1-B source, independently:** frontend IQ→dibits and protocol dibits→validated LC events, with their own synthetic tests.
+- **D1-C synthetic end-to-end verified:** `components/orcsdr_dmr/d1_integration/**` connects the existing modules without inventing missing acquisition bits. [Release + ASan/UBSan CI run](https://github.com/hardcoreerik/OrcSDR/actions/runs/43156539511) both pass using real D0/D1 sources; a nine-burst synthetic BS data stream yielded **eight complete decoded bursts and eight integrity-validated radio IDs/talkgroups**, correct DMR color code and alternating TS1/TS2. The **first acquisition burst is deliberately missed**; short calls and real-air recordings are not accepted yet.
 - **Next lead checkpoint:** independently run host/sanitizer suites, design a truthful cold-start dibit bridge, replay the pinned private DMR IQ fixture, then device-qualify F0c without touching P25. See [integration review and acceptance contract](D1_INTEGRATION_GATE_2026-11-11.md).
 - **Parallel sandbox gates:** D0 DMR constants, host-only offline import preview, and pinned IQ/replay manifest; no overlapping file edits.
 
@@ -57,7 +58,7 @@ The user specifically wants simple import and migration of existing radio data/a
 |---|---|---|---|
 | F0 | Common event/profile schema with proof levels, receiver-location semantics and bounded SD index; design cross-protocol API | **F0a/F0b host tested; F0c adapter committed (host only); device SD and migration pending** | Versioned schema, host tests for provenance, malformed imports, dedupe, time-unknown, migration/rollback; P25 behavior preserved |
 | D0 | DMR constants/oracle | **Host source/tests committed; independent gate pending** | Independently generated ETSI sync/CACH/FEC vectors; cross-check published RSA/REA constant conformance; host tests pass |
-| D1 | DMR Tier II metadata decoder | **D1-A frontend + D1-B protocol delivered separately; integration/real-IQ acceptance pending** | Host synthetic IQ tests for 4FSK, sync, dual-slot CACH, slot type, FEC, group/source IDs, direct/repeater and late entry; measured memory/alloc bounds |
+| D1 | DMR Tier II metadata decoder | **D1-A/B/C integrated; synthetic host CI passed; first burst/real-IQ/device pending** | Host synthetic IQ tests for 4FSK, sync, dual-slot CACH, slot type, FEC, group/source IDs, direct/repeater and late entry; measured memory/alloc bounds |
 | D2 | DX-01 to DX-04 plus offline logbook and CFG-01/02/03/08 | Not started | Single-tuner lifecycle, scan/candidate/save flows, reboot and SD failure tests, no-net integration, P25 regression |
 | D3 | Pack imports and offline ID/candidate matching (DX-05/06), IQ recorder/replay (DX-07) | Not started | Authorized data/terms, deterministic fixture and corruption tests, replay without SDR hardware |
 | D4 | NXDN48/NXDN96 independent protocol cores on shared verified DSP primitives | Not started | Replay/test fixture gates for LICH/SACCH/RAN/identity, distinguish NXDN modes, no P25/DMR regression |
