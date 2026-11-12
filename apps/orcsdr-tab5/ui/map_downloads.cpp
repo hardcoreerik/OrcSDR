@@ -23,7 +23,7 @@ namespace orcsdr::maps::downloads {
 namespace {
 constexpr uint32_t kRecover=1,kCheck=2,kInstall=256;
 EXT_RAM_BSS_ATTR Snapshot g_snapshot;
-EXT_RAM_BSS_ATTR Entry g_entries[32];
+EXT_RAM_BSS_ATTR Entry g_entries[catalog::kMaximumPacks];
 EXT_RAM_BSS_ATTR catalog::Catalog g_catalog;
 portMUX_TYPE g_lock=portMUX_INITIALIZER_UNLOCKED;
 std::atomic<uint32_t> g_command{0},g_last_command{kRecover};
@@ -91,7 +91,7 @@ bool catalog_entries(storage::FileSystem* fs,delivery::Store& store) {
   delivery::State state;if(delivery::load(store,&state)!=delivery::Error::none)return false;
   const auto location=receiver_location::snapshot();
   const double lat=location.latitude_e7/1e7,lon=location.longitude_e7/1e7;
-  const size_t count=g_catalog.packs.size()<32?g_catalog.packs.size():32;
+  const size_t count=g_catalog.packs.size()<catalog::kMaximumPacks?g_catalog.packs.size():catalog::kMaximumPacks;
   for(size_t i=0;i<count;++i) {
     const auto& pack=g_catalog.packs[i];const auto& m=pack.manifest;
     Entry e;

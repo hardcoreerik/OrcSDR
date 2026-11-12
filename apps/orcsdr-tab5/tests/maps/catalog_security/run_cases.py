@@ -69,6 +69,20 @@ def main():
             duplicate_product(value)
             value['packs'][1]['product_id']='another-region'
         run('distinct-products-distinct-artifacts','none',two_products)
+        def many_products(total):
+            def mutate(value):
+                base=value['packs'][0]
+                for number in range(1,total):
+                    entry=copy.deepcopy(base);source=f"{base['manifest']['source_snapshot']}-s{number}"
+                    entry['product_id']=f'state-{number:02d}'
+                    entry['manifest']['source_snapshot']=source
+                    entry['manifest']['pack_id']=source.lower()+'__'+base['manifest']['pack_id'].split('__',1)[1]
+                    value['packs'].append(entry)
+            return mutate
+        # All 50 US states (51 archives) must fit; the cap is 64.
+        run('catalog-51-packs','none',many_products(51))
+        run('catalog-64-packs','none',many_products(64))
+        run('catalog-65-packs','schema',many_products(65))
         run('json-allocation-failure','json',fail_json=True)
         run('signature-before-parsing','signature',raw=b'{broken',tamper=True)
         run('altered-payload','signature',tamper=True)
@@ -89,7 +103,7 @@ def main():
         run('remote-destination','schema',lambda x:x['packs'][0]['archive'].update(destination='/settings'))
         run('duplicate-identity','identity',lambda x:x['packs'].append(copy.deepcopy(x['packs'][0])))
         run('excess-depth','json',raw=b'{"x":'+b'['*17+b'0'+b']'*17+b'}')
-        run('excess-nodes','json',raw=b'{"x":['+b'0,'*4096+b'0]}')
+        run('excess-nodes','json',raw=b'{"x":['+b'0,'*8192+b'0]}')
         for name,url in [('http','http://maps.test/x'),('credentials','https://user:secret@maps.test/x'),
                          ('mutable','https://maps.test/latest.pmtiles'),
                          ('query',f'https://maps.test/{digest}/x.pmtiles?token=x'),
