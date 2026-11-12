@@ -214,7 +214,8 @@ unsigned identities(const Capture& cap){
 }
 void test_first_burst_recovery(){
     const auto bits=make_stream(1);
-    const auto iq=synthesize(bits);
+    // Separate cleaner first-burst proof from an impaired sync-error case.
+    const auto iq=synthesize(bits,320.,.001);
     const auto one=run(iq,1);
     const auto bulk=run(iq,iq.size());
     CHECK(one.bridge_stats.acquisitions==1);
