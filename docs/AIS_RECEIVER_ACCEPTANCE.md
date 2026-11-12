@@ -16,7 +16,7 @@
 
 ## DSP and diagnostic caveats
 
-Independent +/-25 kHz NCOs (48-sample oscillator period at 240 kS/s), 63-tap windowed-sinc channel lowpass (10.5 kHz cutoff), /5 decimator, atan2 phase discriminator, slow DC correction and 3-sample smoothing. Five static symbol-phase hypotheses handle initial burst alignment. Concurrent hypothesis outputs are deduplicated within an 80 ms window.
+Independent +/-25 kHz NCOs (48-sample oscillator period at 240 kS/s), 39-tap windowed-sinc channel lowpass (10.5 kHz cutoff; reduced from 63 taps to cut receiver load), /5 decimator, atan2 phase discriminator, slow DC correction and 3-sample smoothing. Five static symbol-phase hypotheses handle initial burst alignment. Concurrent hypothesis outputs are deduplicated within an 80 ms window.
 
 NOT implemented: true dynamic symbol-clock recovery, adaptive equalization, weak-signal sensitivity tuning, gain selection, UI ownership, transport/NMEA output, alternate IQ rates, or real hardware acceptance.
 
