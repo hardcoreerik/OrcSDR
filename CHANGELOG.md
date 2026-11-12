@@ -2,6 +2,25 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Volume tray redesign, Visualizer entry — 2026-11-11
+
+- **Volume tray:** now 840x280 (3:1, twice the previous size), centred just below the status bar, drawn as the top item: it is composited from a sprite, and the dashboards (scopes, waterfalls, FT8 waterfall) hold still while it is open. The tray reads touch itself; dashboards see no touch until the finger is up and 250 ms have passed, so a tap that opens, adjusts or dismisses the tray never reaches "touch to tune". Only the slider reacts to a held finger; mute fires once per press and the second tap of a double tap on the speaker does not mute.
+- **Header:** the VIS button is gone and Home, speaker and Settings are spaced out. The Visualizer is the last entry in All Dashboards (`RTL_UI OPEN VISUALIZER`). `RTL_UI STATUS` now reports `volume`, `audio_enabled` and `tray`.
+- **Verified:** host test `tests/audio_header_tray_tests.cpp`; hand-tested by the owner on COM17. `tools/tab5_volume_tray_test.py` (on-device) still shows intermittent failures on a few dashboards that are not yet explained (suspected test timing).
+- **Shared code note:** the shared dashboard registry now has a `visualizer` entry and the header geometry changed; P4 Core must treat the entry as unavailable until it has one.
+
+## Unreleased — AIS receiver and dashboard on the Tab5 — 2026-11-10
+
+**New dashboard (AIS, the 20th All Dashboards entry).** Receives AIS on both channels (161.975 and 162.025 MHz) from one 162.000 MHz / 240 kS/s stream, from the USB dongle or an rtl_tcp server, and shows vessels, base stations and aids to navigation on seven pages. Branch `claude/ais-integration-hardware-79f921`; checkpoint in [docs/AIS_INTEGRATION_CHECKPOINT.md](docs/AIS_INTEGRATION_CHECKPOINT.md), evidence in [docs/evidence/ais/2026-11-10-tab5-replay.md](docs/evidence/ais/2026-11-10-tab5-replay.md).
+
+- **Proven on the Tab5 (COM17):** deterministic synthetic AIS IQ replayed over a private rtl_tcp server decodes 43 of 43 transmitted packets byte for byte with none missing or extra, on both channels, with no lost samples. All seven pages render. Names, call signs, destinations, navigation status, base stations and aids to navigation appear. USB and rtl_tcp sources both reach `receiving`, and switching between them works. Fifteen open/close cycles show no PSRAM leak.
+- **Not proven:** reception of real ships (the lab saw only noise), sensitivity, sustained USB operation, comparison with another decoder on the same real IQ, regression of FM, FT8 and ADS-B after this change. Replay is network-only and every page says "TEST REPLAY DATA" while it runs.
+- **Receiver:** per-burst carrier-offset tracking (strong bursts decode at up to 4 kHz offset in the host stress test, was 1.25 kHz). About 32% of one core on the Tab5 at 240 kS/s.
+- **Decoded fields:** Types 1-3, 4, 5, 9, 18, 19, 21, 24, 27, 28 carry fields; the rest are header only. This is not 28 complete decoders.
+- **Memory:** about 70 KB decoder state and 17 KB snapshot in PSRAM while the dashboard is open, freed on exit. Binary 5,585,680 bytes (11% of the app partition free).
+- **Safety:** the dashboard never shows synthetic data on its own; `RTL_AIS TEST ON` (authenticated) only labels replayed data.
+- **Serial:** `RTL_UI OPEN AIS`, `RTL_AIS STATUS`, `RTL_AIS TEST ON|OFF`, `RTL_AIS BENCH`.
+
 ## Unreleased — rtl_tcp remote receiver — 2026-11-09
 
 **New receiver source.** The Tab5 can take its IQ from a standard `rtl_tcp` server on the network (for example a Raspberry Pi with an RTL-SDR) instead of a dongle on its own USB port, and can serve its own dongle with an `rtl_tcp` server. Branch `claude/orcsdr-rtl-tcp-interop-f12b5d`; full test record in [docs/RTL_TCP_RELEASE_TEST_PLAN.md](docs/RTL_TCP_RELEASE_TEST_PLAN.md).

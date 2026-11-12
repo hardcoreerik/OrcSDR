@@ -1,0 +1,68 @@
+{
+  "manifest_version": 1,
+  "worldwide_2025": {
+    "repo": "Dirk--/AIS-testing",
+    "source": "AIS Hub worldwide sample stream published in Dirk--/AIS-testing README, dated 2025-11-09",
+    "commit": "49b9d6b15d348914d99983a720ed21cabec2abcb",
+    "url_prefix": "https://raw.githubusercontent.com/Dirk--/AIS-testing/49b9d6b15d348914d99983a720ed21cabec2abcb",
+    "rights": "No explicit redistributable data license verified. Download on demand for evaluation, never vendor the bulk corpus or ship it in firmware.",
+    "files": {
+      "aishub_msg-06.csv": {
+        "git_blob_sha1": "1da98aead3bf356607bc7d5930c04ac8a0efddfc",
+        "rows": 1624,
+        "min_complete": 1600
+      },
+      "aishub_msg-08.csv": {
+        "git_blob_sha1": "8b40397c156a13340fe87427f123e6959d11af26",
+        "rows": 7507,
+        "min_complete": 7400
+      },
+      "aishub_msg-12.csv": {
+        "git_blob_sha1": "bf359f0f494ad184847e6ba5f775c9ab5110cf6d",
+        "rows": 42,
+        "min_complete": 5
+      },
+      "aishub_msg-25.csv": {
+        "git_blob_sha1": "72270b455bf1ce55831ba213af496d0309d602f8",
+        "rows": 265,
+        "min_complete": 250
+      },
+      "aishub_msg-26.csv": {
+        "git_blob_sha1": "f66565aa1c9445819ba7cb278b12a467e11238d3",
+        "rows": 269,
+        "min_complete": 250
+      }
+    }
+  },
+  "japan_research": {
+    "source": "National Maritime Research Institute (Japan), 日本周辺主要海域のAISデータの現状, page 7 (2013)",
+    "url": "https://j-nav.org/mte/pdf/201307.pdf",
+    "sample_file": "tests/fixtures/ais_international/japan_research_nmea.tsv",
+    "status": "Small NMEA transcriptions from published document; OCR/extraction checksum failures preserved as negative tests. Not an IQ recording. No wholesale redistribution."
+  },
+  "gfw_global_presence": {
+    "source": "Global Fishing Watch global AIS vessel presence",
+    "url": "https://globalfishingwatch.org/platform-update/global-ais-vessel-presence-dataset/",
+    "dataset_id": "public-global-presence:latest",
+    "status": "Reference only, not an NMEA or IQ corpus. Gridded hourly presence, not per-vessel message truth.",
+    "rights": "CC BY-NC 4.0 / noncommercial only under GFW terms. No download, bundling or commercial dependency without written authorization."
+  },
+  "protocol_sources": [
+    {
+      "label": "ITU-R M.1371-6 (February 2026)",
+      "url": "https://www.itu.int/rec/R-REC-M.1371-6-202602-I/en"
+    },
+    {
+      "label": "IMO number of persons on board DAC1/FI16",
+      "url": "https://academy.iala.int/asm/number-persons-board-3/"
+    },
+    {
+      "label": "EU inland persons DAC200/FI55",
+      "url": "https://www.iala.int/asm/number-persons-board/"
+    },
+    {
+      "label": "EU inland static/voyage DAC200/FI10",
+      "url": "https://www.iala.int/asm/inland-ship-static-voyage-related-data/"
+    }
+  ]
+}
