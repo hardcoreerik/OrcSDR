@@ -1,12 +1,12 @@
 # DMR / Digital Voice — development tracker
 
-**Status:** F0a/F0b host validated; F0c microSD adapter host-delivered; D1-A/B/C and replay CLI compiled/tested in CI. Independent ETSI conformance and P25 migration-preview host suites pass. **Real-air IQ, first-burst recovery, ESP32-P4 hardware, CACH cadence and lossless migration remain open.** **Created:** 2026-11-11.
+**Status:** F0a/F0b host validated; F0c host adapter delivered (device unverified); D0 independent ETSI conformance passed; D1-A/B/C synthetic IQ→metadata and the real-IQ replay CLI passed host CI. **D1-R recorded IQ, D1-P first-burst recovery and D1-S corroborated CACH slot attribution are the active parallel gates.** ESP32-P4 hardware and lossless migration remain open. **Created:** 2026-11-11.
 **Product requirements:** [VISION.md](VISION.md). **Current implemented truth:** [PROJECT_STATUS.md](../../PROJECT_STATUS.md).
 **Evidence:** [DMR RSA/REA research branch](https://github.com/hardcoreerik/REA-Results/tree/research/dmr-competitor-20261111), plus the older [digital-voice fixture branch](https://github.com/hardcoreerik/REA-Results/tree/chatgpt/digital-voice-rsa-rea-2026-11-01). Both are research artifacts, not implementation acceptance.
 
 > Priority is not completion status. Every item below is **NOT STARTED** unless explicitly marked otherwise. An imported directory hit is never a verified RF decode. No network connection is needed for the promised core workflows.
 
-## Active implementation checkpoint — F0c + D1 replay acceptance tools (2026-11-11)
+## Active implementation checkpoint — D1 host acceptance (2026-11-11)
 
 **Integration branch:** [`feature/dmr-digital-voice-foundation`](https://github.com/hardcoreerik/OrcSDR/tree/feature/dmr-digital-voice-foundation).
 [Parallel workstreams and restart instructions](WORKSTREAMS.md) set exclusive folder ownership for additional AI sessions.
@@ -20,8 +20,8 @@
 - **Independent protocol tests now executed:** [GitHub Actions 43158073956](https://github.com/hardcoreerik/OrcSDR/actions/runs/43158073956) compiled the actual D0/D1 code and passed **five CTest cases** in Release and sanitizer builds. **13 ETSI reference, 16 replay harness and 38 P25 migration-preview Python tests passed**. The conformance suite reproduced **D1-CACH-01**, a real slot-attribution confidence defect; test passes do not mean that defect was fixed. Rendered ETSI analysis resolved the Golay table text-extraction ambiguity without changing decoder constants.
 - **D1 replay executable implemented and host tested:** `components/orcsdr_dmr/d1_integration/tools/d1_replay_bridge.cpp` reads CF32 LE 48 kS/s from stdin and emits strict JSONL v1 for `tests/dmr_replay_acceptance/acceptance.py run`. [Release + ASan CI run 43158609068](https://github.com/hardcoreerik/OrcSDR/actions/runs/43158609068) passed both integrated synthetic IQ and CLI negative/EOF tests (2/2 CTests in each job). It emits **unknown** rather than misleading BS CACH-derived slot attribution without validated cadence. **Private real-air IQ has NOT been replayed; first-burst loss remains.**
 - **P25 v2 migration preview delivered:** `tools/p25_discovery_migration/**` parses user profiles read-only, reports conflicts and preserves settings in sidecar JSON. `plan.can_apply=false` because the shared journal cannot yet faithfully represent hold, scan, talkgroup alias and receiver control fields. No P25 profile is modified.
-- **Next lead checkpoint:** run `acceptance.py verify/run` with the private pinned DMR corpus in an authorized external checkout, measure first-burst loss and false identities, then fix D1-CACH-01 with cadence-aware evidence and implement bounded pre-roll; separately device-qualify F0c. See [D1 integration review](D1_INTEGRATION_GATE_2026-11-11.md) and [D1-C replay commands](../../components/orcsdr_dmr/d1_integration/README.md).
-- **Parallel sandbox gates:** D0 DMR constants, host-only offline import preview, and pinned IQ/replay manifest; no overlapping file edits.
+- **Next three parallel workstreams (planned, not complete):** [D1-R recorded-IQ verification](NEXT_PHASE_D1_ACCEPTANCE.md), D1-P bounded pre-roll for real first-burst recovery, and D1-S CACH provenance/cadence correction. Exclusive folders and exact exit criteria are in the [next-phase handoff](NEXT_PHASE_D1_ACCEPTANCE.md). Lead retains `d1_integration/**`, CI reconciliation, and this tracker. **Do not claim real-air acceptance until pinned IQ is actually replayed.**
+- **Earlier sandbox deliveries accepted:** D0 sync/CACH/BPTC, host-only CSV/JSON import preview, multi-protocol replay manifest, D1-A/B frontend/protocol, F0c host adapter, conformance oracles, P25 migration preview, and D1 replay acceptance harness. The [next three agents](NEXT_PHASE_D1_ACCEPTANCE.md) must not overwrite each other's directories.
 
 ## DX / user-facing priority matrix (owner-approved, 2026-11-11)
 
@@ -60,8 +60,11 @@ The user specifically wants simple import and migration of existing radio data/a
 | Gate | Work | Status | Evidence required to close |
 |---|---|---|---|
 | F0 | Common event/profile schema with proof levels, receiver-location semantics and bounded SD index; design cross-protocol API | **F0a/F0b host tested; F0c adapter committed (host only); device SD and migration pending** | Versioned schema, host tests for provenance, malformed imports, dedupe, time-unknown, migration/rollback; P25 behavior preserved |
-| D0 | DMR constants/oracle | **Host source/tests committed; independent gate pending** | Independently generated ETSI sync/CACH/FEC vectors; cross-check published RSA/REA constant conformance; host tests pass |
-| D1 | DMR Tier II metadata decoder | **D1-A/B/C integrated; synthetic host CI passed; first burst/real-IQ/device pending** | Host synthetic IQ tests for 4FSK, sync, dual-slot CACH, slot type, FEC, group/source IDs, direct/repeater and late entry; measured memory/alloc bounds |
+| D0 | DMR constants/oracle | **ETSI constants independently host-validated; 13 Python reference tests and five production-linked CTests passed in Release/ASan; D1-CACH-01 remains a D1 framing issue** | Independently generated ETSI sync/CACH/FEC vectors; cross-check published RSA/REA constant conformance; host tests pass |
+| D1 | DMR Tier II metadata decoder | **Synthetic IQ→metadata and strict replay CLI host CI passed. D1-R real-air, D1-P first burst, D1-S slot provenance and device performance NOT ACCEPTED** | Host synthetic IQ tests for 4FSK, sync, dual-slot CACH, slot type, FEC, group/source IDs, direct/repeater and late entry; measured memory/alloc bounds |
+| D1-R | Pinned private DMR real-IQ acceptance + noise/AM negatives | **ASSIGNED next; NOT RUN on real recorded IQ** | Verify source hashes; direct-mode source/group/CC and integrity, multiple chunks, no false identity; separate upstream claims from OrcSDR measurements |
+| D1-P | Fixed-memory pre-roll and complete first-burst recovery | **ASSIGNED next; first acquisition burst currently lost** | Complete single-burst synthetic IQ metadata and correct timestamps without fabricated payload; bounded RAM and lock/discontinuity tests |
+| D1-S | Confirm BS CACH cadence before slot promotion | **ASSIGNED next; D1-CACH-01 reproduced in CI** | Random/zero-prefix rejects confidence upgrade; continuous BS cadence permits supported slot; direct-mode slot unchanged; identity integrity remains independent |
 | D2 | DX-01 to DX-04 plus offline logbook and CFG-01/02/03/08 | Not started | Single-tuner lifecycle, scan/candidate/save flows, reboot and SD failure tests, no-net integration, P25 regression |
 | D3 | Pack imports and offline ID/candidate matching (DX-05/06), IQ recorder/replay (DX-07) | Not started | Authorized data/terms, deterministic fixture and corruption tests, replay without SDR hardware |
 | D4 | NXDN48/NXDN96 independent protocol cores on shared verified DSP primitives | Not started | Replay/test fixture gates for LICH/SACCH/RAN/identity, distinguish NXDN modes, no P25/DMR regression |
@@ -69,6 +72,14 @@ The user specifically wants simple import and migration of existing radio data/a
 | D6 | DMR Tier III and named vendor systems (DX-10), plus voice work | Not started | Per-family spec/compatibility and replay/live RF gates; voice requires independent AMBE+2 feasibility/licensing decision |
 
 P1 must not claim a working DX discovery feature before a real DMR decoder successfully distinguishes energy from valid frames. F0/D0 may progress in parallel in separate testable modules, but a new shared DSP abstraction should be promoted only after it serves two independently verified consumers. DMR decoding comes first; do not block DMR progress on NXDN/Phase II implementation.
+
+## Next execution order and gate ownership
+
+1. **Parallel, no folder overlap:** D1-R agent writes only `tests/dmr_replay_acceptance/**`; D1-P agent writes only `components/orcsdr_dmr/d1_frontend/**`; D1-S agent writes only `components/orcsdr_dmr/d1_protocol/**`. All may read D0 and bridge sources. No agent edits `docs/dmr/**`, D1-C integration, the other two owned directories, firmware or shared CMake.
+2. **Lead integration follows:** after each agent reports commit SHA and exact test results, inspect and combine the additive pre-roll and slot evidence APIs into `components/orcsdr_dmr/d1_integration/**`; re-run CI and the recorded-IQ harness. Preserve evidence-level distinctions and existing validated identity checks.
+3. **Device separate:** F0c microSD adapter still needs physical ESP32-P4 SD/power interruption evidence, internal RAM/PSRAM measurements and non-destructive P25 compatibility; D2 scan/UI remains gated by accepted host decoder behavior. **Dashboard design remains deferred.**
+
+See [NEXT_PHASE_D1_ACCEPTANCE.md](NEXT_PHASE_D1_ACCEPTANCE.md) for stop/acceptance criteria and exact commands. **Latest phase documentation is not a claim of a completed decoder or verified real-air capture.**
 
 ## Non-negotiable architecture and safety rules
 
