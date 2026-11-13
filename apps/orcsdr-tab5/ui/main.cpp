@@ -79,6 +79,7 @@
 #include "ft8_runtime.hpp"
 #include "memory_reclaim.hpp"
 #include "memory_ledger.hpp"
+#include "serial_dead_air.hpp"
 #include "serial_help.hpp"
 #include "serial_keyboard.hpp"
 #include "serial_memory.hpp"
@@ -20075,6 +20076,17 @@ static constexpr orcsdr::serial_rds::Hooks kSerialRdsHooks{
 #endif
 };
 
+// The RTL_DEAD_AIR commands live in serial_dead_air.cpp; they call the same dead_air_app functions as before.
+static constexpr orcsdr::serial_dead_air::Hooks kSerialDeadAirHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    orcsdr::dead_air_app::flood_manual_marks,
+    orcsdr::dead_air_app::describe,
+    orcsdr::dead_air_app::describe_veil,
+    orcsdr::dead_air_app::veil_command,
+    orcsdr::dead_air_app::describe_env,
+};
+
 void process_command(char* command) {
   if (strncmp(command, "JS8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
     process_js8_command(command + 3);
@@ -20344,43 +20356,7 @@ void process_command(char* command) {
                   heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
     return;
   }
-  if (strncmp(command, "RTL_DEAD_AIR FLOOD ", 19) == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_DEAD_AIR_FLOOD_ERROR auth_required");
-      return;
-    }
-    const uint32_t logged = orcsdr::dead_air_app::flood_manual_marks(static_cast<uint32_t>(atoi(command + 19)));
-    Serial.printf("RTL_DEAD_AIR_FLOOD logged=%lu\n", static_cast<unsigned long>(logged));
-    return;
-  }
-  if (strcmp(command, "RTL_DEAD_AIR STATUS") == 0) {
-    char line[768];
-    orcsdr::dead_air_app::describe(line, sizeof(line));
-    Serial.println(line);
-    return;
-  }
-  if (strcmp(command, "RTL_DEAD_AIR VEIL") == 0) {
-    char line[560];
-    orcsdr::dead_air_app::describe_veil(line, sizeof(line));
-    Serial.println(line);
-    return;
-  }
-  if (strncmp(command, "RTL_DEAD_AIR VEIL ", 18) == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_DEAD_AIR_VEIL_ERROR auth_required");
-      return;
-    }
-    char reply[160];
-    orcsdr::dead_air_app::veil_command(command + 18, reply, sizeof(reply));
-    Serial.println(reply);
-    return;
-  }
-  if (strcmp(command, "RTL_DEAD_AIR ENV") == 0) {
-    char line[420];
-    orcsdr::dead_air_app::describe_env(line, sizeof(line));
-    Serial.println(line);
-    return;
-  }
+  if (orcsdr::serial_dead_air::handle_command(command, authenticated, kSerialDeadAirHooks)) return;
   if (strcmp(command, "RTL_ACARS STATUS") == 0) {
     char line[900];
     orcsdr::acars_app::describe(line, sizeof(line));
