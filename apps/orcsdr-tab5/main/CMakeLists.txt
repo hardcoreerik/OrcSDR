@@ -82,6 +82,7 @@ idf_component_register(
         "../ui/serial_dsp.cpp"
         "../ui/serial_pocsag.cpp"
         "../ui/serial_keyboard.cpp"
+        "../ui/serial_rds.cpp"
         "../ui/ft8_hunter.cpp"
         "../ui/ft8_dashboard.cpp"
         "../ui/ft8_map_source.cpp"

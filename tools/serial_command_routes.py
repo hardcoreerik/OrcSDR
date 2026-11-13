@@ -51,6 +51,7 @@ FAMILIES = {
     "orcsdr::serial_memory": "apps/orcsdr-tab5/ui/serial_memory.cpp",
     "orcsdr::serial_pocsag": "apps/orcsdr-tab5/ui/serial_pocsag.cpp",
     "orcsdr::serial_keyboard": "apps/orcsdr-tab5/ui/serial_keyboard.cpp",
+    "orcsdr::serial_rds": "apps/orcsdr-tab5/ui/serial_rds.cpp",
 }
 FAMILY_SIGNATURE = "bool handle_command(const char* command, bool authenticated, const Hooks& hooks) {"
 FAMILY_CALL = re.compile(r"([\w:]+)::handle_command\(command, authenticated, \w+\)")

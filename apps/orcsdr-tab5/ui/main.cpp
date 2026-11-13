@@ -84,6 +84,7 @@
 #include "serial_memory.hpp"
 #include "serial_dsp.hpp"
 #include "serial_pocsag.hpp"
+#include "serial_rds.hpp"
 #include "esp_memory_utils.h"
 #include "shortwave_model.hpp"
 #include "shortwave_audio_dsp.hpp"
@@ -20026,6 +20027,52 @@ static constexpr orcsdr::serial_keyboard::Hooks kSerialKeyboardHooks{
       g_keyboard_echo = on;
       return g_keyboard_echo;
     },
+// The RTL_RDS commands live in serial_rds.cpp; these are the device actions and the facts RTL_RDS_STATUS prints.
+static constexpr orcsdr::serial_rds::Hooks kSerialRdsHooks{
+    [](const char* text) { Serial.print(text); },
+    [] { (void)rds_capture_start(); },
+    [] { (void)rds_capture_stop_and_export(); },
+    rds_capture_status_print,
+    [](const char* path) { (void)rds_replay(path); },
+    []() -> orcsdr::serial_rds::Status {
+      const RdsSelection selection = rds_select();
+      const RdsHypothesis& best = *selection.best;
+      esp_rtl_sdr_metrics_t metrics{};
+      if (g_rtl != nullptr) (void)esp_rtl_sdr_get_metrics(g_rtl, &metrics);
+      orcsdr::serial_rds::Status status;
+      status.carrier_present = rtl_rds_carrier_present.load(std::memory_order_relaxed);
+      status.carrier_signal_dbfs = rtl_rds_signal_dbfs.load(std::memory_order_relaxed);
+      status.block_locked = selection.locked;
+      status.good_blocks = best.good_blocks;
+      status.total_blocks = best.total_blocks;
+      status.parity_streak[0] = selection.parity_streak[0];
+      status.parity_streak[1] = selection.parity_streak[1];
+      status.pilot_pll_locked = rtl_audio.rds_pilot_pll_locked;
+      status.ps = rtl_rds_ps;
+      status.rt = rtl_rds_rt;
+      status.pi = rtl_rds_pi.load(std::memory_order_relaxed);
+      status.chip_rate = kRdsChipInc * kRdsMpxRateHz;
+      status.chip_rate_correction_ppm = kRdsChipRateCorrectionPpm;
+      status.i_lpf = rtl_audio.rds_i_lpf2;
+      status.q_lpf = rtl_audio.rds_q_lpf2;
+      status.chip_phase = selection.chip_phase;
+      for (int i = 0; i < 4; ++i) status.group_info[i] = best.group_info[i];
+      status.driver_overruns = metrics.overruns;
+      status.driver_drops = metrics.consumer_drops;
+      status.effective_sps = metrics.effective_sps;
+      status.audio_chunks = rtl_audio.queued_chunks;
+      status.audio_drops = rtl_audio.dropped_chunks;
+      return status;
+    },
+#if ORCSDR_DSP_AB
+    [](const char* path) {
+      dsp_ab_replay_per_sample = true;
+      (void)rds_replay(path);
+      dsp_ab_replay_per_sample = false;
+    },
+#else
+    nullptr,
+#endif
 };
 
 void process_command(char* command) {
@@ -22384,68 +22431,7 @@ void process_command(char* command) {
                   fm_presets[index].freq_hz);
     return;
   }
-  if (strcmp(command, "RTL_RDS_CAPTURE_START") == 0) {
-    (void)rds_capture_start();
-    return;
-  }
-  if (strcmp(command, "RTL_RDS_CAPTURE_STOP") == 0 ||
-      strcmp(command, "RTL_RDS_CAPTURE_SAVE") == 0) {
-    (void)rds_capture_stop_and_export();
-    return;
-  }
-  if (strcmp(command, "RTL_RDS_CAPTURE_STATUS") == 0) {
-    rds_capture_status_print();
-    return;
-  }
-  if (strncmp(command, "RTL_RDS_REPLAY ", 15) == 0) {
-    (void)rds_replay(command + 15);
-    return;
-  }
-#if ORCSDR_DSP_AB
-  // Same replay through the old per-sample feed, for A/B against the block feed.
-  if (strncmp(command, "RTL_RDS_REPLAY_SAMPLE ", 22) == 0) {
-    dsp_ab_replay_per_sample = true;
-    (void)rds_replay(command + 22);
-    dsp_ab_replay_per_sample = false;
-    return;
-  }
-#endif
-  if (strcmp(command, "RTL_RDS_STATUS") == 0) {
-    const RdsSelection selection = rds_select();
-    const RdsHypothesis& best = *selection.best;
-    esp_rtl_sdr_metrics_t metrics{};
-    if (g_rtl != nullptr) (void)esp_rtl_sdr_get_metrics(g_rtl, &metrics);
-    const float bler = best.total_blocks > 0
-                           ? 100.0f * (1.0f - static_cast<float>(best.good_blocks) /
-                                                   static_cast<float>(best.total_blocks))
-                           : 100.0f;
-    Serial.printf(
-        "RDS_STATUS carrier=%d carrier_signal=%.1f block_locked=%d bler=%.1f%% "
-        "good=%lu total=%lu hyp0_streak=%d hyp1_streak=%d "
-        "pilot_pll=%d ps=\"%s\" rt=\"%s\" pi=%04X "
-        "timing_chip_rate=%.2f timing_correction_ppm=%.1f "
-        "nco_freq_off=%.6f i_lpf=%.2f q_lpf=%.2f mu=%.3f "
-        "A=%04x B=%04x C=%04x D=%04x driver_overruns=%u driver_drops=%u "
-        "effective_sps=%u audio_chunks=%u audio_drops=%u\n",
-        rtl_rds_carrier_present.load(std::memory_order_relaxed) ? 1 : 0,
-        static_cast<double>(rtl_rds_signal_dbfs.load(std::memory_order_relaxed)),
-        selection.locked, static_cast<double>(bler),
-        static_cast<unsigned long>(best.good_blocks),
-        static_cast<unsigned long>(best.total_blocks), selection.parity_streak[0],
-        selection.parity_streak[1],
-        rtl_audio.rds_pilot_pll_locked ? 1 : 0, rtl_rds_ps, rtl_rds_rt,
-        rtl_rds_pi.load(std::memory_order_relaxed),
-        static_cast<double>(kRdsChipInc * kRdsMpxRateHz),
-        static_cast<double>(kRdsChipRateCorrectionPpm),
-        0.0,
-        static_cast<double>(rtl_audio.rds_i_lpf2),
-        static_cast<double>(rtl_audio.rds_q_lpf2),
-        static_cast<double>(selection.chip_phase),
-        best.group_info[0], best.group_info[1], best.group_info[2], best.group_info[3],
-        metrics.overruns, metrics.consumer_drops, metrics.effective_sps,
-        rtl_audio.queued_chunks, rtl_audio.dropped_chunks);
-    return;
-  }
+  if (orcsdr::serial_rds::handle_command(command, authenticated, kSerialRdsHooks)) return;
 
   if (strncmp(command, "PAIR ", 5) == 0) {
     uint8_t candidate[sizeof(pairing_key)];
