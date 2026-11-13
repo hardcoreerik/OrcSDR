@@ -341,7 +341,7 @@ void live_vdl2_formats() {
   }
   interpret(make("H1", '9', '?', arinc[0][0]), r);
   dump(r);
-  CHECK(any_line_contains(r, "Downlink   Ground address USADCXA   ATC data"));
+  CHECK(any_line_contains(r, "Downlink   Ground address USADCXA   FANS CPDLC payload (not interpreted)"));
   CHECK(any_line_contains(r, "Content as received: 6082D82603"));
   // A damaged checksum or data is not decoded as an ARINC 622 message.
   CHECK(interpret(make("H1", '9', '?', "F06AWN0436#M1B/BA USADCXA.AT1.N926WN6082D826032E1E"), r) && std::strcmp(r.headline, "FANS CPDLC ENVELOPE (ARINC 622)") != 0);
