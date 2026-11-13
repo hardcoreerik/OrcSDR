@@ -19968,6 +19968,8 @@ static constexpr orcsdr::serial_dsp::Hooks kSerialDspHooks{
     nullptr,
     nullptr,
 #endif
+};
+
 // The RTL_POCSAG commands live in serial_pocsag.cpp; these are the device actions they need.
 static constexpr orcsdr::serial_pocsag::Hooks kSerialPocsagHooks{
     [](const char* text) { Serial.print(text); },
@@ -19995,6 +19997,9 @@ static constexpr orcsdr::serial_pocsag::Hooks kSerialPocsagHooks{
       // explicitly above rather than left to go stale like a plain retune would.
       queue_local_rtl_listen(RtlBand::pocsag, clamped);
       return clamped;
+    },
+};
+
 // The RTL_KEYBOARD commands live in serial_keyboard.cpp; this is what they read and do on the device.
 static constexpr orcsdr::serial_keyboard::Hooks kSerialKeyboardHooks{
     [](const char* text) { Serial.print(text); },
