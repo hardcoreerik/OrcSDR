@@ -87,6 +87,7 @@
 #include "serial_pocsag.hpp"
 #include "serial_rds.hpp"
 #include "serial_p25.hpp"
+#include "serial_wifi.hpp"
 #include "esp_memory_utils.h"
 #include "shortwave_model.hpp"
 #include "shortwave_audio_dsp.hpp"
@@ -20238,6 +20239,136 @@ static constexpr orcsdr::serial_p25::Hooks kSerialP25Hooks{
     },
 };
 
+// The RTL_WIFI commands live in serial_wifi.cpp; these are the device facts they read and the actions they start.
+static constexpr orcsdr::serial_wifi::Hooks kSerialWifiHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    [](const uint8_t* bytes, size_t size) { print_hex(bytes, size); },
+    [] { wifi_scan_requested.store(true, std::memory_order_release); },
+    []() -> uint8_t { return wifi_profile_count; },
+    [] {
+      select_wifi_profile(0);
+      wifi_connect_requested.store(true, std::memory_order_release);
+    },
+    []() -> orcsdr::serial_wifi::ScanSummary {
+      orcsdr::serial_wifi::ScanSummary summary;
+      summary.count = static_cast<unsigned>(wifi_scan_result_count);
+      summary.total = static_cast<unsigned>(wifi_network_count);
+      summary.revision = static_cast<unsigned>(wifi_scan_revision);
+      summary.age_s = static_cast<unsigned>(wifi_last_scan_completed_ms == 0 ? 0 :
+                                            (millis() - wifi_last_scan_completed_ms) / 1000);
+      summary.duration_ms = static_cast<unsigned>(wifi_last_scan_duration_ms);
+      return summary;
+    },
+    []() -> uint8_t { return wifi_scan_result_count; },
+    [](uint8_t index) -> orcsdr::serial_wifi::ScanResult {
+      orcsdr::serial_wifi::ScanResult ap;
+      ap.ssid = wifi_scan_results[index].ssid;
+      ap.bssid = wifi_scan_results[index].bssid;
+      ap.rssi = wifi_scan_results[index].rssi;
+      ap.channel = static_cast<unsigned>(wifi_scan_results[index].channel);
+      ap.secure = wifi_scan_results[index].secure ? 1 : 0;
+      ap.security = wifi_scan_results[index].security;
+      ap.phy = wifi_scan_results[index].phy;
+      ap.ht40 = wifi_scan_results[index].secondary_channel_offset == 0 ? 0 : 1;
+      return ap;
+    },
+    [](uint8_t index) -> const char* { return wifi_profiles[index].ssid; },
+    [](uint8_t index) -> bool {
+      return wifi_connected && strcmp(orcsdr::wifi::ssid(), wifi_profiles[index].ssid) == 0;
+    },
+    [](uint32_t seconds) { orcsdr::wifi::simulate_outage(seconds); },
+    []() -> unsigned long { return static_cast<unsigned long>(orcsdr::wifi::outage_remaining_s()); },
+    []() -> bool { return disconnect_wifi(); },
+#if ORCSDR_C6_FAULT_TEST
+    [](bool enable) -> bool {
+      const bool ok = enable ? M5.In_I2C.bitOn(0x44, 0x05, 1, 400000)
+                             : M5.In_I2C.bitOff(0x44, 0x05, 1, 400000);
+      log_radio_power_registers(enable ? "test_wlan_on" : "test_wlan_off");
+      return ok;
+    },
+#else
+    nullptr,
+#endif
+    []() -> orcsdr::serial_wifi::BusStatus {
+      log_radio_power_registers("serial_status");
+      orcsdr::serial_wifi::BusStatus bus;
+      bus.wlan_enable = M5.getIOExpander(1).getWriteValue(0);
+      bus.wlan_input = M5.getIOExpander(1).digitalRead(0);
+      bus.hosted_ready = orcsdr::wifi::hosted_transport_ready();
+      bus.link_failed = orcsdr::wifi::link_failed();
+      bus.capture_state = unsigned(rtl_capture_state.load(std::memory_order_acquire));
+      return bus;
+    },
+    []() -> orcsdr::serial_wifi::Status {
+      orcsdr::serial_wifi::Status s;
+      s.station = wifi_station_ready ? 1 : 0;
+      s.hosted_match = wifi_hosted_versions_match ? 1 : 0;
+      s.scanning = wifi_scan_running ? 1 : 0;
+      s.connecting = wifi_connecting ? 1 : 0;
+      s.connected = wifi_connected ? 1 : 0;
+      s.saved_profiles = wifi_profile_count;
+      s.power = settings_wifi_power_enabled ? 1 : 0;
+      s.auto_connect = settings_wifi_start_at_boot ? 1 : 0;
+      s.antenna = settings_wifi_external_antenna ? "external" : "internal";
+      s.ap_count = static_cast<unsigned>(wifi_scan_result_count);
+      s.rssi = static_cast<int>(orcsdr::wifi::rssi());
+      s.outage_s = static_cast<unsigned long>(orcsdr::wifi::outage_remaining_s());
+      return s;
+    },
+    [](orcsdr::serial_wifi::Link* out) -> bool {
+      orcsdr::wifi::LinkDetails link{};
+      if (!orcsdr::wifi::link_details(&link)) return false;
+      out->rssi = link.rssi;
+      out->channel = link.channel;
+      out->second_channel = link.second_channel;
+      out->b = link.b;
+      out->g = link.g;
+      out->n = link.n;
+      out->ax = link.ax;
+      out->ps_mode = link.ps_mode;
+      out->bandwidth = link.bandwidth;
+      return true;
+    },
+    []() -> orcsdr::serial_wifi::Channel {
+      orcsdr::serial_wifi::Channel c;
+      uint8_t primary = 0;
+      wifi_second_chan_t secondary = WIFI_SECOND_CHAN_NONE;
+      const esp_err_t result = esp_wifi_get_channel(&primary, &secondary);
+      if (result != ESP_OK) {
+        c.ok = false;
+        c.error = esp_err_to_name(result);
+        return c;
+      }
+      wifi_ap_record_t ap{};
+      const bool has_ap = wifi_connected && esp_wifi_sta_get_ap_info(&ap) == ESP_OK;
+      c.primary = unsigned(primary);
+      c.secondary = unsigned(secondary);
+      c.connected = wifi_connected ? 1 : 0;
+      c.has_ap = has_ap;
+      if (has_ap) {
+        memcpy(c.ssid, ap.ssid, sizeof(c.ssid));
+        c.ssid_length = strnlen(reinterpret_cast<const char*>(ap.ssid), sizeof(ap.ssid));
+        c.ap_primary = unsigned(ap.primary);
+      }
+      return c;
+    },
+    []() -> orcsdr::serial_wifi::C6Status {
+      const auto c6 = orcsdr::wifi::c6_update_status();
+      orcsdr::serial_wifi::C6Status status;
+      status.coprocessor = orcsdr::wifi::hosted_c6_version();
+      status.transport = orcsdr::wifi::hosted_transport_ready() ? 1 : 0;
+      status.embedded = c6.image_embedded ? 1 : 0;
+      status.state = orcsdr::wifi::c6_update_state_name(c6.state);
+      status.percent = static_cast<unsigned>(c6.progress_percent);
+      memcpy(status.stage, c6.stage, sizeof(status.stage));
+      status.match = orcsdr::wifi::hosted_versions_match() ? 1 : 0;
+      return status;
+    },
+    []() -> bool { return orcsdr::wifi::begin_c6_update(); },
+    [] { print_wifi_coexistence_status(); },
+};
+
 void process_command(char* command) {
   if (strncmp(command, "JS8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
     process_js8_command(command + 3);
@@ -20852,165 +20983,7 @@ void process_command(char* command) {
     Serial.println("RTL_UI_ACTION_INVALID unknown_action");
     return;
   }
-  if (strcmp(command, "RTL_WIFI_SCAN") == 0) {
-    wifi_scan_requested.store(true, std::memory_order_release);
-    Serial.println("RTL_WIFI_SCAN_QUEUED");
-    return;
-  }
-  if (strcmp(command, "RTL_WIFI_CONNECT_SAVED") == 0 ||
-      strcmp(command, "RTL_WIFI_CONNECT_SAVED PAUSE") == 0) {
-    if (wifi_profile_count == 0) {
-      Serial.println("RTL_WIFI_CONNECT_ERROR no_saved_profile");
-      return;
-    }
-    select_wifi_profile(0);
-    wifi_connect_requested.store(true, std::memory_order_release);
-    Serial.println("RTL_WIFI_CONNECT_QUEUED saved_profile=0 mode=pause");
-    return;
-  }
-  if (strcmp(command, "RTL_WIFI_RESULTS") == 0) {
-    Serial.printf("RTL_WIFI_RESULTS_BEGIN count=%u total=%u revision=%u age_s=%u duration_ms=%u\n",
-                  static_cast<unsigned>(wifi_scan_result_count),
-                  static_cast<unsigned>(wifi_network_count),
-                  static_cast<unsigned>(wifi_scan_revision),
-                  static_cast<unsigned>(wifi_last_scan_completed_ms == 0 ? 0 :
-                      (millis() - wifi_last_scan_completed_ms) / 1000),
-                  static_cast<unsigned>(wifi_last_scan_duration_ms));
-    for (uint8_t i = 0; i < wifi_scan_result_count; ++i) {
-      Serial.printf("RTL_WIFI_AP index=%u ssid_hex=", static_cast<unsigned>(i));
-      print_hex(reinterpret_cast<const uint8_t*>(wifi_scan_results[i].ssid),
-                strlen(wifi_scan_results[i].ssid));
-      Serial.print(" bssid=");
-      print_hex(wifi_scan_results[i].bssid, sizeof(wifi_scan_results[i].bssid));
-      Serial.printf(" rssi=%d channel=%u secure=%d security=%s phy=%s ht40=%d\n", wifi_scan_results[i].rssi,
-                    static_cast<unsigned>(wifi_scan_results[i].channel),
-                    wifi_scan_results[i].secure ? 1 : 0,
-                    wifi_scan_results[i].security, wifi_scan_results[i].phy,
-                    wifi_scan_results[i].secondary_channel_offset == 0 ? 0 : 1);
-    }
-    Serial.println("RTL_WIFI_RESULTS_END");
-    return;
-  }
-  if (strcmp(command, "RTL_WIFI_PROFILES") == 0) {
-    Serial.printf("RTL_WIFI_PROFILES_BEGIN count=%u\n",
-                  static_cast<unsigned>(wifi_profile_count));
-    for (uint8_t i = 0; i < wifi_profile_count; ++i) {
-      Serial.printf("RTL_WIFI_PROFILE index=%u ssid_hex=", static_cast<unsigned>(i));
-      print_hex(reinterpret_cast<const uint8_t*>(wifi_profiles[i].ssid),
-                strlen(wifi_profiles[i].ssid));
-      Serial.printf(" connected=%d\n",
-                    wifi_connected && strcmp(orcsdr::wifi::ssid(), wifi_profiles[i].ssid) == 0);
-    }
-    Serial.println("RTL_WIFI_PROFILES_END");
-    return;
-  }
-  if (strncmp(command, "RTL_WIFI_OUTAGE", 15) == 0 && (command[15] == '\0' || command[15] == ' ')) {
-    // Test fault injection: the access point 'vanishes' for N seconds (see wifi_service.hpp). Needs an authenticated session.
-    if (!authenticated) {
-      Serial.println("RTL_WIFI_OUTAGE_ERROR auth_required");
-      return;
-    }
-    const unsigned long seconds = strtoul(command + 15, nullptr, 10);
-    if (seconds > 1800) {
-      Serial.println("RTL_WIFI_OUTAGE_ERROR use 0 (cancel) to 1800 seconds");
-      return;
-    }
-    if (command[15] != '\0') orcsdr::wifi::simulate_outage(static_cast<uint32_t>(seconds));
-    Serial.printf("RTL_WIFI_OUTAGE seconds_left=%lu\n", static_cast<unsigned long>(orcsdr::wifi::outage_remaining_s()));
-    return;
-  }
-  if (strcmp(command, "RTL_WIFI_DISCONNECT") == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_WIFI_DISCONNECT_ERROR auth_required");
-      return;
-    }
-    Serial.println(disconnect_wifi() ? "RTL_WIFI_DISCONNECT_OK"
-                                     : "RTL_WIFI_DISCONNECT_ERROR radio_pause_failed");
-    return;
-  }
-#if ORCSDR_C6_FAULT_TEST
-  if (strcmp(command, "RTL_WIFI_TEST_C6_POWER OFF CONFIRM") == 0 ||
-      strcmp(command, "RTL_WIFI_TEST_C6_POWER ON CONFIRM") == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_WIFI_TEST_C6_POWER_ERROR auth_required");
-      return;
-    }
-    const bool enable = strcmp(command, "RTL_WIFI_TEST_C6_POWER ON CONFIRM") == 0;
-    // Only WLAN P0 changes. USB power P3 remains untouched. This lab command
-    // deliberately bypasses the normal receiver pause to exercise failure.
-    const bool ok = enable ? M5.In_I2C.bitOn(0x44, 0x05, 1, 400000)
-                           : M5.In_I2C.bitOff(0x44, 0x05, 1, 400000);
-    log_radio_power_registers(enable ? "test_wlan_on" : "test_wlan_off");
-    Serial.printf("RTL_WIFI_TEST_C6_POWER_RESULT enabled=%d write_ok=%d\n", enable, ok);
-    return;
-  }
-#endif
-  if (strcmp(command, "RTL_WIFI_BUS_STATUS") == 0) {
-    log_radio_power_registers("serial_status");
-    // Local reads only: this remains usable when a Hosted RPC cannot reply.
-    Serial.printf("RTL_WIFI_BUS_STATUS wlan_enable=%d wlan_input=%d hosted_ready=%d link_failed=%d capture_state=%u\n",
-                  M5.getIOExpander(1).getWriteValue(0),
-                  M5.getIOExpander(1).digitalRead(0),
-                  orcsdr::wifi::hosted_transport_ready(), orcsdr::wifi::link_failed(),
-                  unsigned(rtl_capture_state.load(std::memory_order_acquire)));
-    return;
-  }
-  if (strcmp(command, "RTL_WIFI_STATUS") == 0) {
-    Serial.printf("RTL_WIFI_STATUS station=%d hosted_match=%d scanning=%d connecting=%d "
-                  "connected=%d saved_profiles=%u power=%d auto_connect=%d antenna=%s "
-                  "ap_count=%u rssi=%d outage_s=%lu\n",
-                  wifi_station_ready ? 1 : 0, wifi_hosted_versions_match ? 1 : 0,
-                  wifi_scan_running ? 1 : 0, wifi_connecting ? 1 : 0,
-                  wifi_connected ? 1 : 0, wifi_profile_count,
-                  settings_wifi_power_enabled ? 1 : 0,
-                  settings_wifi_start_at_boot ? 1 : 0,
-                  settings_wifi_external_antenna ? "external" : "internal",
-                  static_cast<unsigned>(wifi_scan_result_count),
-                  static_cast<int>(orcsdr::wifi::rssi()),
-                  static_cast<unsigned long>(orcsdr::wifi::outage_remaining_s()));
-    orcsdr::wifi::LinkDetails link{};
-    if (orcsdr::wifi::link_details(&link))
-      Serial.printf("RTL_WIFI_LINK rssi=%d channel=%u second=%u b=%d g=%d n=%d ax=%d ps=%d bandwidth=%d\n",
-                    link.rssi, link.channel, link.second_channel, link.b, link.g, link.n, link.ax,
-                    link.ps_mode, link.bandwidth);
-    return;
-  }
-  if (strcmp(command, "RTL_WIFI_CHANNEL") == 0) {
-    uint8_t primary = 0;
-    wifi_second_chan_t secondary = WIFI_SECOND_CHAN_NONE;
-    const esp_err_t result = esp_wifi_get_channel(&primary, &secondary);
-    if (result != ESP_OK) {
-      Serial.printf("RTL_WIFI_CHANNEL_ERROR %s\n", esp_err_to_name(result));
-      return;
-    }
-    wifi_ap_record_t ap{};
-    const bool has_ap = wifi_connected && esp_wifi_sta_get_ap_info(&ap) == ESP_OK;
-    Serial.printf("RTL_WIFI_CHANNEL primary=%u secondary=%u connected=%d ssid_hex=",
-                  unsigned(primary), unsigned(secondary), wifi_connected ? 1 : 0);
-    if (has_ap) print_hex(ap.ssid, strnlen(reinterpret_cast<const char*>(ap.ssid), sizeof(ap.ssid)));
-    Serial.printf(" ap_primary=%u\n", has_ap ? unsigned(ap.primary) : 0);
-    return;
-  }
-  if (strcmp(command, "RTL_WIFI_C6_STATUS") == 0) {
-    const auto c6 = orcsdr::wifi::c6_update_status();
-    Serial.printf("RTL_WIFI_C6_STATUS host=3.0.6 coprocessor=%s transport=%d embedded=%d "
-                  "state=%s percent=%u stage=%s match=%d\n",
-                  orcsdr::wifi::hosted_c6_version(), orcsdr::wifi::hosted_transport_ready() ? 1 : 0,
-                  c6.image_embedded ? 1 : 0, orcsdr::wifi::c6_update_state_name(c6.state),
-                  static_cast<unsigned>(c6.progress_percent), c6.stage[0] ? c6.stage : "none",
-                  orcsdr::wifi::hosted_versions_match() ? 1 : 0);
-    return;
-  }
-  if (strcmp(command, "RTL_WIFI_C6_UPDATE CONFIRM") == 0) {
-    if (!authenticated) { Serial.println("RTL_WIFI_C6_UPDATE_ERROR auth_required"); return; }
-    Serial.println(orcsdr::wifi::begin_c6_update() ? "RTL_WIFI_C6_UPDATE_QUEUED"
-                                                    : "RTL_WIFI_C6_UPDATE_ERROR not_ready");
-    return;
-  }
-  if (strcmp(command, "RTL_WIFI_COEX_STATUS") == 0) {
-    print_wifi_coexistence_status();
-    return;
-  }
+  if (orcsdr::serial_wifi::handle_command(command, authenticated, kSerialWifiHooks)) return;
   // UI_TAP x y: one finger press at panel coordinates, through the same path as a real touch (the virtual tap the keyboard's
   // Enter key uses), so every screen's own touch handling runs unchanged. For hands-off test automation over USB serial:
   // authenticated, one tap at a time (a new tap while one is still playing is refused), panel is 1280 x 720.

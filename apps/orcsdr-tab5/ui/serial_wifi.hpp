@@ -83,7 +83,7 @@ struct C6Status {
   int embedded = 0;
   const char* state = "";
   unsigned percent = 0;
-  const char* stage = "";            // empty when there is none
+  char stage[24] = {};               // empty when there is none
   int match = 0;
 };
 

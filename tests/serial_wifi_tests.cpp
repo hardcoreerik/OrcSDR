@@ -110,7 +110,11 @@ Hooks make_hooks() {
     c.ap_primary = 6;
     return c;
   };
-  hooks.c6_status = []() -> C6Status { return {"3.0.6", 1, 1, "downloading", 42, g_stage.c_str(), 1}; };
+  hooks.c6_status = []() -> C6Status {
+    C6Status c6{"3.0.6", 1, 1, "downloading", 42, {}, 1};
+    std::snprintf(c6.stage, sizeof(c6.stage), "%s", g_stage.c_str());
+    return c6;
+  };
   hooks.begin_c6_update = []() -> bool { g_calls.push_back("c6_update"); return g_c6_update_ok; };
   hooks.print_coexistence = [] { g_calls.push_back("coex"); g_out.push_back("W:RTL_WIFI_COEX_STATUS fake\n"); };
   return hooks;
