@@ -100,6 +100,7 @@
 #include "serial_p25.hpp"
 #include "serial_rtc.hpp"
 #include "serial_wifi.hpp"
+#include "serial_health.hpp"
 #include "serial_verbosity.hpp"
 #include "serial_scope.hpp"
 #include "serial_status.hpp"
@@ -20794,6 +20795,30 @@ static constexpr orcsdr::serial_verbosity::Hooks kSerialVerbosityHooks{
     },
 };
 
+// The RTL_HEALTH command lives in serial_health.cpp; the snapshot reads the figures in the order the reply prints them.
+static constexpr orcsdr::serial_health::Hooks kSerialHealthHooks{
+    [](const char* text) { Serial.print(text); },
+    []() -> orcsdr::serial_health::Snapshot {
+      const uint32_t dma_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA;
+      orcsdr::serial_health::Snapshot s;
+      s.uptime_ms = millis();
+      s.free_heap = esp_get_free_heap_size();
+      s.min_free_heap = esp_get_minimum_free_heap_size();
+      s.dma_free = heap_caps_get_free_size(dma_caps);
+      s.dma_min = heap_caps_get_minimum_free_size(dma_caps);
+      s.dma_largest = heap_caps_get_largest_free_block(dma_caps);
+      s.tasks = static_cast<unsigned>(uxTaskGetNumberOfTasks());
+      s.main_stack_hwm = static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr));
+      s.reset_reason = static_cast<int>(esp_reset_reason());
+      s.internal_free = heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+      s.internal_min = heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+      s.internal_largest = heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT);
+      s.psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+      s.psram_largest = heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM);
+      return s;
+    },
+};
+
 void process_command(char* command) {
   if (strncmp(command, "JS8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
     process_js8_command(command + 3);
@@ -21007,26 +21032,7 @@ void process_command(char* command) {
   }
   if(orcsdr::lora::handle_map_command(command,authenticated,[](const char* line){Serial.print(line);}))return;
   if(orcsdr::maps::serial_control::handle(command,authenticated,[](const char* line){Serial.print(line);}))return;
-  if (strcmp(command, "RTL_HEALTH") == 0) {
-    const uint32_t dma_caps = MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA;
-    Serial.printf("RTL_HEALTH_STATUS uptime_ms=%u free_heap=%u min_free_heap=%u "
-                  "dma_free=%u dma_min=%u dma_largest=%u tasks=%u main_stack_hwm=%u "
-                  "reset_reason=%d internal_free=%u internal_min=%u internal_largest=%u "
-                  "psram_free=%u psram_largest=%u\n",
-                  millis(), esp_get_free_heap_size(), esp_get_minimum_free_heap_size(),
-                  heap_caps_get_free_size(dma_caps),
-                  heap_caps_get_minimum_free_size(dma_caps),
-                  heap_caps_get_largest_free_block(dma_caps),
-                  static_cast<unsigned>(uxTaskGetNumberOfTasks()),
-                  static_cast<unsigned>(uxTaskGetStackHighWaterMark(nullptr)),
-                  static_cast<int>(esp_reset_reason()),
-                  heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
-                  heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
-                  heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
-                  heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
-                  heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
-    return;
-  }
+  if (orcsdr::serial_health::handle_command(command, authenticated, kSerialHealthHooks)) return;
   if (orcsdr::serial_dead_air::handle_command(command, authenticated, kSerialDeadAirHooks)) return;
   if (strcmp(command, "RTL_ACARS STATUS") == 0) {
     char line[900];
