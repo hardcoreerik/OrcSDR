@@ -86,6 +86,7 @@
 #include "serial_dsp.hpp"
 #include "serial_pocsag.hpp"
 #include "serial_rds.hpp"
+#include "serial_p25.hpp"
 #include "esp_memory_utils.h"
 #include "shortwave_model.hpp"
 #include "shortwave_audio_dsp.hpp"
@@ -20089,6 +20090,154 @@ static constexpr orcsdr::serial_dead_air::Hooks kSerialDeadAirHooks{
     orcsdr::dead_air_app::describe_env,
 };
 
+// The RTL_P25 commands live in serial_p25.cpp; these are the device facts they read and the actions they start.
+static void serial_p25_retune_if_shown() {
+  if (rtl_ui_band == RtlBand::p25 && p25_config.control_channel_count > 0)
+    tune_p25_control(p25_control_frequency_hz);
+}
+static constexpr orcsdr::serial_p25::Hooks kSerialP25Hooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    [] { (void)p25_iq_rec_start(); },
+    []() -> bool { return g_iq_rec_kind.load(std::memory_order_acquire) == IqCaptureKind::p25; },
+    [] {
+      g_sd_tried = false;
+      g_sd_ready = false;
+      (void)iq_rec_stop_and_export();
+    },
+    []() -> orcsdr::serial_p25::IqStatus {
+      orcsdr::serial_p25::IqStatus iq;
+      iq.source = iq_capture_kind_name(g_iq_rec_kind.load(std::memory_order_acquire));
+      iq.active = g_iq_rec_active.load(std::memory_order_acquire);
+      iq.ready = g_iq_rec_ready.load(std::memory_order_acquire);
+      iq.bytes = static_cast<unsigned>(g_iq_rec_write.load(std::memory_order_acquire));
+      iq.max_bytes = static_cast<unsigned>(kP25IqRecMaxBytes);
+      iq.frequency_hz = g_iq_rec_frequency_hz;
+      iq.rate = kRtlSampleRateSps;
+      iq.last_path = g_iq_rec_last_path;
+      return iq;
+    },
+    [](const char* path) { (void)p25_replay(path); },
+    []() -> orcsdr::serial_p25::Encryption {
+      orcsdr::serial_p25::Encryption state;
+      state.last = p25_last_encryption.load(std::memory_order_acquire);
+      state.detected = p25_encrypted_voice_seen.load(std::memory_order_acquire);
+      state.muted_frames = p25_encrypted_voice_muted_frames.load(std::memory_order_relaxed);
+      state.returns = p25_encrypted_voice_returns.load(std::memory_order_relaxed);
+      state.skip_enabled = p25_encryption_skip.load(std::memory_order_relaxed);
+      return state;
+    },
+    orcsdr::p25decoder::snapshot,
+    []() -> const orcsdr::p25config::Config* { return &p25_config; },
+    [](orcsdr::p25core::Modulation modulation) {
+      p25_config.modulation = modulation;
+      orcsdr::p25decoder::configure(p25_config.modulation, p25_config.cqpsk_timing_gain,
+                                   p25_config.cqpsk_carrier_gain);
+      request_p25_config_save();
+      serial_p25_retune_if_shown();
+    },
+    []() -> orcsdr::serial_p25::Status {
+      orcsdr::serial_p25::Status status;
+      esp_rtl_sdr_metrics_t metrics{};
+      if (g_rtl != nullptr) (void)esp_rtl_sdr_get_metrics(g_rtl, &metrics);
+      status.usb_overruns = metrics.overruns;
+      status.usb_drops = metrics.consumer_drops;
+      status.encryption = p25_last_encryption.load(std::memory_order_acquire);
+      const auto follow_state = p25_follow_state.load(std::memory_order_acquire);
+      status.follow = follow_state == P25FollowState::voice
+                          ? orcsdr::serial_p25::Follow::voice
+                          : follow_state == P25FollowState::phase2_probe
+                                ? orcsdr::serial_p25::Follow::phase2_probe
+                                : orcsdr::serial_p25::Follow::control;
+      status.frequency_hz = rtl_ui_frequency_hz;
+      status.survey = p25_survey_active.load(std::memory_order_relaxed);
+      status.candidate = p25_candidate_index;
+      status.hold = p25_hold.load(std::memory_order_relaxed);
+      status.hold_talkgroup = p25_hold_talkgroup;
+      status.auto_follow = p25_auto_follow.load(std::memory_order_relaxed);
+      status.encryption_skip = p25_encryption_skip.load(std::memory_order_relaxed);
+      status.relative_dbfs = rtl_signal_dbfs.load(std::memory_order_relaxed);
+      status.phase2_grant_events = p25_phase2_grant_events.load(std::memory_order_relaxed);
+      status.phase2_sync_events = p25_phase2_sync_events.load(std::memory_order_relaxed);
+      status.phase2_rejections = p25_phase2_rejections.load(std::memory_order_relaxed);
+      status.phase2_trace = p25_phase2_trace.load(std::memory_order_relaxed);
+      status.grant_events = p25_grant_events.load(std::memory_order_relaxed);
+      status.control_hz = p25_control_frequency_hz;
+      status.voice_hz = p25_voice_frequency_hz;
+      status.encrypted_detected = p25_encrypted_voice_seen.load(std::memory_order_acquire);
+      status.encrypted_muted_frames = p25_encrypted_voice_muted_frames.load(std::memory_order_relaxed);
+      status.encrypted_returns = p25_encrypted_voice_returns.load(std::memory_order_relaxed);
+      status.imbe_frames = p25_imbe_frames.load(std::memory_order_relaxed);
+      status.imbe_errors = p25_imbe_errors.load(std::memory_order_relaxed);
+      status.pcm_frames = p25_pcm_frames.load(std::memory_order_relaxed);
+      status.voice_stack_hwm = p25_voice_stack_hwm.load(std::memory_order_relaxed);
+      status.imbe_max_us = p25_imbe_max_us.load(std::memory_order_relaxed);
+      status.imbe_synth_max_us = p25_imbe_synth_max_us.load(std::memory_order_relaxed);
+      status.audio_queue_max_us = p25_audio_queue_max_us.load(std::memory_order_relaxed);
+      status.heap_free = static_cast<unsigned>(esp_get_free_heap_size());
+      status.heap_min = static_cast<unsigned>(esp_get_minimum_free_heap_size());
+      status.psram_free = static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM));
+      status.iq_drops = rtl_iq_pipeline_drops.load(std::memory_order_relaxed);
+      status.audio_drops = rtl_audio.dropped_chunks;
+      return status;
+    },
+    [](size_t index) -> float { return p25_candidate_levels[index]; },
+    []() -> const orcsdr::p25core::Grant* {
+      return p25_follow_state.load(std::memory_order_acquire) == P25FollowState::phase2_probe ? &p25_follow_grant
+                                                                                             : nullptr;
+    },
+    []() -> orcsdr::serial_p25::Phase2Events {
+      orcsdr::serial_p25::Phase2Events events;
+      events.trace = p25_phase2_trace.load(std::memory_order_relaxed);
+      events.grants = p25_phase2_grant_events.load(std::memory_order_relaxed);
+      events.syncs = p25_phase2_sync_events.load(std::memory_order_relaxed);
+      events.rejections = p25_phase2_rejections.load(std::memory_order_relaxed);
+      return events;
+    },
+    []() -> bool { return p25_phase2_trace.load(std::memory_order_relaxed); },
+    [](bool enabled) { p25_phase2_trace.store(enabled, std::memory_order_release); },
+    []() -> const orcsdr::p25config::StoreState* { return &p25_profiles; },
+    [](const char* id, char* error, size_t error_size) -> bool {
+      orcsdr::p25config::Config config{};
+      if (!ensure_tab5_sd() || g_sd_fs == nullptr ||
+          !orcsdr::p25config::select(*g_sd_fs, id, &config, &p25_profiles, error, error_size)) {
+        return false;
+      }
+      apply_p25_config(config, "P25 system selected");
+      serial_p25_retune_if_shown();
+      return true;
+    },
+    [](const char* path, const char* id, char* error, size_t error_size) -> bool {
+      return ensure_tab5_sd() && g_sd_fs != nullptr &&
+             orcsdr::p25config::import_profile(*g_sd_fs, path, id, &p25_profiles, error, error_size);
+    },
+    [](const char* id, const char* path, char* error, size_t error_size) -> bool {
+      return g_sd_fs != nullptr && orcsdr::p25config::export_profile(*g_sd_fs, id, path, error, error_size);
+    },
+    [](const char* id, const char* name, char* error, size_t error_size) -> bool {
+      return g_sd_fs != nullptr &&
+             orcsdr::p25config::rename_profile(*g_sd_fs, id, name, &p25_profiles, error, error_size);
+    },
+    [](const char* id, char* error, size_t error_size) -> bool {
+      return g_sd_fs != nullptr && orcsdr::p25config::delete_profile(*g_sd_fs, id, &p25_profiles, error, error_size);
+    },
+    load_p25_config,
+    []() -> const char* {
+      cancel_p25_survey();
+      load_p25_config();
+      serial_p25_retune_if_shown();
+      if (orcsdr::p25::active() && orcsdr::screens::owns(orcsdr::screens::Id::p25))
+        orcsdr::p25::draw();
+      return p25_config_status;
+    },
+    [] {
+      if (rtl_ui_band != RtlBand::p25)
+        queue_local_rtl_listen(RtlBand::p25, p25_control_frequency_hz);
+      if (!p25_survey_active.load(std::memory_order_relaxed))
+        handle_p25_dashboard_action({orcsdr::p25::ActionKind::survey_toggle});
+    },
+};
+
 void process_command(char* command) {
   if (strncmp(command, "JS8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
     process_js8_command(command + 3);
@@ -21884,373 +22033,7 @@ void process_command(char* command) {
     reset_rtl_usb_safe_mode_and_restart();
     return;
   }
-  if (strcmp(command, "RTL_P25_IQ_START") == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_P25_IQ_ERROR auth_required");
-      return;
-    }
-    (void)p25_iq_rec_start();
-    return;
-  }
-  if (strcmp(command, "RTL_P25_IQ_STOP") == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_P25_IQ_ERROR auth_required");
-      return;
-    }
-    if (g_iq_rec_kind.load(std::memory_order_acquire) != IqCaptureKind::p25) {
-      Serial.println("RTL_P25_IQ_ERROR no_p25_capture");
-      return;
-    }
-    g_sd_tried = false;
-    g_sd_ready = false;
-    (void)iq_rec_stop_and_export();
-    return;
-  }
-  if (strcmp(command, "RTL_P25_IQ_STATUS") == 0) {
-    Serial.printf(
-        "RTL_P25_IQ_STATUS source=%s active=%d ready=%d bytes=%u max_bytes=%u "
-        "frequency_hz=%lu rate=%u last_path=\"%s\"\n",
-        iq_capture_kind_name(g_iq_rec_kind.load(std::memory_order_acquire)),
-        g_iq_rec_active.load(std::memory_order_acquire) ? 1 : 0,
-        g_iq_rec_ready.load(std::memory_order_acquire) ? 1 : 0,
-        static_cast<unsigned>(g_iq_rec_write.load(std::memory_order_acquire)),
-        static_cast<unsigned>(kP25IqRecMaxBytes),
-        static_cast<unsigned long>(g_iq_rec_frequency_hz), kRtlSampleRateSps,
-        g_iq_rec_last_path[0] ? g_iq_rec_last_path : "none");
-    return;
-  }
-  if (strncmp(command, "RTL_P25_REPLAY ", 15) == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_P25_REPLAY_ERROR auth_required");
-      return;
-    }
-    (void)p25_replay(command + 15);
-    return;
-  }
-  if (strcmp(command, "RTL_P25_ENCRYPTION_STATUS") == 0) {
-    const uint32_t encryption = p25_last_encryption.load(std::memory_order_acquire);
-    Serial.printf(
-        "RTL_P25_ENCRYPTION_STATUS detected=%d algid=%02X kid=%04X muted_frames=%lu "
-        "returns=%lu skip_enabled=%d\n",
-        p25_encrypted_voice_seen.load(std::memory_order_acquire) ? 1 : 0,
-        static_cast<unsigned>(encryption >> 16),
-        static_cast<unsigned>(encryption & 0xFFFFu),
-        static_cast<unsigned long>(
-            p25_encrypted_voice_muted_frames.load(std::memory_order_relaxed)),
-        static_cast<unsigned long>(p25_encrypted_voice_returns.load(std::memory_order_relaxed)),
-        p25_encryption_skip.load(std::memory_order_relaxed) ? 1 : 0);
-    return;
-  }
-  if (strcmp(command, "RTL_P25_MODULATION") == 0) {
-    const auto decoded = orcsdr::p25decoder::snapshot();
-    Serial.printf("RTL_P25_MODULATION configured=%s selected=%s timing_gain=%.6f carrier_gain=%.6f\n",
-                  orcsdr::p25core::modulation_name(p25_config.modulation),
-                  orcsdr::p25core::modulation_name(decoded.selected_modulation),
-                  static_cast<double>(p25_config.cqpsk_timing_gain),
-                  static_cast<double>(p25_config.cqpsk_carrier_gain));
-    return;
-  }
-  if (strncmp(command, "RTL_P25_MODULATION ", 19) == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_P25_MODULATION_ERROR auth_required");
-      return;
-    }
-    const char* value = command + 19;
-    if (strcmp(value, "AUTO") == 0) p25_config.modulation = orcsdr::p25core::Modulation::auto_detect;
-    else if (strcmp(value, "C4FM") == 0) p25_config.modulation = orcsdr::p25core::Modulation::c4fm;
-    else if (strcmp(value, "CQPSK") == 0) p25_config.modulation = orcsdr::p25core::Modulation::cqpsk;
-    else {
-      Serial.println("RTL_P25_MODULATION_ERROR usage: RTL_P25_MODULATION AUTO|C4FM|CQPSK");
-      return;
-    }
-    orcsdr::p25decoder::configure(p25_config.modulation, p25_config.cqpsk_timing_gain,
-                                 p25_config.cqpsk_carrier_gain);
-    request_p25_config_save();
-    if (rtl_ui_band == RtlBand::p25 && p25_config.control_channel_count > 0)
-      tune_p25_control(p25_control_frequency_hz);
-    Serial.printf("RTL_P25_MODULATION_OK configured=%s\n",
-                  orcsdr::p25core::modulation_name(p25_config.modulation));
-    return;
-  }
-  if (strcmp(command, "RTL_P25_STATUS") == 0) {
-    const auto decoded = orcsdr::p25decoder::snapshot();
-    unsigned grant_count = 0;
-    for (const auto& grant : decoded.recent_grants) grant_count += grant.valid ? 1u : 0u;
-    esp_rtl_sdr_metrics_t metrics{};
-    if (g_rtl != nullptr) (void)esp_rtl_sdr_get_metrics(g_rtl, &metrics);
-    const uint32_t encryption = p25_last_encryption.load(std::memory_order_acquire);
-    const auto follow_state = p25_follow_state.load(std::memory_order_acquire);
-    const char* follow_name = follow_state == P25FollowState::voice
-                                  ? "voice"
-                                  : follow_state == P25FollowState::phase2_probe
-                                        ? "phase2_probe"
-                                        : "control";
-    Serial.printf(
-        "RTL_P25_STATUS configured=%d profile_id=\"%s\" profile=\"%s\" identity_source=air "
-        "frequency_hz=%lu survey=%d candidate=%u hold=%d hold_tg=%u auto_follow=%d "
-        "encryption_skip=%d relative_dbfs=%.1f "
-        "modulation_configured=%s modulation_selected=%s lock_quality=%.1f "
-        "timing_error=%.4f carrier_error_hz=%.1f decode_rate_hz=%.2f "
-        "frame_sync=%d identity=%d nac=%03X wacn=%05lX sysid=%03X rfss=%u site=%u "
-        "sync_words=%lu nid_good=%lu nid_failed=%lu tsbk_good=%lu tsbk_failed=%lu "
-        "p2_band_plans=%lu p2_grants=%lu p2_mapping_errors=%lu p2_syncs=%lu "
-        "p2_rejections=%lu p2_trace=%d "
-        "p2_active=%d p2_symbols=%lu p2_sync_words=%lu p2_complete_bursts=%lu "
-        "p2_truncated_bursts=%lu p2_duid_codeword=%02X p2_duid_valid=%d "
-        "p2_duid=%u p2_duid_errors=%u p2_voice_bursts=%lu p2_control_bursts=%lu "
-        "p2_unknown_bursts=%lu p2_reverse=%d "
-        "p2_best_sync_errors=%u "
-        "ber_percent=%.2f grants=%d grant_events=%lu follow=%s control_hz=%lu voice_hz=%lu "
-        "voice_ldus=%lu voice_frames=%lu voice_queue_drops=%lu voice_unrouted=%lu "
-        "enc_sync_good=%lu "
-        "enc_sync_failed=%lu encrypted_detected=%d algid=%02X kid=%04X "
-        "encrypted_muted_frames=%lu encrypted_returns=%lu imbe_frames=%lu "
-        "imbe_errors=%lu pcm_frames=%lu voice_stack_hwm=%lu imbe_max_us=%lu "
-        "imbe_synth_max_us=%lu audio_queue_max_us=%lu heap_free=%u heap_min=%u "
-        "psram_free=%u usb_overruns=%u usb_drops=%u iq_drops=%u audio_drops=%u\n",
-        p25_config.control_channel_count > 0 ? 1 : 0, p25_profiles.active_id,
-        p25_config.system_name,
-        static_cast<unsigned long>(rtl_ui_frequency_hz),
-        p25_survey_active.load(std::memory_order_relaxed) ? 1 : 0,
-        static_cast<unsigned>(p25_candidate_index),
-        p25_hold.load(std::memory_order_relaxed) ? 1 : 0,
-        static_cast<unsigned>(p25_hold_talkgroup),
-        p25_auto_follow.load(std::memory_order_relaxed) ? 1 : 0,
-        p25_encryption_skip.load(std::memory_order_relaxed) ? 1 : 0,
-        static_cast<double>(rtl_signal_dbfs.load(std::memory_order_relaxed)),
-        orcsdr::p25core::modulation_name(decoded.configured_modulation),
-        orcsdr::p25core::modulation_name(decoded.selected_modulation),
-        static_cast<double>(decoded.lock_quality_percent),
-        static_cast<double>(decoded.timing_error),
-        static_cast<double>(decoded.carrier_error_hz),
-        static_cast<double>(decoded.decode_rate_hz),
-        decoded.frame_sync ? 1 : 0, decoded.identity_valid ? 1 : 0,
-        decoded.nac, static_cast<unsigned long>(decoded.wacn), decoded.system_id,
-        decoded.rfss, decoded.site, static_cast<unsigned long>(decoded.sync_words),
-        static_cast<unsigned long>(decoded.nid_good),
-        static_cast<unsigned long>(decoded.nid_failed),
-        static_cast<unsigned long>(decoded.tsbk_good),
-        static_cast<unsigned long>(decoded.tsbk_failed),
-        static_cast<unsigned long>(decoded.phase2_band_plans),
-        static_cast<unsigned long>(p25_phase2_grant_events.load(std::memory_order_relaxed)),
-        static_cast<unsigned long>(decoded.phase2_mapping_errors),
-        static_cast<unsigned long>(p25_phase2_sync_events.load(std::memory_order_relaxed)),
-        static_cast<unsigned long>(p25_phase2_rejections.load(std::memory_order_relaxed)),
-        p25_phase2_trace.load(std::memory_order_relaxed) ? 1 : 0,
-        decoded.phase2_acquisition ? 1 : 0,
-        static_cast<unsigned long>(decoded.phase2_symbols),
-        static_cast<unsigned long>(decoded.phase2_sync_words),
-        static_cast<unsigned long>(decoded.phase2_complete_bursts),
-        static_cast<unsigned long>(decoded.phase2_truncated_bursts),
-        decoded.phase2_last_duid_codeword,
-        decoded.phase2_last_duid_valid ? 1 : 0, decoded.phase2_last_duid,
-        decoded.phase2_last_duid_errors,
-        static_cast<unsigned long>(decoded.phase2_voice_bursts),
-        static_cast<unsigned long>(decoded.phase2_control_bursts),
-        static_cast<unsigned long>(decoded.phase2_unknown_bursts),
-        decoded.phase2_reverse_polarity ? 1 : 0,
-        decoded.phase2_best_sync_errors,
-        static_cast<double>(decoded.estimated_ber_percent),
-        grant_count,
-        static_cast<unsigned long>(p25_grant_events.load(std::memory_order_relaxed)),
-        follow_name,
-        static_cast<unsigned long>(p25_control_frequency_hz),
-        static_cast<unsigned long>(p25_voice_frequency_hz),
-        static_cast<unsigned long>(decoded.voice_ldus),
-        static_cast<unsigned long>(decoded.voice_frames),
-        static_cast<unsigned long>(decoded.voice_queue_drops),
-        static_cast<unsigned long>(decoded.voice_unrouted_frames),
-        static_cast<unsigned long>(decoded.encryption_sync_good),
-        static_cast<unsigned long>(decoded.encryption_sync_failed),
-        p25_encrypted_voice_seen.load(std::memory_order_acquire) ? 1 : 0,
-        static_cast<unsigned>(encryption >> 16),
-        static_cast<unsigned>(encryption & 0xFFFFu),
-        static_cast<unsigned long>(
-            p25_encrypted_voice_muted_frames.load(std::memory_order_relaxed)),
-        static_cast<unsigned long>(p25_encrypted_voice_returns.load(std::memory_order_relaxed)),
-        static_cast<unsigned long>(p25_imbe_frames.load(std::memory_order_relaxed)),
-        static_cast<unsigned long>(p25_imbe_errors.load(std::memory_order_relaxed)),
-        static_cast<unsigned long>(p25_pcm_frames.load(std::memory_order_relaxed)),
-        static_cast<unsigned long>(p25_voice_stack_hwm.load(std::memory_order_relaxed)),
-        static_cast<unsigned long>(p25_imbe_max_us.load(std::memory_order_relaxed)),
-        static_cast<unsigned long>(p25_imbe_synth_max_us.load(std::memory_order_relaxed)),
-        static_cast<unsigned long>(p25_audio_queue_max_us.load(std::memory_order_relaxed)),
-        static_cast<unsigned>(esp_get_free_heap_size()),
-        static_cast<unsigned>(esp_get_minimum_free_heap_size()),
-        static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)),
-        metrics.overruns, metrics.consumer_drops,
-        rtl_iq_pipeline_drops.load(std::memory_order_relaxed),
-        rtl_audio.dropped_chunks);
-    for (size_t i = 0; i < p25_config.control_channel_count; ++i)
-      Serial.printf("RTL_P25_CANDIDATE index=%u frequency_hz=%lu relative_dbfs=%.1f\n",
-                    static_cast<unsigned>(i),
-                    static_cast<unsigned long>(p25_config.control_channels_hz[i]),
-                    static_cast<double>(p25_candidate_levels[i]));
-    return;
-  }
-  if (strcmp(command, "RTL_P25_PHASE2_STATUS") == 0) {
-    const auto decoded = orcsdr::p25decoder::snapshot();
-    const auto& grant = p25_follow_state.load(std::memory_order_acquire) ==
-                                P25FollowState::phase2_probe
-                            ? p25_follow_grant : decoded.current_grant;
-    Serial.printf(
-        "RTL_P25_PHASE2_STATUS trace=%d active=%d grants=%lu mapping_errors=%lu "
-        "syncs=%lu rejections=%lu "
-        "tg=%u src=%lu carrier_hz=%lu slot=%u channel_id=%u channel=%u service=%02X "
-        "encrypted=%d wacn=%05lX sysid=%03X rfss=%u site=%u symbols=%lu "
-        "sync_words=%lu complete_bursts=%lu truncated_bursts=%lu duid_codeword=%02X "
-        "duid_valid=%d duid=%u duid_errors=%u voice_bursts=%lu control_bursts=%lu "
-        "unknown_bursts=%lu reverse=%d best_sync_errors=%u last_sync_ms=%lu "
-        "last_burst_ms=%lu\n",
-        p25_phase2_trace.load(std::memory_order_relaxed) ? 1 : 0,
-        decoded.phase2_acquisition ? 1 : 0,
-        static_cast<unsigned long>(p25_phase2_grant_events.load(std::memory_order_relaxed)),
-        static_cast<unsigned long>(decoded.phase2_mapping_errors),
-        static_cast<unsigned long>(p25_phase2_sync_events.load(std::memory_order_relaxed)),
-        static_cast<unsigned long>(p25_phase2_rejections.load(std::memory_order_relaxed)),
-        grant.talkgroup,
-        static_cast<unsigned long>(grant.source_id),
-        static_cast<unsigned long>(grant.frequency_hz), grant.slot, grant.channel_id,
-        grant.channel_number, grant.service_options, grant.encrypted ? 1 : 0,
-        static_cast<unsigned long>(grant.wacn), grant.system_id, grant.rfss, grant.site,
-        static_cast<unsigned long>(decoded.phase2_symbols),
-        static_cast<unsigned long>(decoded.phase2_sync_words),
-        static_cast<unsigned long>(decoded.phase2_complete_bursts),
-        static_cast<unsigned long>(decoded.phase2_truncated_bursts),
-        decoded.phase2_last_duid_codeword,
-        decoded.phase2_last_duid_valid ? 1 : 0, decoded.phase2_last_duid,
-        decoded.phase2_last_duid_errors,
-        static_cast<unsigned long>(decoded.phase2_voice_bursts),
-        static_cast<unsigned long>(decoded.phase2_control_bursts),
-        static_cast<unsigned long>(decoded.phase2_unknown_bursts),
-        decoded.phase2_reverse_polarity ? 1 : 0,
-        decoded.phase2_best_sync_errors,
-        static_cast<unsigned long>(decoded.phase2_last_sync_ms),
-        static_cast<unsigned long>(decoded.phase2_last_burst_ms));
-    return;
-  }
-  if (strcmp(command, "RTL_P25_PHASE2_TRACE") == 0) {
-    Serial.printf("RTL_P25_PHASE2_TRACE enabled=%d\n",
-                  p25_phase2_trace.load(std::memory_order_relaxed) ? 1 : 0);
-    return;
-  }
-  if (strncmp(command, "RTL_P25_PHASE2_TRACE ", 21) == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_P25_PHASE2_TRACE_ERROR auth_required");
-      return;
-    }
-    const char* value = command + 21;
-    if (strcmp(value, "ON") != 0 && strcmp(value, "OFF") != 0) {
-      Serial.println("RTL_P25_PHASE2_TRACE_ERROR usage: RTL_P25_PHASE2_TRACE ON|OFF");
-      return;
-    }
-    const bool enabled = strcmp(value, "ON") == 0;
-    p25_phase2_trace.store(enabled, std::memory_order_release);
-    Serial.printf("RTL_P25_PHASE2_TRACE_OK enabled=%d\n", enabled ? 1 : 0);
-    return;
-  }
-  if (strcmp(command, "RTL_P25_PROFILE_LIST") == 0) {
-    Serial.printf("RTL_P25_PROFILE_LIST_BEGIN count=%u active=\"%s\"\n",
-                  static_cast<unsigned>(p25_profiles.count), p25_profiles.active_id);
-    for (size_t i = 0; i < p25_profiles.count; ++i)
-      Serial.printf("RTL_P25_PROFILE index=%u id=\"%s\" name=\"%s\" active=%d\n",
-                    static_cast<unsigned>(i), p25_profiles.profiles[i].id,
-                    p25_profiles.profiles[i].name,
-                    static_cast<int>(i) == p25_profiles.active_index ? 1 : 0);
-    Serial.println("RTL_P25_PROFILE_LIST_DONE");
-    return;
-  }
-  if (strncmp(command, "RTL_P25_PROFILE_SELECT ", 23) == 0) {
-    if (!authenticated) { Serial.println("RTL_P25_PROFILE_ERROR auth_required"); return; }
-    orcsdr::p25config::Config config{};
-    char error[64]{};
-    const char* id = command + 23;
-    if (!ensure_tab5_sd() || g_sd_fs == nullptr ||
-        !orcsdr::p25config::select(*g_sd_fs, id, &config, &p25_profiles,
-                                   error, sizeof(error))) {
-      Serial.printf("RTL_P25_PROFILE_ERROR operation=select detail=\"%s\"\n", error);
-      return;
-    }
-    apply_p25_config(config, "P25 system selected");
-    if (rtl_ui_band == RtlBand::p25 && p25_config.control_channel_count > 0)
-      tune_p25_control(p25_control_frequency_hz);
-    Serial.printf("RTL_P25_PROFILE_OK operation=select id=\"%s\"\n", id);
-    return;
-  }
-  if (strncmp(command, "RTL_P25_PROFILE_IMPORT ", 23) == 0) {
-    if (!authenticated) { Serial.println("RTL_P25_PROFILE_ERROR auth_required"); return; }
-    char path[96]{}, id[32]{}, error[64]{};
-    if (sscanf(command + 23, "%95s %31s", path, id) != 2 ||
-        !ensure_tab5_sd() || g_sd_fs == nullptr ||
-        !orcsdr::p25config::import_profile(*g_sd_fs, path, id, &p25_profiles,
-                                           error, sizeof(error))) {
-      Serial.printf("RTL_P25_PROFILE_ERROR operation=import detail=\"%s\"\n",
-                    error[0] ? error : "usage");
-      return;
-    }
-    load_p25_config();
-    Serial.printf("RTL_P25_PROFILE_OK operation=import id=\"%s\" source=\"%s\"\n", id, path);
-    return;
-  }
-  if (strncmp(command, "RTL_P25_PROFILE_EXPORT ", 23) == 0) {
-    if (!authenticated) { Serial.println("RTL_P25_PROFILE_ERROR auth_required"); return; }
-    char id[32]{}, path[96]{}, error[64]{};
-    if (sscanf(command + 23, "%31s %95s", id, path) != 2 || g_sd_fs == nullptr ||
-        !orcsdr::p25config::export_profile(*g_sd_fs, id, path, error, sizeof(error))) {
-      Serial.printf("RTL_P25_PROFILE_ERROR operation=export detail=\"%s\"\n",
-                    error[0] ? error : "usage");
-      return;
-    }
-    Serial.printf("RTL_P25_PROFILE_OK operation=export id=\"%s\" path=\"%s\"\n", id, path);
-    return;
-  }
-  if (strncmp(command, "RTL_P25_PROFILE_RENAME ", 23) == 0) {
-    if (!authenticated) { Serial.println("RTL_P25_PROFILE_ERROR auth_required"); return; }
-    char id[32]{}, name[48]{}, error[64]{};
-    const int parsed = sscanf(command + 23, "%31s %47[^\n]", id, name);
-    if (parsed != 2 || g_sd_fs == nullptr ||
-        !orcsdr::p25config::rename_profile(*g_sd_fs, id, name, &p25_profiles,
-                                           error, sizeof(error))) {
-      Serial.printf("RTL_P25_PROFILE_ERROR operation=rename detail=\"%s\"\n",
-                    error[0] ? error : "usage");
-      return;
-    }
-    if (strcmp(id, p25_profiles.active_id) == 0) load_p25_config();
-    Serial.printf("RTL_P25_PROFILE_OK operation=rename id=\"%s\" name=\"%s\"\n", id, name);
-    return;
-  }
-  if (strncmp(command, "RTL_P25_PROFILE_DELETE ", 23) == 0) {
-    if (!authenticated) { Serial.println("RTL_P25_PROFILE_ERROR auth_required"); return; }
-    char id[32]{}, confirm[16]{}, error[64]{};
-    if (sscanf(command + 23, "%31s %15s", id, confirm) != 2 ||
-        strcmp(confirm, "CONFIRM") != 0 || g_sd_fs == nullptr ||
-        !orcsdr::p25config::delete_profile(*g_sd_fs, id, &p25_profiles,
-                                           error, sizeof(error))) {
-      Serial.printf("RTL_P25_PROFILE_ERROR operation=delete detail=\"%s\"\n",
-                    error[0] ? error : "confirmation_required");
-      return;
-    }
-    load_p25_config();
-    Serial.printf("RTL_P25_PROFILE_OK operation=delete id=\"%s\"\n", id);
-    return;
-  }
-  if (strcmp(command, "RTL_P25_CONFIG_RELOAD") == 0 && authenticated) {
-    cancel_p25_survey();
-    load_p25_config();
-    if (rtl_ui_band == RtlBand::p25 && p25_config.control_channel_count > 0)
-      tune_p25_control(p25_control_frequency_hz);
-    if (orcsdr::p25::active() && orcsdr::screens::owns(orcsdr::screens::Id::p25))
-      orcsdr::p25::draw();
-    Serial.printf("RTL_P25_CONFIG_RELOAD status=\"%s\"\n", p25_config_status);
-    return;
-  }
-  if (strcmp(command, "RTL_P25_SCAN") == 0 && authenticated) {
-    if (rtl_ui_band != RtlBand::p25)
-      queue_local_rtl_listen(RtlBand::p25, p25_control_frequency_hz);
-    if (!p25_survey_active.load(std::memory_order_relaxed))
-      handle_p25_dashboard_action({orcsdr::p25::ActionKind::survey_toggle});
-    return;
-  }
+  if (orcsdr::serial_p25::handle_command(command, authenticated, kSerialP25Hooks)) return;
   if (strncmp(command, "RTL_TUNE ", 9) == 0 && authenticated) {
     char band_name[16] = {0};
     unsigned long freq_hz = 0;

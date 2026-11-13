@@ -31,6 +31,7 @@ on:
       - 'tests/serial_dsp_tests.cpp'
       - 'tests/serial_pocsag_tests.cpp'
       - 'tests/serial_rds_tests.cpp'
+      - 'tests/serial_p25_tests.cpp'
       - 'tests/memory_ledger_tests.cpp'
       - 'tests/data/serial_help_golden.txt'
       - 'tests/data/serial_help_golden_orcdial.txt'

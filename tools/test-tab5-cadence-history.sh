@@ -22,6 +22,7 @@ run serial_dead_air tests/serial_dead_air_tests.cpp "$ui/serial_dead_air.cpp"
 run serial_dsp tests/serial_dsp_tests.cpp "$ui/serial_dsp.cpp"
 run serial_pocsag tests/serial_pocsag_tests.cpp "$ui/serial_pocsag.cpp"
 run serial_rds tests/serial_rds_tests.cpp "$ui/serial_rds.cpp"
+run serial_p25 tests/serial_p25_tests.cpp "$ui/serial_p25.cpp" "$ui/p25_decoder_core.cpp"
 # The DSP lab and A/B routes exist only in test builds; compile those variants too.
 run serial_dsp_lab -DORCSDR_DSP_LAB=1 tests/serial_dsp_tests.cpp "$ui/serial_dsp.cpp"
 run serial_dsp_ab -DORCSDR_DSP_AB=1 tests/serial_dsp_tests.cpp "$ui/serial_dsp.cpp"
