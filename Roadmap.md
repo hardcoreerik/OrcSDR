@@ -94,6 +94,29 @@ rollback, and radio-recovery gates pass.
 - **SSTV:** all 14 supported modes are operational per maintainer. Expand the per-mode/per-receiver recorded RF matrix and long-soak/storage fault acceptance rather than re-implement the existing decoder.
 - **Dead Air:** real RF/event measurements, the working Tab5 Unit ENV III sensor and VEIL-26 symbolic engine are implemented. Continue device-specific sensor accuracy, multi-hour history and VEIL overlay/logging validation. The esoteric output remains **INTERPRETED**, never paranormal measurement or detection.
 
+### Device classes, one codebase: capability-driven UI (design direction, nothing built yet)
+
+Owner direction 2026-11-13. A PlutoSDR (AD9361, Linux on the board, TX-capable) is a second class of local receiver next to
+RTL-SDR dongles. The goal is one codebase that recognises what is plugged in and shows only what it can do; device-specific
+builds (for example Station, DX or TX variants) are build profiles over the same modules, only if RAM or flash force them.
+
+- **Capability record per active source:** RX range, maximum rate, gain model; TX present, range and power limit; offload
+  services; identity for display only. The UI never tests for a device name.
+- **Pages declare requirements:** a page (SSTV TX, LoRa TX, wide-band scan) registers what it needs; navigation lists the pages
+  the current source satisfies and drops them when it goes away.
+- **Capability is not permission:** every TX page also needs the fail-closed gate, a per-session arm, a wiring confirmation
+  before each transmission, and the power/attenuation limits applied by the driver. The LilyGO LoRa TX Lab is the model.
+- **Shape:** a small capabilities module, a page registry, one module per TX feature with narrow interfaces, and the same record
+  as JSON so the web interface builds the same menu. `main.cpp` gets thin hooks only.
+- **Pluto agent (later):** a small versioned service on the Pluto, reached over the USB link, announced by a "hello" that lists
+  its services (decimation, decoders, recording, health, restarting its own USB gadget). An unmodified Pluto stays a plain
+  libiio radio. The standalone `esp-pluto-sdr` driver speaks the agent protocol; OrcSDR stays the customer. Nothing on the
+  board may be reachable without authentication, and anything shipped on it respects the GPL-2 base image.
+- **Order of work:** capability record from the existing RTL and Pluto code; registry with two existing pages moved over; then
+  one TX page (SSTV) behind the gate. No transmission until the owner has approved the bench setup.
+- **Known blocker found 2026-11-12:** the Pluto's USB gadget can wedge (control endpoint errors) and then needs a power cycle.
+  A bus-reset-and-retry in the driver and a way to reboot the board without a cable pull come first.
+
 ## Evidence still needed
 
 - Current M5Burner search/catalog visibility and exact release-image acceptance.
