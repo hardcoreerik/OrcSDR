@@ -47,6 +47,7 @@ DENY = re.compile(r'(?:Serial\.(?:println|printf|print)|hooks\.write_line)\(\s*"
 # and its own top-level routes are read from FAMILY_SIGNATURE in the file named here.
 FAMILIES = {
     "orcsdr::serial_help": "apps/orcsdr-tab5/ui/serial_help.cpp",
+    "orcsdr::serial_dsp": "apps/orcsdr-tab5/ui/serial_dsp.cpp",
     "orcsdr::serial_memory": "apps/orcsdr-tab5/ui/serial_memory.cpp",
 }
 FAMILY_SIGNATURE = "bool handle_command(const char* command, bool authenticated, const Hooks& hooks) {"

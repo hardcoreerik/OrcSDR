@@ -81,6 +81,7 @@
 #include "memory_ledger.hpp"
 #include "serial_help.hpp"
 #include "serial_memory.hpp"
+#include "serial_dsp.hpp"
 #include "esp_memory_utils.h"
 #include "shortwave_model.hpp"
 #include "shortwave_audio_dsp.hpp"
@@ -19882,6 +19883,91 @@ static constexpr orcsdr::serial_memory::Hooks kSerialMemoryHooks{
     ft8_free_memory_and_retry,
 };
 
+// The RTL_DSP commands live in serial_dsp.cpp; these are the device actions and counters they use. The lab and A/B
+// entries exist only in the test builds that have those commands.
+#if ORCSDR_DSP_LAB
+static bool serial_dsp_lab_queue_fm_listen() {
+  const uint32_t frequency = rtl_ui_band == RtlBand::fm
+                                 ? rtl_ui_frequency_hz : rtl_band_default_frequency(RtlBand::fm);
+  return queue_local_rtl_listen(RtlBand::fm, frequency, false);
+}
+static void serial_dsp_lab_command(const char* args) {
+  const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
+  orcsdr::dsp::lab::command(
+      args,
+      state == RtlCaptureState::queued || state == RtlCaptureState::running,
+      [](const char* line) { Serial.println(line); });
+}
+#endif
+#if ORCSDR_DSP_AB
+static orcsdr::serial_dsp::Storm serial_dsp_ab_storm(long n) {
+  const uint32_t kinds[] = {kRtlResetDemod, kRtlResetRds, kRtlResetSsbBfo,
+                            kRtlResetDemod | kRtlResetSsbBfo, kRtlResetFull};
+  const uint32_t applied0 = rtl_dsp_resets_applied.load(std::memory_order_relaxed);
+  const uint32_t t0 = millis();
+  for (long k = 0; k < n; ++k) {
+    // Full resets are rare in real use (stream start); keep them 1 in 25.
+    const uint32_t kind = (k % 25 == 24) ? kinds[4] : kinds[k % 4];
+    rtl_dsp_request_reset(kind);
+    vTaskDelay(pdMS_TO_TICKS(k % 3));
+  }
+  const uint32_t storm_ms = millis() - t0;
+  vTaskDelay(pdMS_TO_TICKS(50));
+  const uint32_t pending = rtl_dsp_reset_requests.load(std::memory_order_acquire);
+  const uint32_t applied = rtl_dsp_resets_applied.load(std::memory_order_relaxed) - applied0;
+  // Audio must keep flowing after the storm (a full reset zeroes the counter,
+  // so measure a fresh 500 ms window).
+  const uint32_t chunks0 = rtl_audio.queued_chunks;
+  vTaskDelay(pdMS_TO_TICKS(500));
+  return {storm_ms, applied, pending, rtl_audio.queued_chunks - chunks0};
+}
+#endif
+static orcsdr::serial_dsp::Stats serial_dsp_stats(char* line, size_t line_size) {
+  static uint32_t last_ms = 0;  // first window runs from boot, like the counters
+  const uint32_t now = millis();
+  (void)orcsdr::dsp::stats::format_and_reset(line, line_size, now - last_ms);
+  last_ms = now;
+  // Loss counters are cumulative since stream start (not windowed).
+  esp_rtl_sdr_metrics_t metrics{};
+  if (g_rtl != nullptr) (void)esp_rtl_sdr_get_metrics(g_rtl, &metrics);
+  return {rtl_band_name(rtl_ui_band),
+          rtl_active_sample_rate_sps.load(std::memory_order_relaxed),
+          rtl_iq_pipeline_drops.load(std::memory_order_relaxed),
+          metrics.overruns,
+          metrics.consumer_drops,
+          rtl_audio.queued_chunks,
+          rtl_audio.dropped_chunks,
+          rtl_audio_ring_overruns.load(std::memory_order_relaxed),
+          rtl_audio_submit_failures.load(std::memory_order_relaxed)};
+}
+static constexpr orcsdr::serial_dsp::Hooks kSerialDspHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    serial_dsp_stats,
+#if ORCSDR_DSP_LAB
+    []() -> bool { return rtl_should_resume_after_disconnect(rtl_capture_state.load(std::memory_order_acquire)); },
+    [](uint32_t rate) { rtl_rate_override_sps.store(rate, std::memory_order_release); },
+    [](uint32_t rate) -> bool { return rtl_device_ready() && esp_rtl_sdr_is_rate_supported(rate); },
+    serial_dsp_lab_queue_fm_listen,
+    serial_dsp_lab_command,
+#else
+    nullptr,
+    nullptr,
+    nullptr,
+    nullptr,
+    nullptr,
+#endif
+#if ORCSDR_DSP_AB
+    [](size_t blocks) -> bool { return dsp_ab_arm(blocks); },
+    serial_dsp_ab_storm,
+    []() { g_dsp_ab.run_requested.store(true, std::memory_order_release); },
+#else
+    nullptr,
+    nullptr,
+    nullptr,
+#endif
+};
+
 void process_command(char* command) {
   if (strncmp(command, "JS8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
     process_js8_command(command + 3);
@@ -21447,113 +21533,7 @@ void process_command(char* command) {
     Serial.println(response);
     return;
   }
-#if ORCSDR_DSP_LAB
-  if (strncmp(command, "RTL_DSP LAB RATE ", 17) == 0) {
-    if (rtl_should_resume_after_disconnect(rtl_capture_state.load(std::memory_order_acquire))) {
-      Serial.println("LAB_RATE_ERROR radio_running");
-      return;
-    }
-    if (strcmp(command + 17, "DEFAULT") == 0) {
-      rtl_rate_override_sps.store(0, std::memory_order_release);
-      Serial.println("LAB_RATE default");
-      return;
-    }
-    const uint32_t rate = strcmp(command + 17, "2560000") == 0 ? 2560000u
-                          : strcmp(command + 17, "3200000") == 0 ? 3200000u : 0u;
-    if (!rate || !rtl_device_ready() || !esp_rtl_sdr_is_rate_supported(rate)) {
-      Serial.println("LAB_RATE_ERROR use_2560000_3200000_or_DEFAULT");
-      return;
-    }
-    rtl_rate_override_sps.store(rate, std::memory_order_release);
-    const uint32_t frequency = rtl_ui_band == RtlBand::fm
-                                   ? rtl_ui_frequency_hz : rtl_band_default_frequency(RtlBand::fm);
-    if (!queue_local_rtl_listen(RtlBand::fm, frequency, false)) {
-      rtl_rate_override_sps.store(0, std::memory_order_release);
-      Serial.println("LAB_RATE_ERROR start_failed");
-      return;
-    }
-    Serial.printf("LAB_RATE queued=1 rate=%u band=FM\n", rate);
-    return;
-  }
-  if (strncmp(command, "RTL_DSP LAB", 11) == 0) {
-    const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
-    orcsdr::dsp::lab::command(
-        command[11] == ' ' ? command + 12 : "",
-        state == RtlCaptureState::queued || state == RtlCaptureState::running,
-        [](const char* line) { Serial.println(line); });
-    return;
-  }
-#endif
-#if ORCSDR_DSP_AB
-  if (strncmp(command, "RTL_DSP AB CAPTURE ", 19) == 0) {
-    const long blocks = strtol(command + 19, nullptr, 10);
-    Serial.printf("RTL_DSP_AB_ARM blocks=%ld ok=%d\n", blocks,
-                  dsp_ab_arm(static_cast<size_t>(blocks)) ? 1 : 0);
-    return;
-  }
-  // Reset stress: n requests of rotating kinds from this (non-DSP) task with
-  // 0-2 ms gaps while the radio streams. All must be served at block
-  // boundaries (pending mask drains) and audio/RDS must keep running.
-  if (strncmp(command, "RTL_DSP AB STORM ", 17) == 0) {
-    const long n = strtol(command + 17, nullptr, 10);
-    const uint32_t kinds[] = {kRtlResetDemod, kRtlResetRds, kRtlResetSsbBfo,
-                              kRtlResetDemod | kRtlResetSsbBfo, kRtlResetFull};
-    const uint32_t applied0 = rtl_dsp_resets_applied.load(std::memory_order_relaxed);
-    const uint32_t t0 = millis();
-    for (long k = 0; k < n; ++k) {
-      // Full resets are rare in real use (stream start); keep them 1 in 25.
-      const uint32_t kind = (k % 25 == 24) ? kinds[4] : kinds[k % 4];
-      rtl_dsp_request_reset(kind);
-      vTaskDelay(pdMS_TO_TICKS(k % 3));
-    }
-    const uint32_t storm_ms = millis() - t0;
-    vTaskDelay(pdMS_TO_TICKS(50));
-    const uint32_t pending = rtl_dsp_reset_requests.load(std::memory_order_acquire);
-    const uint32_t applied = rtl_dsp_resets_applied.load(std::memory_order_relaxed) - applied0;
-    // Audio must keep flowing after the storm (a full reset zeroes the counter,
-    // so measure a fresh 500 ms window).
-    const uint32_t chunks0 = rtl_audio.queued_chunks;
-    vTaskDelay(pdMS_TO_TICKS(500));
-    Serial.printf("RTL_DSP_AB_STORM requests=%ld ms=%lu applied=%lu pending=%lu "
-                  "audio_chunks_500ms=%lu\n",
-                  n, static_cast<unsigned long>(storm_ms), static_cast<unsigned long>(applied),
-                  static_cast<unsigned long>(pending),
-                  static_cast<unsigned long>(rtl_audio.queued_chunks - chunks0));
-    return;
-  }
-  if (strcmp(command, "RTL_DSP AB RUN") == 0) {
-    g_dsp_ab.run_requested.store(true, std::memory_order_release);
-    Serial.println("RTL_DSP_AB_RUN queued");
-    return;
-  }
-#endif
-  if (strcmp(command, "RTL_DSP STATS") == 0) {
-    // Window since the previous RTL_DSP STATS (read-only, resets on read).
-    static uint32_t last_ms = 0;  // first window runs from boot, like the counters
-    const uint32_t now = millis();
-    char line[768];
-    (void)orcsdr::dsp::stats::format_and_reset(line, sizeof(line), now - last_ms);
-    last_ms = now;
-    // Loss counters are cumulative since stream start (not windowed).
-    esp_rtl_sdr_metrics_t metrics{};
-    if (g_rtl != nullptr) (void)esp_rtl_sdr_get_metrics(g_rtl, &metrics);
-    Serial.printf("%s band=%s rate=%lu iq_pipeline_drops=%lu driver_overruns=%u "
-                  "driver_drops=%u audio_chunks=%lu audio_dropped_chunks=%lu "
-                  "audio_ring_overruns=%lu audio_submit_failures=%lu\n",
-                  line, rtl_band_name(rtl_ui_band),
-                  static_cast<unsigned long>(
-                      rtl_active_sample_rate_sps.load(std::memory_order_relaxed)),
-                  static_cast<unsigned long>(
-                      rtl_iq_pipeline_drops.load(std::memory_order_relaxed)),
-                  metrics.overruns, metrics.consumer_drops,
-                  static_cast<unsigned long>(rtl_audio.queued_chunks),
-                  static_cast<unsigned long>(rtl_audio.dropped_chunks),
-                  static_cast<unsigned long>(
-                      rtl_audio_ring_overruns.load(std::memory_order_relaxed)),
-                  static_cast<unsigned long>(
-                      rtl_audio_submit_failures.load(std::memory_order_relaxed)));
-    return;
-  }
+  if (orcsdr::serial_dsp::handle_command(command, authenticated, kSerialDspHooks)) return;
   if (strcmp(command, "RTL_GAIN STATUS") == 0) {
     print_rtl_gain_status();
     return;
