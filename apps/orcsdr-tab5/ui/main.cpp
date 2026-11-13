@@ -20028,6 +20028,8 @@ static constexpr orcsdr::serial_keyboard::Hooks kSerialKeyboardHooks{
       g_keyboard_echo = on;
       return g_keyboard_echo;
     },
+};
+
 // The RTL_RDS commands live in serial_rds.cpp; these are the device actions and the facts RTL_RDS_STATUS prints.
 static constexpr orcsdr::serial_rds::Hooks kSerialRdsHooks{
     [](const char* text) { Serial.print(text); },

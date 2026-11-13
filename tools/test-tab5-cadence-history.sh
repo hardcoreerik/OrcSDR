@@ -17,6 +17,15 @@ run lora_history tests/lora_history_tests.cpp "$ui/lora_history.cpp" "$ui/lora_p
 run memory_ledger tests/memory_ledger_tests.cpp "$ui/memory_ledger.cpp"
 run serial_help tests/serial_help_tests.cpp "$ui/serial_help.cpp"
 run serial_memory tests/serial_memory_tests.cpp "$ui/serial_memory.cpp" "$ui/memory_ledger.cpp" "$ui/memory_reclaim.cpp"
+run serial_keyboard tests/serial_keyboard_tests.cpp "$ui/serial_keyboard.cpp"
+run serial_dead_air tests/serial_dead_air_tests.cpp "$ui/serial_dead_air.cpp"
+run serial_dsp tests/serial_dsp_tests.cpp "$ui/serial_dsp.cpp"
+run serial_pocsag tests/serial_pocsag_tests.cpp "$ui/serial_pocsag.cpp"
+run serial_rds tests/serial_rds_tests.cpp "$ui/serial_rds.cpp"
+# The DSP lab and A/B routes exist only in test builds; compile those variants too.
+run serial_dsp_lab -DORCSDR_DSP_LAB=1 tests/serial_dsp_tests.cpp "$ui/serial_dsp.cpp"
+run serial_dsp_ab -DORCSDR_DSP_AB=1 tests/serial_dsp_tests.cpp "$ui/serial_dsp.cpp"
+run serial_rds_ab -DORCSDR_DSP_AB=1 tests/serial_rds_tests.cpp "$ui/serial_rds.cpp"
 
 # Focused release-review lifecycle regressions exercise the production routines.
 python3 tests/setup_navigation_pause_test.py
