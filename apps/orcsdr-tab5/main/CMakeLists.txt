@@ -81,6 +81,8 @@ idf_component_register(
         "../ui/serial_adsb.cpp"
         "../ui/serial_location.cpp"
         "../ui/serial_catalog.cpp"
+        "../ui/serial_lora_status.cpp"
+        "../ui/serial_lora.cpp"
         "../ui/serial_audio.cpp"
         "../ui/serial_audio_test.cpp"
         "../ui/serial_web.cpp"

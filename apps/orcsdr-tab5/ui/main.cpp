@@ -83,6 +83,8 @@
 #include "serial_adsb.hpp"
 #include "serial_location.hpp"
 #include "serial_catalog.hpp"
+#include "serial_lora.hpp"
+#include "serial_lora_status.hpp"
 #include "serial_audio.hpp"
 #include "serial_audio_test.hpp"
 #include "serial_web.hpp"
@@ -20012,6 +20014,151 @@ static constexpr orcsdr::serial_web::Hooks kSerialWebHooks{
     []() { if (orcsdr::settings::active()) update_global_settings(); },
 };
 
+// The RTL_LORA_NATIVE_STATUS and RTL_LORA_PLAN_STATUS commands live in serial_lora_status.cpp; these read the same
+// decoder counters and channel plan as before.
+static constexpr orcsdr::serial_lora_status::Hooks kSerialLoraStatusHooks{
+    [](const char* text) { Serial.print(text); },
+    []() -> orcsdr::serial_lora_status::NativeStatus {
+      orcsdr::serial_lora_status::NativeStatus status;
+      status.ready = lora_native_decoder_ready.load(std::memory_order_acquire);
+      status.busy = lora_native_decode_busy.load(std::memory_order_acquire);
+      status.key_loaded = lora_authorized_key_loaded;
+      status.crc_ok = static_cast<unsigned long>(lora_native_crc_ok.load(std::memory_order_relaxed));
+      status.encrypted = static_cast<unsigned long>(lora_native_encrypted.load(std::memory_order_relaxed));
+      status.failures = static_cast<unsigned long>(lora_native_failures.load(std::memory_order_relaxed));
+      status.last_decode_ms = static_cast<unsigned long>(lora_native_last_millis.load(std::memory_order_relaxed));
+      status.preambles = static_cast<unsigned long>(lora_native_last_preambles.load(std::memory_order_relaxed));
+      status.header_failures =
+          static_cast<unsigned long>(lora_native_last_header_failures.load(std::memory_order_relaxed));
+      status.crc_failures = static_cast<unsigned long>(lora_native_last_crc_failures.load(std::memory_order_relaxed));
+      status.raw_cfo_hz =
+          static_cast<double>(lora_native_last_raw_cfo_tenths_hz.load(std::memory_order_relaxed)) / 10.0;
+      status.cfo_hz = static_cast<double>(lora_native_last_cfo_tenths_hz.load(std::memory_order_relaxed)) / 10.0;
+      return status;
+    },
+    []() -> orcsdr::serial_lora_status::PlanStatus {
+      const auto& selected = orcsdr::lora_channel::selection();
+      orcsdr::serial_lora_status::PlanStatus plan;
+      plan.region_index = static_cast<unsigned>(selected.region_index + 1);
+      plan.region_name = lora_region_name;
+      plan.slot = static_cast<unsigned>(selected.slot);
+      plan.slots = static_cast<unsigned>(orcsdr::lora_channel::slot_count(selected.region_index));
+      plan.default_slot = static_cast<unsigned>(orcsdr::lora_channel::default_slot(selected.region_index));
+      plan.frequency_hz = selected.frequency_hz;
+      plan.persisted = selected.persisted;
+      return plan;
+    },
+};
+
+// The LoRa commands (region list, auto detect, tune, SD log, history, host messages) live in serial_lora.cpp. Each
+// hook does its whole access to the LoRa decode buffers, as the dispatcher did.
+static_assert(orcsdr::serial_lora::kHistoryLineMax == orcsdr::lora_history::kLineMax,
+              "serial_lora HistoryNode::data must hold a history line");
+static constexpr orcsdr::serial_lora::Hooks kSerialLoraHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    []() -> size_t { return orcsdr::lora_channel::region_count(); },
+    [](size_t i) -> orcsdr::serial_lora::Region {
+      return {orcsdr::lora_channel::region(i).code, static_cast<unsigned>(orcsdr::lora_channel::slot_count(i)),
+              static_cast<unsigned>(orcsdr::lora_channel::default_slot(i))};
+    },
+    [](bool enabled) { lora_detector_enabled.store(enabled, std::memory_order_release); },
+    kLoraMinHz,
+    kLoraMaxHz,
+    [](uint32_t frequency_hz) {
+      if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running &&
+          rtl_ui_band == RtlBand::lora) {
+        request_hot_retune(frequency_hz);
+      } else {
+        queue_local_rtl_listen(RtlBand::lora, frequency_hz);
+      }
+    },
+    [](bool enabled) { set_lora_sd_logging(enabled); },
+    [](void* context, orcsdr::serial_lora::HistoryFileEmit emit) -> orcsdr::serial_lora::HistoryFiles {
+      if (sd_transfer_radio_busy()) return orcsdr::serial_lora::HistoryFiles::radio_busy;
+      if (!ensure_tab5_sd() || !g_sd_fs) return orcsdr::serial_lora::HistoryFiles::sd_unavailable;
+      File directory = g_sd_fs->open("/orcsdr/lora");
+      if (!directory) return orcsdr::serial_lora::HistoryFiles::open_failed;
+      for (File entry = directory.openNextFile(); entry; entry = directory.openNextFile()) {
+        std::string name = entry.name();
+        const auto slash = name.find_last_of('/');
+        if (slash != std::string::npos) name = name.substr(slash + 1);
+        if (!entry.isDirectory() && lora_archive_name(name)) {
+          emit(context, static_cast<unsigned long long>(entry.size()), name.c_str());
+        }
+        entry.close();
+      }
+      directory.close();
+      return orcsdr::serial_lora::HistoryFiles::ok;
+    },
+    []() -> orcsdr::serial_lora::HistoryStatus {
+      portENTER_CRITICAL(&lora_message_mux);
+      const size_t nodes = lora_history.count();
+      portEXIT_CRITICAL(&lora_message_mux);
+      orcsdr::serial_lora::HistoryStatus status;
+      status.loaded = unsigned(lora_history_loaded.load());
+      status.nodes = unsigned(nodes);
+      status.replayed = static_cast<unsigned long>(lora_history_replayed.load());
+      status.rejected = static_cast<unsigned long>(lora_history_rejected.load());
+      status.written = static_cast<unsigned long>(lora_history_written.load());
+      status.error = unsigned(lora_log_error.load());
+      return status;
+    },
+    [](const char* text, uint32_t* value) -> bool { return parse_hex_u32_exact(text, value); },
+    [](uint32_t id, orcsdr::serial_lora::HistoryNode* out) -> bool {
+      orcsdr::lora_history::Node node{}; bool found = false;
+      portENTER_CRITICAL(&lora_message_mux);
+      if (const auto* entry = lora_history.find(id)) { node = *entry; found = true; }
+      portEXIT_CRITICAL(&lora_message_mux);
+      if (!found) return false;
+      LoraDisplayPacket record{}; record.sender = node.id; record.received_utc = node.last_utc;
+      record.latitude_e7 = node.latitude_e7; record.longitude_e7 = node.longitude_e7;
+      strlcpy(record.short_name, node.short_name, sizeof(record.short_name));
+      strlcpy(record.long_name, node.long_name, sizeof(record.long_name));
+      orcsdr::lora_history::format_line(record, out->data, sizeof(out->data));
+      out->first_utc = static_cast<unsigned long>(node.first_utc);
+      out->packets = static_cast<unsigned long>(node.packets);
+      out->name_utc = static_cast<unsigned long>(node.name_utc);
+      out->position_utc = static_cast<unsigned long>(node.position_utc);
+      return true;
+    },
+    []() -> orcsdr::serial_lora::SdLogStatus {
+      orcsdr::serial_lora::SdLogStatus status;
+      status.requested = lora_log_requested.load(std::memory_order_relaxed);
+      status.ready = lora_log_ready.load(std::memory_order_relaxed);
+      status.error = lora_log_error.load(std::memory_order_relaxed);
+      status.queued = lora_log_queue == nullptr
+                          ? 0u
+                          : static_cast<unsigned>(uxQueueMessagesWaiting(lora_log_queue));
+      status.dropped = static_cast<unsigned long>(lora_log_dropped.load(std::memory_order_relaxed));
+      status.path = kLoraLogPath;
+      status.pending = unsigned(lora_log_pending.load(std::memory_order_acquire));
+      status.retry_attempts = static_cast<unsigned long>(lora_log_retry_count.load(std::memory_order_relaxed));
+      status.last_error_stage = lora_log_error_stage.load(std::memory_order_relaxed);
+      status.last_errno = lora_log_error_errno.load(std::memory_order_relaxed);
+      return status;
+    },
+    // lora_present_host_message()/_packet() split the text in place. The dispatcher's line buffer is discarded
+    // right after the command, so they get a copy of it (serial_input is the longest line process_command sees).
+    [](const char* fields) -> bool {
+      char copy[sizeof(serial_input)];
+      strlcpy(copy, fields, sizeof(copy));
+      return lora_present_host_message(copy);
+    },
+    [](const char* fields) -> bool {
+      char copy[sizeof(serial_input)];
+      strlcpy(copy, fields, sizeof(copy));
+      return lora_present_host_packet(copy);
+    },
+    []() {
+      portENTER_CRITICAL(&lora_message_mux);
+      for (auto& packet : lora_display_packets) packet = {};
+      for (auto& position : lora_node_positions) position = {};
+      portEXIT_CRITICAL(&lora_message_mux);
+    },
+    []() { log_lora_memory("live"); },
+};
+
 static constexpr orcsdr::serial_dsp::Hooks kSerialDspHooks{
     [](const char* text) { Serial.print(text); },
     [](const char* text) { Serial.println(text); },
@@ -21537,175 +21684,11 @@ void process_command(char* command) {
                   g_iq_rec_last_path[0] ? g_iq_rec_last_path : "none");
     return;
   }
-  if (strcmp(command, "RTL_LORA_NATIVE_STATUS") == 0) {
-    Serial.printf("RTL_LORA_NATIVE_STATUS ready=%s busy=%s key_loaded=%s crc_ok=%lu encrypted=%lu failures=%lu last_decode_ms=%lu preambles=%lu header_failures=%lu crc_failures=%lu raw_cfo_hz=%.1f cfo_hz=%.1f\n",
-                  lora_native_decoder_ready.load(std::memory_order_acquire) ? "true" : "false",
-                  lora_native_decode_busy.load(std::memory_order_acquire) ? "true" : "false",
-                  lora_authorized_key_loaded ? "true" : "false",
-                  static_cast<unsigned long>(lora_native_crc_ok.load(std::memory_order_relaxed)),
-                  static_cast<unsigned long>(lora_native_encrypted.load(std::memory_order_relaxed)),
-                  static_cast<unsigned long>(lora_native_failures.load(std::memory_order_relaxed)),
-                  static_cast<unsigned long>(lora_native_last_millis.load(std::memory_order_relaxed)),
-                  static_cast<unsigned long>(lora_native_last_preambles.load(std::memory_order_relaxed)),
-                  static_cast<unsigned long>(lora_native_last_header_failures.load(std::memory_order_relaxed)),
-                  static_cast<unsigned long>(lora_native_last_crc_failures.load(std::memory_order_relaxed)),
-                  static_cast<double>(lora_native_last_raw_cfo_tenths_hz.load(std::memory_order_relaxed)) / 10.0,
-                  static_cast<double>(lora_native_last_cfo_tenths_hz.load(std::memory_order_relaxed)) / 10.0);
-    return;
-  }
-  if (strcmp(command, "RTL_LORA_PLAN_STATUS") == 0) {
-    const auto& selected = orcsdr::lora_channel::selection();
-    Serial.printf("RTL_LORA_PLAN_STATUS region_index=%u region=%s slot=%u slots=%u "
-                  "default_slot=%u frequency_hz=%u profile=LONGFAST persisted=%s\n",
-                  static_cast<unsigned>(selected.region_index + 1), lora_region_name,
-                  static_cast<unsigned>(selected.slot),
-                  static_cast<unsigned>(orcsdr::lora_channel::slot_count(selected.region_index)),
-                  static_cast<unsigned>(orcsdr::lora_channel::default_slot(selected.region_index)),
-                  selected.frequency_hz, selected.persisted ? "true" : "false");
-    return;
-  }
+  if (orcsdr::serial_lora_status::handle_command(command, authenticated, kSerialLoraStatusHooks)) return;
   if (orcsdr::lora_diag::handle_command(command, authenticated, kLoraDiagHooks)) return;
   if (orcsdr::sstv_diag::handle_command(command, authenticated, kSstvDiagHooks)) return;
   if (orcsdr::lora_gain_guard::handle_command(command, authenticated, kLoraGainHooks)) return;
-  if (strcmp(command, "RTL_LORA_REGION_LIST") == 0) {
-    for (size_t i = 0; i < orcsdr::lora_channel::region_count(); ++i)
-      Serial.printf("RTL_LORA_REGION index=%u code=%s slots=%u default_slot=%u\n",
-                    static_cast<unsigned>(i + 1), orcsdr::lora_channel::region(i).code,
-                    static_cast<unsigned>(orcsdr::lora_channel::slot_count(i)),
-                    static_cast<unsigned>(orcsdr::lora_channel::default_slot(i)));
-    return;
-  }
-  if ((strcmp(command, "RTL_LORA_AUTO ON") == 0 ||
-       strcmp(command, "RTL_LORA_AUTO OFF") == 0) &&
-      authenticated) {
-    const bool enabled = command[14] == 'O' && command[15] == 'N';
-    lora_detector_enabled.store(enabled, std::memory_order_release);
-    Serial.printf("RTL_LORA_AUTO %s\n", enabled ? "ON" : "OFF");
-    return;
-  }
-  if (strncmp(command, "RTL_LORA_TUNE ", 14) == 0 && authenticated) {
-    char* end = nullptr;
-    const unsigned long requested = strtoul(command + 14, &end, 10);
-    if (end == command + 14 || *end != '\0' || requested < kLoraMinHz ||
-        requested > kLoraMaxHz) {
-      Serial.printf("RTL_LORA_TUNE_ERROR range=%u-%u\n", kLoraMinHz, kLoraMaxHz);
-      return;
-    }
-    const uint32_t frequency_hz = static_cast<uint32_t>(requested);
-    if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running &&
-        rtl_ui_band == RtlBand::lora) {
-      request_hot_retune(frequency_hz);
-    } else {
-      queue_local_rtl_listen(RtlBand::lora, frequency_hz);
-    }
-    Serial.printf("RTL_LORA_TUNE_OK frequency_hz=%u\n", frequency_hz);
-    return;
-  }
-  if (strcmp(command, "LORA_SD_LOG ON") == 0) {
-    set_lora_sd_logging(true);
-    return;
-  }
-  if (strcmp(command, "LORA_SD_LOG OFF") == 0) {
-    set_lora_sd_logging(false);
-    return;
-  }
-  if (strcmp(command, "LORA_HISTORY FILES") == 0) {
-    if (sd_transfer_radio_busy()) { Serial.println("LORA_HISTORY_ERROR radio_busy"); return; }
-    if (!ensure_tab5_sd() || !g_sd_fs) { Serial.println("LORA_HISTORY_ERROR sd_unavailable"); return; }
-    File directory = g_sd_fs->open("/orcsdr/lora");
-    if (!directory) { Serial.println("LORA_HISTORY_ERROR open_failed"); return; }
-    unsigned count = 0;
-    for (File entry = directory.openNextFile(); entry; entry = directory.openNextFile()) {
-      std::string name = entry.name();
-      const auto slash = name.find_last_of('/');
-      if (slash != std::string::npos) name = name.substr(slash + 1);
-      if (!entry.isDirectory() && lora_archive_name(name)) {
-        Serial.printf("LORA_HISTORY_FILE bytes=%llu path=/orcsdr/lora/%s\n",
-          static_cast<unsigned long long>(entry.size()), name.c_str());
-        ++count;
-      }
-      entry.close();
-    }
-    directory.close();
-    Serial.printf("LORA_HISTORY_FILES_DONE count=%u\n", count);
-    return;
-  }
-  if (strcmp(command, "LORA_HISTORY STATUS") == 0) {
-    portENTER_CRITICAL(&lora_message_mux);
-    const size_t nodes = lora_history.count();
-    portEXIT_CRITICAL(&lora_message_mux);
-    Serial.printf("LORA_HISTORY_STATUS loaded=%u nodes=%u replayed=%lu rejected=%lu written=%lu error=%u directory=/orcsdr/lora\n",
-      unsigned(lora_history_loaded.load()), unsigned(nodes),
-      static_cast<unsigned long>(lora_history_replayed.load()),
-      static_cast<unsigned long>(lora_history_rejected.load()),
-      static_cast<unsigned long>(lora_history_written.load()), unsigned(lora_log_error.load()));
-    return;
-  }
-  if (strncmp(command, "LORA_HISTORY NODE ", 18) == 0) {
-    uint32_t id = 0;
-    if (!parse_hex_u32_exact(command + 18, &id)) { Serial.println("LORA_HISTORY_ERROR invalid_id"); return; }
-    orcsdr::lora_history::Node node{}; bool found = false;
-    portENTER_CRITICAL(&lora_message_mux);
-    if (const auto* entry = lora_history.find(id)) { node = *entry; found = true; }
-    portEXIT_CRITICAL(&lora_message_mux);
-    if (!found) { Serial.println("LORA_HISTORY_ERROR not_found"); return; }
-    LoraDisplayPacket record{}; record.sender = node.id; record.received_utc = node.last_utc;
-    record.latitude_e7 = node.latitude_e7; record.longitude_e7 = node.longitude_e7;
-    strlcpy(record.short_name, node.short_name, sizeof(record.short_name));
-    strlcpy(record.long_name, node.long_name, sizeof(record.long_name));
-    char line[orcsdr::lora_history::kLineMax];
-    orcsdr::lora_history::format_line(record, line, sizeof(line));
-    Serial.printf("LORA_HISTORY_NODE first_utc=%lu packets=%lu name_utc=%lu position_utc=%lu data=%s",
-      static_cast<unsigned long>(node.first_utc), static_cast<unsigned long>(node.packets),
-      static_cast<unsigned long>(node.name_utc), static_cast<unsigned long>(node.position_utc), line);
-    return;
-  }
-  if (strcmp(command, "LORA_SD_LOG STATUS") == 0) {
-    Serial.printf(
-        "LORA_SD_LOG_STATUS requested=%s ready=%s error=%s queued=%u "
-        "dropped=%lu path=\"%s\" pending=%u retry_attempts=%lu last_error_stage=%s last_errno=%d\n",
-        lora_log_requested.load(std::memory_order_relaxed) ? "true" : "false",
-        lora_log_ready.load(std::memory_order_relaxed) ? "true" : "false",
-        lora_log_error.load(std::memory_order_relaxed) ? "true" : "false",
-        lora_log_queue == nullptr
-            ? 0u
-            : static_cast<unsigned>(uxQueueMessagesWaiting(lora_log_queue)),
-        static_cast<unsigned long>(
-            lora_log_dropped.load(std::memory_order_relaxed)),
-        kLoraLogPath, unsigned(lora_log_pending.load(std::memory_order_acquire)),
-        static_cast<unsigned long>(lora_log_retry_count.load(std::memory_order_relaxed)),
-        lora_log_error_stage.load(std::memory_order_relaxed),
-        lora_log_error_errno.load(std::memory_order_relaxed));
-    return;
-  }
-  if (strncmp(command, "LORA_MESSAGE ", 13) == 0) {
-    if (!lora_present_host_message(command + 13)) {
-      Serial.println("LORA_MESSAGE_ERROR invalid_fields");
-      return;
-    }
-    Serial.println("LORA_MESSAGE_OK");
-    return;
-  }
-  if (strncmp(command, "LORA_PACKET ", 12) == 0) {
-    if (!lora_present_host_packet(command + 12)) {
-      Serial.println("LORA_PACKET_ERROR invalid_fields");
-      return;
-    }
-    Serial.println("LORA_PACKET_OK");
-    return;
-  }
-  if (strcmp(command, "LORA_MESSAGE_CLEAR") == 0) {
-    portENTER_CRITICAL(&lora_message_mux);
-    for (auto& packet : lora_display_packets) packet = {};
-    for (auto& position : lora_node_positions) position = {};
-    portEXIT_CRITICAL(&lora_message_mux);
-    Serial.println("LORA_MESSAGE_CLEARED");
-    return;
-  }
-  if (strcmp(command, "RTL_LORA_MEMORY") == 0) {
-    log_lora_memory("live");
-    return;
-  }
+  if (orcsdr::serial_lora::handle_command(command, authenticated, kSerialLoraHooks)) return;
   if (strncmp(command, "RTL_LORA_REPLAY_BEGIN ", 22) == 0) {
     if (!authenticated) {
       Serial.println("RTL_LORA_REPLAY_ERROR auth_required");
