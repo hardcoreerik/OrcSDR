@@ -80,6 +80,7 @@
 #include "memory_reclaim.hpp"
 #include "memory_ledger.hpp"
 #include "serial_dead_air.hpp"
+#include "serial_catalog.hpp"
 #include "serial_help.hpp"
 #include "serial_keyboard.hpp"
 #include "serial_memory.hpp"
@@ -20032,6 +20033,16 @@ static constexpr orcsdr::serial_keyboard::Hooks kSerialKeyboardHooks{
     },
 };
 
+// The RTL_CATALOG commands live in serial_catalog.cpp; they queue the same settings actions as before.
+static constexpr orcsdr::serial_catalog::Hooks kSerialCatalogHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    []() -> orcsdr::catalog::State { return orcsdr::catalog::state(); },
+    []() { handle_global_settings_action({orcsdr::settings::ActionKind::catalog_check, 0}); },
+    [](int index) { handle_global_settings_action({orcsdr::settings::ActionKind::catalog_install, index}); },
+    [](int index) { handle_global_settings_action({orcsdr::settings::ActionKind::catalog_remove, index}); },
+};
+
 // The RTL_RDS commands live in serial_rds.cpp; these are the device actions and the facts RTL_RDS_STATUS prints.
 static constexpr orcsdr::serial_rds::Hooks kSerialRdsHooks{
     [](const char* text) { Serial.print(text); },
@@ -21035,65 +21046,7 @@ void process_command(char* command) {
     run_ui_regression(true);
     return;
   }
-  if (strcmp(command, "RTL_CATALOG_STATUS") == 0 ||
-      strcmp(command, "RTL_CATALOG_LIST") == 0) {
-    const auto state = orcsdr::catalog::state();
-    Serial.printf("RTL_CATALOG_STATUS ready=%d busy=%d operation=%u progress=%u date=%s message=\"%s\"\n",
-                  state.ready ? 1 : 0, state.busy ? 1 : 0,
-                  static_cast<unsigned>(state.operation),
-                  static_cast<unsigned>(state.progress_percent),
-                  state.catalog_date[0] ? state.catalog_date : "--", state.message);
-    for (uint8_t i = 0; i < orcsdr::catalog::kPackCount; ++i) {
-      const auto& pack = state.packs[i];
-      if (pack.id[0] == '\0') continue;
-      Serial.printf("RTL_CATALOG_PACK id=%s version=%s source_date=%s runtime_bytes=%lu archive_bytes=%lu installed=%d update=%d status=\"%s\"\n",
-                    pack.id, pack.version[0] ? pack.version : "--",
-                    pack.source_date[0] ? pack.source_date : "--",
-                    static_cast<unsigned long>(pack.runtime_bytes),
-                    static_cast<unsigned long>(pack.archive_bytes),
-                    pack.installed ? 1 : 0, pack.update_available ? 1 : 0, pack.status);
-    }
-    return;
-  }
-  if (strcmp(command, "RTL_CATALOG_CHECK") == 0 ||
-      strcmp(command, "RTL_CATALOG_FETCH") == 0) {
-    if (!authenticated) { Serial.println("RTL_CATALOG_ERROR auth_required"); return; }
-    const bool fetch = strcmp(command, "RTL_CATALOG_FETCH") == 0;
-    handle_global_settings_action({orcsdr::settings::ActionKind::catalog_check, 0});
-    Serial.printf("RTL_CATALOG_%s_%s\n", fetch ? "FETCH" : "CHECK",
-                  orcsdr::catalog::state().busy ? "QUEUED" : "REJECTED");
-    return;
-  }
-  if (strncmp(command, "RTL_CATALOG_INSTALL ", 20) == 0 ||
-      strncmp(command, "RTL_CATALOG_REMOVE ", 19) == 0) {
-    if (!authenticated) { Serial.println("RTL_CATALOG_ERROR auth_required"); return; }
-    const bool remove = strncmp(command, "RTL_CATALOG_REMOVE ", 19) == 0;
-    const char* argument = command + (remove ? 19 : 20);
-    char id[20]{};
-    char confirm[12]{};
-    char trailing = 0;
-    const int fields = sscanf(argument, "%19s %11s %c", id, confirm, &trailing);
-    if ((remove && (fields != 2 || strcmp(confirm, "CONFIRM") != 0)) ||
-        (!remove && fields != 1)) {
-      Serial.println(remove ? "RTL_CATALOG_REMOVE_ERROR usage: RTL_CATALOG_REMOVE <id> CONFIRM"
-                            : "RTL_CATALOG_INSTALL_ERROR usage: RTL_CATALOG_INSTALL <id>");
-      return;
-    }
-    const auto state = orcsdr::catalog::state();
-    int index = -1;
-    for (uint8_t i = 0; i < orcsdr::catalog::kPackCount; ++i)
-      if (strcmp(state.packs[i].id, id) == 0) { index = i; break; }
-    if (index < 0) {
-      Serial.println("RTL_CATALOG_ERROR unknown_or_unchecked_pack");
-      return;
-    }
-    handle_global_settings_action({remove ? orcsdr::settings::ActionKind::catalog_remove
-                                          : orcsdr::settings::ActionKind::catalog_install,
-                                   index});
-    Serial.printf("RTL_CATALOG_%s_%s\n", remove ? "REMOVE" : "INSTALL",
-                  orcsdr::catalog::state().busy ? "QUEUED" : "REJECTED");
-    return;
-  }
+  if (orcsdr::serial_catalog::handle_command(command, authenticated, kSerialCatalogHooks)) return;
   if (strcmp(command, "RTL_LOCATION STATUS") == 0) {
     const auto location = orcsdr::location_estimate::state();
     Serial.printf("RTL_LOCATION_STATUS busy=%d ready=%d latitude_e7=%ld longitude_e7=%ld message=\"%s\"\n",
