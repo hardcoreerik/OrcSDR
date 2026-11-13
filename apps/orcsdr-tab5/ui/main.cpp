@@ -92,6 +92,7 @@
 #include "serial_pocsag.hpp"
 #include "serial_rds.hpp"
 #include "serial_p25.hpp"
+#include "serial_rtc.hpp"
 #include "serial_wifi.hpp"
 #include "esp_memory_utils.h"
 #include "shortwave_model.hpp"
@@ -20420,6 +20421,31 @@ static constexpr orcsdr::serial_p25::Hooks kSerialP25Hooks{
     },
 };
 
+// The ORC_RTC_STATUS, ORC_TZ_SET and ORC_RTC_SET commands live in serial_rtc.cpp; these are the clock facts they read
+// and the actions they start.
+static constexpr orcsdr::serial_rtc::Hooks kSerialRtcHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    []() -> orcsdr::serial_rtc::Clock {
+      const auto clock = orcsdr::time_service::now();
+      orcsdr::serial_rtc::Clock out;
+      out.valid = clock.wallclock_valid;
+      out.utc = static_cast<uint32_t>(clock.utc);
+      out.hardware = M5.Rtc.isEnabled();
+      out.offset_min = orcsdr::time_service::utc_offset_minutes();
+      return out;
+    },
+    [](int32_t minutes) { return orcsdr::clock_settings::valid_offset(minutes); },
+    [](int32_t minutes) { return orcsdr::time_service::store_utc_offset_minutes(preferences, minutes); },
+    [](uint32_t utc) { return orcsdr::time_service::set_utc(utc); },
+    [] { ft8_clock_trust_forget(); },
+    []() -> bool { return preferences.putBool("rtc_est", true); },
+    [] {
+      update_global_settings();
+      bump_rtl_ui();
+    },
+};
+
 // The RTL_WIFI commands live in serial_wifi.cpp; these are the device facts they read and the actions they start.
 static constexpr orcsdr::serial_wifi::Hooks kSerialWifiHooks{
     [](const char* text) { Serial.print(text); },
@@ -21792,58 +21818,7 @@ void process_command(char* command) {
     return;
   }
   if (orcsdr::serial_help::handle_command(command, authenticated, kSerialHelpHooks)) return;
-  if (strcmp(command, "ORC_RTC_STATUS") == 0) {
-    const auto clock = orcsdr::time_service::now();
-    Serial.printf("ORC_RTC_STATUS valid=%d utc=%lu source=%s offset_min=%ld\n",
-                  clock.wallclock_valid ? 1 : 0,
-                  static_cast<unsigned long>(clock.utc),
-                  M5.Rtc.isEnabled() ? "hardware" : "unavailable",
-                  static_cast<long>(orcsdr::time_service::utc_offset_minutes()));
-    return;
-  }
-  if (strncmp(command, "ORC_TZ_SET ", 11) == 0) {
-    if (!authenticated) {
-      Serial.println("ORC_TZ_SET_ERROR auth_required");
-      return;
-    }
-    char* end = nullptr;
-    const long minutes = strtol(command + 11, &end, 10);
-    if (end == command + 11 || *end != '\0' ||
-        !orcsdr::clock_settings::valid_offset(static_cast<int32_t>(minutes))) {
-      Serial.println("ORC_TZ_SET_ERROR out_of_range");
-      return;
-    }
-    if (!orcsdr::time_service::store_utc_offset_minutes(preferences, static_cast<int32_t>(minutes))) {
-      Serial.println("ORC_TZ_SET_ERROR persistence_failed");
-      return;
-    }
-    Serial.printf("ORC_TZ_SET_OK offset_min=%ld\n", minutes);
-    update_global_settings();
-    bump_rtl_ui();
-    return;
-  }
-  if (strncmp(command, "ORC_RTC_SET ", 12) == 0) {
-    if (!authenticated) {
-      Serial.println("ORC_RTC_SET_ERROR auth_required");
-      return;
-    }
-    char* end = nullptr;
-    const unsigned long epoch = strtoul(command + 12, &end, 10);
-    if (end == command + 12 || *end != '\0' ||
-        !orcsdr::time_service::set_utc(static_cast<uint32_t>(epoch))) {
-      Serial.println("ORC_RTC_SET_ERROR invalid_or_unavailable");
-      return;
-    }
-    ft8_clock_trust_forget();   // set by hand: nothing vouches for its accuracy, so the sync status starts over (even if persisting below fails)
-    if (!preferences.putBool("rtc_est", true)) {
-      Serial.println("ORC_RTC_SET_ERROR persistence_failed");
-      return;
-    }
-    Serial.printf("ORC_RTC_SET_OK utc=%lu\n", epoch);
-    update_global_settings();
-    bump_rtl_ui();
-    return;
-  }
+  if (orcsdr::serial_rtc::handle_command(command, authenticated, kSerialRtcHooks)) return;
   if (strcmp(command, "RTL_RESET") == 0) {
     if (!authenticated) {
       Serial.println("RTL_RESET_ERROR auth_required");

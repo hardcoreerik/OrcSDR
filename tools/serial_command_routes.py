@@ -59,6 +59,7 @@ FAMILIES = {
     "orcsdr::serial_rds": "apps/orcsdr-tab5/ui/serial_rds.cpp",
     "orcsdr::serial_dead_air": "apps/orcsdr-tab5/ui/serial_dead_air.cpp",
     "orcsdr::serial_p25": "apps/orcsdr-tab5/ui/serial_p25.cpp",
+    "orcsdr::serial_rtc": "apps/orcsdr-tab5/ui/serial_rtc.cpp",
     "orcsdr::serial_wifi": "apps/orcsdr-tab5/ui/serial_wifi.cpp",
 }
 FAMILY_SIGNATURE = "bool handle_command(const char* command, bool authenticated, const Hooks& hooks) {"

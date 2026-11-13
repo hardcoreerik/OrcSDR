@@ -90,6 +90,7 @@ idf_component_register(
         "../ui/serial_rds.cpp"
         "../ui/serial_dead_air.cpp"
         "../ui/serial_p25.cpp"
+        "../ui/serial_rtc.cpp"
         "../ui/serial_wifi.cpp"
         "../ui/ft8_hunter.cpp"
         "../ui/ft8_dashboard.cpp"
