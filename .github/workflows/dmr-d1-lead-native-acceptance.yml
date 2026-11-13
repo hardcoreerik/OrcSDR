@@ -1,0 +1,156 @@
+name: DMR D1 exact four-fixture native acceptance (lead gate)
+on:
+  push:
+    branches:
+      - feature/dmr-digital-voice-foundation
+    paths:
+      - '.github/workflows/dmr-d1-lead-native-acceptance.yml'
+      - 'tests/dmr_replay_acceptance/**'
+      - 'tests/digital_voice_replay/manifest.json'
+      - 'components/orcsdr_dmr/d1_frontend/**'
+      - 'components/orcsdr_dmr/d1_protocol/**'
+      - 'components/orcsdr_dmr/d1_integration/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  exact-native-four-fixture-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - uses: actions/checkout@v4
+      - name: Prepare isolated temporary IQ and evidence folders
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "$RUNNER_TEMP/orcsdr-dmr-d1n-fixtures/DMR"
+          mkdir -p "$RUNNER_TEMP/orcsdr-dmr-d1n-evidence"
+          {
+            echo "OrcSDR commit $GITHUB_SHA"
+            echo "Compiled on $(uname -a)"
+            cmake --version | head -1
+            c++ --version | head -1
+            python3 --version
+          } > "$RUNNER_TEMP/orcsdr-dmr-d1n-evidence/environment.log"
+      - name: Download exact two public real-air direct-mode captures
+        shell: bash
+        run: |
+          set -euo pipefail
+          base="https://raw.githubusercontent.com/MattCheramie/GopherTrunk/f06bfff493f47fdeb69807c8b08b2b32a253839f/cmd/gophertrunk/testdata"
+          out="$RUNNER_TEMP/orcsdr-dmr-d1n-fixtures/DMR"
+          curl --fail --location --silent --show-error --retry 3 --max-time 90 \
+            "$base/dmr-directmode-446500-keyup-48k.cs16" \
+            --output "$out/dmr-directmode-446500-keyup-48k.cs16"
+          curl --fail --location --silent --show-error --retry 3 --max-time 90 \
+            "$base/dmr-directmode-446500-ptt2-48k.cs16" \
+            --output "$out/dmr-directmode-446500-ptt2-48k.cs16"
+          # Fail closed using the original, unmodified source pins and lengths.
+          python3 - <<'PY'
+          import hashlib, json, os
+          from pathlib import Path
+          manifest=json.loads(Path("tests/digital_voice_replay/manifest.json").read_text())
+          root=Path(os.environ["RUNNER_TEMP"])/"orcsdr-dmr-d1n-fixtures"
+          for fid in ("dmr-directmode-keyup","dmr-directmode-second-ptt"):
+              entry=next(x for x in manifest["files"] if x["id"]==fid)
+              data=(root/entry["path"]).read_bytes()
+              gitsha=hashlib.sha1(("blob "+str(len(data))+"\0").encode()+data).hexdigest()
+              sha256=hashlib.sha256(data).hexdigest()
+              if len(data)!=entry["bytes"] or gitsha!=entry["git_blob_sha1"] or (
+                  entry.get("sha256") and sha256!=entry["sha256"]):
+                  raise SystemExit("SOURCE HASH OR BYTE LENGTH MISMATCH: "+fid)
+              print("VERIFIED",fid,"bytes",len(data),"git_blob_sha1",gitsha,"sha256",sha256)
+          PY
+      - name: Regenerate and verify the two EXACT source-pinned noise and AM negatives
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/dmr_replay_acceptance/negative_control_repro.py \
+            --write-external-root "$RUNNER_TEMP/orcsdr-dmr-d1n-fixtures" \
+            --report "$RUNNER_TEMP/orcsdr-dmr-d1n-evidence/pinned-negatives.json" \
+            > "$RUNNER_TEMP/orcsdr-dmr-d1n-evidence/pinned-negatives.log" 2>&1
+      - name: Execute D1-N Python source and gate tests
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 -m unittest discover -s tests/dmr_replay_acceptance -p 'test_*.py' -v \
+            > "$RUNNER_TEMP/orcsdr-dmr-d1n-evidence/python-tests.log" 2>&1
+      - name: Build and test native Release D1 bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/orcsdr-dmr-d1n-evidence"
+          cmake -S components/orcsdr_dmr/d1_integration -B build/dmr-d1n-lead-release \
+            -DCMAKE_BUILD_TYPE=Release > "$evidence/release-configure.log" 2>&1
+          cmake --build build/dmr-d1n-lead-release --parallel 2 \
+            > "$evidence/release-build.log" 2>&1
+          ctest --test-dir build/dmr-d1n-lead-release --output-on-failure --verbose \
+            > "$evidence/release-ctest.log" 2>&1
+      - name: Build and test native ASan and UBSan D1 bridge
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="$RUNNER_TEMP/orcsdr-dmr-d1n-evidence"
+          cmake -S components/orcsdr_dmr/d1_integration -B build/dmr-d1n-lead-asan \
+            -DCMAKE_BUILD_TYPE=Debug -DDMR_D1_INTEGRATION_SANITIZE=ON \
+            > "$evidence/asan-configure.log" 2>&1
+          cmake --build build/dmr-d1n-lead-asan --parallel 2 \
+            > "$evidence/asan-build.log" 2>&1
+          ctest --test-dir build/dmr-d1n-lead-asan --output-on-failure --verbose \
+            > "$evidence/asan-ctest.log" 2>&1
+      - name: Execute actual native D1 40-combination acceptance
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 tests/dmr_replay_acceptance/d1n_matrix.py \
+            --fixtures-root "$RUNNER_TEMP/orcsdr-dmr-d1n-fixtures" \
+            --release-bridge "$GITHUB_WORKSPACE/build/dmr-d1n-lead-release/dmr_d1_replay_bridge" \
+            --sanitizer-bridge "$GITHUB_WORKSPACE/build/dmr-d1n-lead-asan/dmr_d1_replay_bridge" \
+            --chunk-sizes 1 7 257 1024 4096 \
+            --timeout 240 \
+            --report "$RUNNER_TEMP/orcsdr-dmr-d1n-evidence/d1n-native-matrix.json" \
+            --log "$RUNNER_TEMP/orcsdr-dmr-d1n-evidence/d1n-native-matrix.log" \
+            > "$RUNNER_TEMP/orcsdr-dmr-d1n-evidence/d1n-runner-stdout.log" 2>&1
+      - name: Summarize complete measured acceptance, including blocked/fail status
+        if: always()
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          import json,os
+          from pathlib import Path
+          report=Path(os.environ["RUNNER_TEMP"])/"orcsdr-dmr-d1n-evidence"/"d1n-native-matrix.json"
+          with open(os.environ["GITHUB_STEP_SUMMARY"],"a",encoding="utf-8") as out:
+              out.write("## DMR D1-N native acceptance — exact pinned four fixtures\n\n")
+              out.write(f"**Decoder source:** `{os.environ['GITHUB_SHA']}`  \n")
+              out.write("**Required:** 4 original inputs × 5 chunks (1,7,257,1024,4096) × 2 native builds = 40.\n\n")
+              if not report.is_file():
+                  out.write("**BLOCKED / FAIL:** No matrix evidence created; see build or test logs.\n")
+              else:
+                  r=json.loads(report.read_text())
+                  rows=r.get("native_replay_matrix",[])
+                  measured=sum(x.get("status")=="MEASURED" for x in rows)
+                  out.write(f"**Native gate result: {r.get('status')}** — **{measured}/{len(rows)}** executions measured.\n\n")
+                  out.write("| Fixture | Build | Measured chunk replays | Assessment | Verified identities / controls |\n")
+                  out.write("|---|---|---:|---|---|\n")
+                  for fid in r.get("fixture_order",[]):
+                      for mode in r.get("build_modes",[]):
+                          sample=[x for x in rows if x.get("fixture")==fid and x.get("build")==mode]
+                          result=next((x.get("fixture_assessment",{}) for x in sample if x.get("fixture_assessment")), {})
+                          one=next((x["metrics"] for x in sample if x.get("metrics")), {})
+                          ident=(
+                              f"source={one.get('source_ids',[])} TG={one.get('talkgroups',[])} "
+                              f"false-IDs={one.get('false_identity_detections')}"
+                          ) if one else "NOT MEASURED"
+                          out.write(f"| {fid} | {mode} | {sum(x.get('status')=='MEASURED' for x in sample)}/5 "
+                                    f"| {result.get('status','NOT MEASURED')} | {ident} |\n")
+                  out.write("\n**The overall PASS claim requires status PASS, exactly 40 measured executions, "
+                            "original hash checks, and all per-fixture validations.**\n")
+          PY
+      - name: Preserve only source-safe JSON and logs (NO raw IQ)
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dmr-d1n-lead-native-evidence
+          path: ${{ runner.temp }}/orcsdr-dmr-d1n-evidence/**
+          if-no-files-found: ignore
+          retention-days: 21
