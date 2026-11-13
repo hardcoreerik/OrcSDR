@@ -87,6 +87,7 @@
 #include "serial_keyboard.hpp"
 #include "serial_memory.hpp"
 #include "serial_gain.hpp"
+#include "serial_driver.hpp"
 #include "serial_dsp.hpp"
 #include "serial_pocsag.hpp"
 #include "serial_rds.hpp"
@@ -20016,6 +20017,108 @@ static constexpr orcsdr::serial_gain::Hooks kSerialGainHooks{
     serial_gain_fm_status,
 };
 
+// The RTL_DRIVER SELF_CHECK and RTL_DRIVER <action> commands live in serial_driver.cpp. Each hook below does one whole
+// action (capability check included) in the order the dispatcher did, and reports what the driver answered.
+static orcsdr::serial_driver::Outcome serial_driver_outcome(esp_err_t err) {
+  return {err == ESP_OK, esp_rtl_sdr_err_to_name(err)};
+}
+static orcsdr::serial_driver::SelfCheck serial_driver_self_check() {
+  const auto profile = g_rtl_profile.load(std::memory_order_acquire);
+  uint32_t required = ESP_RTL_SDR_CAP_STREAM | ESP_RTL_SDR_CAP_RETUNE |
+                      ESP_RTL_SDR_CAP_METRICS | ESP_RTL_SDR_CAP_FREQ_CORRECTION |
+                      ESP_RTL_SDR_CAP_DELIVERY_MODE;
+  if (profile == ESP_RTL_SDR_PROFILE_BLOG_V4)
+    required |= ESP_RTL_SDR_CAP_HF_UPCONVERTER | ESP_RTL_SDR_CAP_GAIN |
+                ESP_RTL_SDR_CAP_GAIN_AUTO | ESP_RTL_SDR_CAP_RTL_AGC |
+                ESP_RTL_SDR_CAP_BIAS_TEE;
+  else if (profile == ESP_RTL_SDR_PROFILE_BLOG_V3 ||
+           profile == ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5)
+    required |= ESP_RTL_SDR_CAP_DIRECT_SAMPLING | ESP_RTL_SDR_CAP_GAIN |
+                ESP_RTL_SDR_CAP_GAIN_AUTO | ESP_RTL_SDR_CAP_RTL_AGC;
+  else if (profile == ESP_RTL_SDR_PROFILE_BLOG_V4L)
+    required |= ESP_RTL_SDR_CAP_HF_UPCONVERTER | ESP_RTL_SDR_CAP_GAIN |
+                ESP_RTL_SDR_CAP_GAIN_AUTO | ESP_RTL_SDR_CAP_RTL_AGC;
+  else if (profile == ESP_RTL_SDR_PROFILE_E4000)
+    required |= ESP_RTL_SDR_CAP_GAIN | ESP_RTL_SDR_CAP_GAIN_AUTO |
+                ESP_RTL_SDR_CAP_OFFSET_TUNING;
+  const uint32_t caps = rtl_device_capabilities();
+  const bool pass = g_rtl != nullptr &&
+                    (profile == ESP_RTL_SDR_PROFILE_BLOG_V4 ||
+                     profile == ESP_RTL_SDR_PROFILE_BLOG_V4L ||
+                     profile == ESP_RTL_SDR_PROFILE_BLOG_V3 ||
+                     profile == ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5 ||
+                     profile == ESP_RTL_SDR_PROFILE_E4000) &&
+                    (caps & required) == required;
+  return {pass, esp_rtl_sdr_get_version_string(), static_cast<unsigned>(profile), static_cast<unsigned>(caps),
+          static_cast<unsigned>(required)};
+}
+static orcsdr::serial_driver::Outcome serial_driver_offset_tuning(bool enabled) {
+  const esp_err_t err = esp_rtl_sdr_set_offset_tuning(g_rtl, enabled);
+  if (err == ESP_OK) rtl_offset_tuning_enabled.store(enabled, std::memory_order_release);
+  return serial_driver_outcome(err);
+}
+static orcsdr::serial_driver::Outcome serial_driver_gain_mode(bool automatic) {
+  rtl_gain_stop_smart();
+  const uint32_t capability = automatic ? ESP_RTL_SDR_CAP_GAIN_AUTO : ESP_RTL_SDR_CAP_GAIN;
+  const esp_rtl_sdr_gain_mode_t mode = automatic ? ESP_RTL_SDR_GAIN_MODE_AUTO : ESP_RTL_SDR_GAIN_MODE_MANUAL;
+  const esp_err_t err = rtl_has_device_capability(capability) ? esp_rtl_sdr_set_tuner_gain_mode(g_rtl, mode)
+                                                              : ESP_RTL_SDR_ERR_UNSUPPORTED;
+  return serial_driver_outcome(err);
+}
+static orcsdr::serial_driver::Outcome serial_driver_gain(int gain_tenth_db) {
+  rtl_gain_stop_smart();  // SMART would otherwise step over the raw gain
+  const esp_err_t err = rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN)
+                            ? esp_rtl_sdr_set_tuner_gain(g_rtl, gain_tenth_db)
+                            : ESP_RTL_SDR_ERR_UNSUPPORTED;
+  return serial_driver_outcome(err);
+}
+static orcsdr::serial_driver::Outcome serial_driver_rtl_agc(bool enabled) {
+  const esp_err_t err = rtl_has_device_capability(ESP_RTL_SDR_CAP_RTL_AGC)
+                            ? esp_rtl_sdr_set_rtl_agc(g_rtl, enabled)
+                            : ESP_RTL_SDR_ERR_UNSUPPORTED;
+  return serial_driver_outcome(err);
+}
+static orcsdr::serial_driver::Outcome serial_driver_bias_tee(bool enabled) {
+  const esp_err_t err = rtl_has_device_capability(ESP_RTL_SDR_CAP_BIAS_TEE)
+                            ? esp_rtl_sdr_set_bias_tee(g_rtl, enabled)
+                            : ESP_RTL_SDR_ERR_UNSUPPORTED;
+  return serial_driver_outcome(err);
+}
+static orcsdr::serial_driver::Outcome serial_driver_hf_direct(uint32_t override_hz) {
+  rtl_hf_direct_override_hz = override_hz;
+  const esp_err_t err = rtl_hf_direct_override_hz == UINT32_MAX
+                            ? ESP_OK
+                            : esp_rtl_sdr_set_hf_direct_min_hz(g_rtl, rtl_hf_direct_override_hz);
+  return serial_driver_outcome(err);
+}
+static orcsdr::serial_driver::Outcome serial_driver_bandwidth(uint32_t bandwidth_hz) {
+  const esp_err_t err = rtl_has_device_capability(ESP_RTL_SDR_CAP_TUNER_BANDWIDTH)
+                            ? esp_rtl_sdr_set_tuner_bandwidth(g_rtl, bandwidth_hz)
+                            : ESP_RTL_SDR_ERR_UNSUPPORTED;
+  return serial_driver_outcome(err);
+}
+static orcsdr::serial_driver::Outcome serial_driver_retune(uint32_t frequency_hz) {
+  return serial_driver_outcome(esp_rtl_sdr_retune_hz(g_rtl, frequency_hz));
+}
+static constexpr orcsdr::serial_driver::Hooks kSerialDriverHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    serial_driver_self_check,
+    []() -> bool { return g_rtl != nullptr; },
+    serial_driver_offset_tuning,
+    serial_driver_gain_mode,
+    serial_driver_gain,
+    serial_driver_rtl_agc,
+    serial_driver_bias_tee,
+    serial_driver_hf_direct,
+    serial_driver_bandwidth,
+    serial_driver_retune,
+    kRtlHfDirectMinHz,
+    ESP_RTL_SDR_HF_UPCONV_LO_HZ,
+    ESP_RTL_SDR_FREQ_MIN_HZ,
+    ESP_RTL_SDR_FREQ_MAX_HZ,
+};
+
 // The RTL_POCSAG commands live in serial_pocsag.cpp; these are the device actions they need.
 static constexpr orcsdr::serial_pocsag::Hooks kSerialPocsagHooks{
     [](const char* text) { Serial.print(text); },
@@ -21634,132 +21737,7 @@ void process_command(char* command) {
   }
   if (orcsdr::serial_dsp::handle_command(command, authenticated, kSerialDspHooks)) return;
   if (orcsdr::serial_gain::handle_command(command, authenticated, kSerialGainHooks)) return;
-  if (strcmp(command, "RTL_DRIVER SELF_CHECK") == 0) {
-    const auto profile = g_rtl_profile.load(std::memory_order_acquire);
-    uint32_t required = ESP_RTL_SDR_CAP_STREAM | ESP_RTL_SDR_CAP_RETUNE |
-                        ESP_RTL_SDR_CAP_METRICS | ESP_RTL_SDR_CAP_FREQ_CORRECTION |
-                        ESP_RTL_SDR_CAP_DELIVERY_MODE;
-    if (profile == ESP_RTL_SDR_PROFILE_BLOG_V4)
-      required |= ESP_RTL_SDR_CAP_HF_UPCONVERTER | ESP_RTL_SDR_CAP_GAIN |
-                  ESP_RTL_SDR_CAP_GAIN_AUTO | ESP_RTL_SDR_CAP_RTL_AGC |
-                  ESP_RTL_SDR_CAP_BIAS_TEE;
-    else if (profile == ESP_RTL_SDR_PROFILE_BLOG_V3 ||
-             profile == ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5)
-      required |= ESP_RTL_SDR_CAP_DIRECT_SAMPLING | ESP_RTL_SDR_CAP_GAIN |
-                  ESP_RTL_SDR_CAP_GAIN_AUTO | ESP_RTL_SDR_CAP_RTL_AGC;
-    else if (profile == ESP_RTL_SDR_PROFILE_BLOG_V4L)
-      required |= ESP_RTL_SDR_CAP_HF_UPCONVERTER | ESP_RTL_SDR_CAP_GAIN |
-                  ESP_RTL_SDR_CAP_GAIN_AUTO | ESP_RTL_SDR_CAP_RTL_AGC;
-    else if (profile == ESP_RTL_SDR_PROFILE_E4000)
-      required |= ESP_RTL_SDR_CAP_GAIN | ESP_RTL_SDR_CAP_GAIN_AUTO |
-                  ESP_RTL_SDR_CAP_OFFSET_TUNING;
-    const uint32_t caps = rtl_device_capabilities();
-    const bool pass = g_rtl != nullptr &&
-                      (profile == ESP_RTL_SDR_PROFILE_BLOG_V4 ||
-                       profile == ESP_RTL_SDR_PROFILE_BLOG_V4L ||
-                       profile == ESP_RTL_SDR_PROFILE_BLOG_V3 ||
-                       profile == ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5 ||
-                       profile == ESP_RTL_SDR_PROFILE_E4000) &&
-                      (caps & required) == required;
-    Serial.printf("RTL_DRIVER_SELF_CHECK pass=%d version=%s profile=%u "
-                  "device_caps=0x%08x required=0x%08x\n",
-                  pass ? 1 : 0, esp_rtl_sdr_get_version_string(),
-                  static_cast<unsigned>(profile), static_cast<unsigned>(caps),
-                  static_cast<unsigned>(required));
-    return;
-  }
-  if (strncmp(command, "RTL_DRIVER ", 11) == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_DRIVER_ERROR auth_required");
-      return;
-    }
-    if (g_rtl == nullptr) {
-      Serial.println("RTL_DRIVER_ERROR not_installed");
-      return;
-    }
-    esp_err_t err = ESP_ERR_INVALID_ARG;
-    const char* action = command + 11;
-    if (strcmp(action, "OFFSET ON") == 0 || strcmp(action, "OFFSET OFF") == 0) {
-      const bool enabled = strcmp(action, "OFFSET ON") == 0;
-      err = esp_rtl_sdr_set_offset_tuning(g_rtl, enabled);
-      if (err == ESP_OK) rtl_offset_tuning_enabled.store(enabled, std::memory_order_release);
-    } else if (strcmp(action, "GAINMODE AUTO") == 0)
-      err = (rtl_gain_stop_smart(), rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN_AUTO))
-                ? esp_rtl_sdr_set_tuner_gain_mode(g_rtl, ESP_RTL_SDR_GAIN_MODE_AUTO)
-                : ESP_RTL_SDR_ERR_UNSUPPORTED;
-    else if (strcmp(action, "GAINMODE MANUAL") == 0)
-      err = (rtl_gain_stop_smart(), rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN))
-                ? esp_rtl_sdr_set_tuner_gain_mode(g_rtl, ESP_RTL_SDR_GAIN_MODE_MANUAL)
-                : ESP_RTL_SDR_ERR_UNSUPPORTED;
-    else if (strncmp(action, "GAIN ", 5) == 0) {
-      char* end = nullptr;
-      const long gain = strtol(action + 5, &end, 10);
-      if (end == action + 5 || *end != '\0' || gain < -10 || gain > 496) {
-        Serial.println("RTL_DRIVER_INVALID use GAIN <-10..496>; driver selects nearest supported step");
-        return;
-      }
-      rtl_gain_stop_smart();  // SMART would otherwise step over the raw gain
-      err = rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN)
-                ? esp_rtl_sdr_set_tuner_gain(g_rtl, static_cast<int>(gain))
-                : ESP_RTL_SDR_ERR_UNSUPPORTED;
-    } else if (strcmp(action, "RTLAGC ON") == 0 || strcmp(action, "RTLAGC OFF") == 0)
-      err = rtl_has_device_capability(ESP_RTL_SDR_CAP_RTL_AGC)
-                ? esp_rtl_sdr_set_rtl_agc(g_rtl, strcmp(action + 7, "ON") == 0)
-                : ESP_RTL_SDR_ERR_UNSUPPORTED;
-    else if (strcmp(action, "BIAS ON") == 0 || strcmp(action, "BIAS OFF") == 0)
-      err = rtl_has_device_capability(ESP_RTL_SDR_CAP_BIAS_TEE)
-                ? esp_rtl_sdr_set_bias_tee(g_rtl, strcmp(action + 5, "ON") == 0)
-                : ESP_RTL_SDR_ERR_UNSUPPORTED;
-    else if (strncmp(action, "HFDIRECT ", 9) == 0) {
-      // V4L route override for the next start: AUTO (CB direct), OFF, or a min Hz.
-      const char* value = action + 9;
-      if (strcmp(value, "AUTO") == 0) rtl_hf_direct_override_hz = UINT32_MAX;
-      else if (strcmp(value, "OFF") == 0) rtl_hf_direct_override_hz = 0;
-      else {
-        char* end = nullptr;
-        const unsigned long hz = strtoul(value, &end, 10);
-        if (end == value || *end != '\0' || hz < kRtlHfDirectMinHz ||
-            hz >= ESP_RTL_SDR_HF_UPCONV_LO_HZ) {
-          Serial.println("RTL_DRIVER_INVALID use HFDIRECT AUTO|OFF|<24000000..28799999>");
-          return;
-        }
-        rtl_hf_direct_override_hz = static_cast<uint32_t>(hz);
-      }
-      err = rtl_hf_direct_override_hz == UINT32_MAX
-                ? ESP_OK
-                : esp_rtl_sdr_set_hf_direct_min_hz(g_rtl, rtl_hf_direct_override_hz);
-    }
-    else if (strncmp(action, "BW ", 3) == 0) {
-      // Queues the request only; read back with RTL_DRIVER STATUS
-      // (bw_requested_hz / bw_applied_hz). 0 = automatic.
-      char* end = nullptr;
-      const unsigned long bandwidth_hz = strtoul(action + 3, &end, 10);
-      if (end == action + 3 || *end != '\0') {
-        Serial.println("RTL_DRIVER_INVALID use BW <hz|0>");
-        return;
-      }
-      err = rtl_has_device_capability(ESP_RTL_SDR_CAP_TUNER_BANDWIDTH)
-                ? esp_rtl_sdr_set_tuner_bandwidth(g_rtl, static_cast<uint32_t>(bandwidth_hz))
-                : ESP_RTL_SDR_ERR_UNSUPPORTED;
-    }
-    else if (strncmp(action, "TUNE ", 5) == 0) {
-      char* end = nullptr;
-      const unsigned long frequency_hz = strtoul(action + 5, &end, 10);
-      if (end == action + 5 || *end != '\0' || frequency_hz < ESP_RTL_SDR_FREQ_MIN_HZ ||
-          frequency_hz > ESP_RTL_SDR_FREQ_MAX_HZ) {
-        Serial.println("RTL_DRIVER_INVALID use TUNE <24000..1766000000>");
-        return;
-      }
-      err = esp_rtl_sdr_retune_hz(g_rtl, static_cast<uint32_t>(frequency_hz));
-    }
-    else {
-      Serial.println("RTL_DRIVER_INVALID use STATUS|SELF_CHECK|TUNE <HZ>|OFFSET ON|OFF|HFDIRECT AUTO|OFF|<24000000..28799999>|GAINMODE AUTO|MANUAL|GAIN <-10..496>|RTLAGC ON|OFF|BIAS ON|OFF|BW <hz|0>");
-      return;
-    }
-    Serial.printf("RTL_DRIVER_RESULT action=\"%s\" accepted=%d result=%s\n", action,
-                  err == ESP_OK ? 1 : 0, esp_rtl_sdr_err_to_name(err));
-    return;
-  }
+  if (orcsdr::serial_driver::handle_command(command, authenticated, kSerialDriverHooks)) return;
 
   // ---------------------------------------------------------------------
   // CLI/serial control surface for scripted/AI-driven tuning and decoding
