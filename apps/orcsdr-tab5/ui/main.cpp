@@ -80,6 +80,7 @@
 #include "memory_reclaim.hpp"
 #include "memory_ledger.hpp"
 #include "serial_help.hpp"
+#include "serial_keyboard.hpp"
 #include "serial_memory.hpp"
 #include "serial_dsp.hpp"
 #include "serial_pocsag.hpp"
@@ -19994,6 +19995,31 @@ static constexpr orcsdr::serial_pocsag::Hooks kSerialPocsagHooks{
       // explicitly above rather than left to go stale like a plain retune would.
       queue_local_rtl_listen(RtlBand::pocsag, clamped);
       return clamped;
+// The RTL_KEYBOARD commands live in serial_keyboard.cpp; this is what they read and do on the device.
+static constexpr orcsdr::serial_keyboard::Hooks kSerialKeyboardHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    orcsdr::tab5_keyboard::status,
+    []() -> bool { return g_keyboard_echo; },
+    orcsdr::text_editor::active,
+    []() -> orcsdr::serial_keyboard::Focus {
+      orcsdr::serial_keyboard::Focus focus;
+      orcsdr::focus_nav::Rect rect;
+      focus.focused = orcsdr::focus_nav::focused(&rect);
+      focus.controls = static_cast<uint32_t>(orcsdr::focus_nav::count());
+      if (focus.focused) {
+        focus.x = rect.x;
+        focus.y = rect.y;
+        focus.w = rect.w;
+        focus.h = rect.h;
+        focus.ring = orcsdr::focus_ring::visible();
+      }
+      return focus;
+    },
+    route_key,
+    [](bool on) -> bool {
+      g_keyboard_echo = on;
+      return g_keyboard_echo;
     },
 };
 
@@ -20175,63 +20201,7 @@ void process_command(char* command) {
       Serial.println(line);
     return;
   }
-  if (strcmp(command, "RTL_KEYBOARD STATUS") == 0) {
-    const auto keyboard = orcsdr::tab5_keyboard::status();
-    Serial.printf("RTL_KEYBOARD_STATUS present=%d firmware=%u mode=%u int_low=%d keys=%lu "
-                  "dropped=%lu undecoded=%lu bus_errors=%lu attaches=%lu echo=%d editor=%d\n",
-                  keyboard.present ? 1 : 0, static_cast<unsigned>(keyboard.firmware),
-                  static_cast<unsigned>(keyboard.mode), keyboard.int_low ? 1 : 0,
-                  static_cast<unsigned long>(keyboard.keys),
-                  static_cast<unsigned long>(keyboard.dropped),
-                  static_cast<unsigned long>(keyboard.undecoded),
-                  static_cast<unsigned long>(keyboard.bus_errors),
-                  static_cast<unsigned long>(keyboard.attach_count), g_keyboard_echo ? 1 : 0,
-                  orcsdr::text_editor::active() ? 1 : 0);
-    orcsdr::focus_nav::Rect rect;
-    if (orcsdr::focus_nav::focused(&rect))
-      Serial.printf("RTL_KEYBOARD_FOCUS controls=%u x=%d y=%d w=%d h=%d ring=%d\n",
-                    static_cast<unsigned>(orcsdr::focus_nav::count()), rect.x, rect.y, rect.w,
-                    rect.h, orcsdr::focus_ring::visible() ? 1 : 0);
-    else
-      Serial.printf("RTL_KEYBOARD_FOCUS controls=%u none\n",
-                    static_cast<unsigned>(orcsdr::focus_nav::count()));
-    return;
-  }
-  if (strncmp(command, "RTL_KEYBOARD KEY ", 17) == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_KEYBOARD_ERROR auth_required");
-      return;
-    }
-    using orcsdr::keyboard_input::Special;
-    orcsdr::keyboard_input::Key key;
-    const char* name = command + 17;
-    if (strcmp(name, "UP") == 0) key.special = Special::up;
-    else if (strcmp(name, "DOWN") == 0) key.special = Special::down;
-    else if (strcmp(name, "LEFT") == 0) key.special = Special::left;
-    else if (strcmp(name, "RIGHT") == 0) key.special = Special::right;
-    else if (strcmp(name, "ENTER") == 0) key.special = Special::enter;
-    else if (strcmp(name, "ESC") == 0) key.special = Special::escape;
-    else if (strcmp(name, "BACKSPACE") == 0) key.special = Special::backspace;
-    else if (strcmp(name, "TAB") == 0) key.special = Special::tab;
-    else if (strcmp(name, "SPACE") == 0) key.ch = ' ';
-    else if (name[0] != '\0' && name[1] == '\0') key.ch = name[0];
-    else {
-      Serial.println("RTL_KEYBOARD_INVALID use UP|DOWN|LEFT|RIGHT|ENTER|ESC|TAB|SPACE|BACKSPACE|<char>");
-      return;
-    }
-    route_key(key);
-    Serial.println("RTL_KEYBOARD_KEY_OK");
-    return;
-  }
-  if (strncmp(command, "RTL_KEYBOARD ECHO ", 18) == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_KEYBOARD_ERROR auth_required");
-      return;
-    }
-    g_keyboard_echo = command[18] == '1';
-    Serial.printf("RTL_KEYBOARD_ECHO %d\n", g_keyboard_echo ? 1 : 0);
-    return;
-  }
+  if (orcsdr::serial_keyboard::handle_command(command, authenticated, kSerialKeyboardHooks)) return;
   if (strcmp(command, "RTL_UI STATUS") == 0) {
     Serial.printf("RTL_UI_STATUS screen=%s band=%s frequency_hz=%u settings=%d fm=%d am=%d p25=%d "
                   "adsb=%d lora=%d rf24=%d home_font=%d graphics=%d radio_ui=%d route=%s volume=%u audio_enabled=%d tray=%d\n",
