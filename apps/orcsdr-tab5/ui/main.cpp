@@ -82,6 +82,7 @@
 #include "serial_help.hpp"
 #include "serial_memory.hpp"
 #include "serial_dsp.hpp"
+#include "serial_pocsag.hpp"
 #include "esp_memory_utils.h"
 #include "shortwave_model.hpp"
 #include "shortwave_audio_dsp.hpp"
@@ -19966,6 +19967,34 @@ static constexpr orcsdr::serial_dsp::Hooks kSerialDspHooks{
     nullptr,
     nullptr,
 #endif
+// The RTL_POCSAG commands live in serial_pocsag.cpp; these are the device actions they need.
+static constexpr orcsdr::serial_pocsag::Hooks kSerialPocsagHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    print_pocsag_status,
+    []() -> bool { return rtl_ui_band == RtlBand::pocsag; },
+    [] { pocsag_scan_requested.store(true, std::memory_order_release); },
+    [] { pocsag_scan_cancel_requested.store(true, std::memory_order_release); },
+    [](uint16_t baud_bps) {
+      pocsag_baud_bps.store(baud_bps, std::memory_order_relaxed);
+      pocsag_config_apply_pending.store(true, std::memory_order_release);
+    },
+    [](uint8_t mode) {
+      pocsag_polarity_mode.store(mode, std::memory_order_relaxed);
+      pocsag_config_apply_pending.store(true, std::memory_order_release);
+    },
+    [](uint32_t frequency_hz) -> uint32_t {
+      const uint32_t clamped = rtl_clamp_frequency(RtlBand::pocsag, frequency_hz);
+      pocsag_config_frequency_hz = clamped;
+      // Reuses the same band-switch path RTL_TUNE uses for every other band --
+      // this also handles entering POCSAG fresh if it wasn't already active --
+      // but queue_local_rtl_listen() never touches pocsag_config_frequency_hz
+      // itself (that variable is POCSAG's own config-of-record, read by the
+      // dashboard header and the discovery scan's restore target), so it's set
+      // explicitly above rather than left to go stale like a plain retune would.
+      queue_local_rtl_listen(RtlBand::pocsag, clamped);
+      return clamped;
+    },
 };
 
 void process_command(char* command) {
@@ -22358,75 +22387,7 @@ void process_command(char* command) {
     Serial.println("RTL_PRESET_SCAN_QUEUED");
     return;
   }
-  if (strcmp(command, "RTL_POCSAG STATUS") == 0) {
-    print_pocsag_status();
-    return;
-  }
-  if (strcmp(command, "RTL_POCSAG_SCAN") == 0 && authenticated) {
-    if (rtl_ui_band != RtlBand::pocsag) {
-      Serial.println("RTL_POCSAG_SCAN_INVALID POCSAG band only");
-      return;
-    }
-    pocsag_scan_requested.store(true, std::memory_order_release);
-    Serial.println("RTL_POCSAG_SCAN_QUEUED");
-    return;
-  }
-  if (strcmp(command, "RTL_POCSAG_SCAN_STOP") == 0 && authenticated) {
-    pocsag_scan_cancel_requested.store(true, std::memory_order_release);
-    Serial.println("RTL_POCSAG_SCAN_STOP_QUEUED");
-    return;
-  }
-  if (strncmp(command, "RTL_POCSAG_SET_BAUD ", 20) == 0 && authenticated) {
-    const char* arg = command + 20;
-    uint16_t baud_bps;
-    if (strcasecmp(arg, "AUTO") == 0) baud_bps = 0;
-    else if (strcmp(arg, "512") == 0) baud_bps = 512;
-    else if (strcmp(arg, "1200") == 0) baud_bps = 1200;
-    else if (strcmp(arg, "2400") == 0) baud_bps = 2400;
-    else {
-      Serial.println("RTL_POCSAG_SET_BAUD_INVALID use AUTO|512|1200|2400");
-      return;
-    }
-    pocsag_baud_bps.store(baud_bps, std::memory_order_relaxed);
-    pocsag_config_apply_pending.store(true, std::memory_order_release);
-    Serial.printf("RTL_POCSAG_SET_BAUD_OK baud=%s\n", baud_bps == 0 ? "AUTO" : arg);
-    return;
-  }
-  if (strncmp(command, "RTL_POCSAG_SET_POLARITY ", 24) == 0 && authenticated) {
-    const char* arg = command + 24;
-    uint8_t mode;
-    if (strcasecmp(arg, "AUTO") == 0) mode = 0;
-    else if (strcasecmp(arg, "NORMAL") == 0) mode = 1;
-    else if (strcasecmp(arg, "INVERTED") == 0) mode = 2;
-    else {
-      Serial.println("RTL_POCSAG_SET_POLARITY_INVALID use AUTO|NORMAL|INVERTED");
-      return;
-    }
-    pocsag_polarity_mode.store(mode, std::memory_order_relaxed);
-    pocsag_config_apply_pending.store(true, std::memory_order_release);
-    Serial.printf("RTL_POCSAG_SET_POLARITY_OK polarity=%s\n",
-                  mode == 0 ? "AUTO" : mode == 1 ? "NORMAL" : "INVERTED");
-    return;
-  }
-  if (strncmp(command, "RTL_POCSAG_TUNE ", 16) == 0 && authenticated) {
-    char* end = nullptr;
-    const unsigned long parsed = strtoul(command + 16, &end, 10);
-    if (end == command + 16 || parsed == 0) {
-      Serial.println("RTL_POCSAG_TUNE_INVALID usage: RTL_POCSAG_TUNE <HZ>");
-      return;
-    }
-    const uint32_t clamped = rtl_clamp_frequency(RtlBand::pocsag, static_cast<uint32_t>(parsed));
-    pocsag_config_frequency_hz = clamped;
-    // Reuses the same band-switch path RTL_TUNE uses for every other band --
-    // this also handles entering POCSAG fresh if it wasn't already active --
-    // but queue_local_rtl_listen() never touches pocsag_config_frequency_hz
-    // itself (that variable is POCSAG's own config-of-record, read by the
-    // dashboard header and the discovery scan's restore target), so it's set
-    // explicitly above rather than left to go stale like a plain retune would.
-    queue_local_rtl_listen(RtlBand::pocsag, clamped);
-    Serial.printf("RTL_POCSAG_TUNE_OK frequency_hz=%lu\n", static_cast<unsigned long>(clamped));
-    return;
-  }
+  if (orcsdr::serial_pocsag::handle_command(command, authenticated, kSerialPocsagHooks)) return;
   if (strcmp(command, "RTL_PRESET_LIST") == 0) {
     Serial.printf("RTL_PRESET_LIST_BEGIN count=%d\n", fm_preset_count);
     for (int i = 0; i < fm_preset_count; ++i) {
