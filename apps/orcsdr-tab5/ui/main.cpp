@@ -86,6 +86,7 @@
 #include "serial_help.hpp"
 #include "serial_keyboard.hpp"
 #include "serial_memory.hpp"
+#include "serial_gain.hpp"
 #include "serial_dsp.hpp"
 #include "serial_pocsag.hpp"
 #include "serial_rds.hpp"
@@ -19977,6 +19978,44 @@ static constexpr orcsdr::serial_dsp::Hooks kSerialDspHooks{
 #endif
 };
 
+// The RTL_GAIN, RTL_AM_GAIN and RTL_FM_GAIN commands live in serial_gain.cpp; these are the device reads and gain
+// actions they use. Each gain change goes through the same function the Home gain popup uses.
+static int serial_gain_current() {
+  int gain = 0;
+  if (g_rtl != nullptr) (void)esp_rtl_sdr_get_tuner_gain(g_rtl, &gain);
+  return gain;
+}
+static orcsdr::serial_gain::AutoStatus serial_gain_am_status() {
+  orcsdr::serial_gain::AutoStatus status;
+  status.gain_tenth_db = serial_gain_current();
+  status.automatic = rtl_am_gain_auto_enabled.load(std::memory_order_relaxed);
+  status.selecting = rtl_am_gain_auto_selecting.load(std::memory_order_relaxed);
+  status.target_dbfs = static_cast<double>(orcsdr::am::kAutoGainTargetDbfs);
+  status.clipping_percent = static_cast<double>(rtl_iq_clipping_percent.load(std::memory_order_relaxed));
+  return status;
+}
+static orcsdr::serial_gain::AutoStatus serial_gain_fm_status() {
+  orcsdr::serial_gain::AutoStatus status;
+  status.gain_tenth_db = serial_gain_current();
+  status.automatic = rtl_fm_gain_auto_enabled.load(std::memory_order_relaxed);
+  status.selecting = rtl_fm_gain_auto_selecting.load(std::memory_order_relaxed);
+  status.target_dbfs = static_cast<double>(orcsdr::am::kAutoGainTargetDbfs);
+  status.clipping_percent = static_cast<double>(rtl_iq_clipping_percent.load(std::memory_order_relaxed));
+  return status;
+}
+static constexpr orcsdr::serial_gain::Hooks kSerialGainHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    print_rtl_gain_status,
+    []() { (void)rtl_gain_set_auto("SERIAL"); },
+    [](int gain_tenth_db) { (void)rtl_gain_set_manual("SERIAL", gain_tenth_db); },
+    [](bool enabled) { (void)rtl_gain_set_rtl_agc("SERIAL", enabled); },
+    serial_gain_current,
+    bump_rtl_ui,
+    serial_gain_am_status,
+    serial_gain_fm_status,
+};
+
 // The RTL_POCSAG commands live in serial_pocsag.cpp; these are the device actions they need.
 static constexpr orcsdr::serial_pocsag::Hooks kSerialPocsagHooks{
     [](const char* text) { Serial.print(text); },
@@ -21594,64 +21633,7 @@ void process_command(char* command) {
     return;
   }
   if (orcsdr::serial_dsp::handle_command(command, authenticated, kSerialDspHooks)) return;
-  if (strcmp(command, "RTL_GAIN STATUS") == 0) {
-    print_rtl_gain_status();
-    return;
-  }
-  if (strncmp(command, "RTL_GAIN ", 9) == 0) {
-    // Same paths as the Home gain popup, for the current band.
-    if (!authenticated) {
-      Serial.println("RTL_GAIN_ERROR auth_required");
-      return;
-    }
-    const char* action = command + 9;
-    if (strcmp(action, "AUTO") == 0 || strcmp(action, "SMART") == 0) {
-      (void)rtl_gain_set_auto("SERIAL");
-    } else if (strcmp(action, "MANUAL") == 0 || strncmp(action, "MANUAL ", 7) == 0) {
-      int gain = 0;
-      if (action[6] == ' ') {
-        char* end = nullptr;
-        const long value = strtol(action + 7, &end, 10);
-        if (end == action + 7 || *end != '\0' || value < 0 || value > 496) {
-          Serial.println("RTL_GAIN_INVALID use MANUAL [0..496]");
-          return;
-        }
-        gain = static_cast<int>(value);
-      } else if (g_rtl != nullptr) {
-        (void)esp_rtl_sdr_get_tuner_gain(g_rtl, &gain);  // hold the current gain
-      }
-      (void)rtl_gain_set_manual("SERIAL", gain);
-    } else if (strcmp(action, "RTLAGC ON") == 0 || strcmp(action, "RTLAGC OFF") == 0) {
-      (void)rtl_gain_set_rtl_agc("SERIAL", strcmp(action + 7, "ON") == 0);
-    } else {
-      Serial.println("RTL_GAIN_INVALID use STATUS|AUTO|SMART|MANUAL [0..496]|RTLAGC ON|OFF");
-      return;
-    }
-    bump_rtl_ui();
-    return;
-  }
-  if (strcmp(command, "RTL_AM_GAIN STATUS") == 0) {
-    int gain = 0;
-    if (g_rtl != nullptr) (void)esp_rtl_sdr_get_tuner_gain(g_rtl, &gain);
-    Serial.printf("RTL_AM_GAIN_STATUS mode=%s selecting=%d gain_tenth_db=%d "
-                  "target_dbfs=%.1f clipping_percent=%.3f\n",
-                  rtl_am_gain_auto_enabled.load(std::memory_order_relaxed) ? "AUTO" : "MANUAL",
-                  rtl_am_gain_auto_selecting.load(std::memory_order_relaxed) ? 1 : 0, gain,
-                  static_cast<double>(orcsdr::am::kAutoGainTargetDbfs),
-                  static_cast<double>(rtl_iq_clipping_percent.load(std::memory_order_relaxed)));
-    return;
-  }
-  if (strcmp(command, "RTL_FM_GAIN STATUS") == 0) {
-    int gain = 0;
-    if (g_rtl != nullptr) (void)esp_rtl_sdr_get_tuner_gain(g_rtl, &gain);
-    Serial.printf("RTL_FM_GAIN_STATUS mode=%s selecting=%d gain_tenth_db=%d "
-                  "target_dbfs=%.1f clipping_percent=%.3f\n",
-                  rtl_fm_gain_auto_enabled.load(std::memory_order_relaxed) ? "AUTO" : "MANUAL",
-                  rtl_fm_gain_auto_selecting.load(std::memory_order_relaxed) ? 1 : 0, gain,
-                  static_cast<double>(orcsdr::am::kAutoGainTargetDbfs),
-                  static_cast<double>(rtl_iq_clipping_percent.load(std::memory_order_relaxed)));
-    return;
-  }
+  if (orcsdr::serial_gain::handle_command(command, authenticated, kSerialGainHooks)) return;
   if (strcmp(command, "RTL_DRIVER SELF_CHECK") == 0) {
     const auto profile = g_rtl_profile.load(std::memory_order_acquire);
     uint32_t required = ESP_RTL_SDR_CAP_STREAM | ESP_RTL_SDR_CAP_RETUNE |

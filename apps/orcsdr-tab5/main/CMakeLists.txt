@@ -83,6 +83,7 @@ idf_component_register(
         "../ui/serial_catalog.cpp"
         "../ui/serial_memory.cpp"
         "../ui/serial_dsp.cpp"
+        "../ui/serial_gain.cpp"
         "../ui/serial_pocsag.cpp"
         "../ui/serial_keyboard.cpp"
         "../ui/serial_rds.cpp"
