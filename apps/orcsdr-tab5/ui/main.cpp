@@ -80,6 +80,7 @@
 #include "memory_reclaim.hpp"
 #include "memory_ledger.hpp"
 #include "serial_dead_air.hpp"
+#include "serial_adsb.hpp"
 #include "serial_location.hpp"
 #include "serial_catalog.hpp"
 #include "serial_help.hpp"
@@ -20054,6 +20055,22 @@ static constexpr orcsdr::serial_location::Hooks kSerialLocationHooks{
     []() { handle_global_settings_action({orcsdr::settings::ActionKind::location_ip_confirm, 0}); },
 };
 
+// The RTL_ADSB range, location, start and stop commands live in serial_adsb.cpp; they call the same functions as before.
+static constexpr orcsdr::serial_adsb::Hooks kSerialAdsbHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    []() -> orcsdr::serial_adsb::RangeStatus {
+      return {adsb_settings.radar_range_nm, orcsdr::adsb::settings().radar_range_nm, orcsdr::adsb::active(),
+              adsb_settings_persist_pending.load(std::memory_order_acquire)};
+    },
+    [](uint16_t range) { handle_global_settings_action({orcsdr::settings::ActionKind::range_changed, range}); },
+    [](int32_t latitude_e7, int32_t longitude_e7) -> bool { return save_map_receiver_location(latitude_e7, longitude_e7); },
+    []() { if (orcsdr::adsb::active()) orcsdr::adsb::enter(adsb_settings); },
+    []() -> bool { return rtl_ui_band == RtlBand::adsb; },
+    []() { rtl_stop_requested.store(true, std::memory_order_release); },
+    []() { queue_local_rtl_listen(RtlBand::adsb, kAdsbDefaultHz); },
+};
+
 // The RTL_RDS commands live in serial_rds.cpp; these are the device actions and the facts RTL_RDS_STATUS prints.
 static constexpr orcsdr::serial_rds::Hooks kSerialRdsHooks{
     [](const char* text) { Serial.print(text); },
@@ -21059,50 +21076,7 @@ void process_command(char* command) {
   }
   if (orcsdr::serial_catalog::handle_command(command, authenticated, kSerialCatalogHooks)) return;
   if (orcsdr::serial_location::handle_command(command, authenticated, kSerialLocationHooks)) return;
-  if(strcmp(command,"RTL_ADSB_RANGE")==0) {
-    Serial.printf("RTL_ADSB_RANGE_STATUS range_nm=%u dashboard_range_nm=%u active=%u pending=%u\n",
-        adsb_settings.radar_range_nm,orcsdr::adsb::settings().radar_range_nm,
-        orcsdr::adsb::active(),adsb_settings_persist_pending.load(std::memory_order_acquire));
-    return;
-  }
-  if(strncmp(command,"RTL_ADSB_RANGE ",15)==0) {
-    if(!authenticated){Serial.println("RTL_ADSB_RANGE_ERROR auth_required");return;}
-    uint16_t range=0;
-    if(!orcsdr::adsb::parse_map_range(command+15,&range)) {
-      Serial.println("RTL_ADSB_RANGE_ERROR invalid_range");return;
-    }
-    handle_global_settings_action({orcsdr::settings::ActionKind::range_changed,range});
-    Serial.printf("RTL_ADSB_RANGE_OK range_nm=%u persistence=pending\n",range);return;
-  }
-  if (strncmp(command, "RTL_ADSB_LOCATION ", 18) == 0) {
-    if (!authenticated) { Serial.println("RTL_ADSB_LOCATION_ERROR auth_required"); return; }
-    double latitude = 0, longitude = 0;
-    char trailing = 0;
-    if (sscanf(command + 18, "%lf %lf %c", &latitude, &longitude, &trailing) != 2 ||
-        !std::isfinite(latitude) || !std::isfinite(longitude) ||
-        latitude < -90.0 || latitude > 90.0 || longitude < -180.0 || longitude > 180.0) {
-      Serial.println("RTL_ADSB_LOCATION_ERROR invalid_coordinate");
-      return;
-    }
-    const int32_t latitude_e7 = static_cast<int32_t>(llround(latitude * 10000000.0));
-    const int32_t longitude_e7 = static_cast<int32_t>(llround(longitude * 10000000.0));
-    if (!save_map_receiver_location(latitude_e7,longitude_e7)) {
-      Serial.println("RTL_ADSB_LOCATION_ERROR storage"); return;
-    }
-    if (orcsdr::adsb::active()) orcsdr::adsb::enter(adsb_settings);
-    Serial.println("RTL_ADSB_LOCATION_OK");
-    return;
-  }
-  if (strcmp(command, "RTL_ADSB_STOP") == 0 && rtl_ui_band == RtlBand::adsb) {
-    rtl_stop_requested.store(true, std::memory_order_release);
-    Serial.println("RTL_ADSB_STOPPING");
-    return;
-  }
-  if (strcmp(command, "RTL_ADSB_START") == 0) {
-    queue_local_rtl_listen(RtlBand::adsb, kAdsbDefaultHz);
-    Serial.println("RTL_ADSB_STARTING");
-    return;
-  }
+  if (orcsdr::serial_adsb::handle_command(command, authenticated, kSerialAdsbHooks)) return;
   if (strcmp(command, "SD_LIST") == 0) {
     sd_list();
     return;

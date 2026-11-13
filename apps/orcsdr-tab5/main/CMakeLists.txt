@@ -78,6 +78,7 @@ idf_component_register(
         "../ui/memory_reclaim.cpp"
         "../ui/memory_ledger.cpp"
         "../ui/serial_help.cpp"
+        "../ui/serial_adsb.cpp"
         "../ui/serial_location.cpp"
         "../ui/serial_catalog.cpp"
         "../ui/serial_memory.cpp"
