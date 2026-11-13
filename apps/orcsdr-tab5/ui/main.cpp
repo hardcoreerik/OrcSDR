@@ -94,6 +94,7 @@
 #include "serial_p25.hpp"
 #include "serial_rtc.hpp"
 #include "serial_wifi.hpp"
+#include "serial_status.hpp"
 #include "esp_memory_utils.h"
 #include "shortwave_model.hpp"
 #include "shortwave_audio_dsp.hpp"
@@ -20576,6 +20577,69 @@ static constexpr orcsdr::serial_wifi::Hooks kSerialWifiHooks{
     [] { print_wifi_coexistence_status(); },
 };
 
+// The read-only status commands (RTL_STATUS, AUDIO_CODEC, UI_SELF_CHECK, ...) live in serial_status.cpp; these are the
+// device facts they read. The hooks fill each snapshot in the order the original reply read its values.
+static constexpr orcsdr::serial_status::Hooks kSerialStatusHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    []() -> orcsdr::serial_status::RtlStatus {
+      orcsdr::serial_status::RtlStatus s;
+      s.connected = rtl_device_ready();
+      s.vid = rtl_sdr_vid;
+      s.pid = rtl_sdr_pid;
+      s.speed = rtl_sdr_speed;
+      s.serial = rtl_sdr_serial;
+      return s;
+    },
+    []() -> orcsdr::serial_status::HotplugStatus {
+      orcsdr::serial_status::HotplugStatus h;
+      h.pending = rtl_hotplug_resume_pending.load(std::memory_order_acquire) ? 1 : 0;
+      h.ready = rtl_device_ready() ? 1 : 0;
+      h.state = rtl_capture_state_name(rtl_capture_state.load(std::memory_order_acquire));
+      h.band = rtl_band_name(rtl_ui_band);
+      h.frequency_hz = rtl_ui_frequency_hz;
+      return h;
+    },
+    [] { print_adsb_status(); },
+    [](uint8_t reg) -> uint8_t {
+      static constexpr uint8_t kEs8388 = 0x10;
+      return M5.In_I2C.readRegister8(kEs8388, reg, 400000);
+    },
+    []() -> orcsdr::serial_status::AudioState {
+      auto& audio_io = M5.getIOExpander(0);
+      orcsdr::serial_status::AudioState a;
+      a.hp_detect = audio_io.digitalRead(7) ? 1 : 0;
+      a.amp_pin = audio_io.getWriteValue(1) ? 1 : 0;
+      a.muted = rtl_internal_speaker_muted.load(std::memory_order_relaxed) ? 1 : 0;
+      a.running = M5.Speaker.isRunning() ? 1 : 0;
+      a.volume = M5.Speaker.getVolume();
+      return a;
+    },
+    [] { print_rtl_driver_status(); },
+    []() -> orcsdr::serial_status::AmScanStatus {
+      orcsdr::serial_status::AmScanStatus s;
+      s.active = rtl_am_scan_active.load(std::memory_order_relaxed) ? 1 : 0;
+      s.step = static_cast<unsigned>(rtl_am_scan_step.load(std::memory_order_relaxed));
+      s.total = static_cast<unsigned>(rtl_am_scan_total.load(std::memory_order_relaxed));
+      s.found = static_cast<unsigned>(rtl_am_scan_found.load(std::memory_order_relaxed));
+      s.frequency_hz = static_cast<unsigned long>(rtl_am_scan_freq_hz.load(std::memory_order_relaxed));
+      s.prompt = orcsdr::am::scan_prompt_active() ? 1 : 0;
+      return s;
+    },
+    []() -> orcsdr::serial_status::SelfCheck {
+      const bool editor = orcsdr::text_editor::active() || orcsdr::text_editor::self_check();
+      orcsdr::serial_status::SelfCheck c;
+      c.am = orcsdr::am::self_check() ? 1 : 0;
+      c.fm = orcsdr::fm::self_check() ? 1 : 0;
+      c.home = orcsdr::home::self_check() ? 1 : 0;
+      c.shortwave = orcsdr::shortwave::dashboard_self_check() ? 1 : 0;
+      c.keypad = orcsdr::freq_keypad::self_check() ? 1 : 0;
+      c.editor = editor ? 1 : 0;
+      return c;
+    },
+    [](char* out, size_t size) { orcsdr::home::plot_status(out, size); },
+};
+
 void process_command(char* command) {
   if (strncmp(command, "JS8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
     process_js8_command(command + 3);
@@ -21698,69 +21762,7 @@ void process_command(char* command) {
     Serial.printf("RTL_VOLUME_OK volume=%u\n", value);
     return;
   }
-  if (strcmp(command, "RTL_STATUS") == 0) {
-    Serial.printf("RTL_SDR_STATUS connected=%s vid=%04x pid=%04x speed=%s serial=\"%s\"\n",
-                  rtl_device_ready() ? "true" : "false", rtl_sdr_vid, rtl_sdr_pid,
-                  rtl_sdr_speed, rtl_sdr_serial);
-    return;
-  }
-  if (strcmp(command, "RTL_HOTPLUG_STATUS") == 0) {
-    Serial.printf("RTL_HOTPLUG_STATUS pending=%d ready=%d state=%s band=%s frequency_hz=%u\n",
-                  rtl_hotplug_resume_pending.load(std::memory_order_acquire) ? 1 : 0,
-                  rtl_device_ready() ? 1 : 0,
-                  rtl_capture_state_name(rtl_capture_state.load(std::memory_order_acquire)),
-                  rtl_band_name(rtl_ui_band), rtl_ui_frequency_hz);
-    return;
-  }
-  if (strcmp(command, "RTL_ADSB STATUS") == 0) {
-    print_adsb_status();
-    return;
-  }
-  if (strcmp(command, "AUDIO_CODEC") == 0) {
-    // ES8388 power/output state: reg4 0x3C = LOUT1/ROUT1 (jack) + LOUT2/ROUT2 on;
-    // reg46-49 are the LOUT1/ROUT1/LOUT2/ROUT2 volumes.
-    static constexpr uint8_t kEs8388 = 0x10;
-    static constexpr uint8_t regs[] = {2, 4, 25, 26, 27, 39, 42, 46, 47, 48, 49};
-    Serial.print("AUDIO_CODEC");
-    for (const uint8_t reg : regs)
-      Serial.printf(" r%u=0x%02x", reg, M5.In_I2C.readRegister8(kEs8388, reg, 400000));
-    auto& audio_io = M5.getIOExpander(0);
-    Serial.printf(" hp_detect=%d amp_pin=%d muted=%d running=%d volume=%u\n",
-                  audio_io.digitalRead(7) ? 1 : 0, audio_io.getWriteValue(1) ? 1 : 0,
-                  rtl_internal_speaker_muted.load(std::memory_order_relaxed) ? 1 : 0,
-                  M5.Speaker.isRunning() ? 1 : 0, M5.Speaker.getVolume());
-    return;
-  }
-  if (strcmp(command, "RTL_DRIVER STATUS") == 0) {
-    print_rtl_driver_status();
-    return;
-  }
-  if (strcmp(command, "RTL_AM_SCAN STATUS") == 0) {
-    Serial.printf("RTL_AM_SCAN_STATUS active=%d step=%u total=%u found=%u frequency_hz=%lu "
-                  "prompt=%d\n",
-                  rtl_am_scan_active.load(std::memory_order_relaxed) ? 1 : 0,
-                  static_cast<unsigned>(rtl_am_scan_step.load(std::memory_order_relaxed)),
-                  static_cast<unsigned>(rtl_am_scan_total.load(std::memory_order_relaxed)),
-                  static_cast<unsigned>(rtl_am_scan_found.load(std::memory_order_relaxed)),
-                  static_cast<unsigned long>(rtl_am_scan_freq_hz.load(std::memory_order_relaxed)),
-                  orcsdr::am::scan_prompt_active() ? 1 : 0);
-    return;
-  }
-  if (strcmp(command, "UI_SELF_CHECK") == 0) {
-    const bool editor = orcsdr::text_editor::active() || orcsdr::text_editor::self_check();
-    Serial.printf("UI_SELF_CHECK am=%d fm=%d home=%d shortwave=%d keypad=%d editor=%d\n",
-                  orcsdr::am::self_check() ? 1 : 0, orcsdr::fm::self_check() ? 1 : 0,
-                  orcsdr::home::self_check() ? 1 : 0,
-                  orcsdr::shortwave::dashboard_self_check() ? 1 : 0,
-                  orcsdr::freq_keypad::self_check() ? 1 : 0, editor ? 1 : 0);
-    return;
-  }
-  if (strcmp(command, "HOME_PLOT STATUS") == 0) {
-    char response[384];
-    orcsdr::home::plot_status(response, sizeof(response));
-    Serial.println(response);
-    return;
-  }
+  if (orcsdr::serial_status::handle_command(command, authenticated, kSerialStatusHooks)) return;
   if (orcsdr::serial_dsp::handle_command(command, authenticated, kSerialDspHooks)) return;
   if (orcsdr::serial_gain::handle_command(command, authenticated, kSerialGainHooks)) return;
   if (orcsdr::serial_driver::handle_command(command, authenticated, kSerialDriverHooks)) return;
