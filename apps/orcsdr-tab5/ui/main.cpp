@@ -80,6 +80,7 @@
 #include "memory_reclaim.hpp"
 #include "memory_ledger.hpp"
 #include "serial_dead_air.hpp"
+#include "serial_location.hpp"
 #include "serial_catalog.hpp"
 #include "serial_help.hpp"
 #include "serial_keyboard.hpp"
@@ -20043,6 +20044,16 @@ static constexpr orcsdr::serial_catalog::Hooks kSerialCatalogHooks{
     [](int index) { handle_global_settings_action({orcsdr::settings::ActionKind::catalog_remove, index}); },
 };
 
+// The RTL_LOCATION commands live in serial_location.cpp; these are the same estimate calls and settings action as before.
+static constexpr orcsdr::serial_location::Hooks kSerialLocationHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    []() -> orcsdr::location_estimate::State { return orcsdr::location_estimate::state(); },
+    []() -> bool { return orcsdr::location_estimate::request(wifi_connected); },
+    [](const char* query) -> bool { return orcsdr::location_estimate::request(query, wifi_connected); },
+    []() { handle_global_settings_action({orcsdr::settings::ActionKind::location_ip_confirm, 0}); },
+};
+
 // The RTL_RDS commands live in serial_rds.cpp; these are the device actions and the facts RTL_RDS_STATUS prints.
 static constexpr orcsdr::serial_rds::Hooks kSerialRdsHooks{
     [](const char* text) { Serial.print(text); },
@@ -21047,36 +21058,7 @@ void process_command(char* command) {
     return;
   }
   if (orcsdr::serial_catalog::handle_command(command, authenticated, kSerialCatalogHooks)) return;
-  if (strcmp(command, "RTL_LOCATION STATUS") == 0) {
-    const auto location = orcsdr::location_estimate::state();
-    Serial.printf("RTL_LOCATION_STATUS busy=%d ready=%d latitude_e7=%ld longitude_e7=%ld message=\"%s\"\n",
-                  location.busy ? 1 : 0, location.ready ? 1 : 0,
-                  static_cast<long>(location.latitude_e7),
-                  static_cast<long>(location.longitude_e7), location.message);
-    return;
-  }
-  if (strcmp(command, "RTL_LOCATION IP") == 0 ||
-      strncmp(command, "RTL_LOCATION LOOKUP ", 20) == 0 ||
-      strcmp(command, "RTL_LOCATION CONFIRM") == 0) {
-    if (!authenticated) { Serial.println("RTL_LOCATION_ERROR auth_required"); return; }
-    if (strcmp(command, "RTL_LOCATION CONFIRM") == 0) {
-      handle_global_settings_action({orcsdr::settings::ActionKind::location_ip_confirm, 0});
-      Serial.printf("RTL_LOCATION_CONFIRM_%s\n",
-                    orcsdr::location_estimate::state().ready ? "OK" : "REJECTED");
-      return;
-    }
-    const char* query = strncmp(command, "RTL_LOCATION LOOKUP ", 20) == 0
-                            ? command + 20 : nullptr;
-    if (query && (!query[0] || strlen(query) >= 64)) {
-      Serial.println("RTL_LOCATION_ERROR query_length");
-      return;
-    }
-    const bool queued = query ? orcsdr::location_estimate::request(query, wifi_connected)
-                              : orcsdr::location_estimate::request(wifi_connected);
-    Serial.printf("RTL_LOCATION_%s_%s\n", query ? "LOOKUP" : "IP",
-                  queued ? "QUEUED" : "REJECTED");
-    return;
-  }
+  if (orcsdr::serial_location::handle_command(command, authenticated, kSerialLocationHooks)) return;
   if(strcmp(command,"RTL_ADSB_RANGE")==0) {
     Serial.printf("RTL_ADSB_RANGE_STATUS range_nm=%u dashboard_range_nm=%u active=%u pending=%u\n",
         adsb_settings.radar_range_nm,orcsdr::adsb::settings().radar_range_nm,
