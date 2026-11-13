@@ -42,6 +42,14 @@ Required driver work on a separately reviewed driver branch:
 - Before permitting any optimized shortcut: check PLL lock, RF route, correct signal center, checksum-valid ACARS/VDL2/ADS-B, acquisition epochs, stale-block rejection, stream discontinuity, USB faults and recovery on V4/V4L/V3c/Nooelec independently.
 - Save host and hardware log files in the directory from which the test command was run, including hardware, commit SHA, frequencies, dwell, and per-phase timings.
 
+## Adjacent aviation channels: prefer channelization over hopping
+
+Several VDL2 assignments (e.g. 136.650, 136.700, 136.800 and 136.975 MHz) fit in a 325 kHz span. A single RTL-SDR at a sufficiently wide, actually negotiated IQ sample rate can *potentially* receive them all without retuning, using one physical stream and multiple digital downconverters/channel filters. The current OrcSDR 250 kS/s single-VDL2-channel pipeline does NOT do this.
+
+Before enabling multi-VDL2 processing, measure usable passband/guard margins, CPU load, PSRAM ring ownership, AVLC CRC good counts per channel, and USB continuity. On one Tab5, a single VDL2 decoder already consumed substantial CPU in prior profiling; do not assume four concurrent complete decoders fit. A low-cost burst detector followed by bounded selective decoder allocation is an experiment, not an implemented feature. Never create a second RTL driver owner to obtain more channels.
+
+The same principle may cover subsets of analog ACARS within an adequately wide IQ capture. This does not simultaneously cover 131 MHz, 136 MHz and 1090 MHz: those are widely separated bands for one tuner.
+
 ## Future receive-mode UX
 
 **Single dongle:** Target Lock scan would use a consented, bounded scanning plan with measured hop/settle/dwell times; clearly indicate that the current ACARS/VDL2 channel is paused while scanning. A fast retune can reduce missed windows but cannot cover VHF and 1090 MHz at the same instant.
