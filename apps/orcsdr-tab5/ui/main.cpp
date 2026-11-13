@@ -100,6 +100,7 @@
 #include "serial_p25.hpp"
 #include "serial_rtc.hpp"
 #include "serial_wifi.hpp"
+#include "serial_scope.hpp"
 #include "serial_status.hpp"
 #include "esp_memory_utils.h"
 #include "shortwave_model.hpp"
@@ -20757,6 +20758,23 @@ static constexpr orcsdr::serial_status::Hooks kSerialStatusHooks{
     [](char* out, size_t size) { orcsdr::home::plot_status(out, size); },
 };
 
+// The RTL_CB, RTL_FM_SCOPE and RTL_AIRBAND STATUS commands live in serial_scope.cpp; these are what they read and run.
+static constexpr orcsdr::serial_scope::Hooks kSerialScopeHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    [](const char* command) { process_cb_command(command); },
+    []() -> orcsdr::serial_scope::FmScope {
+      orcsdr::serial_scope::FmScope scope;
+      scope.active = orcsdr::fm::spectrum_active();
+      scope.fps = orcsdr::fm::spectrum_fps();
+      scope.draw_ms = orcsdr::fm::spectrum_draw_ms();
+      return scope;
+    },
+    [](char* line, size_t size) -> int {
+      return static_cast<int>(orcsdr::airband::status_line(airband_live_state(), line, size));
+    },
+};
+
 void process_command(char* command) {
   if (strncmp(command, "JS8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
     process_js8_command(command + 3);
@@ -20918,23 +20936,7 @@ void process_command(char* command) {
       return;
     }
   }
-  if (strncmp(command, "RTL_CB", 6) == 0 && (command[6] == '\0' || command[6] == ' ')) {
-    process_cb_command(command);
-    return;
-  }
-  if (strcmp(command, "RTL_FM_SCOPE") == 0) {   // frame rate of the FM spectrum view (0 when not showing)
-    Serial.printf("RTL_FM_SCOPE_STATUS active=%d fps=%lu draw_ms=%lu\n",
-                  orcsdr::fm::spectrum_active() ? 1 : 0,
-                  static_cast<unsigned long>(orcsdr::fm::spectrum_fps()),
-                  static_cast<unsigned long>(orcsdr::fm::spectrum_draw_ms()));
-    return;
-  }
-  if (strcmp(command, "RTL_AIRBAND STATUS") == 0) {
-    char line[640];
-    if (orcsdr::airband::status_line(airband_live_state(), line, sizeof(line)) > 0)
-      Serial.println(line);
-    return;
-  }
+  if (orcsdr::serial_scope::handle_command(command, authenticated, kSerialScopeHooks)) return;
   if (orcsdr::serial_keyboard::handle_command(command, authenticated, kSerialKeyboardHooks)) return;
   if (strcmp(command, "RTL_UI STATUS") == 0) {
     Serial.printf("RTL_UI_STATUS screen=%s band=%s frequency_hz=%u settings=%d fm=%d am=%d p25=%d "
