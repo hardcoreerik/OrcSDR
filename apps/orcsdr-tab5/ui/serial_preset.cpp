@@ -27,7 +27,7 @@ bool handle_command(const char* command, bool authenticated, const Hooks& hooks)
     say(hooks, "RTL_PRESET_LIST_BEGIN count=%d\n", hooks.preset_count());
     for (int i = 0; i < hooks.preset_count(); ++i) {
       const Preset preset = hooks.preset(i);
-      say(hooks, "RTL_PRESET %d frequency_hz=%u level=%.1f\n", i + 1, preset.freq_hz,
+      say(hooks, "RTL_PRESET %d frequency_hz=%u level=%.1f\n", i + 1, static_cast<unsigned>(preset.freq_hz),
           static_cast<double>(preset.level_dbfs));
     }
     hooks.write_line("RTL_PRESET_LIST_END");
@@ -42,7 +42,7 @@ bool handle_command(const char* command, bool authenticated, const Hooks& hooks)
     }
     hooks.tune_fm(hooks.preset(index).freq_hz);
     hooks.persist_fm(hooks.preset(index).freq_hz);
-    say(hooks, "RTL_PRESET_TUNE_OK index=%d frequency_hz=%u\n", index + 1, hooks.preset(index).freq_hz);
+    say(hooks, "RTL_PRESET_TUNE_OK index=%d frequency_hz=%u\n", index + 1, static_cast<unsigned>(hooks.preset(index).freq_hz));
     return true;
   }
   return false;

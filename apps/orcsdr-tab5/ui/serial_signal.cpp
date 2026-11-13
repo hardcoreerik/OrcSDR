@@ -29,8 +29,8 @@ bool handle_command(const char* command, bool authenticated, const Hooks& hooks)
         "stereo_locked=%d left_dbfs_tenths=%d right_dbfs_tenths=%d "
         "rds_carrier=%d rds_signal_tenths=%d pilot_env_thou=%d clipping_percent=%.3f "
         "filter_hz=%u lo_nudge=%d\n",
-        s.band, s.frequency_hz, s.signal_tenths, s.stereo_locked ? 1 : 0, s.left_tenths, s.right_tenths,
-        s.rds_carrier ? 1 : 0, s.rds_tenths, s.pilot_env_thou, static_cast<double>(s.clipping_percent), s.filter_hz,
+        s.band, static_cast<unsigned>(s.frequency_hz), s.signal_tenths, s.stereo_locked ? 1 : 0, s.left_tenths, s.right_tenths,
+        s.rds_carrier ? 1 : 0, s.rds_tenths, s.pilot_env_thou, static_cast<double>(s.clipping_percent), static_cast<unsigned>(s.filter_hz),
         0);
     return true;
   }

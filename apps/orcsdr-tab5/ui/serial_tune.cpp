@@ -48,7 +48,7 @@ bool handle_command(const char* command, bool authenticated, const Hooks& hooks)
   }
   if (strcmp(command, "RTL_FREQ") == 0) {
     const FreqStatus status = hooks.freq_status();
-    say(hooks, "RTL_FREQ_STATUS band=%s frequency_hz=%u mode=%s\n", status.band, status.frequency_hz, status.mode);
+    say(hooks, "RTL_FREQ_STATUS band=%s frequency_hz=%u mode=%s\n", status.band, static_cast<unsigned>(status.frequency_hz), status.mode);
     return true;
   }
   if (strncmp(command, "RTL_FREQ ", 9) == 0 && authenticated) {
