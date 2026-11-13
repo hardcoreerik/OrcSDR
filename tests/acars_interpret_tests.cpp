@@ -333,7 +333,9 @@ void live_vdl2_formats() {
       {"F34ACX3280#M1B/BA USADCXA.AT1..B-LJK79191A9D005EBA", "Aircraft B-LJK "}};
   for (const auto& a : arinc) {
     CHECK(interpret(make("H1", '9', '?', a[0]), r) && r.decoded);
-    CHECK(std::strcmp(r.headline, "ATC DATA LINK MESSAGE (ARINC 622)") == 0);
+    CHECK(std::strcmp(r.headline, "FANS CPDLC ENVELOPE (ARINC 622)") == 0);
+    CHECK(std::strstr(r.summary, "CPDLC") != nullptr);
+    CHECK(std::strstr(r.summary, "payload not decoded") != nullptr);
     CHECK(any_line_contains(r, a[1]));
     CHECK(any_line_contains(r, "checksum OK"));
   }
@@ -342,8 +344,8 @@ void live_vdl2_formats() {
   CHECK(any_line_contains(r, "Downlink   Ground address USADCXA   ATC data"));
   CHECK(any_line_contains(r, "Content as received: 6082D82603"));
   // A damaged checksum or data is not decoded as an ARINC 622 message.
-  CHECK(interpret(make("H1", '9', '?', "F06AWN0436#M1B/BA USADCXA.AT1.N926WN6082D826032E1E"), r) && std::strcmp(r.headline, "ATC DATA LINK MESSAGE (ARINC 622)") != 0);
-  CHECK(interpret(make("H1", '9', '?', "F06AWN0436#M1B/BA USADCXA.AT1.N926WN6082D826132E1F"), r) && std::strcmp(r.headline, "ATC DATA LINK MESSAGE (ARINC 622)") != 0);
+  CHECK(interpret(make("H1", '9', '?', "F06AWN0436#M1B/BA USADCXA.AT1.N926WN6082D826032E1E"), r) && std::strcmp(r.headline, "FANS CPDLC ENVELOPE (ARINC 622)") != 0);
+  CHECK(interpret(make("H1", '9', '?', "F06AWN0436#M1B/BA USADCXA.AT1.N926WN6082D826132E1F"), r) && std::strcmp(r.headline, "FANS CPDLC ENVELOPE (ARINC 622)") != 0);
 
   // D-ATIS request (label B9): six samples, all pass the checksum (the first is live from this unit, the rest from the same carrier).
   static const char* const atis[][3] = {
