@@ -93,6 +93,9 @@
 #include "serial_driver.hpp"
 #include "serial_dsp.hpp"
 #include "serial_pocsag.hpp"
+#include "serial_tune.hpp"
+#include "serial_signal.hpp"
+#include "serial_preset.hpp"
 #include "serial_rds.hpp"
 #include "serial_p25.hpp"
 #include "serial_rtc.hpp"
@@ -20327,6 +20330,67 @@ static constexpr orcsdr::serial_dead_air::Hooks kSerialDeadAirHooks{
     orcsdr::dead_air_app::describe_env,
 };
 
+// The RTL_TUNE and RTL_FREQ commands live in serial_tune.cpp; the band lookup, the receiver check and every tuning
+// limit stay in the functions these hooks call.
+static constexpr orcsdr::serial_tune::Hooks kSerialTuneHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    []() -> orcsdr::serial_tune::FreqStatus {
+      return {rtl_band_name(rtl_ui_band), rtl_ui_frequency_hz, rtl_mode_name(rtl_ui_band)};
+    },
+    [](uint32_t frequency_hz) -> bool { return request_hot_retune(frequency_hz); },
+    []() -> const char* { return rtl_band_name(rtl_ui_band); },
+    [](const char* band_name, uint32_t frequency_hz, const char** band_label) -> orcsdr::serial_tune::TuneResult {
+      RtlBand band;
+      if (!rtl_band_from_name(band_name, &band)) return orcsdr::serial_tune::TuneResult::unknown_band;
+      if (!rtl_device_ready()) return orcsdr::serial_tune::TuneResult::not_ready;
+      if (!queue_local_rtl_listen(band, frequency_hz)) return orcsdr::serial_tune::TuneResult::not_queued;
+      *band_label = rtl_band_name(band);
+      return orcsdr::serial_tune::TuneResult::ok;
+    },
+};
+
+// The RTL_SIGNAL and RTL_PRESET_SCAN commands live in serial_signal.cpp; these are the measurements they read and
+// the scan request they set.
+static constexpr orcsdr::serial_signal::Hooks kSerialSignalHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    []() -> orcsdr::serial_signal::Signal {
+      orcsdr::serial_signal::Signal s;
+      s.signal_tenths = static_cast<int>(lroundf(rtl_signal_dbfs_smooth * 10.0f));
+      s.left_tenths = static_cast<int>(
+          lroundf(rtl_audio_left_dbfs.load(std::memory_order_relaxed) * 10.0f));
+      s.right_tenths = static_cast<int>(
+          lroundf(rtl_audio_right_dbfs.load(std::memory_order_relaxed) * 10.0f));
+      s.rds_tenths = static_cast<int>(
+          lroundf(rtl_rds_signal_dbfs.load(std::memory_order_relaxed) * 10.0f));
+      s.band = rtl_band_name(rtl_ui_band);
+      s.frequency_hz = rtl_ui_frequency_hz;
+      s.stereo_locked = rtl_stereo_locked.load(std::memory_order_relaxed);
+      s.rds_carrier = rtl_rds_carrier_present.load(std::memory_order_relaxed);
+      s.pilot_env_thou = static_cast<int>(lroundf(
+          rtl_pilot_env.load(std::memory_order_relaxed) * 1000.0f));
+      s.clipping_percent = rtl_iq_clipping_percent.load(std::memory_order_relaxed);
+      s.filter_hz = rtl_filter_bandwidth_hz.load(std::memory_order_relaxed);
+      return s;
+    },
+    []() -> bool { return rtl_ui_band == RtlBand::fm; },
+    []() { rtl_fm_preset_scan_requested.store(true, std::memory_order_relaxed); },
+};
+
+// The RTL_PRESET_LIST and RTL_PRESET_TUNE commands live in serial_preset.cpp; these read the FM preset table and
+// start the tune and the save.
+static constexpr orcsdr::serial_preset::Hooks kSerialPresetHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    []() -> int { return fm_preset_count; },
+    [](int index) -> orcsdr::serial_preset::Preset {
+      return {fm_presets[index].freq_hz, fm_presets[index].level_dbfs};
+    },
+    [](uint32_t frequency_hz) { queue_local_rtl_listen(RtlBand::fm, frequency_hz); },
+    [](uint32_t frequency_hz) { persist_fm_frequency(frequency_hz); },
+};
+
 // The RTL_P25 commands live in serial_p25.cpp; these are the device facts they read and the actions they start.
 static void serial_p25_retune_if_shown() {
   if (rtl_ui_band == RtlBand::p25 && p25_config.control_channel_count > 0)
@@ -21906,104 +21970,13 @@ void process_command(char* command) {
     return;
   }
   if (orcsdr::serial_p25::handle_command(command, authenticated, kSerialP25Hooks)) return;
-  if (strncmp(command, "RTL_TUNE ", 9) == 0 && authenticated) {
-    char band_name[16] = {0};
-    unsigned long freq_hz = 0;
-    if (sscanf(command + 9, "%15s %lu", band_name, &freq_hz) != 2) {
-      Serial.println("RTL_TUNE_INVALID usage: RTL_TUNE <BAND> <HZ>");
-      return;
-    }
-    RtlBand band;
-    if (!rtl_band_from_name(band_name, &band)) {
-      Serial.println("RTL_TUNE_INVALID unknown band (FM|AM|WX|CB|LORA|BROWSE|ADSB|P25)");
-      return;
-    }
-    if (!rtl_device_ready()) {
-      Serial.println("RTL_TUNE_UNAVAILABLE device not ready");
-      return;
-    }
-    if (!queue_local_rtl_listen(band, static_cast<uint32_t>(freq_hz))) return;
-    Serial.printf("RTL_TUNE_OK band=%s frequency_hz=%lu\n", rtl_band_name(band), freq_hz);
-    return;
-  }
-  if (strcmp(command, "RTL_FREQ") == 0) {
-    Serial.printf("RTL_FREQ_STATUS band=%s frequency_hz=%u mode=%s\n",
-                  rtl_band_name(rtl_ui_band), rtl_ui_frequency_hz,
-                  rtl_mode_name(rtl_ui_band));
-    return;
-  }
-  if (strncmp(command, "RTL_FREQ ", 9) == 0 && authenticated) {
-    const unsigned long freq_hz = strtoul(command + 9, nullptr, 10);
-    if (freq_hz == 0) {
-      Serial.println("RTL_FREQ_INVALID usage: RTL_FREQ <HZ>");
-      return;
-    }
-    if (!request_hot_retune(static_cast<uint32_t>(freq_hz))) {
-      Serial.printf("RTL_FREQ_REJECTED band=%s frequency_hz=%lu\n",
-                    rtl_band_name(rtl_ui_band), freq_hz);
-      return;
-    }
-    Serial.printf("RTL_FREQ_OK band=%s frequency_hz=%lu\n", rtl_band_name(rtl_ui_band), freq_hz);
-    return;
-  }
+  if (orcsdr::serial_tune::handle_command(command, authenticated, kSerialTuneHooks)) return;
   if (orcsdr::serial_audio::handle_command(command, authenticated, kSerialAudioHooks)) return;
   if (orcsdr::serial_web::handle_command(command, authenticated, kSerialWebHooks)) return;
   if (orcsdr::serial_audio_test::handle_command(command, authenticated, kSerialAudioTestHooks)) return;
-  if (strcmp(command, "RTL_SIGNAL") == 0) {
-    const int signal_tenths = static_cast<int>(lroundf(rtl_signal_dbfs_smooth * 10.0f));
-    const int left_tenths = static_cast<int>(
-        lroundf(rtl_audio_left_dbfs.load(std::memory_order_relaxed) * 10.0f));
-    const int right_tenths = static_cast<int>(
-        lroundf(rtl_audio_right_dbfs.load(std::memory_order_relaxed) * 10.0f));
-    const int rds_tenths = static_cast<int>(
-        lroundf(rtl_rds_signal_dbfs.load(std::memory_order_relaxed) * 10.0f));
-    Serial.printf(
-        "RTL_SIGNAL_STATUS band=%s frequency_hz=%u signal_dbfs_tenths=%d "
-        "stereo_locked=%d left_dbfs_tenths=%d right_dbfs_tenths=%d "
-        "rds_carrier=%d rds_signal_tenths=%d pilot_env_thou=%d clipping_percent=%.3f "
-        "filter_hz=%u lo_nudge=%d\n",
-        rtl_band_name(rtl_ui_band), rtl_ui_frequency_hz, signal_tenths,
-        rtl_stereo_locked.load(std::memory_order_relaxed) ? 1 : 0,
-        left_tenths, right_tenths,
-        rtl_rds_carrier_present.load(std::memory_order_relaxed) ? 1 : 0,
-        rds_tenths,
-        static_cast<int>(lroundf(
-            rtl_pilot_env.load(std::memory_order_relaxed) * 1000.0f)),
-        static_cast<double>(rtl_iq_clipping_percent.load(std::memory_order_relaxed)),
-        rtl_filter_bandwidth_hz.load(std::memory_order_relaxed), 0);
-    return;
-  }
-  if (strcmp(command, "RTL_PRESET_SCAN") == 0 && authenticated) {
-    if (rtl_ui_band != RtlBand::fm) {
-      Serial.println("RTL_PRESET_SCAN_INVALID FM band only");
-      return;
-    }
-    rtl_fm_preset_scan_requested.store(true, std::memory_order_relaxed);
-    Serial.println("RTL_PRESET_SCAN_QUEUED");
-    return;
-  }
+  if (orcsdr::serial_signal::handle_command(command, authenticated, kSerialSignalHooks)) return;
   if (orcsdr::serial_pocsag::handle_command(command, authenticated, kSerialPocsagHooks)) return;
-  if (strcmp(command, "RTL_PRESET_LIST") == 0) {
-    Serial.printf("RTL_PRESET_LIST_BEGIN count=%d\n", fm_preset_count);
-    for (int i = 0; i < fm_preset_count; ++i) {
-      Serial.printf("RTL_PRESET %d frequency_hz=%u level=%.1f\n", i + 1,
-                    fm_presets[i].freq_hz, static_cast<double>(fm_presets[i].level_dbfs));
-    }
-    Serial.println("RTL_PRESET_LIST_END");
-    return;
-  }
-  if (strncmp(command, "RTL_PRESET_TUNE ", 17) == 0 && authenticated) {
-    const int index = atoi(command + 17) - 1;
-    if (index < 0 || index >= fm_preset_count) {
-      Serial.println("RTL_PRESET_TUNE_INVALID index out of range");
-      return;
-    }
-    queue_local_rtl_listen(RtlBand::fm, fm_presets[index].freq_hz);
-    persist_fm_frequency(fm_presets[index].freq_hz);
-    Serial.printf("RTL_PRESET_TUNE_OK index=%d frequency_hz=%u\n", index + 1,
-                  fm_presets[index].freq_hz);
-    return;
-  }
+  if (orcsdr::serial_preset::handle_command(command, authenticated, kSerialPresetHooks)) return;
   if (orcsdr::serial_rds::handle_command(command, authenticated, kSerialRdsHooks)) return;
 
   if (strncmp(command, "PAIR ", 5) == 0) {
