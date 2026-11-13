@@ -83,6 +83,9 @@
 #include "serial_adsb.hpp"
 #include "serial_location.hpp"
 #include "serial_catalog.hpp"
+#include "serial_audio.hpp"
+#include "serial_audio_test.hpp"
+#include "serial_web.hpp"
 #include "serial_help.hpp"
 #include "serial_keyboard.hpp"
 #include "serial_memory.hpp"
@@ -19953,6 +19956,56 @@ static orcsdr::serial_dsp::Stats serial_dsp_stats(char* line, size_t line_size) 
           rtl_audio_ring_overruns.load(std::memory_order_relaxed),
           rtl_audio_submit_failures.load(std::memory_order_relaxed)};
 }
+// The RTL_VOLUME and RTL_SOUND commands live in serial_audio.cpp; these are the receiver state they read and the
+// speaker switch they set.
+static constexpr orcsdr::serial_audio::Hooks kSerialAudioHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    []() -> uint8_t { return rtl_ui_volume; },
+    []() -> bool { return rtl_audio_enabled.load(std::memory_order_relaxed); },
+    [](bool enable) { set_rtl_audio_user_enabled(enable); },
+};
+
+// The RTL_AUDIO_TEST commands live in serial_audio_test.cpp; each action prints its own reply.
+static constexpr orcsdr::serial_audio_test::Hooks kSerialAudioTestHooks{
+    []() { rtl_audio_test_emit_status(); },
+    []() { rtl_audio_test_start_tone(); },
+    []() { rtl_audio_test_start_fm(); },
+    []() { rtl_audio_test_stop(); },
+};
+
+// The web console commands live in serial_web.cpp. The address is only reported while the server listens and Wi-Fi is up.
+static orcsdr::serial_web::Status serial_web_status() {
+  orcsdr::serial_web::Status status;
+  if (orcsdr::web_console::listening() && wifi_connected) {
+    orcsdr::web_console::format_url(status.url, sizeof(status.url), orcsdr::wifi::ip());
+  }
+  status.enabled = orcsdr::web_console::enabled();
+  status.listening = orcsdr::web_console::listening();
+  return status;
+}
+static orcsdr::serial_web::Status serial_web_apply_enabled(bool enable) {
+  settings_web_console_enabled = enable;
+  preferences.putBool("set_web_console", settings_web_console_enabled);
+  orcsdr::web_console::set_enabled(settings_web_console_enabled);
+  orcsdr::web_console::poll(wifi_connected);
+  orcsdr::serial_web::Status status;
+  if (orcsdr::web_console::listening() && wifi_connected) {
+    orcsdr::web_console::format_url(status.url, sizeof(status.url), orcsdr::wifi::ip());
+  }
+  status.enabled = settings_web_console_enabled;
+  status.listening = orcsdr::web_console::listening();
+  return status;
+}
+static constexpr orcsdr::serial_web::Hooks kSerialWebHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    serial_web_status,
+    []() { web_audio_diag_emit_status(); },
+    serial_web_apply_enabled,
+    []() { if (orcsdr::settings::active()) update_global_settings(); },
+};
+
 static constexpr orcsdr::serial_dsp::Hooks kSerialDspHooks{
     [](const char* text) { Serial.print(text); },
     [](const char* text) { Serial.println(text); },
@@ -21893,69 +21946,9 @@ void process_command(char* command) {
     Serial.printf("RTL_FREQ_OK band=%s frequency_hz=%lu\n", rtl_band_name(rtl_ui_band), freq_hz);
     return;
   }
-  if (strcmp(command, "RTL_VOLUME") == 0) {
-    Serial.printf("RTL_VOLUME_STATUS volume=%u\n", rtl_ui_volume);
-    return;
-  }
-  if (strcmp(command, "RTL_SOUND") == 0) {
-    Serial.printf("RTL_SOUND_STATUS enabled=%d\n",
-                  rtl_audio_enabled.load(std::memory_order_relaxed) ? 1 : 0);
-    return;
-  }
-  if (strcmp(command, "RTL_SOUND ON") == 0 || strcmp(command, "RTL_SOUND OFF") == 0) {
-    const bool enable = command[10] == 'O' && command[11] == 'N';
-    set_rtl_audio_user_enabled(enable);
-    Serial.printf("RTL_SOUND_OK enabled=%d\n", enable ? 1 : 0);
-    return;
-  }
-  if (strcmp(command, "RTL_WEB") == 0 || strcmp(command, "RTL_WEB_STATUS") == 0) {
-    char url[48]{};
-    if (orcsdr::web_console::listening() && wifi_connected) {
-      orcsdr::web_console::format_url(url, sizeof(url), orcsdr::wifi::ip());
-    }
-    Serial.printf("RTL_WEB_STATUS enabled=%d listening=%d url=%s\n",
-                  orcsdr::web_console::enabled() ? 1 : 0,
-                  orcsdr::web_console::listening() ? 1 : 0,
-                  url[0] ? url : "offline");
-    return;
-  }
-  if (strcmp(command, "RTL_WEB_AUDIO_STATUS") == 0) {
-    web_audio_diag_emit_status();
-    return;
-  }
-  if ((strcmp(command, "RTL_WEB ON") == 0 || strcmp(command, "RTL_WEB OFF") == 0) &&
-      authenticated) {
-    settings_web_console_enabled = command[8] == 'O' && command[9] == 'N';
-    preferences.putBool("set_web_console", settings_web_console_enabled);
-    orcsdr::web_console::set_enabled(settings_web_console_enabled);
-    orcsdr::web_console::poll(wifi_connected);
-    char url[48]{};
-    if (orcsdr::web_console::listening() && wifi_connected) {
-      orcsdr::web_console::format_url(url, sizeof(url), orcsdr::wifi::ip());
-    }
-    Serial.printf("RTL_WEB_OK enabled=%d listening=%d url=%s\n",
-                  settings_web_console_enabled ? 1 : 0,
-                  orcsdr::web_console::listening() ? 1 : 0,
-                  url[0] ? url : "offline");
-    if (orcsdr::settings::active()) update_global_settings();
-    return;
-  }
-  if (strcmp(command, "RTL_AUDIO_TEST STATUS") == 0) {
-    rtl_audio_test_emit_status();
-    return;
-  }
-  if (strcmp(command, "RTL_AUDIO_TEST TONE") == 0) {
-    rtl_audio_test_start_tone();
-    return;
-  }
-  if (strcmp(command, "RTL_AUDIO_TEST FM") == 0) {
-    rtl_audio_test_start_fm();
-    return;
-  }
-  if (strcmp(command, "RTL_AUDIO_TEST STOP") == 0) {
-    rtl_audio_test_stop();
-    return;
-  }
+  if (orcsdr::serial_audio::handle_command(command, authenticated, kSerialAudioHooks)) return;
+  if (orcsdr::serial_web::handle_command(command, authenticated, kSerialWebHooks)) return;
+  if (orcsdr::serial_audio_test::handle_command(command, authenticated, kSerialAudioTestHooks)) return;
   if (strcmp(command, "RTL_SIGNAL") == 0) {
     const int signal_tenths = static_cast<int>(lroundf(rtl_signal_dbfs_smooth * 10.0f));
     const int left_tenths = static_cast<int>(
