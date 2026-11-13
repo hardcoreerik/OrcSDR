@@ -100,6 +100,7 @@
 #include "serial_p25.hpp"
 #include "serial_rtc.hpp"
 #include "serial_wifi.hpp"
+#include "serial_verbosity.hpp"
 #include "serial_scope.hpp"
 #include "serial_status.hpp"
 #include "esp_memory_utils.h"
@@ -20775,6 +20776,24 @@ static constexpr orcsdr::serial_scope::Hooks kSerialScopeHooks{
     },
 };
 
+// The RTL_SERIAL VERBOSITY commands live in serial_verbosity.cpp; a level travels as the number stored for it.
+static constexpr orcsdr::serial_verbosity::Hooks kSerialVerbosityHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    []() -> uint8_t { return serial_verbosity.load(std::memory_order_relaxed); },
+    [](uint8_t level) -> const char* { return serial_verbosity_name(static_cast<SerialVerbosity>(level)); },
+    [](const char* text, uint8_t* level) -> bool {
+      SerialVerbosity parsed{};
+      if (!parse_serial_verbosity(text, &parsed)) return false;
+      *level = static_cast<uint8_t>(parsed);
+      return true;
+    },
+    [](uint8_t level) {
+      preferences.putUChar("serial_verb", level);
+      apply_serial_verbosity(static_cast<SerialVerbosity>(level));
+    },
+};
+
 void process_command(char* command) {
   if (strncmp(command, "JS8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
     process_js8_command(command + 3);
@@ -20956,27 +20975,7 @@ void process_command(char* command) {
                   rtl_header_audio_control.expanded ? 1 : 0);
     return;
   }
-  if (strcmp(command, "RTL_SERIAL VERBOSITY") == 0) {
-    const auto level = static_cast<SerialVerbosity>(
-        serial_verbosity.load(std::memory_order_relaxed));
-    Serial.printf("RTL_SERIAL_VERBOSITY mode=%s\n", serial_verbosity_name(level));
-    return;
-  }
-  if (strncmp(command, "RTL_SERIAL VERBOSITY ", 21) == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_SERIAL_VERBOSITY_ERROR auth_required");
-      return;
-    }
-    SerialVerbosity level{};
-    if (!parse_serial_verbosity(command + 21, &level)) {
-      Serial.println("RTL_SERIAL_VERBOSITY_INVALID use QUIET|NORMAL|DEBUG|TRACE");
-      return;
-    }
-    preferences.putUChar("serial_verb", static_cast<uint8_t>(level));
-    apply_serial_verbosity(level);
-    Serial.printf("RTL_SERIAL_VERBOSITY_OK mode=%s\n", serial_verbosity_name(level));
-    return;
-  }
+  if (orcsdr::serial_verbosity::handle_command(command, authenticated, kSerialVerbosityHooks)) return;
   if (strncmp(command, "RTL_TCP", 7) == 0 && (command[7] == '\0' || command[7] == ' ' || command[7] == '\t')) {
     char reply[320];
     // Allow-list: only STATUS is open; every other verb changes a setting or starts network activity.

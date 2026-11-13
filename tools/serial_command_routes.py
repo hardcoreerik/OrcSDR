@@ -69,6 +69,7 @@ FAMILIES = {
     "orcsdr::serial_wifi": "apps/orcsdr-tab5/ui/serial_wifi.cpp",
     "orcsdr::serial_status": "apps/orcsdr-tab5/ui/serial_status.cpp",
     "orcsdr::serial_scope": "apps/orcsdr-tab5/ui/serial_scope.cpp",
+    "orcsdr::serial_verbosity": "apps/orcsdr-tab5/ui/serial_verbosity.cpp",
 }
 FAMILY_SIGNATURE = "bool handle_command(const char* command, bool authenticated, const Hooks& hooks) {"
 FAMILY_CALL = re.compile(r"([\w:]+)::handle_command\(command, authenticated, \w+\)")

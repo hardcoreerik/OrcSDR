@@ -98,6 +98,7 @@ idf_component_register(
         "../ui/serial_p25.cpp"
         "../ui/serial_rtc.cpp"
         "../ui/serial_wifi.cpp"
+        "../ui/serial_verbosity.cpp"
         "../ui/serial_scope.cpp"
         "../ui/serial_status.cpp"
         "../ui/ft8_hunter.cpp"
