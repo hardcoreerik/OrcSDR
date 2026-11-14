@@ -79,6 +79,8 @@
 #include "ft8_runtime.hpp"
 #include "memory_reclaim.hpp"
 #include "buffer_claim.hpp"
+#include "rds_capture.hpp"
+#include "sd_writer.hpp"
 #include "memory_ledger.hpp"
 #include "serial_dead_air.hpp"
 #include "serial_ui_nav.hpp"
@@ -480,11 +482,10 @@ constexpr float kRdsChipInc24 =
 constexpr float kRdsCostasAlpha = 0.012f;
 constexpr size_t kRdsTimingTracks = 4;
 constexpr uint32_t kRdsMpxRateHz = kRtlSampleRateSps / kFmRfDecim;
-constexpr size_t kRdsCaptureSeconds = 8;
-constexpr size_t kRdsCaptureSamples = kRdsMpxRateHz * kRdsCaptureSeconds;
 constexpr float kRdsMpxToInt16 = 32767.0f / 3.14159265358979323846f;
 constexpr float kRdsInt16ToMpx = 1.0f / kRdsMpxToInt16;
 static_assert(kRdsMpxRateHz == 240000, "RDS MPX file format requires 240 kS/s");
+static_assert(kRdsMpxRateHz == orcsdr::rds_capture::kRateHz, "rds_capture.hpp assumes the MPX rate");
 /* RDS/RBDS generator polynomial x^10+x^8+x^7+x^5+x^4+x^3+1, and the five
  * offset words (IEC 62106). Verified by direct polynomial-division check
  * against all five before this was written into demodulate_fm. */
@@ -1639,17 +1640,7 @@ static std::atomic<bool> g_audio_rec_export_pending{false};
 static std::atomic<uint32_t> g_audio_rec_writers{0};      // callers inside audio_rec_append right now
 static orcsdr::buffer_claim::Claim g_audio_rec_claim;      // held to arm, export or free g_audio_rec_buf (buffer_claim.hpp)
 
-/* ---- FM multiplex capture for repeatable RDS replay ---- */
-static int16_t* g_rds_capture_buf = nullptr;
-static std::atomic<size_t> g_rds_capture_write{0};
-static std::atomic<bool> g_rds_capture_active{false};
-static std::atomic<bool> g_rds_capture_ready{false};
-static std::atomic<bool> g_rds_capture_writing{false};
-static orcsdr::buffer_claim::Claim g_rds_capture_claim;   // held to arm, export or free g_rds_capture_buf (buffer_claim.hpp)
-static uint32_t g_rds_capture_frequency_hz = 0;
-static uint32_t g_rds_capture_started_ms = 0;
-static uint32_t g_rds_capture_file_seq = 0;
-static char g_rds_capture_last_path[96] = "";
+/* ---- FM multiplex capture for repeatable RDS replay: rds_capture.cpp ---- */
 
 /* ---- Raw CU8 IQ capture and adaptive LoRa energy trigger ---- */
 // LongFast maximum-size packets can exceed 3.2 seconds. Four seconds retains
@@ -2648,10 +2639,7 @@ bool dsp_ab_take_mpx(float phase, float pilot);
 #endif
 void rds_publish_state();
 void rds_log_status();
-bool rds_capture_start();
-bool rds_capture_stop_and_export();
 bool rds_replay(const char* path);
-void rds_capture_status_print();
 bool ensure_tab5_sd();
 void load_lora_config();
 uint32_t lora_channel_frequency_hz();
@@ -4092,6 +4080,27 @@ bool ensure_tab5_sd() {
   return false;
 }
 
+// RTL_RDS_CAPTURE (rds_capture.cpp): the device actions it needs. The card is written by the background SD writer.
+static constexpr orcsdr::rds_capture::Hooks kRdsCaptureHooks = [] {
+  orcsdr::rds_capture::Hooks h;
+  h.write = [](const char* text) { Serial.print(text); };
+  h.write_line = [](const char* text) { Serial.println(text); };
+  h.fm_selected = [] { return rtl_ui_band == RtlBand::fm; };
+  h.frequency_hz = [] { return static_cast<uint32_t>(rtl_ui_frequency_hz); };
+  h.now_ms = [] { return static_cast<uint32_t>(millis()); };
+  h.alloc = [](size_t bytes) { return static_cast<int16_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)); };
+  h.release = [](int16_t* buffer) { heap_caps_free(buffer); };
+  h.sd_ready = [] { return ensure_tab5_sd() && g_sd_fs != nullptr; };
+  h.sd_state = [] { return g_sd_ready ? "ready" : (g_sd_tried ? "missing" : "untried"); };
+  h.exists = [](const char* path) { return g_sd_fs != nullptr && g_sd_fs->exists(path); };
+  h.mkdir = [](const char* path) { return g_sd_fs != nullptr && g_sd_fs->mkdir(path); };
+  h.remove = [](const char* path) { return g_sd_fs != nullptr && g_sd_fs->remove(path); };
+  h.wait = [] { delay(1); };
+  h.writer = []() -> orcsdr::sd_writer::Writer& { return orcsdr::sd_writer::shared(); };
+  h.scale_radians_per_lsb = static_cast<double>(kRdsInt16ToMpx);
+  return h;
+}();
+
 void load_lora_config() {
   if (lora_config_loaded) return;
   lora_config_loaded = true;
@@ -4667,8 +4676,8 @@ bool iq_rec_ensure_buffer() {
 static constexpr orcsdr::memory_ledger::Buffer kMemoryBuffers[] = {
     {"audio_rec", []() -> const void* { return g_audio_rec_buf; },
      []() -> size_t { return g_audio_rec_capacity * sizeof(int16_t); }},
-    {"rds_capture", []() -> const void* { return g_rds_capture_buf; },
-     []() -> size_t { return kRdsCaptureSamples * sizeof(int16_t); }},
+    {"rds_capture", []() -> const void* { return orcsdr::rds_capture::buffer(); },
+     []() -> size_t { return orcsdr::rds_capture::kBufferBytes; }},
     {"iq_capture", []() -> const void* { return g_iq_rec_buf; }, []() -> size_t { return kIqRecMaxBytes; }},
     {"lora_decode", []() -> const void* { return g_lora_decode_buf; }, []() -> size_t { return kIqRecMaxBytes; }},
     {"lora_pre_roll", []() -> const void* { return g_lora_pre_roll_buf; },
@@ -5651,153 +5660,6 @@ void audio_rec_status_print() {
       static_cast<unsigned>(kAudioRecMaxSeconds), kAudioRecRateHz,
       rtl_band_name(g_audio_rec_band), g_audio_rec_freq_hz,
       g_audio_rec_last_path[0] ? g_audio_rec_last_path : "none",
-      g_sd_ready ? "ready" : (g_sd_tried ? "missing" : "untried"));
-}
-
-// The 3.84 MB RDS multiplex capture buffer used to stay allocated for the rest of the session after one RTL_RDS_CAPTURE.
-// It is now a reclaimable holder: given back on request once the capture has been saved (or was never filled), and
-// allocated again by the next RTL_RDS_CAPTURE_START. A capture that is running, or stopped but not yet on the SD card,
-// is never released. Callers of reclaim_all() run on the main loop and on the radio driver task, hence the claim.
-static orcsdr::buffer_claim::CaptureState rds_capture_buffer_state() {
-  orcsdr::buffer_claim::CaptureState s;
-  s.allocated = g_rds_capture_buf != nullptr;
-  s.active = g_rds_capture_active.load();
-  s.writing = g_rds_capture_writing.load();
-  s.samples = g_rds_capture_write.load();
-  s.saved = g_rds_capture_last_path[0] != '\0';
-  return s;
-}
-
-size_t rds_capture_held_bytes() {
-  return orcsdr::buffer_claim::releasable(rds_capture_buffer_state()) ? kRdsCaptureSamples * sizeof(int16_t) : 0u;
-}
-
-size_t rds_capture_release_buffer() {
-  if (!g_rds_capture_claim.try_take()) return 0;   // being armed or exported right now
-  orcsdr::buffer_claim::Hold hold(g_rds_capture_claim);
-  if (!orcsdr::buffer_claim::releasable(rds_capture_buffer_state())) return 0;
-  int16_t* buffer = g_rds_capture_buf;
-  g_rds_capture_buf = nullptr;   // clear first: every user checks for null and the next capture allocates it again
-  g_rds_capture_write.store(0);  // the samples are gone; the saved file's path stays in the status line
-  g_rds_capture_ready.store(false);
-  heap_caps_free(buffer);
-  return kRdsCaptureSamples * sizeof(int16_t);
-}
-
-bool rds_capture_start() {
-  if (rtl_ui_band != RtlBand::fm) {
-    Serial.println("RTL_RDS_CAPTURE_ERROR fm_mode_required");
-    return false;
-  }
-  if (g_rds_capture_active.load(std::memory_order_acquire)) {
-    Serial.println("RTL_RDS_CAPTURE_ALREADY");
-    return true;
-  }
-  (void)orcsdr::memory_reclaim::register_holder({"RDS capture", rds_capture_held_bytes, rds_capture_release_buffer});
-  g_rds_capture_claim.take([] { delay(1); });
-  orcsdr::buffer_claim::Hold hold(g_rds_capture_claim);
-  if (g_rds_capture_buf == nullptr) {
-    g_rds_capture_buf = static_cast<int16_t*>(heap_caps_malloc(
-        kRdsCaptureSamples * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-  }
-  if (g_rds_capture_buf == nullptr) {
-    Serial.println("RTL_RDS_CAPTURE_ERROR no_psram_buffer");
-    return false;
-  }
-  g_rds_capture_frequency_hz = rtl_ui_frequency_hz;
-  g_rds_capture_started_ms = millis();
-  g_rds_capture_last_path[0] = '\0';
-  g_rds_capture_write.store(0, std::memory_order_release);
-  g_rds_capture_ready.store(false, std::memory_order_release);
-  g_rds_capture_active.store(true, std::memory_order_release);
-  Serial.printf("RTL_RDS_CAPTURE_START samples=%u seconds=%u rate=%u frequency_hz=%u\n",
-                static_cast<unsigned>(kRdsCaptureSamples),
-                static_cast<unsigned>(kRdsCaptureSeconds), kRdsMpxRateHz,
-                g_rds_capture_frequency_hz);
-  return true;
-}
-
-bool rds_capture_write_files(size_t samples) {
-  if (g_rds_capture_buf == nullptr || samples == 0 || !ensure_tab5_sd()) return false;
-  g_sd_fs->mkdir("/orcsdr");
-  g_sd_fs->mkdir("/orcsdr/rds_debug");
-  char raw_path[96];
-  char json_path[96];
-  do {
-    ++g_rds_capture_file_seq;
-    snprintf(raw_path, sizeof(raw_path), "/orcsdr/rds_debug/%03u_%lu_mpx.s16",
-              static_cast<unsigned>(g_rds_capture_file_seq),
-              static_cast<unsigned long>(g_rds_capture_frequency_hz));
-  } while (g_sd_fs->exists(raw_path));
-  snprintf(json_path, sizeof(json_path), "/orcsdr/rds_debug/%03u_%lu_mpx.json",
-            static_cast<unsigned>(g_rds_capture_file_seq),
-            static_cast<unsigned long>(g_rds_capture_frequency_hz));
-
-  File raw = g_sd_fs->open(raw_path, FILE_WRITE, true);
-  if (!raw) {
-    Serial.println("RTL_RDS_CAPTURE_ERROR raw_open_failed");
-    return false;
-  }
-  const size_t bytes = samples * sizeof(int16_t);
-  const size_t wrote = raw.write(reinterpret_cast<const uint8_t*>(g_rds_capture_buf), bytes);
-  raw.close();
-  if (wrote != bytes) {
-    g_sd_fs->remove(raw_path);
-    Serial.printf("RTL_RDS_CAPTURE_ERROR short_write got=%u want=%u\n",
-                  static_cast<unsigned>(wrote), static_cast<unsigned>(bytes));
-    return false;
-  }
-
-  File metadata = g_sd_fs->open(json_path, FILE_WRITE, true);
-  if (!metadata) {
-    Serial.printf("RTL_RDS_CAPTURE_ERROR metadata_open_failed raw=\"%s\"\n", raw_path);
-    return false;
-  }
-  metadata.printf(
-      "{\"format\":\"s16le_mpx\",\"sample_rate_hz\":%lu,\"frequency_hz\":%lu,"
-      "\"samples\":%u,\"scale_radians_per_lsb\":%.10g,\"start_uptime_ms\":%lu}\n",
-      static_cast<unsigned long>(kRdsMpxRateHz),
-      static_cast<unsigned long>(g_rds_capture_frequency_hz), static_cast<unsigned>(samples),
-      static_cast<double>(kRdsInt16ToMpx), static_cast<unsigned long>(g_rds_capture_started_ms));
-  metadata.close();
-  strlcpy(g_rds_capture_last_path, raw_path, sizeof(g_rds_capture_last_path));
-  Serial.printf("RTL_RDS_CAPTURE_SAVED path=\"%s\" metadata=\"%s\" samples=%u rate=%u\n",
-                raw_path, json_path, static_cast<unsigned>(samples), kRdsMpxRateHz);
-  return true;
-}
-
-bool rds_capture_stop_and_export() {
-  g_rds_capture_claim.take([] { delay(1); });   // the buffer cannot be released while it is being written to the card
-  orcsdr::buffer_claim::Hold hold(g_rds_capture_claim);
-  g_rds_capture_active.store(false, std::memory_order_release);
-  while (g_rds_capture_writing.load(std::memory_order_acquire)) delay(1);
-  const size_t samples = g_rds_capture_write.load(std::memory_order_acquire);
-  if (samples == 0) {
-    Serial.println("RTL_RDS_CAPTURE_STOP empty");
-    return false;
-  }
-  g_rds_capture_ready.store(true, std::memory_order_release);
-  Serial.printf("RTL_RDS_CAPTURE_STOP samples=%u seconds=%.3f\n",
-                static_cast<unsigned>(samples),
-                static_cast<double>(samples) / static_cast<double>(kRdsMpxRateHz));
-  if (rds_capture_write_files(samples)) return true;
-  Serial.printf("RTL_RDS_CAPTURE_PSRAM_HOLD samples=%u note=insert_sd_then_stop_again\n",
-                static_cast<unsigned>(samples));
-  return false;
-}
-
-void rds_capture_status_print() {
-  const size_t samples = g_rds_capture_write.load(std::memory_order_acquire);
-  Serial.printf(
-      "RTL_RDS_CAPTURE_STATUS active=%s ready=%s samples=%u seconds=%.3f max_seconds=%u "
-      "rate=%u frequency_hz=%u last_path=\"%s\" sd=%s\n",
-      g_rds_capture_active.load(std::memory_order_acquire) ? "true" : "false",
-      g_rds_capture_ready.load(std::memory_order_acquire) ? "true" : "false",
-      static_cast<unsigned>(samples),
-      static_cast<double>(samples) / static_cast<double>(kRdsMpxRateHz),
-      static_cast<unsigned>(kRdsCaptureSeconds), kRdsMpxRateHz,
-      g_rds_capture_frequency_hz,
-      g_rds_capture_last_path[0] ? g_rds_capture_last_path : "none",
       g_sd_ready ? "ready" : (g_sd_tried ? "missing" : "untried"));
 }
 
@@ -8481,18 +8343,8 @@ __attribute__((noinline)) void demodulate_fm(const uint8_t* iq, size_t bytes, fl
   float meter_peak_l = 0.0f;
   float meter_peak_r = 0.0f;
   bool meter_any = false;
-  bool capture_mpx = false;
-  size_t capture_write = 0;
-  if (wbfm && g_rds_capture_active.load(std::memory_order_acquire)) {
-    // Sequentially consistent: a release on another task must see this flag before this task re-reads `active`.
-    g_rds_capture_writing.store(true, std::memory_order_seq_cst);
-    if (g_rds_capture_active.load(std::memory_order_seq_cst)) {
-      capture_mpx = true;
-      capture_write = g_rds_capture_write.load(std::memory_order_relaxed);
-    } else {
-      g_rds_capture_writing.store(false, std::memory_order_release);
-    }
-  }
+  orcsdr::rds_capture::Tap capture;   // RTL_RDS_CAPTURE: copies the MPX into the capture buffer (rds_capture.cpp)
+  const bool capture_mpx = wbfm && orcsdr::rds_capture::tap_begin(&capture);
 
   // Hot state lives in locals for the block (see rtl_dsp_reset_requests);
   // AGC and RDS state stay in rtl_audio (other functions own them).
@@ -8567,9 +8419,9 @@ __attribute__((noinline)) void demodulate_fm(const uint8_t* iq, size_t bytes, fl
     if (have_previous) {
       const float phase = fast_phase(previous_i * q - previous_q * i,
                                      previous_i * i + previous_q * q);
-      if (capture_mpx && capture_write < kRdsCaptureSamples) {
+      if (capture_mpx && capture.write < capture.capacity) {
         const float scaled = constrain(phase * kRdsMpxToInt16, -32767.0f, 32767.0f);
-        g_rds_capture_buf[capture_write++] = static_cast<int16_t>(scaled);
+        capture.data[capture.write++] = static_cast<int16_t>(scaled);
       }
 
       /*
@@ -8729,17 +8581,7 @@ __attribute__((noinline)) void demodulate_fm(const uint8_t* iq, size_t bytes, fl
   orcsdr::dsp::stats::add(orcsdr::dsp::stats::Stage::rds,
                            rds_cycles / (CONFIG_ESP_DEFAULT_CPU_FREQ_MHZ));
 #endif
-  if (capture_mpx) {
-    g_rds_capture_write.store(capture_write, std::memory_order_release);
-    if (capture_write >= kRdsCaptureSamples) {
-      g_rds_capture_active.store(false, std::memory_order_release);
-      g_rds_capture_ready.store(true, std::memory_order_release);
-      Serial.printf("RTL_RDS_CAPTURE_FULL samples=%u seconds=%u note=send_stop_to_export\n",
-                    static_cast<unsigned>(capture_write),
-                    static_cast<unsigned>(kRdsCaptureSeconds));
-    }
-    g_rds_capture_writing.store(false, std::memory_order_release);
-  }
+  if (capture_mpx) orcsdr::rds_capture::tap_end(capture, kRdsCaptureHooks);
   if (wbfm) {
     /* dBFS relative to int16 full scale; matches the mono peak's own units. */
     constexpr float kFullScaleInv = 1.0f / 32768.0f;
@@ -20552,9 +20394,9 @@ static constexpr orcsdr::serial_adsb::Hooks kSerialAdsbHooks{
 // The RTL_RDS commands live in serial_rds.cpp; these are the device actions and the facts RTL_RDS_STATUS prints.
 static constexpr orcsdr::serial_rds::Hooks kSerialRdsHooks{
     [](const char* text) { Serial.print(text); },
-    [] { (void)rds_capture_start(); },
-    [] { (void)rds_capture_stop_and_export(); },
-    rds_capture_status_print,
+    [] { (void)orcsdr::rds_capture::start(kRdsCaptureHooks); },
+    [] { (void)orcsdr::rds_capture::stop_and_export(kRdsCaptureHooks); },
+    [] { orcsdr::rds_capture::status_print(kRdsCaptureHooks); },
     [](const char* path) { (void)rds_replay(path); },
     []() -> orcsdr::serial_rds::Status {
       const RdsSelection selection = rds_select();
@@ -22935,6 +22777,7 @@ void loop() {
     if (elapsed_ms >= 500)
       Serial.printf("RTL_MAIN_STALL stage=serial_dispatch elapsed_ms=%u\n", elapsed_ms);
   }
+  orcsdr::rds_capture::service(kRdsCaptureHooks);   // reports a finished background save
   service_clock();
   orcsdr::location_estimate::service();
   orcsdr::maps::service_downloads();

@@ -58,17 +58,8 @@ void demodulate_fm_ref(const uint8_t* iq, size_t bytes, float audio_scale, bool 
   float meter_peak_l = 0.0f;
   float meter_peak_r = 0.0f;
   bool meter_any = false;
-  bool capture_mpx = false;
-  size_t capture_write = 0;
-  if (wbfm && g_rds_capture_active.load(std::memory_order_acquire)) {
-    g_rds_capture_writing.store(true, std::memory_order_seq_cst);
-    if (g_rds_capture_active.load(std::memory_order_seq_cst)) {
-      capture_mpx = true;
-      capture_write = g_rds_capture_write.load(std::memory_order_relaxed);
-    } else {
-      g_rds_capture_writing.store(false, std::memory_order_release);
-    }
-  }
+  orcsdr::rds_capture::Tap capture;
+  const bool capture_mpx = wbfm && orcsdr::rds_capture::tap_begin(&capture);
 
   for (size_t offset = 0; offset + 1 < bytes; offset += 2) {
     /* Center CU8 and complex channel LPF (pre-demod adjacent-channel relief). */
@@ -89,9 +80,9 @@ void demodulate_fm_ref(const uint8_t* iq, size_t bytes, float audio_scale, bool 
     if (rtl_audio.have_previous) {
       const float phase = fast_phase(rtl_audio.previous_i * q - rtl_audio.previous_q * i,
                                      rtl_audio.previous_i * i + rtl_audio.previous_q * q);
-      if (capture_mpx && capture_write < kRdsCaptureSamples) {
+      if (capture_mpx && capture.write < capture.capacity) {
         const float scaled = constrain(phase * kRdsMpxToInt16, -32767.0f, 32767.0f);
-        g_rds_capture_buf[capture_write++] = static_cast<int16_t>(scaled);
+        capture.data[capture.write++] = static_cast<int16_t>(scaled);
       }
 
       /*
@@ -211,17 +202,7 @@ void demodulate_fm_ref(const uint8_t* iq, size_t bytes, float audio_scale, bool 
     rtl_audio.previous_q = q;
     rtl_audio.have_previous = true;
   }
-  if (capture_mpx) {
-    g_rds_capture_write.store(capture_write, std::memory_order_release);
-    if (capture_write >= kRdsCaptureSamples) {
-      g_rds_capture_active.store(false, std::memory_order_release);
-      g_rds_capture_ready.store(true, std::memory_order_release);
-      Serial.printf("RTL_RDS_CAPTURE_FULL samples=%u seconds=%u note=send_stop_to_export\n",
-                    static_cast<unsigned>(capture_write),
-                    static_cast<unsigned>(kRdsCaptureSeconds));
-    }
-    g_rds_capture_writing.store(false, std::memory_order_release);
-  }
+  if (capture_mpx) orcsdr::rds_capture::tap_end(capture, kRdsCaptureHooks);
   if (wbfm) {
     /* dBFS relative to int16 full scale; matches the mono peak's own units. */
     constexpr float kFullScaleInv = 1.0f / 32768.0f;

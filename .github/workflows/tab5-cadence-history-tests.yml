@@ -57,6 +57,8 @@ on:
       - 'tests/serial_ui_nav_tests.cpp'
       - 'tests/memory_ledger_tests.cpp'
       - 'tests/buffer_claim_tests.cpp'
+      - 'tests/sd_writer_tests.cpp'
+      - 'tests/rds_capture_tests.cpp'
       - 'tests/data/serial_help_golden.txt'
       - 'tests/data/serial_help_golden_orcdial.txt'
       - 'tests/data/serial_command_routes.tsv'
