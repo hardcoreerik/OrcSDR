@@ -108,6 +108,7 @@
 #include "serial_radio.hpp"
 #include "serial_digimodes.hpp"
 #include "serial_splash.hpp"
+#include "serial_session.hpp"
 #include "display_bench.hpp"
 #include "serial_gain.hpp"
 #include "serial_driver.hpp"
@@ -15544,19 +15545,11 @@ uint32_t append_journal(const char* kind, int16_t x = -1, int16_t y = -1) {
   return entry.sequence;
 }
 
-bool hmac_matches(const char* value, const uint8_t* candidate) {
-  uint8_t expected[32];
+// HMAC-SHA256 keyed with the pairing key: the session protocol's proofs and signatures (serial_session.cpp).
+bool pairing_hmac(const uint8_t* data, size_t size, uint8_t out[32]) {
   const mbedtls_md_info_t* info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
-  if (info == nullptr ||
-      mbedtls_md_hmac(info, pairing_key, sizeof(pairing_key),
-                      reinterpret_cast<const uint8_t*>(value), strlen(value), expected) != 0) {
-    return false;
-  }
-  uint8_t difference = 0;
-  for (size_t index = 0; index < sizeof(expected); ++index) {
-    difference |= expected[index] ^ candidate[index];
-  }
-  return difference == 0;
+  return info != nullptr &&
+         mbedtls_md_hmac(info, pairing_key, sizeof(pairing_key), data, size, out) == 0;
 }
 
 void run_offline_workflow() {
@@ -21003,6 +20996,73 @@ static constexpr orcsdr::serial_splash::Hooks kSerialSplashHooks{
     [] { return preferences.getBool("splash_gate", true); },
 };
 
+// PAIR / AUTH / PING and the signed session commands (serial_session.cpp): the key, settings and journal stay here.
+static_assert(sizeof(pairing_key) == orcsdr::serial_session::kPairingKeySize);
+static_assert(sizeof(wifi_ssid) == orcsdr::serial_session::kWifiSsidSize);
+static_assert(sizeof(wifi_password) == orcsdr::serial_session::kWifiPasswordSize);
+static constexpr orcsdr::serial_session::Hooks kSerialSessionHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    [](const uint8_t* value, size_t size) { print_hex(value, size); },
+    [](const char* text, uint8_t* out, size_t size) { return decode_hex(text, out, size); },
+    [](const char* text, char* out, size_t size) { return decode_hex_text(text, out, size); },
+    [](const uint8_t* data, size_t size, uint8_t out[32]) { return pairing_hmac(data, size, out); },
+    [] { return paired; },
+    []() -> const uint8_t* { return pairing_key; },
+    [](const uint8_t* key) {
+      memcpy(pairing_key, key, sizeof(pairing_key));
+      preferences.putBytes("pair_key", pairing_key, sizeof(pairing_key));
+      paired = true;
+    },
+    [](bool on) { authenticated = on; },
+    [] {
+      // An authenticated host (e.g. the UI regression scripts) takes over from
+      // the boot splash instead of waiting behind the OrcSDR button.
+      if (orcsdr_splash_is_active()) orcsdr_splash_end();
+      offline_transition_handled = false;
+      last_ping_ms = millis();
+      set_online();
+    },
+    [] {
+      offline_transition_handled = false;
+      last_ping_ms = millis();
+    },
+    [] { last_ping_ms = millis(); },
+    [](const char* event) { append_journal(event); },
+    [](const char* text, orcsdr::serial_session::Tone tone) {
+      draw_session_state(text, tone == orcsdr::serial_session::Tone::approved ? TFT_CYAN : TFT_YELLOW);
+    },
+    [] { emit_identity(); },
+    [] { emit_pending_journal(); },
+    [](const char* ssid, const char* password) {
+      strlcpy(wifi_ssid, ssid, sizeof(wifi_ssid));
+      strlcpy(wifi_password, password, sizeof(wifi_password));
+      preferences.putString("wifi_ssid", wifi_ssid);
+      preferences.putString("wifi_pass", wifi_password);
+      strlcpy(wifi_profiles[0].ssid, wifi_ssid, sizeof(wifi_profiles[0].ssid));
+      strlcpy(wifi_profiles[0].password, wifi_password, sizeof(wifi_profiles[0].password));
+      if (wifi_profile_count == 0) wifi_profile_count = 1;
+      preferences.putString("wifi0_ssid", wifi_profiles[0].ssid);
+      preferences.putString("wifi0_pass", wifi_profiles[0].password);
+      wifi_configured = true;
+    },
+    [] { start_wifi_connection(); },
+    [] { return workflow.config_revision; },
+    [](uint32_t revision, uint16_t max_runs) {
+      workflow.config_revision = revision;
+      workflow.max_runs = max_runs;
+      workflow.runs = 0;
+      persist_workflow();
+    },
+    [] { return journal.dropped_events; },
+    [] {
+      journal.dropped_events = 0;
+      persist_journal();
+    },
+    [] { return journal.next_sequence; },
+    [](uint32_t sequence) { acknowledge_journal(sequence); },
+};
+
 // RTL_STOP, RTL_CAPTURE / RTL_LISTEN and RTL_VOLUME (serial_radio.cpp): the receiver state stays here.
 static constexpr orcsdr::serial_radio::Hooks kSerialRadioHooks{
     [](const char* text) { Serial.print(text); },
@@ -21347,239 +21407,7 @@ void process_command(char* command) {
   if (orcsdr::serial_preset::handle_command(command, authenticated, kSerialPresetHooks)) return;
   if (orcsdr::serial_rds::handle_command(command, authenticated, kSerialRdsHooks)) return;
 
-  if (strncmp(command, "PAIR ", 5) == 0) {
-    uint8_t candidate[sizeof(pairing_key)];
-    if (!decode_hex(command + 5, candidate, sizeof(candidate))) {
-      Serial.println("PAIR_INVALID");
-      return;
-    }
-    if (!paired) {
-      memcpy(pairing_key, candidate, sizeof(pairing_key));
-      preferences.putBytes("pair_key", pairing_key, sizeof(pairing_key));
-      paired = true;
-      append_journal("paired");
-    }
-    uint8_t difference = 0;
-    for (size_t index = 0; index < sizeof(pairing_key); ++index) {
-      difference |= pairing_key[index] ^ candidate[index];
-    }
-    Serial.println(difference == 0 ? "PAIR_OK" : "PAIR_LOCKED");
-    return;
-  }
-  if (strncmp(command, "AUTH ", 5) == 0 && paired) {
-    uint8_t nonce[16];
-    uint8_t host_proof[32];
-    uint8_t expected_host_proof[32];
-    uint8_t signature[32];
-    char* proof_hex = strchr(command + 5, ' ');
-    if (proof_hex == nullptr) {
-      Serial.println("AUTH_INVALID");
-      return;
-    }
-    *proof_hex++ = '\0';
-    if (!decode_hex(command + 5, nonce, sizeof(nonce)) ||
-        !decode_hex(proof_hex, host_proof, sizeof(host_proof))) {
-      Serial.println("AUTH_INVALID");
-      return;
-    }
-    const mbedtls_md_info_t* info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
-    uint8_t host_input[sizeof("host") - 1 + sizeof(nonce)];
-    memcpy(host_input, "host", sizeof("host") - 1);
-    memcpy(host_input + sizeof("host") - 1, nonce, sizeof(nonce));
-    if (info == nullptr ||
-        mbedtls_md_hmac(info, pairing_key, sizeof(pairing_key), host_input,
-                        sizeof(host_input), expected_host_proof) != 0) {
-      Serial.println("AUTH_ERROR");
-      return;
-    }
-    uint8_t difference = 0;
-    for (size_t index = 0; index < sizeof(host_proof); ++index) {
-      difference |= host_proof[index] ^ expected_host_proof[index];
-    }
-    if (difference != 0) {
-      Serial.println("AUTH_DENIED");
-      return;
-    }
-    uint8_t device_input[sizeof("device") - 1 + sizeof(nonce)];
-    memcpy(device_input, "device", sizeof("device") - 1);
-    memcpy(device_input + sizeof("device") - 1, nonce, sizeof(nonce));
-    if (mbedtls_md_hmac(info, pairing_key, sizeof(pairing_key), device_input,
-                        sizeof(device_input), signature) != 0) {
-      Serial.println("AUTH_ERROR");
-      return;
-    }
-    Serial.print("AUTH_OK ");
-    print_hex(signature, sizeof(signature));
-    Serial.println();
-    authenticated = true;
-    // An authenticated host (e.g. the UI regression scripts) takes over from
-    // the boot splash instead of waiting behind the OrcSDR button.
-    if (orcsdr_splash_is_active()) orcsdr_splash_end();
-    offline_transition_handled = false;
-    last_ping_ms = millis();
-    set_online();
-    return;
-  }
-  if (strcmp(command, "PING") == 0 && authenticated) {
-    last_ping_ms = millis();
-    return;
-  }
-  if (strncmp(command, "PREPARE_FLASH ", 14) == 0 && authenticated) {
-    uint8_t digest[32];
-    if (!decode_hex(command + 14, digest, sizeof(digest))) {
-      Serial.println("FLASH_INVALID");
-      return;
-    }
-    draw_session_state("Approved firmware update starting", TFT_CYAN);
-    append_journal("firmware_approved");
-    Serial.print("FLASH_READY ");
-    print_hex(digest, sizeof(digest));
-    Serial.println();
-    emit_identity();
-    emit_pending_journal();
-    return;
-  }
-  if (strncmp(command, "SET_WIFI ", 9) == 0 && authenticated) {
-    char* ssid_hex = command + 9;
-    char* password_hex = strchr(ssid_hex, ' ');
-    if (password_hex == nullptr) {
-      Serial.println("WIFI_INVALID");
-      return;
-    }
-    *password_hex++ = '\0';
-    char* signature_text = strchr(password_hex, ' ');
-    if (signature_text == nullptr) {
-      Serial.println("WIFI_INVALID");
-      return;
-    }
-    *signature_text++ = '\0';
-    char candidate_ssid[sizeof(wifi_ssid)];
-    char candidate_password[sizeof(wifi_password)];
-    uint8_t signature[32];
-    char signed_value[208];
-    if (strlen(ssid_hex) > 2 * (sizeof(candidate_ssid) - 1) ||
-        strlen(password_hex) > 2 * (sizeof(candidate_password) - 1) ||
-        strlen(signature_text) != 2 * sizeof(signature)) {
-      Serial.println("WIFI_INVALID");
-      return;
-    }
-    snprintf(signed_value, sizeof(signed_value), "wifi|%s|%s", ssid_hex, password_hex);
-    if (!decode_hex_text(ssid_hex, candidate_ssid, sizeof(candidate_ssid)) ||
-        candidate_ssid[0] == '\0' ||
-        !decode_hex_text(password_hex, candidate_password, sizeof(candidate_password)) ||
-        !decode_hex(signature_text, signature, sizeof(signature)) ||
-        !hmac_matches(signed_value, signature)) {
-      Serial.println("WIFI_INVALID");
-      return;
-    }
-    strlcpy(wifi_ssid, candidate_ssid, sizeof(wifi_ssid));
-    strlcpy(wifi_password, candidate_password, sizeof(wifi_password));
-    preferences.putString("wifi_ssid", wifi_ssid);
-    preferences.putString("wifi_pass", wifi_password);
-    strlcpy(wifi_profiles[0].ssid, wifi_ssid, sizeof(wifi_profiles[0].ssid));
-    strlcpy(wifi_profiles[0].password, wifi_password, sizeof(wifi_profiles[0].password));
-    if (wifi_profile_count == 0) wifi_profile_count = 1;
-    preferences.putString("wifi0_ssid", wifi_profiles[0].ssid);
-    preferences.putString("wifi0_pass", wifi_profiles[0].password);
-    wifi_configured = true;
-    append_journal("wifi_configured");
-    Serial.println("WIFI_CONFIGURED");
-    start_wifi_connection();
-    emit_identity();
-    emit_pending_journal();
-    return;
-  }
-  if (strncmp(command, "INSTALL_STATUS ", 15) == 0 && authenticated) {
-    char* revision_text = command + 15;
-    char* max_runs_text = strchr(revision_text, ' ');
-    if (max_runs_text == nullptr) {
-      Serial.println("WORKFLOW_INVALID");
-      return;
-    }
-    *max_runs_text++ = '\0';
-    char* signature_text = strchr(max_runs_text, ' ');
-    if (signature_text == nullptr) {
-      Serial.println("WORKFLOW_INVALID");
-      return;
-    }
-    *signature_text++ = '\0';
-    const uint32_t revision = strtoul(revision_text, nullptr, 10);
-    const uint32_t max_runs = strtoul(max_runs_text, nullptr, 10);
-    uint8_t signature[32];
-    char signed_value[48];
-    snprintf(signed_value, sizeof(signed_value), "workflow|%lu|%lu",
-             static_cast<unsigned long>(revision), static_cast<unsigned long>(max_runs));
-    if (revision == 0 || max_runs == 0 || max_runs > UINT16_MAX ||
-        !decode_hex(signature_text, signature, sizeof(signature)) ||
-        !hmac_matches(signed_value, signature)) {
-      Serial.println("WORKFLOW_INVALID");
-      return;
-    }
-    if (revision <= workflow.config_revision) {
-      Serial.println("WORKFLOW_STALE");
-      return;
-    }
-    workflow.config_revision = revision;
-    workflow.max_runs = static_cast<uint16_t>(max_runs);
-    workflow.runs = 0;
-    persist_workflow();
-    append_journal("workflow_installed");
-    Serial.printf("WORKFLOW_OK %lu\n", static_cast<unsigned long>(revision));
-    emit_identity();
-    emit_pending_journal();
-    return;
-  }
-  if (strncmp(command, "ROTATE_KEY ", 11) == 0 && authenticated) {
-    char* key_text = command + 11;
-    char* signature_text = strchr(key_text, ' ');
-    if (signature_text == nullptr) {
-      Serial.println("ROTATE_INVALID");
-      return;
-    }
-    *signature_text++ = '\0';
-    uint8_t replacement[sizeof(pairing_key)];
-    uint8_t signature[32];
-    char signed_value[80];
-    if (strlen(key_text) != 2 * sizeof(replacement) ||
-        strlen(signature_text) != 2 * sizeof(signature)) {
-      Serial.println("ROTATE_INVALID");
-      return;
-    }
-    snprintf(signed_value, sizeof(signed_value), "rotate|%s", key_text);
-    if (!decode_hex(key_text, replacement, sizeof(replacement)) ||
-        !decode_hex(signature_text, signature, sizeof(signature)) ||
-        !hmac_matches(signed_value, signature)) {
-      Serial.println("ROTATE_INVALID");
-      return;
-    }
-    memcpy(pairing_key, replacement, sizeof(pairing_key));
-    preferences.putBytes("pair_key", pairing_key, sizeof(pairing_key));
-    append_journal("credential_rotated");
-    Serial.println("KEY_ROTATED");
-    authenticated = false;
-    offline_transition_handled = false;
-    last_ping_ms = millis();
-    draw_session_state("Credential rotated - host reconnect required", TFT_YELLOW);
-    return;
-  }
-  if (strcmp(command, "TEST_PRESSURE") == 0 && authenticated) {
-    for (int index = 0; index < 10; ++index) append_journal("pressure_test");
-    Serial.printf("PRESSURE_OK %lu\n", static_cast<unsigned long>(journal.dropped_events));
-    emit_identity();
-    emit_pending_journal();
-    return;
-  }
-  if (strcmp(command, "PRESSURE_ACK") == 0 && authenticated) {
-    journal.dropped_events = 0;
-    persist_journal();
-    Serial.println("PRESSURE_CLEARED");
-    emit_identity();
-    return;
-  }
-  if (strncmp(command, "ACK ", 4) == 0 && authenticated) {
-    const uint32_t sequence = strtoul(command + 4, nullptr, 10);
-    if (sequence <= journal.next_sequence) acknowledge_journal(sequence);
-  }
+  if (orcsdr::serial_session::handle_command(command, authenticated, kSerialSessionHooks)) return;
 }
 
 void poll_serial() {

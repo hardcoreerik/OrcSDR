@@ -136,6 +136,15 @@ compliant nonce/proof pair from a plain script without replicating the
 HMAC-SHA256 handshake — treat the authenticated commands as requiring a
 proper pairing client, not something to hand-roll casually.
 
+**Lost key (`PAIR_LOCKED` for every key you have).** Read-only commands keep
+working without sign-in, and the Tab5 can always be reflashed over USB: this
+firmware does not enable secure boot or disable the ROM download mode. But
+today there is no command and no on-device button that clears the stored key.
+The only way back is erasing the flash (for example the M5Burner full install),
+which also clears Wi-Fi, location, rotation and every other saved setting. Keep
+the key file (default `.orclink/ui-doc.key`); `ROTATE_KEY` changes it only from
+inside a signed-in session.
+
 ## Hardware clock
 
 The Tab5 hardware RTC (an RX8130CE; M5Unified addresses it at I2C 0x32 and it keeps a two-digit

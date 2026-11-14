@@ -18,9 +18,11 @@ import subprocess
 import sys
 
 FUNC = re.compile(r"^[0-9a-f]+ <(.+)>:$")
-ADDI_SP = re.compile(r"\baddi\s+sp,sp,(-?\d+)")
+# Some objdump builds print the immediate form as `add sp,sp,-480` instead of `addi`: accept both, or every frame
+# reads 0 and the guard passes silently (seen 2026-11-14).
+ADDI_SP = re.compile(r"\baddi?\s+sp,sp,(-?\d+)\b")
 LUI = re.compile(r"\blui\s+(\w+),(0x[0-9a-f]+|\d+)")
-ADDI_REG = re.compile(r"\baddi\s+(\w+),(\w+),(-?\d+)")
+ADDI_REG = re.compile(r"\baddi?\s+(\w+),(\w+),(-?\d+)\b")
 ADD_SP = re.compile(r"\b(add|sub)\s+sp,sp,(\w+)")
 
 
@@ -76,6 +78,9 @@ def main():
     if not found:
         print("no matching function")
         return 2
+    if not any(found.values()):
+        print("FAIL: every frame read 0 bytes; the disassembly format was not recognised")
+        return 1
     worst = 0
     for name, size in sorted(found.items(), key=lambda kv: -kv[1]):
         print(f"{size:7d}  {name}")

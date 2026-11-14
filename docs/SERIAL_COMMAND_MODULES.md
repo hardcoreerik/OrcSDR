@@ -8,6 +8,8 @@ commands follows this page.
 ## The pattern
 
 - **Signature (exactly this line):** `bool handle_command(const char* command, bool authenticated, const Hooks& hooks) {`.
+  The one exception is a family that must split the line in place, which takes `char* command` instead
+  (`serial_session`, for `AUTH`, `SET_WIFI`, `INSTALL_STATUS` and `ROTATE_KEY`).
   It returns `true` when it handled the line and `false` to let the dispatcher carry on.
 - **No device headers.** The module includes no ESP-IDF, Arduino, M5 or UI header and holds no state (no statics, no
   heap, no `std::function`). It builds on a Linux host with `g++ -std=c++17 -Wall -Wextra -Werror`.

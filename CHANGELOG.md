@@ -2,6 +2,17 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — host session protocol moved out of process_command — 2026-11-14
+
+No behaviour change intended. Host-tested and built; not flashed.
+
+- **`PAIR`, `AUTH`, `PING`, `PREPARE_FLASH`, `SET_WIFI`, `INSTALL_STATUS`, `ROTATE_KEY`, `TEST_PRESSURE`, `PRESSURE_ACK` and `ACK`** moved into `apps/orcsdr-tab5/ui/serial_session.{hpp,cpp}`. Each reply and line split is the same, and signed-out lines are still silent. The pairing key, stored settings and journal stay in `main.cpp` behind hooks; `hmac_matches()` became `pairing_hmac()` there (same mbedTLS call, same key).
+- **Test:** `tests/serial_session_tests.cpp` checks every route with real HMAC-SHA256 proofs. The test carries its own SHA-256, checked first against RFC 4231 test case 2. Route table unchanged (229 routes).
+- **Route checker:** `tools/serial_command_routes.py` accepts a family that takes a writable line (`char* command`), which this one needs because `AUTH`, `SET_WIFI`, `INSTALL_STATUS` and `ROTATE_KEY` split the line in place.
+- **Guard fix:** `tools/tab5_function_frames.py` read every frame as 0 with an objdump that prints `add sp,sp,-N` instead of `addi`, so it would have passed silently. It now accepts both and fails when every frame reads 0.
+- **Measured:** `process_command` 480 bytes of stack (was 624), the session handler 416 bytes and only while a session command runs; `process_command` complexity 200 to 141, 522 to 290 lines; `main.cpp` 22,568 lines. Firmware image 4,525,136 bytes.
+- **Scan, noted not changed:** `AUTH` takes its nonce from the host and the Tab5 adds none, so a recorded `AUTH` line can be sent again to sign in. Using it needs the serial traffic itself. There is also no way to clear a forgotten pairing key short of erasing the flash, which wipes every setting.
+
 ## Unreleased — main-task stack regression from the overnight moves, fixed — 2026-11-14
 
 Tab5. Found by the device check of the overnight batch on COM17; fixed, flashed and checked.

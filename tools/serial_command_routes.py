@@ -44,7 +44,7 @@ DENY = re.compile(r'(?:Serial\.(?:println|printf|print)|hooks\.write_line)\(\s*"
 
 # Command families moved out of process_command(). Each is called from the dispatcher as
 #   if (<namespace>::handle_command(command, authenticated, <hooks>)) return;
-# and its own top-level routes are read from FAMILY_SIGNATURE in the file named here.
+# and its own top-level routes are read from the FAMILY_SIGNATURES definition in the file named here.
 FAMILIES = {
     "orcsdr::serial_lora_status": "apps/orcsdr-tab5/ui/serial_lora_status.cpp",
     "orcsdr::serial_lora": "apps/orcsdr-tab5/ui/serial_lora.cpp",
@@ -67,6 +67,7 @@ FAMILIES = {
     "orcsdr::serial_radio": "apps/orcsdr-tab5/ui/serial_radio.cpp",
     "orcsdr::serial_digimodes": "apps/orcsdr-tab5/ui/serial_digimodes.cpp",
     "orcsdr::serial_splash": "apps/orcsdr-tab5/ui/serial_splash.cpp",
+    "orcsdr::serial_session": "apps/orcsdr-tab5/ui/serial_session.cpp",
     "orcsdr::serial_driver": "apps/orcsdr-tab5/ui/serial_driver.cpp",
     "orcsdr::serial_gain": "apps/orcsdr-tab5/ui/serial_gain.cpp",
     "orcsdr::serial_pocsag": "apps/orcsdr-tab5/ui/serial_pocsag.cpp",
@@ -88,7 +89,8 @@ FAMILIES = {
     "orcsdr::serial_health": "apps/orcsdr-tab5/ui/serial_health.cpp",
     "orcsdr::serial_bench": "apps/orcsdr-tab5/ui/serial_bench.cpp",
 }
-FAMILY_SIGNATURE = "bool handle_command(const char* command, bool authenticated, const Hooks& hooks) {"
+FAMILY_SIGNATURES = ("bool handle_command(const char* command, bool authenticated, const Hooks& hooks) {",
+                     "bool handle_command(char* command, bool authenticated, const Hooks& hooks) {")
 FAMILY_CALL = re.compile(r"([\w:]+)::handle_command\(command, authenticated, \w+\)")
 FAMILY_PLUMBING = re.compile(r"return false;|\(void\)\w+;")
 
@@ -218,7 +220,10 @@ def extract_function(source_text: str, signature: str, is_family: bool, known, l
                 # A family moved out of the dispatcher: its routes count as if they were still written here.
                 if squeeze(body) != "return;":
                     raise SystemExit(f"family call {call[1]} must be followed by a bare 'return;'")
-                for r in extract_function(load(call[1]), FAMILY_SIGNATURE, True, known, load):
+                family_text = load(call[1])
+                # serial_session takes a writable line (AUTH, SET_WIFI, ... split it in place); the rest take const.
+                signature = next((s for s in FAMILY_SIGNATURES if s in family_text), FAMILY_SIGNATURES[0])
+                for r in extract_function(family_text, signature, True, known, load):
                     here = list(guards) + ([r["guard"]] if r["guard"] != "-" else [])
                     routes.append(dict(r, guard=" && ".join(here) if here else "-",
                                        line=text.count("\n", 0, i) + 1))
