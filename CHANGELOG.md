@@ -2,6 +2,15 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — RTL_UI ACTION moved out of process_command — 2026-11-14
+
+No behaviour change intended. Host-tested and built; not flashed.
+
+- **`RTL_UI ACTION <FM|AM|AIRBAND|CB|P25|LORA|SETTINGS> <action> [value]`** (both routes: the sign-in refusal and the command) moved into `apps/orcsdr-tab5/ui/serial_ui_action.{hpp,cpp}`. The module body was generated from the original text by a script that applied only listed substitutions (prints and returns, and each call into `main.cpp` replaced by a hook) and asserted how many times each applied. The dashboards' action types come from their own headers.
+- **`tests/serial_ui_action_tests.cpp`:** every action name of every dashboard against its action kind and value, every range check at both edges (FM/AM gain, AM band limits, AM preset 1 to 160 and the 1-based to 0-based conversion, AM filter, LoRa region and slot, Wi-Fi profile index and moves, radar range), the CB-inactive and AM-scan-prompt refusals, usage, unknown actions and domains, and near misses. Route table unchanged.
+- **One compile-level change:** the Wi-Fi profile move check compared an unsigned value with a signed `count - 1`; the module casts it, which gives the same result because the preceding check guarantees `count >= 2`.
+- **Measured:** `process_command` complexity 418 to 240, 785 to 615 lines; `main.cpp` 22,756 lines. Firmware image 4,519,904 bytes.
+
 ## Unreleased — IQ transfer commands moved out of process_command — 2026-11-14
 
 No behaviour change intended. Host-tested and built; not flashed.
