@@ -13,7 +13,6 @@ esp_err_t queued(bool ok) { return ok ? ESP_OK : ESP_ERR_NO_MEM; }
 
 // A PlutoSDR stream is running: gain goes to the AD9361 through the Pluto source (tenths of a dB, like the RTL driver).
 bool pluto() { return orcsdr::pluto_source::active(); }
-
 }  // namespace
 
 esp_err_t set_tuner_gain_mode(esp_rtl_sdr_handle_t handle, esp_rtl_sdr_gain_mode_t mode) {

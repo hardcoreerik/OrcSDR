@@ -9,6 +9,7 @@
 
 #include "esp_heap_caps.h"
 #include "esp_log.h"
+#include "nvs.h"
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
@@ -33,6 +34,18 @@ std::atomic<bool> g_first_block{false};
 std::atomic<bool> g_reader_run{false};
 std::atomic<bool> g_reader_exited{true};
 std::atomic<uint32_t> g_ring_drops{0};
+
+// Recovery ladder. A Pluto's USB gadget can stay wedged after the host resets, and nothing short of removing its 5 V brings it back. The IDF host
+// library has no per-device reset, so the ladder is: let the driver retry on its own, then cycle the port's 5 V rail through the application's
+// hook, backing off between tries, and finally report that the board needs a manual power cycle.
+constexpr int64_t kFailedStartGraceUs = 30000000;   // one failed start with no success for this long counts as wedged
+constexpr int64_t kLostGraceUs = 30000000;          // a Pluto seen before and absent this long counts as wedged
+constexpr int64_t kBackoffUs[] = {45000000, 120000000, 300000000, 600000000};
+constexpr uint32_t kMaxCycles = 6;
+std::atomic<uint32_t> g_start_failures{0};
+std::atomic<int64_t> g_last_failure_us{0};
+std::atomic<uint32_t> g_cycles{0};
+std::atomic<bool> g_gave_up{false};
 
 uint32_t clamp32(uint64_t v) { return v > 0xFFFFFFFFULL ? 0xFFFFFFFFu : static_cast<uint32_t>(v); }
 
@@ -88,17 +101,78 @@ void reader_task(void*) {
   vTaskDelete(nullptr);
 }
 
+// Remembers across reboots that a Pluto has been used here, so a board left wedged by a Tab5 reset is still recovered after the new boot.
+// Cleared when the ladder gives up, so a Pluto that was removed for good does not make every boot cycle the port.
+bool seen_flag_get() {
+  nvs_handle_t nvs;
+  uint8_t v = 0;
+  if (nvs_open("orcpluto", NVS_READONLY, &nvs) != ESP_OK) return false;
+  (void)nvs_get_u8(nvs, "seen", &v);
+  nvs_close(nvs);
+  return v != 0;
+}
+
+void seen_flag_set(bool seen) {
+  nvs_handle_t nvs;
+  if (nvs_open("orcpluto", NVS_READWRITE, &nvs) != ESP_OK) return;
+  (void)nvs_set_u8(nvs, "seen", seen ? 1 : 0);
+  (void)nvs_commit(nvs);
+  nvs_close(nvs);
+}
+
+void note_healthy() {
+  g_start_failures.store(0, std::memory_order_release);
+  g_cycles.store(0, std::memory_order_release);
+  g_gave_up.store(false, std::memory_order_release);
+}
+
+// One rung of the ladder: runs the application's power-cycle hook if the backoff allows it.
+void try_recovery(const char* reason, int64_t now_us, int64_t* next_cycle_us) {
+  if (!g_events.power_cycle || g_gave_up.load(std::memory_order_acquire) || now_us < *next_cycle_us) return;
+  const uint32_t done = g_cycles.load(std::memory_order_acquire);
+  if (done >= kMaxCycles) {
+    g_gave_up.store(true, std::memory_order_release);
+    seen_flag_set(false);
+    ESP_LOGE(TAG, "PLUTO_RECOVERY gave_up cycles=%u: the board needs a manual power cycle", static_cast<unsigned>(done));
+    return;
+  }
+  const bool ran = g_events.power_cycle();
+  const uint32_t n = ran ? g_cycles.fetch_add(1, std::memory_order_acq_rel) + 1 : done;
+  const size_t step = std::min<size_t>(done, sizeof(kBackoffUs) / sizeof(kBackoffUs[0]) - 1);
+  *next_cycle_us = esp_timer_get_time() + kBackoffUs[step];
+  g_start_failures.store(0, std::memory_order_release);
+  ESP_LOGW(TAG, "PLUTO_RECOVERY reason=%s power_cycle=%s cycle=%u/%u next_in_s=%d", reason, ran ? "done" : "skipped", static_cast<unsigned>(n),
+           static_cast<unsigned>(kMaxCycles), static_cast<int>(kBackoffUs[step] / 1000000));
+}
+
 void watcher_task(void*) {
+  bool seen_before = seen_flag_get();
+  int64_t lost_at = esp_timer_get_time(), next_cycle_us = 0;  // a Pluto used before this boot gets the same grace period from boot
   for (;;) {
     vTaskDelay(pdMS_TO_TICKS(500));
     const bool now = pluto_sdr_device_present(g_h);
     const bool was = g_present.exchange(now, std::memory_order_acq_rel);
+    const int64_t t = esp_timer_get_time();
     if (now && !was) {
       ESP_LOGI(TAG, "PlutoSDR attached");
+      if (!seen_before) seen_flag_set(true);
+      seen_before = true;
       if (g_events.attached) g_events.attached();
     } else if (!now && was) {
       ESP_LOGW(TAG, "PlutoSDR removed");
+      lost_at = t;
       if (g_events.detached) g_events.detached();
+    }
+    if (g_running.load(std::memory_order_acquire)) {
+      if (g_first_block.load(std::memory_order_acquire)) note_healthy();
+      continue;
+    }
+    if (!now && seen_before && lost_at && t - lost_at > kLostGraceUs) {
+      try_recovery("not_returning", t, &next_cycle_us);
+    } else if (now) {
+      const uint32_t fails = g_start_failures.load(std::memory_order_acquire);
+      const int64_t since = t - g_last_failure_us.load(std::memory_order_acquire);
+      if (fails >= 3 || (fails >= 1 && since > kFailedStartGraceUs)) try_recovery("start_failures", t, &next_cycle_us);
     }
   }
 }
@@ -137,7 +211,7 @@ bool begin(const IqSink& sink, const Events& events) {
 bool ready() { return g_h != nullptr && g_present.load(std::memory_order_acquire); }
 bool active() { return g_running.load(std::memory_order_acquire); }
 
-bool start_and_wait(uint32_t sample_rate_sps, uint32_t frequency_hz, uint32_t timeout_ms, bool (*cancelled)()) {
+static bool start_once(uint32_t sample_rate_sps, uint32_t frequency_hz, uint32_t timeout_ms, bool (*cancelled)()) {
   if (!g_h || g_running.load(std::memory_order_acquire)) return false;
   if (pluto_sdr_set_sample_rate(g_h, sample_rate_sps) != PLUTO_SDR_OK) {
     ESP_LOGE(TAG, "rate %u refused", static_cast<unsigned>(sample_rate_sps));
@@ -172,6 +246,17 @@ bool start_and_wait(uint32_t sample_rate_sps, uint32_t frequency_hz, uint32_t ti
     vTaskDelay(pdMS_TO_TICKS(50));
   }
   return true;
+}
+
+bool start_and_wait(uint32_t sample_rate_sps, uint32_t frequency_hz, uint32_t timeout_ms, bool (*cancelled)()) {
+  const bool ok = start_once(sample_rate_sps, frequency_hz, timeout_ms, cancelled);
+  if (ok) {
+    note_healthy();
+  } else if (g_present.load(std::memory_order_acquire) && !(cancelled && cancelled())) {
+    g_last_failure_us.store(esp_timer_get_time(), std::memory_order_release);  // a cancelled start is the user's doing, not a fault
+    g_start_failures.fetch_add(1, std::memory_order_acq_rel);
+  }
+  return ok;
 }
 
 bool alive() { return g_running.load(std::memory_order_acquire) && g_alive.load(std::memory_order_acquire); }
@@ -230,6 +315,8 @@ Status status() {
   s.source_drops = m.source_drops;
   s.usb_errors = m.usb_errors;
   s.ring_drops = g_ring_drops.load(std::memory_order_relaxed);
+  s.recovery_cycles = g_cycles.load(std::memory_order_relaxed);
+  s.recovery_gave_up = g_gave_up.load(std::memory_order_relaxed);
   std::snprintf(s.product, sizeof(s.product), "%s", info.product[0] ? info.product : "PlutoSDR AD9361");
   std::snprintf(s.serial, sizeof(s.serial), "%s", info.serial);
   return s;

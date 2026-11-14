@@ -20,6 +20,9 @@ using IqSink = rtl_tcp_source::IqSink;
 struct Events {
   void (*attached)();  // a Pluto enumerated and can stream (called from the watcher task; must not block)
   void (*detached)();  // the Pluto went away
+  // Optional. Cuts and restores the USB port's 5 V rail, the only real reset a wedged Pluto gets. Returns false when it must not run now (a dongle
+  // or another stream is using the port). Called from the watcher task, so it may block for a couple of seconds.
+  bool (*power_cycle)() = nullptr;
 };
 
 // Installs the driver and starts a watcher task. Returns false when the driver would not install. Does nothing on the USB bus until a Pluto
@@ -61,6 +64,8 @@ struct Status {
   uint32_t source_drops = 0;
   uint32_t usb_errors = 0;
   uint32_t ring_drops = 0;        // blocks the IQ ring had no free slot for
+  uint32_t recovery_cycles = 0;   // 5 V power cycles tried since the last healthy stream
+  bool recovery_gave_up = false;  // the ladder is exhausted; the board needs a manual power cycle
   char product[48]{};
   char serial[40]{};
   char version[24]{};

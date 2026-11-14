@@ -7,8 +7,15 @@ This is the **project-level release and current-source index**. It links the aut
 - **New receiver class:** a PlutoSDR (AD9361, 70 MHz to 6 GHz) on the Tab5's USB-A port is used like an RTL-SDR dongle. `ui/pluto_source.cpp` adapts the standalone esp-pluto-sdr driver (pinned at `ca88e37`, includes the libiio `CLOSE_PIPE` fix) and feeds the same IQ ring the dongle and rtl_tcp use, so the existing demodulators and screens are shared. Source order is dongle, then Pluto, then remote rtl_tcp (`receiver_source_policy`, host-tested). Gain goes through `rtl_source_routing`. Receive only; the app never writes a transmit setting.
 - **Proven on the Tab5 (COM39):** the Pluto enumerates, the stream starts at 0.96 and 2.4 MS/s, and FM audio plays (owner listened).
 - **Known problem, not fixed:** intermittent boot-time crash. 3 of 4 boots in a 30-minute capture hit `assert failed: usb_dwc_hal_chan_decode_intr (CHHLTD)` in the USB host interrupt, each right after the FM auto-gain wrote a new gain to the Pluto about 1 s after stream start; the device recovers on its own after the reboot. Cause not confirmed. Do not treat the Pluto source as release quality.
-- **Not done:** replug while streaming, long soak, "RTL-SDR" wording on screens, gain/frequency UI checks, TX.
-- **Verified:** full `build-tab5-idf.ps1` build links, 5,616,832 bytes (11% of the app partition free).
+- **Update 2026-11-13 — replug and recovery:**
+  - A replugged or re-enumerated Pluto now restarts its stream (the hot-plug resume only accepted an RTL dongle before). Proven on COM39: `PLUTO_ATTACHED`, `RTL_HOTPLUG_RESUME`, `RTL_START ESP_OK`; a retune to 96.1 MHz took.
+  - The driver pin is now the queued-reads branch (`383cd73`, pipelined bulk IN reads, not yet merged to esp-pluto-sdr main). Ten reboots with that driver and the diagnostics showed 0 USB asserts against a 2 of 10 baseline; the same ten-reboot run on the final configuration is not done, so the crash is not shown fixed.
+  - Recovery ladder in `ui/pluto_source.cpp`: failed starts or a previously used Pluto that does not return trigger a power cycle of the USB-A 5 V rail (hook `on_pluto_power_cycle` in `main.cpp`), with backoff of 45 s, 2, 5 and 10 minutes, at most 6 tries, then it reports that the board needs a manual power cycle. A small NVS flag remembers that a Pluto has been used and is cleared when the ladder gives up. The IDF host library has no per-device reset, so the rail is the only real reset.
+  - Proven once on COM39: after a Tab5 restart the Pluto did not enumerate, the ladder cycled the rail about 30 s into the boot, the Pluto attached at 61 s and streamed with no cable touched. This needs the Pluto powered only from the Tab5; a PC cable on its debug port keeps it alive and defeats the cycle.
+  - `tools/pluto_console.py` runs one command on the Pluto's debug UART; the password is typed at a prompt and never stored.
+  - Observed, not fixed: the boot splash and dongle recovery still assume an RTL dongle (a 1 s power cut at boot did not wake the Pluto; the ladder's 2.5 s cut did), and a Pluto needs 20 to 25 s to boot.
+- **Not done:** long soak, "RTL-SDR" wording on screens, gain/frequency UI checks, boot sequence for the Pluto, TX.
+- **Verified:** full `build-tab5-idf.ps1` build links, 5,616,928 bytes (11% of the app partition free).
 
 ## Unreleased — Volume tray redesign, Visualizer entry — 2026-11-11
 

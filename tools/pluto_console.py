@@ -30,11 +30,21 @@ def main():
     ap.add_argument("--user", default="root")
     ap.add_argument("--cmd", required=True)
     ap.add_argument("--wait", type=float, default=4.0, help="seconds to collect output after the command")
+    ap.add_argument("--boot-wait", type=float, default=90.0, help="seconds to wait for a login or shell prompt")
     a = ap.parse_args()
 
     ser = serial.Serial(a.port, a.baud, timeout=0.3)
-    ser.write(b"\r\n")
-    banner = read_for(ser, 1.5)
+    # Wait for a login prompt or a shell prompt; never send the command into boot output.
+    banner = ""
+    end = time.time() + a.boot_wait
+    while time.time() < end:
+        ser.write(b"\r\n")
+        banner = read_for(ser, 1.5)
+        if "login:" in banner or banner.rstrip().endswith(("#", "$")):
+            break
+    else:
+        print(f"No login or shell prompt within {a.boot_wait:.0f} s (still booting?); nothing was sent.")
+        return 1
     if "login:" in banner:
         ser.write(a.user.encode() + b"\r\n")
         read_for(ser, 1.0)

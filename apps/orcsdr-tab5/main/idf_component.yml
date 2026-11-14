@@ -15,8 +15,8 @@ dependencies:
     version: dabdda1aff6aa196f3c1523d791adf80d2c24ccc
   esp-pluto-sdr:
     git: https://github.com/hardcoreerik/esp-pluto-sdr.git
-    # Standalone PlutoSDR driver, pinned and compiled but not yet called by the Tab5 app (no Pluto source in ui/main.cpp).
-    version: ca88e3702078c2f3868669edec41bcf205e7096d
+    # Standalone PlutoSDR driver (receive only), used by ui/pluto_source.cpp. Branch claude/pluto-usb-queued-reads: pipelined bulk IN reads.
+    version: 383cd733936df68ad81f078eb6a558e1a3b24e2f
   orcmaps:
     git: https://github.com/hardcoreerik/OrcMaps.git
     # Development candidate: offscreen feature rejection; native timing pending.

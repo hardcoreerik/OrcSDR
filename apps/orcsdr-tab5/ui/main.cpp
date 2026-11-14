@@ -9763,6 +9763,18 @@ static void on_pluto_detached() {
   Serial.printf("PLUTO_DETACHED previous=%u resume_pending=%d\n", static_cast<unsigned>(previous), resume ? 1 : 0);
 }
 
+// Recovery hook for a wedged Pluto: remove the USB-A 5 V rail long enough for the board to drop, then restore it. Skipped while anything else
+// uses the port. A Pluto that is also powered from a PC cable never loses power this way; that is a bench-wiring matter, not a firmware one.
+static bool on_pluto_power_cycle() {
+  if (rtl_usb_device_ready() || rtl_remote_active() || rtl_pluto_active()) return false;
+  Serial.println("PLUTO_POWER_CYCLE off");
+  M5.Power.setExtOutput(false, m5::ext_USB);
+  vTaskDelay(pdMS_TO_TICKS(2500));
+  M5.Power.setExtOutput(true, m5::ext_USB);
+  Serial.println("PLUTO_POWER_CYCLE on");
+  return true;
+}
+
 static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, void *ctx) {
   (void)ctx;
   switch (event) {
@@ -10089,7 +10101,10 @@ static void rtl_driver_app_task(void *) {
       vTaskDelay(pdMS_TO_TICKS(20));
       continue;
     }
-    if (g_rtl != nullptr && g_rtl_device_ready.load(std::memory_order_acquire) &&
+    // A replugged receiver restarts the stream: the RTL dongle through its driver flag, a PlutoSDR through pluto_source (it never sets the
+    // dongle's flag, so without this a replugged Pluto was attached but never restarted).
+    if (g_rtl != nullptr &&
+        (g_rtl_device_ready.load(std::memory_order_acquire) || orcsdr::pluto_source::ready()) &&
         !radio_io_paused() &&
         rtl_hotplug_resume_pending.exchange(false, std::memory_order_acq_rel)) {
       const RtlBand band = rtl_requested_band.load(std::memory_order_acquire);
@@ -10771,7 +10786,7 @@ void initialize_rtl_sdr_host() {
   // so it is installed only after the RTL driver is.
   Serial.printf("PLUTO_SOURCE install=%d\n",
                 orcsdr::pluto_source::begin({rtl_tcp_sink_acquire, rtl_tcp_sink_submit, rtl_tcp_sink_release, rtl_tcp_sink_discontinuity},
-                                            {on_pluto_attached, on_pluto_detached}) ? 1 : 0);
+                                            {on_pluto_attached, on_pluto_detached, on_pluto_power_cycle}) ? 1 : 0);
 }
 #endif /* RTL_USE_LEGACY_USB */
 
