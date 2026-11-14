@@ -2,6 +2,17 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — audio recordings save in the background — 2026-11-13
+
+Behaviour change, Tab5. Flashed to one Tab5 (COM17) and measured.
+
+- **Audio recording moved out of `main.cpp`** into `apps/orcsdr-tab5/ui/audio_rec.{hpp,cpp}`: buffer, state, the REC button actions, `RTL_REC_START/STOP/STATUS/SAVE`, the WAV header and the memory reclaim holder. `main.cpp` keeps one hook table, the screen's reads, the DSP call and one `service()` line; 289 lines removed, 65 added. Reply strings are unchanged; the internal-RAM fallback for the buffer is kept as it was (owner decision pending).
+- **WAV files are written by the background SD writer.** STOP answers at once and `RTL_REC_WAV ok` follows from the main loop. A full 12 s buffer used to be saved on the radio driver task (`rtl_app`), so the radio task itself waited on the card; the DSP now only flags the full buffer and the main loop hands it to the writer. No radio or audio task touches the card for a recording any more.
+- **New replies while a save is running:** `RTL_REC_STOP busy=saving` and `RTL_REC_ERROR saving` (START). A START while a full recording waits to be saved is now refused instead of overwriting it.
+- **The radio controls and the Capture panel redraw when a save finishes** (not only after an automatic save), so the panel shows the new file name once it exists.
+- **Measured on the Tab5:** a full 12 s recording (1.15 MB) saved in 0.66 s after the buffer filled, a 3 s clip in 0.26 s; no `RTL_MAIN_STALL`; receiver input stayed at 2.40 MS/s and no audio chunks were dropped across the saves; DSP load 64 to 65%, the same as before in the same conditions.
+- **Tests:** `tests/audio_rec_tests.cpp` (ASan/UBSan and ThreadSanitizer: WAV header bytes, refusals, record, full buffer saved from the main loop once, manual stop after full, no card, existing file, open failure, short write, reclaim), in `tools/test-tab5-cadence-history.sh` and the workflow.
+
 ## Unreleased — RDS capture saves in the background — 2026-11-13
 
 Behaviour change, Tab5. Flashed to one Tab5 (COM17) and measured.

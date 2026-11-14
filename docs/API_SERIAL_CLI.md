@@ -350,8 +350,8 @@ RTL_RDS_STATUS
 
 | Command | Auth | Reply |
 |---|---|---|
-| `RTL_REC_START` | no | (switches to Capture tool, starts recording) |
-| `RTL_REC_STOP` | no | (stops and exports WAV to SD) |
+| `RTL_REC_START` | no | (switches to Capture tool, starts recording); `RTL_REC_ERROR saving` while the previous recording is still being written to SD |
+| `RTL_REC_STOP` | no | (stops and exports WAV to SD). Answers at once with `RTL_REC_STOP samples=...`; the card is written in the background and `RTL_REC_WAV ok path=...` (or an error and `RTL_REC_PSRAM_HOLD`) follows when it ends, under 1 s for a full 12 s clip. A full buffer is saved the same way without a command. A repeat stop meanwhile answers `RTL_REC_STOP busy=saving` |
 | `RTL_REC_STATUS` | no | multi-line status (buffered seconds, sample count, last file path — see `audio_rec_status_print()`) |
 | `RTL_REC_SAVE` | no | re-exports the currently-held PCM buffer, useful after inserting an SD card mid-session |
 
