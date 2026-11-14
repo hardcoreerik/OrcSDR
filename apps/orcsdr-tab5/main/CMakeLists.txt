@@ -89,6 +89,8 @@ idf_component_register(
         "../ui/serial_iq_transfer.cpp"
         "../ui/serial_ui_action.cpp"
         "../ui/serial_radio.cpp"
+        "../ui/serial_digimodes.cpp"
+        "../ui/serial_splash.cpp"
         "../ui/display_bench.cpp"
         "../ui/screen_blit.cpp"
         "../ui/serial_help.cpp"

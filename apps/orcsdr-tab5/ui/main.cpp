@@ -106,6 +106,8 @@
 #include "serial_iq_transfer.hpp"
 #include "serial_ui_action.hpp"
 #include "serial_radio.hpp"
+#include "serial_digimodes.hpp"
+#include "serial_splash.hpp"
 #include "display_bench.hpp"
 #include "serial_gain.hpp"
 #include "serial_driver.hpp"
@@ -20983,6 +20985,20 @@ static constexpr orcsdr::serial_ui_action::Hooks kSerialUiActionHooks{
     [](const orcsdr::settings::Action& action) { handle_global_settings_action(action); },
 };
 
+// "JS8 ..." and "FT8 ..." (serial_digimodes.cpp) go to their own parsers.
+static constexpr orcsdr::serial_digimodes::Hooks kSerialDigimodesHooks{
+    [](const char* args) { process_js8_command(args); },
+    [](const char* args) { process_ft8_command(args); },
+};
+
+// RTL_SPLASH_GATE (serial_splash.cpp): the stored "splash_gate" setting.
+static constexpr orcsdr::serial_splash::Hooks kSerialSplashHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    [](bool on) { preferences.putBool("splash_gate", on); },
+    [] { return preferences.getBool("splash_gate", true); },
+};
+
 // RTL_STOP, RTL_CAPTURE / RTL_LISTEN and RTL_VOLUME (serial_radio.cpp): the receiver state stays here.
 static constexpr orcsdr::serial_radio::Hooks kSerialRadioHooks{
     [](const char* text) { Serial.print(text); },
@@ -21040,14 +21056,7 @@ static constexpr orcsdr::serial_radio::Hooks kSerialRadioHooks{
 };
 
 void process_command(char* command) {
-  if (strncmp(command, "JS8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
-    process_js8_command(command + 3);
-    return;
-  }
-  if (strncmp(command, "FT8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
-    process_ft8_command(command + 3);
-    return;
-  }
+  if (orcsdr::serial_digimodes::handle_command(command, authenticated, kSerialDigimodesHooks)) return;
   // Any command received from an authenticated host proves the session is alive.
   // This also keeps long-running CLI/soak workflows from expiring while polling status.
   if (authenticated) last_ping_ms = millis();
@@ -21290,21 +21299,7 @@ void process_command(char* command) {
   // not, matching RTL_STATUS/RTL_REC_STATUS/RTL_TOOL above).
   // ---------------------------------------------------------------------
   if (orcsdr::serial_bench::handle_command(command, authenticated, kSerialBenchHooks)) return;
-  if (strncmp(command, "RTL_SPLASH_GATE", 15) == 0) {
-    const char* argument = command[15] == ' ' ? command + 16 : command + 15;
-    if (strcmp(argument, "ON") == 0 || strcmp(argument, "OFF") == 0) {
-      if (!authenticated) {
-        Serial.println("RTL_SPLASH_GATE_ERROR auth_required");
-        return;
-      }
-      preferences.putBool("splash_gate", strcmp(argument, "ON") == 0);
-    } else if (argument[0] != '\0' && strcmp(argument, "STATUS") != 0) {
-      Serial.println("RTL_SPLASH_GATE_INVALID use RTL_SPLASH_GATE [ON|OFF|STATUS]");
-      return;
-    }
-    Serial.printf("RTL_SPLASH_GATE enabled=%d\n", preferences.getBool("splash_gate", true) ? 1 : 0);
-    return;
-  }
+  if (orcsdr::serial_splash::handle_command(command, authenticated, kSerialSplashHooks)) return;
   if (orcsdr::serial_help::handle_command(command, authenticated, kSerialHelpHooks)) return;
   if (orcsdr::serial_rtc::handle_command(command, authenticated, kSerialRtcHooks)) return;
   if (strcmp(command, "RTL_RESET") == 0) {

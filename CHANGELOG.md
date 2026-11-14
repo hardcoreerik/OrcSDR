@@ -2,6 +2,15 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — JS8/FT8 prefixes and RTL_SPLASH_GATE moved out of process_command — 2026-11-14
+
+No behaviour change intended. Host-tested and built; not flashed.
+
+- **`JS8 ...` / `FT8 ...`** (the prefix match that hands the rest of the line to the JS8 and FT8 parsers) moved into `apps/orcsdr-tab5/ui/serial_digimodes.{hpp,cpp}`, and **`RTL_SPLASH_GATE [ON|OFF|STATUS]`** into `apps/orcsdr-tab5/ui/serial_splash.{hpp,cpp}`, both covered by `tests/serial_small_families_tests.cpp`. Route table unchanged.
+- **Scan, noted not changed:** `RTL_SPLASH_GATE` matches any line that starts with it, so `RTL_SPLASH_GATEON` sets the gate and `RTL_SPLASH_GATESTATUS` reports it.
+- **Measured:** `process_command` complexity 212 to 200, 543 to 522 lines; `main.cpp` 22,736 lines. Firmware image 4,522,496 bytes.
+- **What is left in `process_command` (about 35 routes), each waiting on a decision:** `UI_DOC_*` / `UI_CAPTURE` (documentation mode; reaches deep into `main.cpp`), `RTL_TCP` / `RTL_TCPD` (owned by the rtl_tcp branch), `RTL_MAP_STATUS`, the OrcDial pairing commands, the SD transfer commands (`SD_LIST`, `SD_GET_*`, `SD_PUT_*`, `SD_REMOVE`, none signed in), `RTL_RESET` / `RTL_RESET CPU` / `RTL_USB_SAFE_MODE_*`, and the pairing and session protocol (`PAIR`, `AUTH`, `PING`, `PREPARE_FLASH`, `SET_WIFI`, `INSTALL_STATUS`, `ROTATE_KEY`, `TEST_PRESSURE`, `PRESSURE_ACK`, `ACK`).
+
 ## Unreleased — receiver start/stop commands moved out of process_command — 2026-11-14
 
 No behaviour change intended. Host-tested and built; not flashed.
