@@ -13,6 +13,7 @@
 #include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
+#include "pluto_power_guard.hpp"
 #include "pluto_sdr.h"
 
 namespace orcsdr::pluto_source {
@@ -120,6 +121,11 @@ void seen_flag_set(bool seen) {
   nvs_close(nvs);
 }
 
+pluto_power_guard::State g_guard;                   // touched by the watcher task only
+std::atomic<bool> g_guard_tripped{false};
+std::atomic<bool> g_guard_enabled{true};
+constexpr int64_t kGuardEveryUs = 5000000;
+
 std::atomic<int8_t> g_seen_cache{-1};              // -1 = not read yet
 std::atomic<int64_t> g_hold_off_until_us{0};        // the ladder waits until this time (the boot sequence just cycled the rail)
 constexpr int64_t kBootHoldOffUs = 60000000;        // 25 s boot plus enumeration plus margin
@@ -133,8 +139,8 @@ void note_healthy() {
 // One rung of the ladder: runs the application's power-cycle hook if the backoff allows it.
 void try_recovery(const char* reason, int64_t now_us, int64_t* next_cycle_us) {
   if (!g_events.power_cycle || g_gave_up.load(std::memory_order_acquire) || now_us < *next_cycle_us ||
-      now_us < g_hold_off_until_us.load(std::memory_order_acquire))
-    return;
+      now_us < g_hold_off_until_us.load(std::memory_order_acquire) || g_guard_tripped.load(std::memory_order_acquire))
+    return;  // a tripped power guard means the host supply is the problem: cutting the rail would not help and could make it worse
   const uint32_t done = g_cycles.load(std::memory_order_acquire);
   if (done >= kMaxCycles) {
     g_gave_up.store(true, std::memory_order_release);
@@ -169,8 +175,40 @@ void log_health(bool present) {
               static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)), pw.battery_pct, pw.battery_mv, pw.vbus_mv, pw.charging);
 }
 
+// Evaluates the power guard from the host's battery numbers. Watcher task only.
+void run_guard() {
+  if (!g_guard_enabled.load(std::memory_order_acquire)) {
+    if (g_guard.tripped) {  // switched off while tripped: clear it so nothing stays blocked
+      g_guard = pluto_power_guard::State{};
+      g_guard_tripped.store(false, std::memory_order_release);
+      ESP_LOGW(TAG, "PLUTO_POWER_GUARD disabled while tripped; cleared");
+      if (g_events.power_guard) g_events.power_guard(false);
+    }
+    return;
+  }
+  PowerInfo pw;
+  if (!g_events.power_info || !g_events.power_info(&pw)) return;
+  switch (pluto_power_guard::update(g_guard, pw.battery_pct, pw.charging)) {
+    case pluto_power_guard::Event::warn:
+      ESP_LOGW(TAG, "PLUTO_POWER_GUARD warn battery=%d%% discharging (stops at %d%%)", pw.battery_pct, pluto_power_guard::kTripPct);
+      break;
+    case pluto_power_guard::Event::trip:
+      g_guard_tripped.store(true, std::memory_order_release);
+      ESP_LOGE(TAG, "PLUTO_POWER_GUARD trip battery=%d%% discharging: stopping the Pluto stream before the host supply fails", pw.battery_pct);
+      if (g_events.power_guard) g_events.power_guard(true);
+      break;
+    case pluto_power_guard::Event::recover:
+      g_guard_tripped.store(false, std::memory_order_release);
+      ESP_LOGW(TAG, "PLUTO_POWER_GUARD recover battery=%d%% charging=%d", pw.battery_pct, pw.charging);
+      if (g_events.power_guard) g_events.power_guard(false);
+      break;
+    case pluto_power_guard::Event::none:
+      break;
+  }
+}
+
 void watcher_task(void*) {
-  int64_t last_health_us = 0;
+  int64_t last_health_us = 0, last_guard_us = 0;
   bool seen_before = seen_flag_get();
   int64_t lost_at = esp_timer_get_time(), next_cycle_us = 0;  // a Pluto used before this boot gets the same grace period from boot
   for (;;) {
@@ -181,6 +219,10 @@ void watcher_task(void*) {
     if (t - last_health_us >= kHealthEveryUs) {
       last_health_us = t;
       log_health(now);
+    }
+    if (t - last_guard_us >= kGuardEveryUs) {
+      last_guard_us = t;
+      run_guard();
     }
     if (now && !was) {
       ESP_LOGI(TAG, "PlutoSDR attached");
@@ -292,6 +334,10 @@ static bool start_once(uint32_t sample_rate_sps, uint32_t frequency_hz, uint32_t
 }
 
 bool start_and_wait(uint32_t sample_rate_sps, uint32_t frequency_hz, uint32_t timeout_ms, bool (*cancelled)()) {
+  if (g_guard_tripped.load(std::memory_order_acquire)) {
+    ESP_LOGW(TAG, "start refused: the power guard is tripped (host battery low and discharging)");
+    return false;  // not a device fault: it must not count toward the recovery ladder
+  }
   const bool ok = start_once(sample_rate_sps, frequency_hz, timeout_ms, cancelled);
   if (ok) {
     note_healthy();
@@ -312,6 +358,10 @@ void stop() {
   g_running.store(false, std::memory_order_release);
   g_alive.store(false, std::memory_order_release);
 }
+
+void set_guard_enabled(bool enabled) { g_guard_enabled.store(enabled, std::memory_order_release); }
+bool guard_enabled() { return g_guard_enabled.load(std::memory_order_acquire); }
+bool power_blocked() { return g_guard_tripped.load(std::memory_order_acquire); }
 
 uint32_t output_rate_sps() { return g_h && g_running.load(std::memory_order_acquire) ? pluto_sdr_get_sample_rate(g_h) : 0; }
 

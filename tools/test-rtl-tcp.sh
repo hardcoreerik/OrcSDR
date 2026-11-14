@@ -20,6 +20,8 @@ g++ "${flags[@]}" "$app/ui/rtl_tcp_protocol.cpp" "$app/tests/rtl_tcp_protocol_ho
 g++ "${flags[@]}" "$app/tests/rtl_tcp_iq_ring_host_test.cpp" -o "$out/ring"
 g++ "${flags[@]}" "$app/ui/receiver_source_policy.cpp" "$app/tests/receiver_source_policy_host_test.cpp" -o "$out/policy"
 g++ "${flags[@]}" "$app/ui/source_capabilities.cpp" "$app/tests/source_capabilities_host_test.cpp" -o "$out/caps"
+"$out/pluto_guard"
+g++ "${flags[@]}" "$app/tests/pluto_power_guard_host_test.cpp" -o "$out/pluto_guard"
 g++ "${flags[@]}" "$app/ui/rtl_tcp_protocol.cpp" "$app/ui/rtl_tcp_session.cpp" \
   "$app/tests/rtl_tcp_session_host_test.cpp" -o "$out/client"
 g++ "${flags[@]}" "$app/ui/rtl_tcp_protocol.cpp" "$app/ui/rtl_tcp_server_session.cpp" \

@@ -8,6 +8,8 @@ on:
       - "apps/orcsdr-tab5/ui/receiver_source_policy.*"
       - "apps/orcsdr-tab5/tests/rtl_tcp_*"
       - "apps/orcsdr-tab5/tests/receiver_source_policy_host_test.cpp"
+      - "apps/orcsdr-tab5/ui/pluto_power_guard.hpp"
+      - "apps/orcsdr-tab5/tests/pluto_power_guard_host_test.cpp"
       - "apps/orcsdr-tab5/tests/settings_remote_ui_tests.cpp"
       - "apps/orcsdr-tab5/ui/settings_*"
       - "apps/orcsdr-tab5/tests/maps/ui_stubs/**"

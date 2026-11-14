@@ -32,6 +32,7 @@ EVENT_PATTERNS = {
     "start_ok": re.compile(r"RTL_START ESP_OK"),
     "start_fail": re.compile(r"RTL_START ESP_ERR|RTL_START cancelled"),
     "wdt": re.compile(r"Task watchdog|WDT|stack overflow|Stack canary"),
+    "power_guard": re.compile(r"PLUTO_POWER_GUARD"),
 }
 HEALTH = re.compile(r"PLUTO_HEALTH present=(\d) running=(\d) alive=(\d) state=(-?\d+) samples=(\d+) src_drops=(\d+) usb_err=(\d+) "
                     r"ring_drops=(\d+) cycles=(\d+) int_free=(\d+) dma_largest=(\d+) psram_free=(\d+)"

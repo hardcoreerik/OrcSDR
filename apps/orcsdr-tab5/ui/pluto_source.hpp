@@ -34,6 +34,9 @@ struct Events {
   bool (*power_cycle)() = nullptr;
   // Optional. Fills the host's battery and USB-rail numbers for the once-a-minute health line. Called from the watcher task.
   bool (*power_info)(PowerInfo*) = nullptr;
+  // Optional. The power guard tripped (true) or cleared (false); see pluto_power_guard.hpp. On true the application stops the stream; on false it
+  // may resume it. Called from the watcher task, so it only sets flags.
+  void (*power_guard)(bool tripped) = nullptr;
 };
 
 // Installs the driver and starts a watcher task. Returns false when the driver would not install. Does nothing on the USB bus until a Pluto
@@ -46,6 +49,12 @@ bool previously_used();
 
 // The boot sequence cut and restored the USB 5 V rail itself. Holds the recovery ladder off while the Pluto boots, so it does not cut it again.
 void note_power_cycled();
+
+// Power guard (pluto_power_guard.hpp): stops the stream while the host battery is low and discharging, and refuses starts until it clears.
+// On by default; a development bench that wants to run the battery down can switch it off. Switching it off clears a tripped guard.
+void set_guard_enabled(bool enabled);
+bool guard_enabled();
+bool power_blocked();  // the guard is tripped: a start is refused, and the screen says why
 
 bool ready();  // a Pluto is attached and can start a stream (or is streaming)
 bool active();  // a stream from the Pluto is running or starting
