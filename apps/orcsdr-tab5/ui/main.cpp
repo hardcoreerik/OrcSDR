@@ -90,6 +90,7 @@
 #include "serial_web.hpp"
 #include "serial_help.hpp"
 #include "serial_keyboard.hpp"
+#include "serial_decoder_diag.hpp"
 #include "serial_memory.hpp"
 #include "serial_gain.hpp"
 #include "serial_driver.hpp"
@@ -20358,6 +20359,42 @@ static constexpr orcsdr::serial_pocsag::Hooks kSerialPocsagHooks{
     },
 };
 
+// The RTL_ACARS STATUS/SELFTEST/ARCHIVETEST, RTL_AIS STATUS/BENCH/TEST and RTL_DROPLOG commands live in
+// serial_decoder_diag.cpp; the decoders, the SD card and the drop log stay here.
+static constexpr orcsdr::serial_decoder_diag::Hooks kSerialDecoderDiagHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    [](char* out, size_t capacity) { orcsdr::acars_app::describe(out, capacity); },
+    [](char* out, size_t capacity) { orcsdr::acars_receiver::format_status(out, capacity); },
+    []() -> orcsdr::serial_decoder_diag::AcarsSelfTest {
+      const auto r = orcsdr::acars_selftest::run([] { return static_cast<uint32_t>(esp_timer_get_time()); });
+      orcsdr::serial_decoder_diag::AcarsSelfTest result;
+      result.allocated = r.allocated;
+      result.cases = r.cases;
+      result.passed = r.passed;
+      result.missed = r.missed;
+      result.duplicates = r.duplicates;
+      result.samples = r.samples;
+      result.total_us = r.total_us;
+      return result;
+    },
+    [](char* out, size_t capacity) { (void)orcsdr::acars_archive_sd::self_test(out, capacity); },
+    [](size_t capacity) -> char* { return static_cast<char*>(heap_caps_malloc(capacity, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)); },
+    [](char* line) { heap_caps_free(line); },
+    [](char* out, size_t capacity) { orcsdr::ais_app::describe(out, capacity); },
+    [](char* out, size_t capacity) { orcsdr::ais_radio::format_status(out, capacity); },
+    []() -> unsigned { return rtl_dsp_task_handle ? static_cast<unsigned>(uxTaskGetStackHighWaterMark(rtl_dsp_task_handle)) : 0u; },
+    [](char* out, size_t capacity) { orcsdr::ais_radio::bench(out, capacity); },
+    [](bool on) { orcsdr::ais_radio::set_test_replay(on); },
+    []() -> uint32_t { return g_drop_log_count.load(std::memory_order_relaxed); },
+    kDropLogEntries,
+    []() -> uint32_t { return static_cast<uint32_t>(esp_timer_get_time() / 1000); },
+    []() -> uint32_t { return static_cast<uint32_t>(g_stream_started_ms.load()); },
+    [](uint32_t index) -> uint32_t { return g_drop_log_ms[index]; },
+    [](uint32_t index) -> uint32_t { return g_drop_log_filled[index]; },
+    []() { g_drop_log_count.store(0); },
+};
+
 // The RTL_KEYBOARD commands live in serial_keyboard.cpp; this is what they read and do on the device.
 static constexpr orcsdr::serial_keyboard::Hooks kSerialKeyboardHooks{
     [](const char* text) { Serial.print(text); },
@@ -21190,80 +21227,7 @@ void process_command(char* command) {
   if(orcsdr::maps::serial_control::handle(command,authenticated,[](const char* line){Serial.print(line);}))return;
   if (orcsdr::serial_health::handle_command(command, authenticated, kSerialHealthHooks)) return;
   if (orcsdr::serial_dead_air::handle_command(command, authenticated, kSerialDeadAirHooks)) return;
-  if (strcmp(command, "RTL_ACARS STATUS") == 0) {
-    char line[900];
-    orcsdr::acars_app::describe(line, sizeof(line));
-    Serial.println(line);
-    orcsdr::acars_receiver::format_status(line, sizeof(line));
-    Serial.println(line);
-    return;
-  }
-  if (strcmp(command, "RTL_AIS STATUS") == 0) {
-    constexpr size_t kLine = 1400;   // PSRAM, not the UI task's stack
-    char* line = static_cast<char*>(heap_caps_malloc(kLine, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    if (!line) { Serial.println("RTL_AIS_STATUS error=no_memory"); return; }
-    orcsdr::ais_app::describe(line, kLine);
-    Serial.println(line);
-    orcsdr::ais_radio::format_status(line, kLine);
-    Serial.println(line);
-    heap_caps_free(line);
-    Serial.printf("RTL_AIS_TASK dsp_stack_hwm=%u\n",
-                  rtl_dsp_task_handle ? static_cast<unsigned>(uxTaskGetStackHighWaterMark(rtl_dsp_task_handle)) : 0u);
-    return;
-  }
-  if (strcmp(command, "RTL_DROPLOG") == 0) {
-    const uint32_t count = g_drop_log_count.load(std::memory_order_relaxed);
-    Serial.printf("RTL_DROPLOG now_ms=%u stream_started_ms=%u total_drops=%u first_%u:",
-                  static_cast<unsigned>(esp_timer_get_time() / 1000), static_cast<unsigned>(g_stream_started_ms.load()),
-                  static_cast<unsigned>(count), static_cast<unsigned>(count < kDropLogEntries ? count : kDropLogEntries));
-    for (uint32_t i = 0; i < count && i < kDropLogEntries; ++i)
-      Serial.printf(" %u(f%u)", static_cast<unsigned>(g_drop_log_ms[i]), static_cast<unsigned>(g_drop_log_filled[i]));
-    Serial.println();
-    if (strcmp(command, "RTL_DROPLOG") == 0 && count) {}   // read only; RTL_DROPLOG CLEAR resets it
-    return;
-  }
-  if (strcmp(command, "RTL_DROPLOG CLEAR") == 0) { g_drop_log_count.store(0); Serial.println("RTL_DROPLOG cleared"); return; }
-  if (strcmp(command, "RTL_AIS BENCH") == 0) {
-    if (!authenticated) { Serial.println("RTL_AIS_BENCH error=auth_required"); return; }
-    char line[400];
-    orcsdr::ais_radio::bench(line, sizeof(line));
-    Serial.println(line);
-    return;
-  }
-  // Bench replay marker: every AIS page then says the data is replayed, not live RF. Arm it BEFORE opening AIS and
-  // pointing the receiver at the replay source; it is cleared when the screen is left and by TEST OFF.
-  if (strcmp(command, "RTL_AIS TEST ON") == 0 || strcmp(command, "RTL_AIS TEST OFF") == 0) {
-    if (!authenticated) { Serial.println("RTL_AIS_TEST_ERR auth_required"); return; }
-    const bool on = command[14] == 'N';   // may be sent before AIS opens: the label is armed and applies from the first block
-    orcsdr::ais_radio::set_test_replay(on);
-    Serial.printf("RTL_AIS_TEST_OK test=%d\n", on ? 1 : 0);
-    return;
-  }
-  // Known-signal check of this build's ACARS decoder, on a private decoder instance (live reception is not touched).
-  if (strcmp(command, "RTL_ACARS SELFTEST") == 0 && !authenticated) {
-    Serial.println("RTL_ACARS_SELFTEST_ERROR auth_required");
-    return;
-  }
-  if (strcmp(command, "RTL_ACARS SELFTEST") == 0) {
-    const auto r = orcsdr::acars_selftest::run([] { return static_cast<uint32_t>(esp_timer_get_time()); });
-    Serial.printf("RTL_ACARS_SELFTEST allocated=%d cases=%u passed=%u missed=%u duplicates=%u samples=%u dsp_us=%u "
-                  "us_per_ksample=%u result=%s\n",
-                  r.allocated ? 1 : 0, r.cases, r.passed, r.missed, r.duplicates, static_cast<unsigned>(r.samples),
-                  static_cast<unsigned>(r.total_us), r.samples ? static_cast<unsigned>(r.total_us / (r.samples / 1000u)) : 0u,
-                  r.allocated && r.passed == r.cases ? "PASS" : "FAIL");
-    return;
-  }
-  // Archive check against the real SD card, in a scratch folder (the real log is not touched).
-  if (strcmp(command, "RTL_ACARS ARCHIVETEST") == 0 && !authenticated) {
-    Serial.println("RTL_ACARS_ARCHIVETEST_ERROR auth_required");
-    return;
-  }
-  if (strcmp(command, "RTL_ACARS ARCHIVETEST") == 0) {
-    char line[200];
-    (void)orcsdr::acars_archive_sd::self_test(line, sizeof(line));
-    Serial.println(line);
-    return;
-  }
+  if (orcsdr::serial_decoder_diag::handle_command(command, authenticated, kSerialDecoderDiagHooks)) return;
   // Serial input mimics the screen: RTL_UI TAP x y goes through the same routing as a finger on the panel (full-screen
   // coordinates, header included).
   if (strncmp(command, "RTL_UI TAP ", 11) == 0 && !authenticated) {

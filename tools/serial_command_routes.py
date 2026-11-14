@@ -61,6 +61,7 @@ FAMILIES = {
     "orcsdr::serial_gain": "apps/orcsdr-tab5/ui/serial_gain.cpp",
     "orcsdr::serial_pocsag": "apps/orcsdr-tab5/ui/serial_pocsag.cpp",
     "orcsdr::serial_keyboard": "apps/orcsdr-tab5/ui/serial_keyboard.cpp",
+    "orcsdr::serial_decoder_diag": "apps/orcsdr-tab5/ui/serial_decoder_diag.cpp",
     "orcsdr::serial_rds": "apps/orcsdr-tab5/ui/serial_rds.cpp",
     "orcsdr::serial_dead_air": "apps/orcsdr-tab5/ui/serial_dead_air.cpp",
     "orcsdr::serial_p25": "apps/orcsdr-tab5/ui/serial_p25.cpp",

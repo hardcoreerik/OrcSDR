@@ -95,6 +95,7 @@ idf_component_register(
         "../ui/serial_signal.cpp"
         "../ui/serial_preset.cpp"
         "../ui/serial_keyboard.cpp"
+        "../ui/serial_decoder_diag.cpp"
         "../ui/serial_rds.cpp"
         "../ui/serial_dead_air.cpp"
         "../ui/serial_p25.cpp"
