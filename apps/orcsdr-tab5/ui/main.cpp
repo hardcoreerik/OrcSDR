@@ -80,6 +80,7 @@
 #include "memory_reclaim.hpp"
 #include "buffer_claim.hpp"
 #include "rds_capture.hpp"
+#include "audio_rec.hpp"
 #include "sd_writer.hpp"
 #include "memory_ledger.hpp"
 #include "serial_dead_air.hpp"
@@ -667,11 +668,6 @@ constexpr int kTab5SdCsPin = 42;
 constexpr int kTab5SdSckPin = 43;
 constexpr int kTab5SdMosiPin = 44;
 constexpr int kTab5SdMisoPin = 39;
-/** Post-demod mono capture rate (matches playRaw). */
-constexpr uint32_t kAudioRecRateHz = 48000;
-/** ~12 s of int16 mono in PSRAM — enough for interference A/B without SD thrash mid-stream. */
-constexpr size_t kAudioRecMaxSeconds = 12;
-constexpr size_t kAudioRecMaxSamples = kAudioRecRateHz * kAudioRecMaxSeconds;
 constexpr UBaseType_t kRtlAppTaskPrio = 5;
 constexpr int kSpectrumX = 64;
 constexpr int kSpectrumY = 96;
@@ -1621,24 +1617,12 @@ EXT_RAM_BSS_ATTR uint8_t
 static size_t rtl_spectrum_iq_snap_bytes = 0;
 static portMUX_TYPE rtl_spectrum_snap_mux = portMUX_INITIALIZER_UNLOCKED;
 
-/* ---- Post-demod audio recorder (PSRAM ring → optional SD WAV) ---- */
-static int16_t* g_audio_rec_buf = nullptr;
-static size_t g_audio_rec_capacity = 0;
-static std::atomic<size_t> g_audio_rec_write{0};
-static std::atomic<bool> g_audio_rec_active{false};
-static std::atomic<bool> g_audio_rec_full{false};
-static uint32_t g_audio_rec_freq_hz = 0;
-static RtlBand g_audio_rec_band = RtlBand::fm;
-static uint32_t g_audio_rec_file_seq = 0;
+/* ---- Post-demod audio recorder: audio_rec.cpp ---- */
 static bool g_sd_ready = false;
 static orcsdr::storage::FileSystem* g_sd_fs = nullptr;
 static bool g_sd_tried = false;
 static uint32_t g_sd_last_attempt_ms = 0;
-static char g_audio_rec_last_path[64] = "";
 static std::atomic<uint8_t> g_orc_tool{static_cast<uint8_t>(OrcTool::Radio)};
-static std::atomic<bool> g_audio_rec_export_pending{false};
-static std::atomic<uint32_t> g_audio_rec_writers{0};      // callers inside audio_rec_append right now
-static orcsdr::buffer_claim::Claim g_audio_rec_claim;      // held to arm, export or free g_audio_rec_buf (buffer_claim.hpp)
 
 /* ---- FM multiplex capture for repeatable RDS replay: rds_capture.cpp ---- */
 
@@ -2601,12 +2585,7 @@ orcsdr::shortwave::Snapshot shortwave_dashboard_snapshot();
 void handle_shortwave_dashboard_action(const orcsdr::shortwave::Action& action);
 void adjust_rtl_volume(int delta);
 void spectrum_offer_iq_snapshot(const uint8_t* iq, size_t bytes);
-bool audio_rec_ensure_buffer();
-bool audio_rec_start();
-bool audio_rec_stop_and_export();
-void audio_rec_append(const int16_t* samples, size_t count);
 void queue_audio_samples(int16_t* audio, size_t audio_count);
-void audio_rec_status_print();
 #if ORCSDR_DSP_AB
 void rds_process_mpx_sample(float phase, float pilot_y0 = 0.0f);
 #endif
@@ -3968,101 +3947,6 @@ void rtl_audio_test_service() {
   }
 }
 
-bool audio_rec_ensure_buffer() {
-  if (g_audio_rec_buf != nullptr && g_audio_rec_capacity >= kAudioRecMaxSamples) {
-    return true;
-  }
-  if (g_audio_rec_buf != nullptr) {
-    heap_caps_free(g_audio_rec_buf);
-    g_audio_rec_buf = nullptr;
-    g_audio_rec_capacity = 0;
-  }
-  g_audio_rec_buf = static_cast<int16_t*>(heap_caps_malloc(
-      kAudioRecMaxSamples * sizeof(int16_t),
-      MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT | MALLOC_CAP_CACHE_ALIGNED));
-  if (g_audio_rec_buf == nullptr) {
-    g_audio_rec_buf = static_cast<int16_t*>(
-        heap_caps_malloc(kAudioRecMaxSamples * sizeof(int16_t),
-                         MALLOC_CAP_8BIT | MALLOC_CAP_CACHE_ALIGNED));
-  }
-  if (g_audio_rec_buf == nullptr) {
-    Serial.println("RTL_REC_ERR no_buffer");
-    return false;
-  }
-  g_audio_rec_capacity = kAudioRecMaxSamples;
-  Serial.printf("RTL_REC_BUF samples=%u bytes=%u psram=%s\n",
-                static_cast<unsigned>(g_audio_rec_capacity),
-                static_cast<unsigned>(g_audio_rec_capacity * sizeof(int16_t)),
-                heap_caps_get_free_size(MALLOC_CAP_SPIRAM) > 0 ? "yes" : "no");
-  return true;
-}
-
-// The 1.15 MB audio recording buffer used to stay allocated for the rest of the session after one recording. It is now a
-// reclaimable holder: given back on request once the recording is in a file (or nothing was recorded), and allocated
-// again by the next recording. A recording that is running, waiting for its automatic export, being written to the
-// card, or held because no card was present is never released. The status line and the on-screen summary keep the last
-// recording's length and path. Callers of reclaim_all() run on the main loop and on the radio driver task, and the
-// automatic export runs on the radio driver task, hence the claim.
-static orcsdr::buffer_claim::CaptureState audio_rec_buffer_state() {
-  orcsdr::buffer_claim::CaptureState s;
-  s.allocated = g_audio_rec_buf != nullptr;
-  s.active = g_audio_rec_active.load();
-  s.writing = g_audio_rec_writers.load() != 0;
-  s.pending = g_audio_rec_export_pending.load();
-  s.samples = g_audio_rec_write.load();
-  s.saved = g_audio_rec_last_path[0] != '\0';
-  return s;
-}
-
-size_t audio_rec_held_bytes() {
-  return orcsdr::buffer_claim::releasable(audio_rec_buffer_state()) ? g_audio_rec_capacity * sizeof(int16_t) : 0u;
-}
-
-size_t audio_rec_release_buffer() {
-  if (!g_audio_rec_claim.try_take()) return 0;   // being armed or exported right now
-  orcsdr::buffer_claim::Hold hold(g_audio_rec_claim);
-  if (!orcsdr::buffer_claim::releasable(audio_rec_buffer_state())) return 0;
-  const size_t bytes = g_audio_rec_capacity * sizeof(int16_t);
-  int16_t* buffer = g_audio_rec_buf;
-  g_audio_rec_buf = nullptr;   // clear first: every user checks for null and the next recording allocates it again
-  g_audio_rec_capacity = 0;
-  heap_caps_free(buffer);
-  return bytes;
-}
-
-static void audio_rec_append_guarded(const int16_t* samples, size_t count);
-
-void audio_rec_append(const int16_t* samples, size_t count) {
-  if (samples == nullptr || count == 0) return;
-  if (!g_audio_rec_active.load(std::memory_order_relaxed)) return;
-  // Announce the writer, then look at `active` again: a release on another task sees one or the other.
-  g_audio_rec_writers.fetch_add(1, std::memory_order_seq_cst);
-  if (g_audio_rec_active.load(std::memory_order_seq_cst)) audio_rec_append_guarded(samples, count);
-  g_audio_rec_writers.fetch_sub(1, std::memory_order_seq_cst);
-}
-
-static void audio_rec_append_guarded(const int16_t* samples, size_t count) {
-  if (g_audio_rec_buf == nullptr) return;
-  size_t w = g_audio_rec_write.load(std::memory_order_relaxed);
-  const size_t cap = g_audio_rec_capacity;
-  if (w >= cap) {
-    g_audio_rec_full.store(true, std::memory_order_release);
-    g_audio_rec_active.store(false, std::memory_order_release);
-    return;
-  }
-  const size_t n = (w + count > cap) ? (cap - w) : count;
-  memcpy(g_audio_rec_buf + w, samples, n * sizeof(int16_t));
-  w += n;
-  g_audio_rec_write.store(w, std::memory_order_release);
-  if (w >= cap) {
-    g_audio_rec_full.store(true, std::memory_order_release);
-    g_audio_rec_active.store(false, std::memory_order_release);
-    g_audio_rec_export_pending.store(true, std::memory_order_release);
-    Serial.printf("RTL_REC_FULL samples=%u sec=%.1f\n", static_cast<unsigned>(w),
-                  static_cast<double>(w) / static_cast<double>(kAudioRecRateHz));
-  }
-}
-
 bool ensure_tab5_sd() {
   if (g_sd_ready) return true;
   if (g_sd_tried && millis() - g_sd_last_attempt_ms < 2000u) return false;
@@ -4098,6 +3982,37 @@ static constexpr orcsdr::rds_capture::Hooks kRdsCaptureHooks = [] {
   h.wait = [] { delay(1); };
   h.writer = []() -> orcsdr::sd_writer::Writer& { return orcsdr::sd_writer::shared(); };
   h.scale_radians_per_lsb = static_cast<double>(kRdsInt16ToMpx);
+  return h;
+}();
+
+// The REC button and RTL_REC (audio_rec.cpp): the device actions it needs. The card is written by the background SD writer.
+static constexpr orcsdr::audio_rec::Hooks kAudioRecHooks = [] {
+  orcsdr::audio_rec::Hooks h;
+  h.write = [](const char* text) { Serial.print(text); };
+  h.write_line = [](const char* text) { Serial.println(text); };
+  h.band = [] { return static_cast<uint8_t>(rtl_ui_band); };
+  h.band_name = [](uint8_t band) { return rtl_band_name(static_cast<RtlBand>(band)); };
+  h.band_is_lora = [] { return rtl_ui_band == RtlBand::lora; };
+  h.frequency_hz = [] { return static_cast<uint32_t>(rtl_ui_frequency_hz); };
+  h.alloc_psram = [](size_t bytes) {
+    return static_cast<int16_t*>(heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT | MALLOC_CAP_CACHE_ALIGNED));
+  };
+  h.alloc_internal = [](size_t bytes) {
+    return static_cast<int16_t*>(heap_caps_malloc(bytes, MALLOC_CAP_8BIT | MALLOC_CAP_CACHE_ALIGNED));
+  };
+  h.release = [](int16_t* buffer) { heap_caps_free(buffer); };
+  h.psram_has_room = [] { return heap_caps_get_free_size(MALLOC_CAP_SPIRAM) > 0; };
+  h.sd_ready = [] { return ensure_tab5_sd() && g_sd_fs != nullptr; };
+  h.sd_state = [] { return g_sd_ready ? "ready" : (g_sd_tried ? "missing" : "untried"); };
+  h.exists = [](const char* path) { return g_sd_fs != nullptr && g_sd_fs->exists(path); };
+  h.mkdir = [](const char* path) { return g_sd_fs != nullptr && g_sd_fs->mkdir(path); };
+  h.remove = [](const char* path) { return g_sd_fs != nullptr && g_sd_fs->remove(path); };
+  h.wait = [] { delay(1); };
+  h.ui_refresh = [] {
+    // Settings owns the framebuffer until close; the radio screen picks the new state up when it returns.
+    if (!orcsdr::settings::active()) rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
+  };
+  h.writer = []() -> orcsdr::sd_writer::Writer& { return orcsdr::sd_writer::shared(); };
   return h;
 }();
 
@@ -4674,8 +4589,8 @@ bool iq_rec_ensure_buffer() {
 // The large on-demand buffers reported by RTL_MEM BUFFERS (serial_memory.cpp). Constant data: nothing here
 // allocates or frees.
 static constexpr orcsdr::memory_ledger::Buffer kMemoryBuffers[] = {
-    {"audio_rec", []() -> const void* { return g_audio_rec_buf; },
-     []() -> size_t { return g_audio_rec_capacity * sizeof(int16_t); }},
+    {"audio_rec", []() -> const void* { return orcsdr::audio_rec::buffer(); },
+     []() -> size_t { return orcsdr::audio_rec::buffer_bytes(); }},
     {"rds_capture", []() -> const void* { return orcsdr::rds_capture::buffer(); },
      []() -> size_t { return orcsdr::rds_capture::kBufferBytes; }},
     {"iq_capture", []() -> const void* { return g_iq_rec_buf; }, []() -> size_t { return kIqRecMaxBytes; }},
@@ -5532,137 +5447,6 @@ bool p25_replay(const char* path) {
   return decoded.nid_good > 0 && decoded.tsbk_good > 0;
 }
 
-bool audio_rec_write_wav(const char* path, const int16_t* pcm, size_t samples) {
-  if (path == nullptr || pcm == nullptr || samples == 0) return false;
-  if (!ensure_tab5_sd()) return false;
-  g_sd_fs->mkdir("/orcsdr");
-  // FILE_WRITE appends; sequence numbers restart after boot, so replace collisions.
-  if (g_sd_fs->exists(path) && !g_sd_fs->remove(path)) {
-    Serial.printf("RTL_REC_WAV_ERR replace path=%s\n", path);
-    return false;
-  }
-  File f = g_sd_fs->open(path, FILE_WRITE, true);
-  if (!f) {
-    Serial.printf("RTL_REC_WAV_ERR open path=%s\n", path);
-    return false;
-  }
-  const uint32_t data_bytes = static_cast<uint32_t>(samples * sizeof(int16_t));
-  const uint32_t byte_rate = kAudioRecRateHz * 2u; /* mono int16 */
-  f.write(reinterpret_cast<const uint8_t*>("RIFF"), 4);
-  write_le32(f, 36u + data_bytes);
-  f.write(reinterpret_cast<const uint8_t*>("WAVE"), 4);
-  f.write(reinterpret_cast<const uint8_t*>("fmt "), 4);
-  write_le32(f, 16u);
-  write_le16(f, 1u); /* PCM */
-  write_le16(f, 1u); /* mono */
-  write_le32(f, kAudioRecRateHz);
-  write_le32(f, byte_rate);
-  write_le16(f, 2u); /* block align */
-  write_le16(f, 16u); /* bits */
-  f.write(reinterpret_cast<const uint8_t*>("data"), 4);
-  write_le32(f, data_bytes);
-  const size_t wrote =
-      f.write(reinterpret_cast<const uint8_t*>(pcm), data_bytes);
-  f.close();
-  if (wrote != data_bytes) {
-    Serial.printf("RTL_REC_WAV_ERR short_write got=%u want=%u\n",
-                  static_cast<unsigned>(wrote), static_cast<unsigned>(data_bytes));
-    return false;
-  }
-  return true;
-}
-
-bool audio_rec_start() {
-  if (rtl_ui_band == RtlBand::lora) {
-    Serial.println("RTL_REC_ERROR data_mode_use_RTL_IQ_START");
-    return false;
-  }
-  if (g_audio_rec_active.load(std::memory_order_acquire)) {
-    Serial.println("RTL_REC_ALREADY");
-    return true;
-  }
-  (void)orcsdr::memory_reclaim::register_holder({"Audio recording", audio_rec_held_bytes, audio_rec_release_buffer});
-  g_audio_rec_claim.take([] { delay(1); });
-  orcsdr::buffer_claim::Hold hold(g_audio_rec_claim);
-  if (!audio_rec_ensure_buffer()) return false;
-  g_audio_rec_write.store(0, std::memory_order_release);
-  g_audio_rec_full.store(false, std::memory_order_release);
-  g_audio_rec_band = rtl_ui_band;
-  g_audio_rec_freq_hz = rtl_ui_frequency_hz;
-  g_audio_rec_last_path[0] = '\0';
-  g_audio_rec_active.store(true, std::memory_order_release);
-  Serial.printf("RTL_REC_START band=%s frequency_hz=%u rate=%u max_sec=%u\n",
-                rtl_band_name(g_audio_rec_band), g_audio_rec_freq_hz, kAudioRecRateHz,
-                static_cast<unsigned>(kAudioRecMaxSeconds));
-  return true;
-}
-
-bool audio_rec_stop_and_export() {
-  g_audio_rec_claim.take([] { delay(1); });   // the buffer cannot be released while it is being written to the card
-  orcsdr::buffer_claim::Hold hold(g_audio_rec_claim);
-  const bool was = g_audio_rec_active.exchange(false, std::memory_order_acq_rel);
-  const size_t samples = g_audio_rec_write.load(std::memory_order_acquire);
-  const bool full = g_audio_rec_full.load(std::memory_order_acquire);
-  if (!was && g_audio_rec_last_path[0]) {
-    Serial.printf("RTL_REC_STOP already_saved path=%s\n", g_audio_rec_last_path);
-    return true;
-  }
-  if (!was && samples == 0) {
-    Serial.println("RTL_REC_STOP empty");
-    return false;
-  }
-  Serial.printf("RTL_REC_STOP samples=%u sec=%.2f full=%s band=%s frequency_hz=%u\n",
-                static_cast<unsigned>(samples),
-                static_cast<double>(samples) / static_cast<double>(kAudioRecRateHz),
-                full ? "true" : "false", rtl_band_name(g_audio_rec_band),
-                g_audio_rec_freq_hz);
-  if (samples == 0 || g_audio_rec_buf == nullptr) return false;
-
-  char path[64];
-  const bool sd_ready = ensure_tab5_sd() && g_sd_fs != nullptr;
-  bool free_slot = false;
-  for (size_t attempt = 0; attempt < 999; ++attempt) {
-    g_audio_rec_file_seq = g_audio_rec_file_seq % 999 + 1;
-    snprintf(path, sizeof(path), "/orcsdr/rec_%03u_%s_%u.wav",
-             static_cast<unsigned>(g_audio_rec_file_seq), rtl_band_name(g_audio_rec_band),
-             static_cast<unsigned>(g_audio_rec_freq_hz));
-    if (!sd_ready || !g_sd_fs->exists(path)) {
-      free_slot = true;
-      break;
-    }
-  }
-  if (!free_slot) {
-    Serial.println("RTL_REC_WAV_ERR no_free_slot");
-    return false;
-  }
-  if (audio_rec_write_wav(path, g_audio_rec_buf, samples)) {
-    strlcpy(g_audio_rec_last_path, path, sizeof(g_audio_rec_last_path));
-    Serial.printf("RTL_REC_WAV ok path=%s samples=%u rate=%u channels=1 bits=16 "
-                  "note=post_demod_pcm\n",
-                  path, static_cast<unsigned>(samples), kAudioRecRateHz);
-    return true;
-  }
-  /* No SD: keep PCM in PSRAM; operator can re-insert card and RTL_REC_SAVE. */
-  Serial.printf("RTL_REC_PSRAM_HOLD samples=%u rate=%u note=insert_sd_then_RTL_REC_SAVE\n",
-                static_cast<unsigned>(samples), kAudioRecRateHz);
-  return false;
-}
-
-void audio_rec_status_print() {
-  const size_t samples = g_audio_rec_write.load(std::memory_order_acquire);
-  Serial.printf(
-      "RTL_REC_STATUS active=%s full=%s samples=%u sec=%.2f max_sec=%u rate=%u "
-      "band=%s frequency_hz=%u last_path=\"%s\" sd=%s\n",
-      g_audio_rec_active.load(std::memory_order_acquire) ? "true" : "false",
-      g_audio_rec_full.load(std::memory_order_acquire) ? "true" : "false",
-      static_cast<unsigned>(samples),
-      static_cast<double>(samples) / static_cast<double>(kAudioRecRateHz),
-      static_cast<unsigned>(kAudioRecMaxSeconds), kAudioRecRateHz,
-      rtl_band_name(g_audio_rec_band), g_audio_rec_freq_hz,
-      g_audio_rec_last_path[0] ? g_audio_rec_last_path : "none",
-      g_sd_ready ? "ready" : (g_sd_tried ? "missing" : "untried"));
-}
-
 #if ORCSDR_DSP_AB
 bool dsp_ab_replay_per_sample = false;  // RTL_RDS_REPLAY_SAMPLE: old per-sample feed
 #endif
@@ -5872,7 +5656,7 @@ bool sd_remove_path_allowed(const char* path) {
 bool sd_transfer_radio_busy() {
   const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
   return state == RtlCaptureState::queued || state == RtlCaptureState::running ||
-         g_audio_rec_active.load(std::memory_order_acquire);
+         orcsdr::audio_rec::active();
 }
 
 void sd_list() {
@@ -6391,10 +6175,10 @@ void draw_capture_tool_panel() {
   const int panel_h = kWaterfallHeight - 50;
   M5.Display.fillRect(kSpectrumX + 4, panel_y, kSpectrumWidth - 8, panel_h, TFT_BLACK);
   M5.Display.drawRect(kSpectrumX + 4, panel_y, kSpectrumWidth - 8, panel_h, TFT_ORANGE);
-  const size_t samples = g_audio_rec_write.load(std::memory_order_acquire);
-  const bool active = g_audio_rec_active.load(std::memory_order_acquire);
-  const bool full = g_audio_rec_full.load(std::memory_order_acquire);
-  const float sec = static_cast<float>(samples) / static_cast<float>(kAudioRecRateHz);
+  const size_t samples = orcsdr::audio_rec::samples();
+  const bool active = orcsdr::audio_rec::active();
+  const bool full = orcsdr::audio_rec::full();
+  const float sec = static_cast<float>(samples) / static_cast<float>(orcsdr::audio_rec::kRateHz);
   char line[128];
   M5.Display.setTextDatum(top_left);
   M5.Display.setTextSize(3);
@@ -6407,14 +6191,15 @@ void draw_capture_tool_panel() {
            full ? " (buffer full)" : "");
   M5.Display.drawString(line, kSpectrumX + 16, panel_y + 48);
   snprintf(line, sizeof(line), "buffered: %.2f / %u s   samples=%u   rate=%lu",
-            static_cast<double>(sec), static_cast<unsigned>(kAudioRecMaxSeconds),
-            static_cast<unsigned>(samples), static_cast<unsigned long>(kAudioRecRateHz));
+            static_cast<double>(sec), static_cast<unsigned>(orcsdr::audio_rec::kMaxSeconds),
+            static_cast<unsigned>(samples), static_cast<unsigned long>(orcsdr::audio_rec::kRateHz));
   M5.Display.drawString(line, kSpectrumX + 16, panel_y + 72);
-  snprintf(line, sizeof(line), "LO meta: %s  %lu Hz", rtl_band_name(g_audio_rec_band),
-            static_cast<unsigned long>(g_audio_rec_freq_hz));
+  snprintf(line, sizeof(line), "LO meta: %s  %lu Hz",
+            rtl_band_name(static_cast<RtlBand>(orcsdr::audio_rec::band())),
+            static_cast<unsigned long>(orcsdr::audio_rec::frequency_hz()));
   M5.Display.drawString(line, kSpectrumX + 16, panel_y + 96);
   snprintf(line, sizeof(line), "last file: %s",
-           g_audio_rec_last_path[0] ? g_audio_rec_last_path : "(none yet)");
+           orcsdr::audio_rec::last_path()[0] ? orcsdr::audio_rec::last_path() : "(none yet)");
   M5.Display.drawString(line, kSpectrumX + 16, panel_y + 120);
   snprintf(line, sizeof(line),
            "SD: %s   |  REC button or RTL_REC_START/STOP   |  WAV for Audacity/etc",
@@ -6469,7 +6254,7 @@ void draw_sdr_controls(RtlBand band, bool running) {
                                       kSdrGap, lora_row, std::size(lora_row));
     return;
   }
-  const bool rec_on = g_audio_rec_active.load(std::memory_order_acquire);
+  const bool rec_on = orcsdr::audio_rec::active();
   const orcsdr::radio_ui::Button band_row[] = {
       {110, "FM",
        static_cast<uint32_t>(band == RtlBand::fm ? TFT_DARKGREEN : TFT_DARKGREY)},
@@ -8032,9 +7817,7 @@ void queue_audio_samples(int16_t* audio, size_t audio_count) {
   orcsdr::dead_air_app::offer_audio(audio, audio_count);  // level meter only, lock-free
   orcsdr::visualizer::offer_audio(audio, nullptr, audio_count, 48000);
   /* Capture the post-DSP mono stream before expanding it for the stereo codec. */
-  if (g_audio_rec_active.load(std::memory_order_acquire)) {
-    audio_rec_append(audio, audio_count);
-  }
+  orcsdr::audio_rec::append(audio, audio_count, kAudioRecHooks);
   /* M5Unified retains playRaw pointers, so fill one owned stereo block at a time. */
   if (!rtl_audio_enabled.load(std::memory_order_acquire)) {
     rtl_audio.buffer = (rtl_audio.buffer + 1) % std::size(rtl_audio_buffers);
@@ -9263,7 +9046,7 @@ static void rtl_dsp_task(void *) {
         block.band != RtlBand::pocsag &&
         (rtl_audio_enabled.load(std::memory_order_relaxed) || sstv_owns_audio(block.band) ||
          orcsdr::web_audio::demanded() || orcsdr::dead_air_app::wants_audio() ||
-         g_audio_rec_active.load(std::memory_order_relaxed)) &&
+         orcsdr::audio_rec::active()) &&
         !rtl_audio_test_tone.load(std::memory_order_relaxed)) {
       if (block.band == RtlBand::cb && !orcsdr::home::active()) {
         if (cb_audio_gate_open()) {
@@ -9794,15 +9577,7 @@ static void rtl_driver_app_task(void *) {
             rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
           }
           if (g_stream_band == RtlBand::fm) rds_log_status();
-          /* Auto-export WAV after buffer fills (never write SD on the IQ callback). */
-          if (g_audio_rec_export_pending.exchange(false, std::memory_order_acq_rel)) {
-            (void)audio_rec_stop_and_export();
-            if (orcsdr::settings::active()) {
-              // Settings owns the framebuffer until close; preserve the finished recording only.
-            } else {
-              rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
-            }
-          }
+          /* A full audio recording is saved by orcsdr::audio_rec::service() on the main loop, not here. */
           if (g_iq_rec_export_pending.exchange(false, std::memory_order_acq_rel)) {
             (void)iq_rec_stop_and_export();
             if (!orcsdr::settings::active())
@@ -10682,7 +10457,7 @@ orcsdr::fm::Snapshot fm_dashboard_snapshot() {
   snapshot.wifi_connected = wifi_connected;
   snapshot.sound_enabled = rtl_audio_user_enabled.load(std::memory_order_relaxed);
   snapshot.graphics_enabled = rtl_graphics_enabled.load(std::memory_order_relaxed);
-  snapshot.recording = g_audio_rec_active.load(std::memory_order_relaxed);
+  snapshot.recording = orcsdr::audio_rec::active();
   snapshot.preset_scanning =
       rtl_fm_preset_scan_active.load(std::memory_order_relaxed);
   snapshot.volume = rtl_ui_volume;
@@ -10815,10 +10590,10 @@ void handle_fm_dashboard_action(const orcsdr::fm::Action& action) {
       reset_spectrum_renderer();
       break;
     case ActionKind::recording_toggle:
-      if (g_audio_rec_active.load(std::memory_order_acquire))
-        (void)audio_rec_stop_and_export();
+      if (orcsdr::audio_rec::active())
+        (void)orcsdr::audio_rec::stop_and_export(kAudioRecHooks);
       else
-        (void)audio_rec_start();
+        (void)orcsdr::audio_rec::start(kAudioRecHooks);
       break;
     case ActionKind::gain_auto:
       if (g_rtl != nullptr && rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN)) {
@@ -10871,7 +10646,7 @@ orcsdr::am::Snapshot am_dashboard_snapshot() {
   snapshot.driver_ready = rtl_device_ready();
   snapshot.sound_enabled = rtl_audio_user_enabled.load(std::memory_order_relaxed);
   snapshot.graphics_enabled = rtl_graphics_enabled.load(std::memory_order_relaxed);
-  snapshot.recording = g_audio_rec_active.load(std::memory_order_relaxed);
+  snapshot.recording = orcsdr::audio_rec::active();
   snapshot.volume = rtl_ui_volume;
   snapshot.battery_percent = M5.Power.getBatteryLevel();
   snapshot.scan_active = rtl_am_scan_active.load(std::memory_order_relaxed);
@@ -10961,8 +10736,8 @@ void handle_am_dashboard_action(const orcsdr::am::Action& action) {
       reset_spectrum_renderer();
       break;
     case ActionKind::recording_toggle:
-      if (g_audio_rec_active.load(std::memory_order_acquire)) (void)audio_rec_stop_and_export();
-      else (void)audio_rec_start();
+      if (orcsdr::audio_rec::active()) (void)orcsdr::audio_rec::stop_and_export(kAudioRecHooks);
+      else (void)orcsdr::audio_rec::start(kAudioRecHooks);
       break;
     case ActionKind::gain_auto:
       if (g_rtl != nullptr && rtl_tuner_gain_available(rtl_ui_frequency_hz)) {
@@ -17854,11 +17629,11 @@ void handle_sdr_touch(int32_t x, int32_t y) {
                                              kRtlBrowseMinHz, kRtlBrowseMaxHz));
   } else if (action == orcsdr::radio_ui::ControlAction::toggle_audio_record) {
       /* REC toggle — Capture tool records post-demod PCM for offline analysis. */
-      if (g_audio_rec_active.load(std::memory_order_acquire)) {
-        (void)audio_rec_stop_and_export();
+      if (orcsdr::audio_rec::active()) {
+        (void)orcsdr::audio_rec::stop_and_export(kAudioRecHooks);
       } else {
         if (orc_tool_current() != OrcTool::Capture) set_orc_tool(OrcTool::Capture);
-        (void)audio_rec_start();
+        (void)orcsdr::audio_rec::start(kAudioRecHooks);
       }
       const bool running =
           rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
@@ -21647,22 +21422,22 @@ void process_command(char* command) {
     return;
   }
   if (strcmp(command, "RTL_REC_START") == 0) {
-    (void)audio_rec_start();
+    (void)orcsdr::audio_rec::start(kAudioRecHooks);
     return;
   }
   if (strcmp(command, "RTL_REC_STOP") == 0) {
-    (void)audio_rec_stop_and_export();
+    (void)orcsdr::audio_rec::stop_and_export(kAudioRecHooks);
     return;
   }
   if (strcmp(command, "RTL_REC_STATUS") == 0) {
-    audio_rec_status_print();
+    orcsdr::audio_rec::status_print(kAudioRecHooks);
     return;
   }
   if (strcmp(command, "RTL_REC_SAVE") == 0) {
     /* Re-export held PSRAM PCM after inserting an SD card. */
     g_sd_tried = false;
     g_sd_ready = false;
-    (void)audio_rec_stop_and_export();
+    (void)orcsdr::audio_rec::stop_and_export(kAudioRecHooks);
     return;
   }
   if (strncmp(command, "RTL_TOOL ", 9) == 0) {
@@ -22778,6 +22553,7 @@ void loop() {
       Serial.printf("RTL_MAIN_STALL stage=serial_dispatch elapsed_ms=%u\n", elapsed_ms);
   }
   orcsdr::rds_capture::service(kRdsCaptureHooks);   // reports a finished background save
+  orcsdr::audio_rec::service(kAudioRecHooks);        // saves a full recording; reports a finished save
   service_clock();
   orcsdr::location_estimate::service();
   orcsdr::maps::service_downloads();

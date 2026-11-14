@@ -80,6 +80,7 @@ idf_component_register(
         "../ui/sd_writer.cpp"
         "../ui/sd_writer_device.cpp"
         "../ui/rds_capture.cpp"
+        "../ui/audio_rec.cpp"
         "../ui/serial_help.cpp"
         "../ui/serial_adsb.cpp"
         "../ui/serial_location.cpp"

@@ -59,6 +59,7 @@ on:
       - 'tests/buffer_claim_tests.cpp'
       - 'tests/sd_writer_tests.cpp'
       - 'tests/rds_capture_tests.cpp'
+      - 'tests/audio_rec_tests.cpp'
       - 'tests/data/serial_help_golden.txt'
       - 'tests/data/serial_help_golden_orcdial.txt'
       - 'tests/data/serial_command_routes.tsv'
