@@ -65,6 +65,7 @@ FAMILIES = {
     "orcsdr::serial_rds": "apps/orcsdr-tab5/ui/serial_rds.cpp",
     "orcsdr::serial_dead_air": "apps/orcsdr-tab5/ui/serial_dead_air.cpp",
     "orcsdr::serial_ui_status": "apps/orcsdr-tab5/ui/serial_ui_status.cpp",
+    "orcsdr::serial_ui_nav": "apps/orcsdr-tab5/ui/serial_ui_nav.cpp",
     "orcsdr::serial_p25": "apps/orcsdr-tab5/ui/serial_p25.cpp",
     "orcsdr::serial_tune": "apps/orcsdr-tab5/ui/serial_tune.cpp",
     "orcsdr::serial_signal": "apps/orcsdr-tab5/ui/serial_signal.cpp",

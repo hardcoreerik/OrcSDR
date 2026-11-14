@@ -80,6 +80,7 @@
 #include "memory_reclaim.hpp"
 #include "memory_ledger.hpp"
 #include "serial_dead_air.hpp"
+#include "serial_ui_nav.hpp"
 #include "serial_ui_status.hpp"
 #include "serial_adsb.hpp"
 #include "serial_location.hpp"
@@ -20535,6 +20536,44 @@ static constexpr orcsdr::serial_ui_status::Hooks kSerialUiStatusHooks{
     },
 };
 
+// RTL_UI TAP, RTL_UI OPEN and RTL_RF24_PAGE live in serial_ui_nav.cpp; the hooks make the same calls as before.
+static constexpr orcsdr::serial_ui_nav::Hooks kSerialUiNavHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    [](int x, int y) { handle_sdr_touch(x, y); },
+    [](orcsdr::serial_ui_nav::Target target) {
+      using Id = orcsdr::dashboards::Id;
+      using Target = orcsdr::serial_ui_nav::Target;
+      switch (target) {
+        case Target::home: show_home(); break;
+        case Target::clock: open_clock_settings(); break;
+        case Target::fm: open_dashboard(Id::fm); break;
+        case Target::am: open_dashboard(Id::am); break;
+        case Target::shortwave: open_dashboard(Id::shortwave); break;
+        case Target::airband: open_dashboard(Id::airband); break;
+        case Target::cb: open_dashboard(Id::cb); break;
+        case Target::p25: open_dashboard(Id::p25); break;
+        case Target::adsb: open_dashboard(Id::adsb); break;
+        case Target::lora: open_dashboard(Id::lora); break;
+        case Target::rf_lab: open_dashboard(Id::rf_lab); break;
+        case Target::wifi_analysis: open_dashboard(Id::wifi_analysis); break;
+        case Target::ft8: open_dashboard(Id::ft8); break;
+        case Target::settings: open_dashboard(Id::settings); break;
+        case Target::weather: open_dashboard(Id::weather); break;
+        case Target::pocsag: open_dashboard(Id::pocsag); break;
+        case Target::acars: open_dashboard(Id::acars); break;
+        case Target::dead_air: open_dashboard(Id::dead_air); break;
+        case Target::ais: open_dashboard(Id::ais); break;
+        case Target::visualizer: open_dashboard(Id::visualizer); break;
+        case Target::marine: open_dashboard(Id::marine); break;
+        case Target::satellite: open_dashboard(Id::satellite); break;
+        case Target::utilities: open_dashboard(Id::utilities); break;
+      }
+    },
+    []() -> unsigned { return static_cast<unsigned>(orcsdr::rf24::Page::count); },
+    [](uint8_t page) -> bool { return orcsdr::rf24::select_page(page, rf24_dashboard_snapshot()); },
+};
+
 // The RTL_DEAD_AIR commands live in serial_dead_air.cpp; they call the same dead_air_app functions as before.
 static constexpr orcsdr::serial_dead_air::Hooks kSerialDeadAirHooks{
     [](const char* text) { Serial.print(text); },
@@ -21239,74 +21278,7 @@ void process_command(char* command) {
   if (orcsdr::serial_health::handle_command(command, authenticated, kSerialHealthHooks)) return;
   if (orcsdr::serial_dead_air::handle_command(command, authenticated, kSerialDeadAirHooks)) return;
   if (orcsdr::serial_decoder_diag::handle_command(command, authenticated, kSerialDecoderDiagHooks)) return;
-  // Serial input mimics the screen: RTL_UI TAP x y goes through the same routing as a finger on the panel (full-screen
-  // coordinates, header included).
-  if (strncmp(command, "RTL_UI TAP ", 11) == 0 && !authenticated) {
-    Serial.println("RTL_UI_TAP_ERROR auth_required");
-    return;
-  }
-  if (strncmp(command, "RTL_UI TAP ", 11) == 0) {
-    int x = 0, y = 0;
-    if (sscanf(command + 11, "%d %d", &x, &y) != 2 || x < 0 || y < 0 || x >= 1280 || y >= 720) {
-      Serial.println("RTL_UI_TAP_INVALID use RTL_UI TAP <x 0-1279> <y 0-719>");
-      return;
-    }
-    handle_sdr_touch(x, y);
-    Serial.printf("RTL_UI_TAP_OK x=%d y=%d\n", x, y);
-    return;
-  }
-  if (strncmp(command, "RTL_UI OPEN ", 12) == 0 && !authenticated) {
-    Serial.println("RTL_UI_OPEN_ERROR auth_required");
-    return;
-  }
-  if (strncmp(command, "RTL_UI OPEN ", 12) == 0) {
-    const char* name = command + 12;
-    using Id = orcsdr::dashboards::Id;
-    if (strcmp(name, "HOME") == 0) show_home();
-    else if (strcmp(name, "CLOCK") == 0) open_clock_settings();
-    else if (strcmp(name, "FM") == 0) open_dashboard(Id::fm);
-    else if (strcmp(name, "AM") == 0) open_dashboard(Id::am);
-    else if (strcmp(name, "SHORTWAVE") == 0) open_dashboard(Id::shortwave);
-    else if (strcmp(name, "AIRBAND") == 0) open_dashboard(Id::airband);
-    else if (strcmp(name, "CB") == 0) open_dashboard(Id::cb);
-    else if (strcmp(name, "P25") == 0) open_dashboard(Id::p25);
-    else if (strcmp(name, "ADSB") == 0) open_dashboard(Id::adsb);
-    else if (strcmp(name, "LORA") == 0) open_dashboard(Id::lora);
-    else if (strcmp(name, "RF_LAB") == 0) open_dashboard(Id::rf_lab);
-    else if (strcmp(name, "WIFI_ANALYSIS") == 0) open_dashboard(Id::wifi_analysis);
-    else if (strcmp(name, "FT8") == 0) open_dashboard(Id::ft8);
-    else if (strcmp(name, "SETTINGS") == 0) open_dashboard(Id::settings);
-    else if (strcmp(name, "WEATHER") == 0) open_dashboard(Id::weather);
-    else if (strcmp(name, "POCSAG") == 0) open_dashboard(Id::pocsag);
-    else if (strcmp(name, "ACARS") == 0) open_dashboard(Id::acars);
-    else if (strcmp(name, "DEAD_AIR") == 0) open_dashboard(Id::dead_air);
-    else if (strcmp(name, "AIS") == 0) open_dashboard(Id::ais);
-    else if (strcmp(name, "VISUALIZER") == 0) open_dashboard(Id::visualizer);
-    else if (strcmp(name, "MARINE") == 0) open_dashboard(Id::marine);
-    else if (strcmp(name, "SATELLITE") == 0) open_dashboard(Id::satellite);
-    else if (strcmp(name, "UTILITIES") == 0) open_dashboard(Id::utilities);
-    else { Serial.println("RTL_UI_OPEN_INVALID use HOME|FM|AM|SHORTWAVE|P25|ADSB|LORA|RF_LAB|WIFI_ANALYSIS|FT8|SETTINGS|WEATHER|CB|POCSAG|AIRBAND|ACARS|DEAD_AIR|AIS|VISUALIZER|MARINE|SATELLITE|UTILITIES"); return; }
-    Serial.printf("RTL_UI_OPEN_OK target=%s\n", name);
-    return;
-  }
-  if (strncmp(command, "RTL_RF24_PAGE ", 14) == 0 && !authenticated) {
-    Serial.println("RTL_RF24_PAGE_ERROR auth_required");
-    return;
-  }
-  if (strncmp(command, "RTL_RF24_PAGE ", 14) == 0) {
-    unsigned page = 0;
-    if (sscanf(command + 14, "%u", &page) != 1 ||
-        page >= static_cast<unsigned>(orcsdr::rf24::Page::count)) {
-      Serial.println("RTL_RF24_PAGE_INVALID use 0-4");
-      return;
-    }
-    if (!orcsdr::rf24::select_page(static_cast<uint8_t>(page), rf24_dashboard_snapshot())) {
-      Serial.println("RTL_RF24_PAGE_ERROR dashboard_inactive");
-      return;
-    }
-    Serial.printf("RTL_RF24_PAGE_OK page=%u\n", page);
-    return;
-  }
+  if (orcsdr::serial_ui_nav::handle_command(command, authenticated, kSerialUiNavHooks)) return;
   if (orcsdr::serial_memory::handle_command(command, authenticated, kSerialMemoryHooks)) return;
 #if ORCSDR_ORCDIAL
   if(!strcmp(command,"RTL_ORCDIAL_STATUS")||!strcmp(command,"RTL_ORCDIAL_PROBE")) {
