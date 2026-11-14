@@ -2,6 +2,16 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — main-task stack regression from the overnight moves, fixed — 2026-11-14
+
+Tab5. Found by the device check of the overnight batch on COM17; fixed, flashed and checked.
+
+- **Problem:** after the overnight family moves, the main task's lowest free stack fell from 6,336 to 2,296 bytes (`RTL_HEALTH main_stack_hwm`), reached on `RTL_POCSAG STATUS`, `RTL_RDS_STATUS` and `RTL_P25_STATUS`. Boot alone fell from 6,468 to 5,468.
+- **Cause:** with most routes moved out, `process_command()` became small enough for GCC to inline `ui_doc_enter()` and `ui_doc_render()` into it. Their locals (about 6 KB) were then reserved on entry to `process_command()` for every serial command, not only `UI_DOC_SHOW`: its frame went from 848 bytes to 6,432. Found by bisecting on the device (`b74ab3ac`, `7735e39e`, `ef51c54d` and `165189fc` all 6,336; the overnight build 2,296) and reading the frames from the disassembly.
+- **Fix:** both helpers are marked `__attribute__((noinline))` in `main.cpp`. `process_command()` is now 624 bytes. On COM17: 6,468 bytes free after boot and 6,336 after every status command, all 35 refusals and the signed-in checks, the same as before the overnight work. No behaviour change.
+- **Guard:** new `tools/tab5_function_frames.py` reads a function's whole stack frame from the firmware (including adjustments after the register saves) and fails over a limit; the serial-module guide now asks for it after each build that moves routes.
+- **Overnight batch device check:** with the fix, 35 of 35 refusals match, read-only replies keep their shape, and the moved commands answer correctly signed in (`RTL_TOOL`, `RTL_REC_STATUS`, `RTL_SCREEN_STATUS`, `UI_TAP` usage, `RTL_LAB`/`RTL_VIS STATUS` and unknown, `RTL_CAPTURE_STATUS`, `RTL_IQ_STATUS`, `RTL_IQ_DIAG_STATUS`, `RTL_IQ_RETRIEVE_BEGIN`, `RTL_UI ACTION` range and unknown replies, `RTL_VOLUME` out of range, `RTL_SPLASH_GATE STATUS`, `FT8 STATUS`, `JS8 STATUS`). Not run: anything that starts, stops or retunes the radio, records, taps the screen or changes a setting.
+
 ## Unreleased — JS8/FT8 prefixes and RTL_SPLASH_GATE moved out of process_command — 2026-11-14
 
 No behaviour change intended. Host-tested and built; not flashed.

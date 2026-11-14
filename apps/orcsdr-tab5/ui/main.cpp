@@ -18101,7 +18101,8 @@ bool ui_doc_view_for_suffix(const char* suffix, orcsdr::p25::View* view) {
   return true;
 }
 
-bool ui_doc_render(const char* screen_id, bool demo) {
+/* noinline: inlined into process_command it put its frame on every serial command's stack (see ui_doc_enter). */
+__attribute__((noinline)) bool ui_doc_render(const char* screen_id, bool demo) {
   if (!ui_doc_screen_exists(screen_id, demo ? "demo" : "live")) return false;
   ui_doc_leave_surfaces();
 
@@ -18247,7 +18248,10 @@ bool ui_doc_live_band(const char* screen_id, RtlBand* band, uint32_t* frequency_
   return false;
 }
 
-void ui_doc_enter() {
+/* noinline: once process_command shrank (serial families moved out), GCC inlined this and ui_doc_render into it and
+ * reserved their ~6 KB of locals for every serial command: main-task free stack fell from 6,336 to 2,296 bytes on
+ * RTL_POCSAG/RDS/P25 STATUS (COM17, 2026-11-14). Kept out of line, the space is used only by UI_DOC_SHOW. */
+__attribute__((noinline)) void ui_doc_enter() {
   if (ui_doc.active) return;
   ui_doc = {};
   ui_doc.active = true;

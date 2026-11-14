@@ -32,6 +32,7 @@ commands follows this page.
 | `tools/tab5_serial_golden.py --self-check` (CI) and `--port COMx` (device) | The refusals really come back from a unit. Opens the port without resetting it |
 | `tests/serial_<family>_tests.cpp` | Every reply, refusal, bad-argument form and near-miss line, with fake hooks that record each write |
 | `tools/test-tab5-cadence-history.sh` and `.github/workflows/tab5-cadence-history-tests.yml` | The host tests in CI. Add the new test to both (script line and workflow `paths`) |
+| `tools/tab5_function_frames.py <elf> --max-bytes 1024 "::process_command(char*)"` | `process_command()` growing a big stack frame. As it shrinks, GCC may inline large helpers into it and reserve their locals for every command: on 2026-11-14 that took the main task from 6,336 to 2,296 bytes free. Run it after each firmware build that moves routes; mark the culprit `__attribute__((noinline))` |
 
 Also required for every change: a `CHANGELOG.md` entry, and a **firmware build** (`apps/orcsdr-tab5/tools/build-tab5-idf.ps1
 -WithoutC6`) before calling it done.
