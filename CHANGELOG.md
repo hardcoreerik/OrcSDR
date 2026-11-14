@@ -4,7 +4,7 @@ This is the **project-level release and current-source index**. It links the aut
 
 ## Unreleased — Home waterfall scroll back on the CPU — 2026-11-14
 
-- **Home's waterfall scroll uses M5GFX again** (`M5.Display.scroll`). The owner does not accept a lower Home frame rate, and the two-pass PPA scroll cost about 15% of it. The spectrum copy and clear stay on the PPA. `screen_blit::scroll_up` stays available and tested. Flashed to COM17; Home frame rate and DSP load with this combination are **not yet measured** (the unit was on the ADS-B screen).
+- **Home's waterfall scroll uses M5GFX again** (`M5.Display.scroll`). The owner does not accept a lower Home frame rate, and the two-pass PPA scroll cost about 15% of it. The spectrum copy and clear stay on the PPA. `screen_blit::scroll_up` stays available and tested. Flashed to COM17 and measured on Home, WFM 96.1 MHz, three steady 20 s windows: about **24 frames/s** (was 20.6 before any PPA work), frame 28 to 29.5 ms (was 36 ms), DSP load **56%** (was 64%; 46% with no drawing).
 - **Context from the owner:** Home was meant to run at 60 frames/s. For scale, one 60 frames/s frame is 16.7 ms, and the spectrum copy alone takes 12 to 19 ms.
 
 ## Unreleased — Home spectrum clear and waterfall scroll on the PPA — 2026-11-13
