@@ -41,12 +41,14 @@ HEALTH_KEYS = ["present", "running", "alive", "state", "samples", "src_drops", "
 
 def ssh_probe(host, key):
     cmd = ["ssh", "-i", key, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "StrictHostKeyChecking=accept-new",
-           f"root@{host}", "cut -d. -f1 /proc/uptime; cat /sys/class/udc/*/state; journalctl -p err -b --no-pager 2>/dev/null | wc -l"]
+           f"root@{host}", "cut -d. -f1 /proc/uptime; cat /sys/class/udc/*/state; journalctl -p err -b --no-pager 2>/dev/null | wc -l; "
+           "for d in /sys/bus/iio/devices/iio:device*; do t=$(cat $d/in_temp0_input 2>/dev/null); [ -n \"$t\" ] && echo \"$(cat $d/name 2>/dev/null)=$t\"; done"]
     try:
         r = subprocess.run(cmd, capture_output=True, text=True, timeout=25)
         parts = r.stdout.split()
         if r.returncode == 0 and len(parts) >= 3:
-            return {"ok": True, "uptime_s": parts[0], "udc": parts[1], "journal_errors": parts[2]}
+            # Temperatures (milli-degrees C) of every IIO device that reports one (the Zynq XADC and the AD9361), joined into one cell.
+            return {"ok": True, "uptime_s": parts[0], "udc": parts[1], "journal_errors": parts[2], "temps": ";".join(parts[3:])}
         return {"ok": False, "error": (r.stderr or "no output").strip()[:120]}
     except Exception as e:  # noqa: BLE001
         return {"ok": False, "error": str(e)[:120]}
@@ -82,7 +84,7 @@ def main():
     hw.writerow(["elapsed_s"] + HEALTH_KEYS)
     pcsv = open(os.path.join(a.out, "probe.csv"), "w", newline="")
     pw = csv.writer(pcsv)
-    pw.writerow(["elapsed_s", "ping_ok", "ssh_ok", "pluto_uptime_s", "udc", "journal_errors", "error"])
+    pw.writerow(["elapsed_s", "ping_ok", "ssh_ok", "pluto_uptime_s", "udc", "journal_errors", "error", "temps_mdegC"])
 
     def event(kind, line):
         with lock:
@@ -108,7 +110,7 @@ def main():
                     state["probe_total"] += 1
                     state["probe_fail"] += 0 if p["ok"] else 1
                 pw.writerow([round(now - t_start), int(ok), int(p["ok"]), p.get("uptime_s", ""), p.get("udc", ""), p.get("journal_errors", ""),
-                             p.get("error", "")])
+                             p.get("error", ""), p.get("temps", "")])
                 pcsv.flush()
                 if not p["ok"]:
                     event("probe_fail", p.get("error", ""))
