@@ -2,6 +2,16 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Home spectrum clear and waterfall scroll on the PPA — 2026-11-13
+
+Tab5. Flashed to one Tab5 (COM17) and measured. The owner saw no visible difference on Home with the PPA spectrum copy (previous entry); the clear and scroll are not yet looked at.
+
+- **`screen_blit::scroll_up`:** moves a screen rectangle up as `M5.Display.scroll(0, -rows)` does, with the PPA through an aligned scratch copy (source and destination overlap), then fills the freed rows as M5GFX does. **`screen_blit::DmaSprite`:** a sprite in a PPA-aligned buffer that the PPA clears to black. Home's spectrum picture and waterfall use them; everything else falls back to M5GFX.
+- **Checked:** `RTL_DISPLAY_BENCH` compares the scroll with M5GFX's pixel by pixel for both landscape rotations (exact) and checks the clear leaves no non-black pixel. On Home: 1,328 copies, scrolls and clears each by the PPA, 0 fallbacks.
+- **Bench (continuous, 2 s each):** CPU scroll 7.6 ms with DSP 98%; PPA scroll 23.7 ms with DSP 49%. CPU clear 4.6 ms with DSP 97%; PPA clear 1.5 ms with DSP 46%.
+- **Measured on Home:** DSP load **49%** (64% before any PPA work, 60% with the PPA copy alone; 46% with no drawing). But each frame now takes 44.6 ms (was 31 ms) because the PPA scroll waits about 25 ms for two passes over the waterfall, so Home draws about 17.7 frames/s (20.6 before any PPA work, 24 with the copy alone). The waterfall's speed is set by time, not frames, so it moves at the same speed in slightly larger steps.
+- **Open:** a ring-buffer waterfall would need one pass instead of two; the main loop's lowest free stack fell to 4,264 bytes during the benchmark run (6,336 to 6,468 before).
+
 ## Unreleased — Home spectrum copied by the PPA — 2026-11-13
 
 Tab5. Flashed to one Tab5 (COM17) and measured; the owner's visual check of Home is still to do.
