@@ -1,0 +1,264 @@
+#!/usr/bin/env python3
+"""orc-diag: development diagnostics for the Pluto's own Linux. Everything is OFF by default and fully reversible.
+
+  orc-diag install            write the unit files (enables nothing)
+  orc-diag status             what is on and off, and the effective settings
+  orc-diag on  <feature>      turn one feature on
+  orc-diag off <feature>      turn one feature off
+  orc-diag all-off            turn every feature off (back to the stock behaviour)
+
+Features
+  journal-sync   journald flushes to the SD card every 10 s instead of 10 minutes (the last minutes before a power loss survive)
+  watchdog       systemd arms the Zynq hardware watchdog (RuntimeWatchdogSec=30): a hung Linux reboots itself
+  telemetry      a service logs temperatures, XADC rails, load, memory, USB gadget and Ethernet state every 10 s (rotated, flushed per line)
+  reset-cause    one log line per boot with the raw Zynq reset registers
+
+Nothing here edits an existing file: each feature adds one drop-in or one unit, and turning it off removes it. The drop-ins are named zz-* so
+they sort after the image's own fishball.conf (systemd reads drop-ins in name order, later wins). Every change is appended to
+/var/log/orc-diag/changes.log.
+"""
+import glob
+import mmap
+import os
+import struct
+import subprocess
+import sys
+import time
+
+STATE_DIR = "/etc/orc-diag"
+LOG_DIR = "/var/log/orc-diag"
+J_DROP = "/etc/systemd/journald.conf.d/zz-orc-diag.conf"
+W_DROP = "/etc/systemd/system.conf.d/zz-orc-diag.conf"
+UNIT_DIR = "/etc/systemd/system"
+TELEM_UNIT = "orc-diag-telemetry.service"
+RC_UNIT = "orc-diag-resetcause.service"
+SELF = "/usr/local/sbin/orc-diag"
+FEATURES = ["journal-sync", "watchdog", "telemetry", "reset-cause"]
+TELEM_PERIOD_S = 10
+TELEM_MAX_BYTES = 2 * 1024 * 1024
+TELEM_KEEP = 3
+
+UNITS = {
+    TELEM_UNIT: f"""[Unit]
+Description=orc-diag telemetry (development tool, off by default)
+
+[Service]
+ExecStart={SELF} telemetry-run
+Restart=on-failure
+Nice=10
+
+[Install]
+WantedBy=multi-user.target
+""",
+    RC_UNIT: f"""[Unit]
+Description=orc-diag reset-cause line (development tool, off by default)
+After=local-fs.target
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStart={SELF} resetcause-run
+
+[Install]
+WantedBy=multi-user.target
+""",
+}
+
+
+def sh(*cmd):
+    r = subprocess.run(list(cmd), capture_output=True, text=True)
+    return r.returncode, (r.stdout + r.stderr).strip()
+
+
+def log_change(msg):
+    os.makedirs(LOG_DIR, exist_ok=True)
+    with open(os.path.join(LOG_DIR, "changes.log"), "a") as f:
+        f.write(f"{time.strftime('%Y-%m-%d %H:%M:%S')} {msg}\n")
+
+
+def rd(path):
+    try:
+        with open(path) as f:
+            return f.read().strip()
+    except OSError:
+        return None
+
+
+def write_file(path, text):
+    os.makedirs(os.path.dirname(path), exist_ok=True)
+    with open(path, "w") as f:
+        f.write(text)
+
+
+def unit_enabled(unit):
+    return sh("systemctl", "is-enabled", unit)[1].split("\n")[-1] == "enabled"
+
+
+def feature_on(name):
+    if name == "journal-sync":
+        return os.path.exists(J_DROP)
+    if name == "watchdog":
+        return os.path.exists(W_DROP)
+    if name == "telemetry":
+        return unit_enabled(TELEM_UNIT)
+    if name == "reset-cause":
+        return unit_enabled(RC_UNIT)
+    return False
+
+
+def install():
+    for unit, text in UNITS.items():
+        write_file(os.path.join(UNIT_DIR, unit), text)
+    os.makedirs(STATE_DIR, exist_ok=True)
+    os.makedirs(LOG_DIR, exist_ok=True)
+    sh("systemctl", "daemon-reload")
+    log_change("install: unit files written, nothing enabled")
+    print("installed; every feature is off")
+
+
+def set_feature(name, on):
+    if name not in FEATURES:
+        print(f"unknown feature {name}; one of: {', '.join(FEATURES)}")
+        return 2
+    if name == "journal-sync":
+        if on:
+            write_file(J_DROP, "[Journal]\nSyncIntervalSec=10s\n")
+        elif os.path.exists(J_DROP):
+            os.remove(J_DROP)
+        sh("systemctl", "restart", "systemd-journald")
+    elif name == "watchdog":
+        if on:
+            write_file(W_DROP, "[Manager]\nRuntimeWatchdogSec=30\n")
+        elif os.path.exists(W_DROP):
+            os.remove(W_DROP)
+        sh("systemctl", "daemon-reexec")
+    elif name == "telemetry":
+        if on:
+            sh("systemctl", "enable", "--now", TELEM_UNIT)
+        else:
+            sh("systemctl", "disable", "--now", TELEM_UNIT)
+    elif name == "reset-cause":
+        if on:
+            sh("systemctl", "enable", "--now", RC_UNIT)
+        else:
+            sh("systemctl", "disable", "--now", RC_UNIT)
+    log_change(f"{name} {'ON' if on else 'OFF'}")
+    print(f"{name}: {'on' if feature_on(name) else 'off'}")
+    return 0
+
+
+def status():
+    for n in FEATURES:
+        print(f"{n:13s} {'ON ' if feature_on(n) else 'off'}")
+    sync = [l for l in sh("systemd-analyze", "cat-config", "systemd/journald.conf")[1].splitlines() if l.startswith("SyncIntervalSec")]
+    print("effective journald:", sync[-1] if sync else "unknown")
+    print("effective watchdog:", sh("systemctl", "show", "-p", "RuntimeWatchdogUSec", "--value")[1] or "unknown", "(0 = off)")
+    print("telemetry log:", ", ".join(sorted(glob.glob(LOG_DIR + "/telemetry.log*"))) or "none")
+
+
+def iio_dir(name):
+    for d in glob.glob("/sys/bus/iio/devices/iio:device*"):
+        if rd(d + "/name") == name:
+            return d
+    return None
+
+
+def sample():
+    out = {"up_s": (rd("/proc/uptime") or "0").split(".")[0]}
+    x = iio_dir("xadc")
+    if x:
+        raw, off, sc = rd(x + "/in_temp0_raw"), rd(x + "/in_temp0_offset"), rd(x + "/in_temp0_scale")
+        if raw and off and sc:
+            out["zynq_c"] = round((float(raw) + float(off)) * float(sc) / 1000.0, 1)
+        vsc = float(rd(x + "/in_voltage_scale") or 3000.0 / 4096.0)  # mV per LSB (3 V over 12 bits)
+        for f in sorted(glob.glob(x + "/in_voltage*_*_raw")):
+            label = os.path.basename(f).split("_", 2)[2].rsplit("_raw", 1)[0]
+            v = rd(f)
+            if v is not None:
+                out[label + "_mv"] = round(float(v) * vsc)
+    a = iio_dir("ad9361-phy")
+    if a:
+        t = rd(a + "/in_temp0_input")
+        if t:
+            out["ad9361_c"] = round(float(t) / 1000.0, 1)
+    out["load"] = (rd("/proc/loadavg") or "").split(" ")[0]
+    mem = {}
+    for line in (rd("/proc/meminfo") or "").splitlines():
+        k, _, v = line.partition(":")
+        mem[k] = v.strip().split(" ")[0]
+    out["mem_avail_mb"] = round(int(mem.get("MemAvailable", "0")) / 1024)
+    udc = glob.glob("/sys/class/udc/*/state")
+    out["udc"] = rd(udc[0]) if udc else "none"
+    out["eth0"] = rd("/sys/class/net/eth0/operstate")
+    return out
+
+
+def rotate(path):
+    try:
+        if os.path.getsize(path) < TELEM_MAX_BYTES:
+            return
+    except OSError:
+        return
+    for i in range(TELEM_KEEP - 1, 0, -1):
+        if os.path.exists(f"{path}.{i}"):
+            os.replace(f"{path}.{i}", f"{path}.{i + 1}")
+    os.replace(path, path + ".1")
+
+
+def telemetry_run():
+    os.makedirs(LOG_DIR, exist_ok=True)
+    path = os.path.join(LOG_DIR, "telemetry.log")
+    while True:
+        rotate(path)
+        line = time.strftime("%Y-%m-%dT%H:%M:%S") + " " + " ".join(f"{k}={v}" for k, v in sample().items()) + "\n"
+        with open(path, "a") as f:
+            f.write(line)
+            f.flush()
+            os.fsync(f.fileno())
+        time.sleep(TELEM_PERIOD_S)
+
+
+def resetcause_run():
+    msg = "reset registers unavailable (/dev/mem)"
+    try:
+        fd = os.open("/dev/mem", os.O_RDONLY | os.O_SYNC)
+        try:
+            mm = mmap.mmap(fd, 4096, mmap.MAP_SHARED, mmap.PROT_READ, offset=0xF8000000)
+            reason = struct.unpack_from("<I", mm, 0x250)[0]
+            reboot = struct.unpack_from("<I", mm, 0x258)[0]
+            msg = f"boot reset registers: RESET_REASON(0xF8000250)=0x{reason:08x} REBOOT_STATUS(0xF8000258)=0x{reboot:08x} (raw, decode not verified)"
+        finally:
+            os.close(fd)
+    except OSError as e:
+        msg += f": {e}"
+    sh("logger", "-t", "orc-diag", "-p", "user.info", msg)
+    print(msg)
+
+
+def main():
+    a = sys.argv[1:]
+    if not a:
+        print(__doc__)
+        return 0
+    cmd = a[0]
+    if cmd == "install":
+        install()
+    elif cmd == "status":
+        status()
+    elif cmd in ("on", "off") and len(a) == 2:
+        return set_feature(a[1], cmd == "on")
+    elif cmd == "all-off":
+        for n in FEATURES:
+            set_feature(n, False)
+    elif cmd == "telemetry-run":
+        telemetry_run()
+    elif cmd == "resetcause-run":
+        resetcause_run()
+    else:
+        print(__doc__)
+        return 2
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
