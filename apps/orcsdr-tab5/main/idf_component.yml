@@ -15,8 +15,9 @@ dependencies:
     version: dabdda1aff6aa196f3c1523d791adf80d2c24ccc
   esp-pluto-sdr:
     git: https://github.com/hardcoreerik/esp-pluto-sdr.git
-    # Standalone PlutoSDR driver (receive only), used by ui/pluto_source.cpp. Branch claude/pluto-usb-queued-reads: pipelined bulk IN reads.
-    version: 383cd733936df68ad81f078eb6a558e1a3b24e2f
+    # Standalone PlutoSDR driver (receive only), used by ui/pluto_source.cpp. esp-pluto-sdr main after PR 4 (pipelined bulk IN reads plus the
+    # CodeRabbit init/open/close fixes).
+    version: dd5fd415d21adc741d0d39820f8323eefc3c657e
   orcmaps:
     git: https://github.com/hardcoreerik/OrcMaps.git
     # Development candidate: offscreen feature rejection; native timing pending.

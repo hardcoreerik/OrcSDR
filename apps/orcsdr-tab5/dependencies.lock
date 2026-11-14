@@ -1,6 +1,6 @@
 dependencies:
   esp-pluto-sdr:
-    component_hash: 378048be8ab354c998c13c96c0f2c974dce300cc5c0d421f82155c201467fbf5
+    component_hash: 8bf44af447d0af7c802377e739ef46255f308a78c0ea3d50b358286f4296e18d
     dependencies:
     - name: idf
       version: '>=5.3'
@@ -8,7 +8,7 @@ dependencies:
       git: https://github.com/hardcoreerik/esp-pluto-sdr.git
       path: .
       type: git
-    version: 383cd733936df68ad81f078eb6a558e1a3b24e2f
+    version: dd5fd415d21adc741d0d39820f8323eefc3c657e
   esp_rtl_sdr:
     component_hash: 1e0821a680231b092ad96fda731c594381d184a270670c5515b2cec8f93c6488
     dependencies:
@@ -169,6 +169,6 @@ direct_dependencies:
 - m5stack/m5gfx
 - m5stack/m5unified
 - orcmaps
-manifest_hash: a58f5b0927e14d2785f6d765b2a15eed9326dd3a39d34567fca473e8d11ea88e
+manifest_hash: 06a901e46f091c94d2f44f77566590b2edecf7c827e625b7f810af40b3792370
 target: esp32p4
 version: 2.0.0
