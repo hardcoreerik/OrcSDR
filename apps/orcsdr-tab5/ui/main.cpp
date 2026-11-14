@@ -99,6 +99,7 @@
 #include "serial_decoder_diag.hpp"
 #include "serial_memory.hpp"
 #include "serial_display_bench.hpp"
+#include "serial_rec.hpp"
 #include "display_bench.hpp"
 #include "serial_gain.hpp"
 #include "serial_driver.hpp"
@@ -20794,6 +20795,22 @@ static constexpr orcsdr::serial_display_bench::Hooks kSerialDisplayBenchHooks{
     },
 };
 
+// RTL_REC_* and RTL_TOOL (serial_rec.cpp): the recording lives in audio_rec.cpp, the tool switch here.
+static constexpr orcsdr::serial_rec::Hooks kSerialRecHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    [] { (void)orcsdr::audio_rec::start(kAudioRecHooks); },
+    [] { (void)orcsdr::audio_rec::stop_and_export(kAudioRecHooks); },
+    [] { orcsdr::audio_rec::status_print(kAudioRecHooks); },
+    [] {
+      g_sd_tried = false;   // try the card again: it may have been inserted since
+      g_sd_ready = false;
+      (void)orcsdr::audio_rec::stop_and_export(kAudioRecHooks);
+    },
+    [](orcsdr::serial_rec::Tool tool) { set_orc_tool(static_cast<OrcTool>(tool)); },
+    [] { return orc_tool_name(orc_tool_current()); },
+};
+
 void process_command(char* command) {
   if (strncmp(command, "JS8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
     process_js8_command(command + 3);
@@ -21432,42 +21449,7 @@ void process_command(char* command) {
     }
     return;
   }
-  if (strcmp(command, "RTL_REC_START") == 0) {
-    (void)orcsdr::audio_rec::start(kAudioRecHooks);
-    return;
-  }
-  if (strcmp(command, "RTL_REC_STOP") == 0) {
-    (void)orcsdr::audio_rec::stop_and_export(kAudioRecHooks);
-    return;
-  }
-  if (strcmp(command, "RTL_REC_STATUS") == 0) {
-    orcsdr::audio_rec::status_print(kAudioRecHooks);
-    return;
-  }
-  if (strcmp(command, "RTL_REC_SAVE") == 0) {
-    /* Re-export held PSRAM PCM after inserting an SD card. */
-    g_sd_tried = false;
-    g_sd_ready = false;
-    (void)orcsdr::audio_rec::stop_and_export(kAudioRecHooks);
-    return;
-  }
-  if (strncmp(command, "RTL_TOOL ", 9) == 0) {
-    const char* name = command + 9;
-    if (strcmp(name, "RADIO") == 0 || strcmp(name, "radio") == 0) {
-      set_orc_tool(OrcTool::Radio);
-    } else if (strcmp(name, "SCOPE") == 0 || strcmp(name, "scope") == 0) {
-      set_orc_tool(OrcTool::Scope);
-    } else if (strcmp(name, "CAPTURE") == 0 || strcmp(name, "capture") == 0) {
-      set_orc_tool(OrcTool::Capture);
-    } else {
-      Serial.println("RTL_TOOL_INVALID use RADIO|SCOPE|CAPTURE");
-    }
-    return;
-  }
-  if (strcmp(command, "RTL_TOOL") == 0) {
-    Serial.printf("RTL_TOOL_STATUS tool=%s\n", orc_tool_name(orc_tool_current()));
-    return;
-  }
+  if (orcsdr::serial_rec::handle_command(command, authenticated, kSerialRecHooks)) return;
   // ORCSDR_DSP_LAB is a compile-time zero in the normal build.
   if (strcmp(command, "RTL_STOP") == 0 &&
       (authenticated || ORC_LORA_TEST_BUILD || ORCSDR_DSP_LAB)) {

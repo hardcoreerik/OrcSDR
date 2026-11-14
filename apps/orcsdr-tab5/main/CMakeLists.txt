@@ -82,6 +82,7 @@ idf_component_register(
         "../ui/rds_capture.cpp"
         "../ui/audio_rec.cpp"
         "../ui/serial_display_bench.cpp"
+        "../ui/serial_rec.cpp"
         "../ui/display_bench.cpp"
         "../ui/screen_blit.cpp"
         "../ui/serial_help.cpp"

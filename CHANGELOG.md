@@ -2,6 +2,14 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — recording and tool commands moved out of process_command — 2026-11-14
+
+No behaviour change intended. Host-tested and built; not flashed.
+
+- **`RTL_REC_START`, `RTL_REC_STOP`, `RTL_REC_STATUS`, `RTL_REC_SAVE`, `RTL_TOOL` and `RTL_TOOL <RADIO|SCOPE|CAPTURE>`** moved into `apps/orcsdr-tab5/ui/serial_rec.{hpp,cpp}` with `tests/serial_rec_tests.cpp` (every route with and without sign-in, both spellings of each tool, the invalid-tool reply, near misses). Route table unchanged (`--check` passes without `--write`); same reply strings and write pattern.
+- **Scan:** none of these commands needs sign-in, as before. `RTL_TOOL` names are case-sensitive except all-lower and all-upper (`Radio` is rejected), as before; noted, not changed.
+- **Measured:** `process_command` complexity 496 to 486, 1,051 to 1,017 lines; `main.cpp` 22,987 lines. Firmware image 4,522,688 bytes.
+
 ## Unreleased — Home waterfall scroll back on the CPU — 2026-11-14
 
 - **Home's waterfall scroll uses M5GFX again** (`M5.Display.scroll`). The owner does not accept a lower Home frame rate, and the two-pass PPA scroll cost about 15% of it. The spectrum copy and clear stay on the PPA. `screen_blit::scroll_up` stays available and tested. Flashed to COM17 and measured on Home, WFM 96.1 MHz, three steady 20 s windows: about **24 frames/s** (was 20.6 before any PPA work), frame 28 to 29.5 ms (was 36 ms), DSP load **56%** (was 64%; 46% with no drawing).
