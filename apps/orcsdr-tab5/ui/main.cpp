@@ -103,6 +103,7 @@
 #include "serial_ui_debug.hpp"
 #include "serial_lab_vis.hpp"
 #include "serial_iq.hpp"
+#include "serial_iq_transfer.hpp"
 #include "display_bench.hpp"
 #include "serial_gain.hpp"
 #include "serial_driver.hpp"
@@ -20911,6 +20912,50 @@ static constexpr orcsdr::serial_iq::Hooks kSerialIqHooks{
     },
 };
 
+// RTL_LORA_REPLAY_* and RTL_IQ_RETRIEVE / RTL_IQ_GET_* (serial_iq_transfer.cpp): the transfers stay here.
+static constexpr orcsdr::serial_iq_transfer::Hooks kSerialIqTransferHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    [](const char* args) { lora_replay_put_begin(args); },
+    [](const char* args) { lora_replay_put_chunk(args); },
+    [] { lora_replay_put_abort("host_abort"); },
+    [](orcsdr::serial_iq_transfer::RetrieveInfo* info) {
+      if (g_iq_rec_active.load(std::memory_order_acquire) ||
+          lora_native_decode_busy.load(std::memory_order_acquire) || g_iq_rec_buf == nullptr ||
+          g_iq_rec_auto_triggered.load(std::memory_order_acquire) ||
+          g_iq_rec_write.load(std::memory_order_acquire) == 0)
+        return false;
+      // The finished buffer is immutable until the next capture begins.
+      g_iq_retrieve_resume.store(false, std::memory_order_release);
+      info->bytes = static_cast<uint32_t>(g_iq_rec_write.load(std::memory_order_acquire));
+      info->rate = kRtlSampleRateSps;
+      info->frequency_hz = g_iq_rec_frequency_hz;
+      info->sf = g_iq_rec_sf;
+      info->bandwidth_hz = g_iq_rec_bandwidth_hz;
+      return true;
+    },
+    [] { iq_get_begin(); },
+    [] { iq_get_chunk(); },
+    []() -> orcsdr::serial_iq_transfer::AbortInfo {
+      iq_get_reset();
+      orcsdr::serial_iq_transfer::AbortInfo a;
+      a.ready = g_iq_rec_ready.load(std::memory_order_acquire);
+      a.bytes = static_cast<uint32_t>(g_iq_rec_write.load(std::memory_order_acquire));
+      return a;
+    },
+    [] {
+      if (g_iq_get.active) iq_get_abort("host_end");
+      g_iq_rec_ready.store(false, std::memory_order_release);
+      g_iq_rec_write.store(0, std::memory_order_release);
+      g_iq_rec_auto_triggered.store(false, std::memory_order_release);
+      if (g_iq_retrieve_resume.exchange(false, std::memory_order_acq_rel) && rtl_device_ready()) {
+        queue_local_rtl_listen(RtlBand::lora, rtl_ui_frequency_hz);
+        return true;
+      }
+      return false;
+    },
+};
+
 void process_command(char* command) {
   if (strncmp(command, "JS8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
     process_js8_command(command + 3);
@@ -21316,77 +21361,7 @@ void process_command(char* command) {
   if (orcsdr::sstv_diag::handle_command(command, authenticated, kSstvDiagHooks)) return;
   if (orcsdr::lora_gain_guard::handle_command(command, authenticated, kLoraGainHooks)) return;
   if (orcsdr::serial_lora::handle_command(command, authenticated, kSerialLoraHooks)) return;
-  if (strncmp(command, "RTL_LORA_REPLAY_BEGIN ", 22) == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_LORA_REPLAY_ERROR auth_required");
-    } else {
-      lora_replay_put_begin(command + 22);
-    }
-    return;
-  }
-  if (strncmp(command, "RTL_LORA_REPLAY_CHUNK ", 22) == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_LORA_REPLAY_ERROR auth_required");
-    } else {
-      lora_replay_put_chunk(command + 22);
-    }
-    return;
-  }
-  if (strcmp(command, "RTL_LORA_REPLAY_ABORT") == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_LORA_REPLAY_ERROR auth_required");
-    } else {
-      lora_replay_put_abort("host_abort");
-    }
-    return;
-  }
-  if (strcmp(command, "RTL_IQ_RETRIEVE_BEGIN") == 0) {
-    if (g_iq_rec_active.load(std::memory_order_acquire) ||
-        lora_native_decode_busy.load(std::memory_order_acquire) || g_iq_rec_buf == nullptr ||
-        g_iq_rec_auto_triggered.load(std::memory_order_acquire) ||
-        g_iq_rec_write.load(std::memory_order_acquire) == 0) {
-      Serial.println("RTL_IQ_RETRIEVE_ERROR capture_not_ready");
-      return;
-    }
-    // The finished buffer is immutable until the next capture begins.
-    g_iq_retrieve_resume.store(false, std::memory_order_release);
-    Serial.print("RTL_IQ_RETRIEVE_READY storage=psram");
-    Serial.printf(" bytes=%u rate=%u frequency_hz=%u sf=%u bw=%u\n",
-                  static_cast<unsigned>(g_iq_rec_write.load(std::memory_order_acquire)),
-                  kRtlSampleRateSps, g_iq_rec_frequency_hz,
-                  static_cast<unsigned>(g_iq_rec_sf),
-                  static_cast<unsigned>(g_iq_rec_bandwidth_hz));
-    return;
-  }
-  if (strcmp(command, "RTL_IQ_GET_BEGIN") == 0) {
-    iq_get_begin();
-    return;
-  }
-  if (strcmp(command, "RTL_IQ_GET_CHUNK") == 0) {
-    iq_get_chunk();
-    return;
-  }
-  if (strcmp(command, "RTL_IQ_GET_ABORT") == 0) {
-    iq_get_reset();
-    Serial.printf("RTL_IQ_GET_ABORTED ready=%s bytes=%u\n",
-                  g_iq_rec_ready.load(std::memory_order_acquire) ? "true" : "false",
-                  static_cast<unsigned>(g_iq_rec_write.load(std::memory_order_acquire)));
-    return;
-  }
-  if (strcmp(command, "RTL_IQ_RETRIEVE_END") == 0) {
-    if (g_iq_get.active) iq_get_abort("host_end");
-    g_iq_rec_ready.store(false, std::memory_order_release);
-    g_iq_rec_write.store(0, std::memory_order_release);
-    g_iq_rec_auto_triggered.store(false, std::memory_order_release);
-    if (g_iq_retrieve_resume.exchange(false, std::memory_order_acq_rel) &&
-        rtl_device_ready()) {
-      queue_local_rtl_listen(RtlBand::lora, rtl_ui_frequency_hz);
-      Serial.println("RTL_IQ_RETRIEVE_RESUMING");
-    } else {
-      Serial.println("RTL_IQ_RETRIEVE_DONE");
-    }
-    return;
-  }
+  if (orcsdr::serial_iq_transfer::handle_command(command, authenticated, kSerialIqTransferHooks)) return;
   if (orcsdr::serial_rec::handle_command(command, authenticated, kSerialRecHooks)) return;
   // ORCSDR_DSP_LAB is a compile-time zero in the normal build.
   if (strcmp(command, "RTL_STOP") == 0 &&

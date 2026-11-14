@@ -2,6 +2,14 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — IQ transfer commands moved out of process_command — 2026-11-14
+
+No behaviour change intended. Host-tested and built; not flashed.
+
+- **`RTL_LORA_REPLAY_BEGIN` / `_CHUNK` / `_ABORT`, `RTL_IQ_RETRIEVE_BEGIN`, `RTL_IQ_GET_BEGIN` / `_CHUNK` / `_ABORT` and `RTL_IQ_RETRIEVE_END`** moved into `apps/orcsdr-tab5/ui/serial_iq_transfer.{hpp,cpp}` with `tests/serial_iq_transfer_tests.cpp`. The transfers stay in `main.cpp`. Route table unchanged; same replies, including the two-write `RTL_IQ_RETRIEVE_READY` line.
+- **Scan, noted not changed:** `RTL_IQ_RETRIEVE_READY` reports `rate=` from the default sample-rate constant, not the rate the capture used; `RTL_IQ_RETRIEVE_END` releases the finished capture without sign-in, while the LoRa replay upload needs it.
+- **Measured:** `process_command` complexity 437 to 418, 855 to 785 lines; `main.cpp` 22,900 lines. Firmware image 4,518,992 bytes.
+
 ## Unreleased — capture and IQ-recording commands moved out of process_command — 2026-11-14
 
 No behaviour change intended. Host-tested and built; not flashed.

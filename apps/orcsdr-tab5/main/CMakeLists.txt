@@ -86,6 +86,7 @@ idf_component_register(
         "../ui/serial_ui_debug.cpp"
         "../ui/serial_lab_vis.cpp"
         "../ui/serial_iq.cpp"
+        "../ui/serial_iq_transfer.cpp"
         "../ui/display_bench.cpp"
         "../ui/screen_blit.cpp"
         "../ui/serial_help.cpp"
