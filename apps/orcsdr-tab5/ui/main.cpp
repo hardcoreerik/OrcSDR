@@ -23759,6 +23759,7 @@ void begin_boot_device_staging() {
 // A PlutoSDR boots in 20 to 25 s after power, so a unit that has used one waits for it (and cuts the rail for 3 s, not 1 s) before giving up.
 // Dongle-only units keep the original 8 s and 1 s.
 constexpr uint32_t kBootPlutoCutMs = 3000;
+constexpr uint32_t kBootPlutoFirstWaitMs = 10000;  // before the first rail cut; 8 s for dongle-only units
 constexpr uint32_t kBootPlutoWaitMs = 35000;
 bool boot_receiver_ready() { return rtl_device_ready() || orcsdr::pluto_source::ready(); }
 // The splash may show its button while a remembered Pluto is still booting, but only once the rail is back on: the splash wait blocks the staging.
@@ -23783,7 +23784,7 @@ void service_boot_device_staging() {
       return;
     case BootInitStage::rtl_enumerating:
       if (!boot_receiver_ready()) {
-        if (elapsed_ms >= (boot_rtl_power_recovered && pluto_known ? kBootPlutoWaitMs : 8000u)) {
+        if (elapsed_ms >= (!pluto_known ? 8000u : boot_rtl_power_recovered ? kBootPlutoWaitMs : kBootPlutoFirstWaitMs)) {
           Serial.println("BOOT_RTL_TIMEOUT no_device");
           // A P4 reset does not reset the IO-expander USB-A rail, so after a
           // warm reboot the dongle is still powered and may be wedged
