@@ -2,6 +2,15 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — forget the paired computer from Settings; PAIR_LOCKED explains itself — 2026-11-14
+
+Tab5. Owner-approved behaviour change. Host-tested and built; not flashed.
+
+- **Settings → System → FORGET COMPUTER:** two taps on the screen clear the stored serial pairing key (`pair_key`). Any other tap, leaving the page or a pairing change from serial cancels the first tap. It ends any open serial session, prints `PAIR_FORGOTTEN` and journals `pairing_forgotten`; every other setting stays. There is deliberately no serial command for it. Before this, a lost key file could only be cleared by erasing the whole flash.
+- **`PAIR_LOCKED`** is now followed by one `PAIR_HINT ...` line naming the default key file, the Settings button and `docs/API_SERIAL_CLI.md`. `PAIR_LOCKED` stays the first line, so tools that read one reply are unaffected (`help_media.py`, `tab5_ft8.py`, `run-tab5-ui-regression.ps1`, `run-tab5-boot-cycles.py`, `run-pocsag-validation.ps1` all stop on anything but `PAIR_OK`).
+- **Docs:** `docs/API_SERIAL_CLI.md` (lost key) and `docs/user-guide/settings.md` (new section). `tests/serial_session_tests.cpp` checks the hint.
+- **Not changed, noted:** the "Companion web console" section of `docs/user-guide/settings.md` describes today's Tab5 TV page and is stale against the unified OrcSDR web interface; it belongs to that work's landing.
+
 ## Unreleased — host session protocol moved out of process_command — 2026-11-14
 
 No behaviour change intended. Host-tested and built; not flashed.

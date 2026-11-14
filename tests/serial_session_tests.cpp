@@ -193,7 +193,9 @@ int main() {
   CHECK(run("PAIR " + hex(key), false) && g_out == "PAIR_OK\n" && g_paired);
   CHECK(calls() == "store_key;journal paired;");
   CHECK(run("PAIR " + hex(key), false) && g_out == "PAIR_OK\n" && calls().empty());
-  CHECK(run("PAIR " + hex(other), false) && g_out == "PAIR_LOCKED\n" && calls().empty());
+  const std::string locked = std::string("PAIR_LOCKED\n") + orcsdr::serial_session::kPairLockedHint + "\n";
+  CHECK(run("PAIR " + hex(other), false) && g_out == locked && calls().empty());
+  CHECK(g_out.rfind("PAIR_LOCKED\n", 0) == 0);   // hosts reading one line still see PAIR_LOCKED
   CHECK(memcmp(g_key, key.data(), 32) == 0);
 
   // AUTH.
@@ -278,7 +280,7 @@ int main() {
   CHECK(calls() ==
         "store_key;journal credential_rotated;auth off;session_ended;yellow Credential rotated - host reconnect required;");
   CHECK(run("PAIR " + hex(other), false) && g_out == "PAIR_OK\n");
-  CHECK(run("PAIR " + hex(key), false) && g_out == "PAIR_LOCKED\n");
+  CHECK(run("PAIR " + hex(key), false) && g_out == locked);
 
   if (failures == 0) std::printf("serial_session: all checks passed\n");
   return failures == 0 ? 0 : 1;

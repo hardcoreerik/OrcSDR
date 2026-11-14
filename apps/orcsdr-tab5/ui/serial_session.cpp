@@ -34,7 +34,13 @@ bool handle_command(char* command, bool authenticated, const Hooks& hooks) {
       hooks.store_pairing_key(candidate);
       hooks.journal("paired");
     }
-    hooks.write_line(same_bytes(hooks.pairing_key(), candidate, kPairingKeySize) ? "PAIR_OK" : "PAIR_LOCKED");
+    if (same_bytes(hooks.pairing_key(), candidate, kPairingKeySize)) {
+      hooks.write_line("PAIR_OK");
+    } else {
+      hooks.write_line("PAIR_LOCKED");
+      // A second line, so a host that reads one reply still sees PAIR_LOCKED first.
+      hooks.write_line(kPairLockedHint);
+    }
     return true;
   }
   if (strncmp(command, "AUTH ", 5) == 0 && hooks.paired()) {

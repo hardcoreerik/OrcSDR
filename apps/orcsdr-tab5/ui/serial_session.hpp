@@ -4,8 +4,8 @@
 //
 // A serial command family moved out of process_command() in main.cpp (see docs/SERIAL_COMMAND_MODULES.md). Every
 // route, its matching, its sign-in rule and every reply are the ones the dispatcher had, byte for byte:
-//   PAIR <key hex>            trust on first use: an unpaired unit stores the key; then PAIR_OK, PAIR_LOCKED or
-//                             PAIR_INVALID. No sign-in.
+//   PAIR <key hex>            trust on first use: an unpaired unit stores the key; then PAIR_OK, PAIR_LOCKED (followed
+//                             by a PAIR_HINT line) or PAIR_INVALID. No sign-in.
 //   AUTH <nonce> <proof>      only once paired: proof = HMAC-SHA256(key, "host"+nonce); the reply signs
 //                             "device"+nonce. Starts the session.
 //   the rest                  only inside a session; nothing is printed when signed out. SET_WIFI, INSTALL_STATUS and
@@ -22,6 +22,11 @@ constexpr size_t kWifiSsidSize = 33;       // including the terminator, as main.
 constexpr size_t kWifiPasswordSize = 64;   // including the terminator, as main.cpp's wifi_password
 
 enum class Tone { approved, warning };     // the session banner colour: cyan, yellow
+
+// Printed on the line after PAIR_LOCKED: where the key lives and how to clear it without erasing the flash.
+constexpr const char* kPairLockedHint =
+    "PAIR_HINT another computer's key is stored. Use that key file (default .orclink/ui-doc.key), or clear it on "
+    "the device: Settings > System > FORGET COMPUTER. See docs/API_SERIAL_CLI.md (Auth model).";
 
 // Every pointer must be set.
 struct Hooks {

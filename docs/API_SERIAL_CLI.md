@@ -136,14 +136,17 @@ compliant nonce/proof pair from a plain script without replicating the
 HMAC-SHA256 handshake — treat the authenticated commands as requiring a
 proper pairing client, not something to hand-roll casually.
 
-**Lost key (`PAIR_LOCKED` for every key you have).** Read-only commands keep
-working without sign-in, and the Tab5 can always be reflashed over USB: this
-firmware does not enable secure boot or disable the ROM download mode. But
-today there is no command and no on-device button that clears the stored key.
-The only way back is erasing the flash (for example the M5Burner full install),
-which also clears Wi-Fi, location, rotation and every other saved setting. Keep
-the key file (default `.orclink/ui-doc.key`); `ROTATE_KEY` changes it only from
-inside a signed-in session.
+**Lost key (`PAIR_LOCKED` for every key you have).** After `PAIR_LOCKED` the
+device prints a `PAIR_HINT` line saying where the key file lives and how to
+clear it. Read-only commands keep working without sign-in. To clear the stored
+key, open **Settings > System > FORGET COMPUTER** on the device and tap it
+again to confirm (two taps on the screen prove someone is at the device). The
+Tab5 prints `PAIR_FORGOTTEN`, ends any open session, and keeps every other
+setting; the next `PAIR` is a first pairing again. There is no serial command
+for this on purpose. As a last resort the Tab5 can always be reflashed over
+USB (this firmware does not enable secure boot or lock the ROM download mode);
+a full flash erase also clears the key, together with every other setting.
+`ROTATE_KEY` changes the key only from inside a signed-in session.
 
 ## Hardware clock
 

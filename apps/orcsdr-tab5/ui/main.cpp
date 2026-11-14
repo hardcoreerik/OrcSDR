@@ -2549,6 +2549,7 @@ void print_adsb_status() {
 }
 
 void emit_identity();
+void forget_pairing();
 bool decode_hex(const char* value, uint8_t* output, size_t output_size);
 bool decode_hex_text(const char* value, char* output, size_t output_size);
 void print_hex(const uint8_t* value, size_t size);
@@ -12549,6 +12550,7 @@ const orcsdr::settings::State& global_settings_state() {
   state.fm_frequency_hz = rtl_saved_fm_hz;
   orcsdr::settings_remote::fill(state);
   state.sd_ready = g_sd_ready;
+  state.host_paired = paired;
   state.sd_total_bytes = sd_total_bytes();
   state.sd_free_bytes = g_sd_ready && g_sd_fs ? orcsdr::storage::free_bytes() : 0;
   const auto catalog_state = orcsdr::catalog::state();
@@ -14783,6 +14785,8 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       orcsdr::map_screen::open(orcsdr::map_screen::Mode::picker); break;
     case orcsdr::settings::ActionKind::run_setup:
       orcsdr::map_screen::open(orcsdr::map_screen::Mode::setup); break;
+    case orcsdr::settings::ActionKind::forget_paired_computer:
+      forget_pairing(); break;
     case orcsdr::settings::ActionKind::location_changed: {
       const auto& state = orcsdr::settings::state();
       adsb_settings.location_configured = state.location_configured;
@@ -15550,6 +15554,19 @@ bool pairing_hmac(const uint8_t* data, size_t size, uint8_t out[32]) {
   const mbedtls_md_info_t* info = mbedtls_md_info_from_type(MBEDTLS_MD_SHA256);
   return info != nullptr &&
          mbedtls_md_hmac(info, pairing_key, sizeof(pairing_key), data, size, out) == 0;
+}
+
+// Settings > System > FORGET COMPUTER: drop the stored key so the next PAIR is a first pairing again. Only from the
+// touchscreen (someone at the device); it ends any open session. Other settings are kept.
+void forget_pairing() {
+  memset(pairing_key, 0, sizeof(pairing_key));
+  preferences.remove("pair_key");
+  paired = false;
+  authenticated = false;
+  offline_transition_handled = false;
+  last_ping_ms = millis();
+  append_journal("pairing_forgotten");
+  Serial.println("PAIR_FORGOTTEN");
 }
 
 void run_offline_workflow() {
