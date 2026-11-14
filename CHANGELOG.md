@@ -2,6 +2,14 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — capture and IQ-recording commands moved out of process_command — 2026-11-14
+
+No behaviour change intended. Host-tested and built; not flashed.
+
+- **`RTL_CAPTURE_STATUS`, `RTL_IQ_START`, `RTL_IQ_DIAG_START <args>`, `RTL_IQ_DIAG_STATUS`, `RTL_IQ_STOP` / `RTL_IQ_SAVE` and `RTL_IQ_STATUS`** moved into `apps/orcsdr-tab5/ui/serial_iq.{hpp,cpp}` with `tests/serial_iq_tests.cpp` (running and finished capture status, the sign-in refusal on the diagnostic start, values above 2^31, rounding of the dBFS fields, near misses). The recorder stays in `main.cpp`. Route table unchanged; same replies; every 32-bit value now printed through an explicit cast (same text).
+- **Scan, noted not changed:** `RTL_IQ_START`, `RTL_IQ_STOP` and `RTL_IQ_SAVE` need no sign-in, while `RTL_IQ_DIAG_START` does; `RTL_IQ_STOP` forgets the SD card state so a newly inserted card is tried, as `RTL_REC_SAVE` does.
+- **Measured:** `process_command` complexity 454 to 437, 921 to 855 lines; `main.cpp` 22,925 lines. Firmware image 4,520,816 bytes.
+
 ## Unreleased — RF Lab and Visualizer commands moved out of process_command — 2026-11-14
 
 No behaviour change intended. Host-tested and built; not flashed.

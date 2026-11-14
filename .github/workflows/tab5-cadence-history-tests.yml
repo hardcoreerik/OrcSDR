@@ -65,6 +65,7 @@ on:
       - 'tests/serial_rec_tests.cpp'
       - 'tests/serial_ui_debug_tests.cpp'
       - 'tests/serial_lab_vis_tests.cpp'
+      - 'tests/serial_iq_tests.cpp'
       - 'tests/data/serial_help_golden.txt'
       - 'tests/data/serial_help_golden_orcdial.txt'
       - 'tests/data/serial_command_routes.tsv'

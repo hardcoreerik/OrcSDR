@@ -102,6 +102,7 @@
 #include "serial_rec.hpp"
 #include "serial_ui_debug.hpp"
 #include "serial_lab_vis.hpp"
+#include "serial_iq.hpp"
 #include "display_bench.hpp"
 #include "serial_gain.hpp"
 #include "serial_driver.hpp"
@@ -20851,6 +20852,65 @@ static constexpr orcsdr::serial_lab_vis::Hooks kSerialLabVisHooks{
     [] { return orcsdr::visualizer::active(); },
 };
 
+// RTL_CAPTURE_STATUS and RTL_IQ_* (serial_iq.cpp): the facts they print and the recorder actions.
+static constexpr orcsdr::serial_iq::Hooks kSerialIqHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    []() -> orcsdr::serial_iq::CaptureStatus {
+      const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
+      orcsdr::serial_iq::CaptureStatus s;
+      s.state = rtl_capture_state_name(state);
+      s.finished = state == RtlCaptureState::complete || state == RtlCaptureState::failed;
+      s.bytes = rtl_capture_bytes;
+      s.min = rtl_capture_min;
+      s.max = rtl_capture_max;
+      s.mean = rtl_capture_mean;
+      s.sha256 = rtl_capture_sha256;
+      s.error = rtl_capture_error;
+      return s;
+    },
+    [] { (void)iq_rec_start(); },
+    [](const char* args) { (void)diagnostic_iq_rec_start(args); },
+    []() -> orcsdr::serial_iq::DiagStatus {
+      orcsdr::serial_iq::DiagStatus s;
+      s.transition = g_iq_rec_transition;
+      s.sequence = g_iq_rec_sequence;
+      s.active = g_iq_rec_active.load(std::memory_order_acquire);
+      s.ready = g_iq_rec_ready.load(std::memory_order_acquire);
+      s.bytes = static_cast<uint32_t>(g_iq_rec_write.load(std::memory_order_acquire));
+      s.max_bytes = static_cast<uint32_t>(iq_capture_max_bytes(IqCaptureKind::diagnostic));
+      s.rate = g_iq_rec_sample_rate_sps;
+      s.frequency_hz = g_iq_rec_frequency_hz;
+      s.started_ms = g_iq_rec_started_ms;
+      return s;
+    },
+    [] {
+      g_sd_tried = false;   // try the card again: it may have been inserted since
+      g_sd_ready = false;
+      (void)iq_rec_stop_and_export();
+    },
+    []() -> orcsdr::serial_iq::IqStatus {
+      const IqCaptureKind kind = g_iq_rec_kind.load(std::memory_order_acquire);
+      orcsdr::serial_iq::IqStatus s;
+      s.source = iq_capture_kind_name(kind);
+      s.active = g_iq_rec_active.load(std::memory_order_acquire);
+      s.ready = g_iq_rec_ready.load(std::memory_order_acquire);
+      s.energy_triggered = g_iq_rec_auto_triggered.load(std::memory_order_acquire);
+      s.bytes = static_cast<uint32_t>(g_iq_rec_write.load(std::memory_order_acquire));
+      s.max_bytes = static_cast<uint32_t>(iq_capture_max_bytes(g_iq_rec_kind.load(std::memory_order_acquire)));
+      s.frequency_hz = g_iq_rec_frequency_hz;
+      s.sf = g_iq_rec_sf;
+      s.bandwidth_hz = g_iq_rec_bandwidth_hz;
+      s.detector_on = lora_detector_enabled.load(std::memory_order_relaxed);
+      s.events = static_cast<uint32_t>(lora_rf_events.load(std::memory_order_relaxed));
+      s.messages = static_cast<uint32_t>(lora_messages.load(std::memory_order_relaxed));
+      s.noise_dbfs = static_cast<double>(lora_noise_dbfs.load(std::memory_order_relaxed));
+      s.trigger_dbfs = static_cast<double>(lora_trigger_dbfs.load(std::memory_order_relaxed));
+      s.last_path = g_iq_rec_last_path;
+      return s;
+    },
+};
+
 void process_command(char* command) {
   if (strncmp(command, "JS8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
     process_js8_command(command + 3);
@@ -21250,73 +21310,7 @@ void process_command(char* command) {
     }
     return;
   }
-  if (strcmp(command, "RTL_CAPTURE_STATUS") == 0) {
-    const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
-    if (state != RtlCaptureState::complete && state != RtlCaptureState::failed) {
-      Serial.printf("RTL_CAPTURE_STATUS state=%s\n", rtl_capture_state_name(state));
-      return;
-    }
-    Serial.printf(
-        "RTL_CAPTURE_STATUS state=%s bytes=%llu min=%u max=%u mean=%.3f sha256=%s error=\"%s\"\n",
-        rtl_capture_state_name(state),
-        static_cast<unsigned long long>(rtl_capture_bytes), rtl_capture_min,
-        rtl_capture_max, rtl_capture_mean,
-        rtl_capture_sha256[0] == '\0' ? "none" : rtl_capture_sha256,
-        rtl_capture_error);
-    return;
-  }
-  if (strcmp(command, "RTL_IQ_START") == 0) {
-    (void)iq_rec_start();
-    return;
-  }
-  if (strncmp(command, "RTL_IQ_DIAG_START ", 18) == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_IQ_DIAG_ERROR auth_required");
-    } else {
-      (void)diagnostic_iq_rec_start(command + 18);
-    }
-    return;
-  }
-  if (strcmp(command, "RTL_IQ_DIAG_STATUS") == 0) {
-    Serial.printf(
-        "RTL_IQ_DIAG_STATUS transition=\"%s\" sequence=%lu active=%d ready=%d "
-        "bytes=%u max_bytes=%u rate=%u frequency_hz=%u started_ms=%lu\n",
-        g_iq_rec_transition, static_cast<unsigned long>(g_iq_rec_sequence),
-        g_iq_rec_active.load(std::memory_order_acquire) ? 1 : 0,
-        g_iq_rec_ready.load(std::memory_order_acquire) ? 1 : 0,
-        static_cast<unsigned>(g_iq_rec_write.load(std::memory_order_acquire)),
-        static_cast<unsigned>(iq_capture_max_bytes(IqCaptureKind::diagnostic)),
-        g_iq_rec_sample_rate_sps,
-        g_iq_rec_frequency_hz, static_cast<unsigned long>(g_iq_rec_started_ms));
-    return;
-  }
-  if (strcmp(command, "RTL_IQ_STOP") == 0 || strcmp(command, "RTL_IQ_SAVE") == 0) {
-    g_sd_tried = false;
-    g_sd_ready = false;
-    (void)iq_rec_stop_and_export();
-    return;
-  }
-  if (strcmp(command, "RTL_IQ_STATUS") == 0) {
-    Serial.printf("RTL_IQ_STATUS source=%s active=%s ready=%s storage=%s mode=%s bytes=%u max_bytes=%u frequency_hz=%u sf=%u bw=%u auto=%s events=%u messages=%u noise_dbfs=%.1f trigger_dbfs=%.1f last_path=\"%s\"\n",
-                  iq_capture_kind_name(g_iq_rec_kind.load(std::memory_order_acquire)),
-                  g_iq_rec_active.load(std::memory_order_acquire) ? "true" : "false",
-                  g_iq_rec_ready.load(std::memory_order_acquire) ? "true" : "false",
-                  "psram",
-                  g_iq_rec_auto_triggered.load(std::memory_order_acquire) ? "energy" : "manual",
-                  static_cast<unsigned>(g_iq_rec_write.load(std::memory_order_acquire)),
-                  static_cast<unsigned>(iq_capture_max_bytes(
-                      g_iq_rec_kind.load(std::memory_order_acquire))),
-                  g_iq_rec_frequency_hz,
-                  static_cast<unsigned>(g_iq_rec_sf),
-                  static_cast<unsigned>(g_iq_rec_bandwidth_hz),
-                  lora_detector_enabled.load(std::memory_order_relaxed) ? "on" : "off",
-                  static_cast<unsigned>(lora_rf_events.load(std::memory_order_relaxed)),
-                  static_cast<unsigned>(lora_messages.load(std::memory_order_relaxed)),
-                  static_cast<double>(lora_noise_dbfs.load(std::memory_order_relaxed)),
-                  static_cast<double>(lora_trigger_dbfs.load(std::memory_order_relaxed)),
-                  g_iq_rec_last_path[0] ? g_iq_rec_last_path : "none");
-    return;
-  }
+  if (orcsdr::serial_iq::handle_command(command, authenticated, kSerialIqHooks)) return;
   if (orcsdr::serial_lora_status::handle_command(command, authenticated, kSerialLoraStatusHooks)) return;
   if (orcsdr::lora_diag::handle_command(command, authenticated, kLoraDiagHooks)) return;
   if (orcsdr::sstv_diag::handle_command(command, authenticated, kSstvDiagHooks)) return;
