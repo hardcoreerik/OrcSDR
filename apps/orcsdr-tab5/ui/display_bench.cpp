@@ -157,7 +157,10 @@ void run(unsigned seconds, bool visualizer_active, Emit emit) {
   target.setRotation(g.rotation);
 
   const screen_blit::Counters live = screen_blit::counters();
-  say(emit, "RTL_DISPLAY_BENCH_SCREEN_BLIT ppa=%lu fallback=%lu last_error=%s", live.ppa, live.fallback,
+  say(emit,
+      "RTL_DISPLAY_BENCH_SCREEN_BLIT push_ppa=%lu push_fallback=%lu scroll_ppa=%lu scroll_fallback=%lu clear_ppa=%lu "
+      "clear_fallback=%lu last_error=%s",
+      live.push_ppa, live.push_fallback, live.scroll_ppa, live.scroll_fallback, live.clear_ppa, live.clear_fallback,
       live.last_error ? esp_err_to_name(live.last_error) : "none");
   say(emit, "RTL_DISPLAY_BENCH_BEGIN w=%d h=%d x=%d y=%d rotation=%u panel=%dx%d region=%d,%d,%dx%d seconds=%u", kW,
       kH, kX0, kY0, static_cast<unsigned>(g.rotation), g.panel_w, g.panel_h, r.x, r.y, r.w, r.h, seconds);
@@ -257,19 +260,101 @@ void run(unsigned seconds, bool visualizer_active, Emit emit) {
       clear(fb, gr, rr);
       source.pushSprite(&target, kX0, kY0);
       capture(fb, gr, rr, reference);
-      op.rotation_angle = degrees == 90 ? PPA_SRM_ROTATION_ANGLE_90 : PPA_SRM_ROTATION_ANGLE_270;
-      op.mirror_x = false;
-      op.mirror_y = false;
-      op.out.block_offset_x = rr.x;
-      op.out.block_offset_y = rr.y;
       clear(fb, gr, rr);
-      err = ppa_do_scale_rotate_mirror(client, &op);
+      screen_blit::Target t;
+      t.fb = fb;
+      t.g = gr;
+      err = static_cast<esp_err_t>(screen_blit::ppa_push(t, pixels, kW, kH, kX0, kY0));
       say(emit, "RTL_DISPLAY_BENCH_CHECK method=screen_blit rotation=%u angle=%d result=%s mismatches=%ld",
           static_cast<unsigned>(rotation), degrees, esp_err_to_name(err),
           err == ESP_OK ? static_cast<long>(mismatches(fb, gr, rr, reference)) : -1L);
     }
     target.setRotation(g.rotation);
     (void)ppa_unregister_client(client);
+  }
+
+  // Waterfall: Home's waterfall area moved up two rows, as Home does each frame.
+  constexpr int kWfX = 331, kWfY = 302, kWfW = 904, kWfH = 192, kRows = 2;
+  M5Canvas pattern;
+  pattern.setPsram(true);
+  pattern.setColorDepth(16);
+  const display_rotate::Rect wr = display_rotate::panel_rect(g, kWfX, kWfY, kWfW, kWfH);
+  uint16_t* want = static_cast<uint16_t*>(
+      heap_caps_malloc(static_cast<size_t>(wr.w) * wr.h * sizeof(uint16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (pattern.createSprite(kWfW, kWfH) && want != nullptr) {
+    uint16_t* p = static_cast<uint16_t*>(pattern.getBuffer());
+    for (int y = 0; y < kWfH; ++y)
+      for (int x = 0; x < kWfW; ++x) p[static_cast<size_t>(y) * kWfW + x] = static_cast<uint16_t>(x * 29u + y * 977u + 5u);
+    for (const uint8_t rotation : {static_cast<uint8_t>(1), static_cast<uint8_t>(3)}) {
+      display_rotate::Geometry gr = g;
+      gr.rotation = rotation;
+      const display_rotate::Rect rr = display_rotate::panel_rect(gr, kWfX, kWfY, kWfW, kWfH);
+      target.setRotation(rotation);
+      pattern.pushSprite(&target, kWfX, kWfY);  // M5GFX's scroll as the reference
+      target.setScrollRect(kWfX, kWfY, kWfW, kWfH, TFT_BLACK);
+      target.scroll(0, -kRows);
+      capture(fb, gr, rr, want);
+      pattern.pushSprite(&target, kWfX, kWfY);  // screen_blit's
+      screen_blit::Target t;
+      t.fb = fb;
+      t.g = gr;
+      write_back(fb, gr, rr);
+      err = static_cast<esp_err_t>(screen_blit::ppa_scroll_up(t, kWfX, kWfY, kWfW, kWfH, kRows));
+      target.fillRect(kWfX, kWfY + kWfH - kRows, kWfW, kRows, TFT_BLACK);
+      say(emit, "RTL_DISPLAY_BENCH_CHECK method=scroll rotation=%u result=%s mismatches=%ld",
+          static_cast<unsigned>(rotation), esp_err_to_name(err),
+          err == ESP_OK ? static_cast<long>(mismatches(fb, gr, rr, want)) : -1L);
+    }
+    target.setRotation(g.rotation);
+    target.clearScrollRect();
+    reset_dsp_window();
+    const Timing m5_scroll = timed_loop(seconds, [&] {
+      target.setScrollRect(kWfX, kWfY, kWfW, kWfH, TFT_BLACK);
+      target.scroll(0, -kRows);
+      write_back(fb, g, wr);
+    });
+    report(emit, "m5gfx_scroll", m5_scroll, seconds);
+    target.clearScrollRect();
+    screen_blit::Target t;
+    t.fb = fb;
+    t.g = g;
+    reset_dsp_window();
+    const Timing ppa_scroll = timed_loop(seconds, [&] {
+      (void)screen_blit::ppa_scroll_up(t, kWfX, kWfY, kWfW, kWfH, kRows);
+      target.fillRect(kWfX, kWfY + kWfH - kRows, kWfW, kRows, TFT_BLACK);
+    });
+    report(emit, "ppa_scroll", ppa_scroll, seconds);
+  } else {
+    emit("RTL_DISPLAY_BENCH_ERROR scroll=no_memory");
+  }
+  pattern.deleteSprite();
+  if (want) heap_caps_free(want);
+
+  // Clearing Home's spectrum picture (333 KB) before each frame is drawn.
+  {
+    screen_blit::DmaSprite dma;
+    M5Canvas* canvas = dma.begin(kW, kH, 0x1234);  // CPU fill with a colour the PPA path does not take
+    if (canvas != nullptr) {
+      canvas = dma.begin(kW, kH, 0);
+      const uint16_t* q = static_cast<const uint16_t*>(canvas->getBuffer());
+      size_t nonzero = 0;
+      for (size_t i = 0; i < static_cast<size_t>(kW) * kH; ++i) nonzero += q[i] != 0;
+      const screen_blit::Counters c = screen_blit::counters();
+      say(emit, "RTL_DISPLAY_BENCH_CHECK method=clear nonzero=%u clear_ppa=%lu clear_fallback=%lu",
+          static_cast<unsigned>(nonzero), c.clear_ppa, c.clear_fallback);
+      reset_dsp_window();
+      const Timing cpu_clear = timed_loop(seconds, [&] {
+        canvas->fillSprite(0);
+        (void)esp_cache_msync(canvas->getBuffer(), static_cast<size_t>(kW) * kH * sizeof(uint16_t),
+                              ESP_CACHE_MSYNC_FLAG_DIR_C2M | ESP_CACHE_MSYNC_FLAG_UNALIGNED);
+      });
+      report(emit, "m5gfx_clear", cpu_clear, seconds);
+      reset_dsp_window();
+      const Timing ppa_clear = timed_loop(seconds, [&] { (void)dma.begin(kW, kH, 0); });
+      report(emit, "ppa_clear", ppa_clear, seconds);
+    } else {
+      emit("RTL_DISPLAY_BENCH_ERROR clear=no_memory");
+    }
   }
 
   source.deleteSprite();

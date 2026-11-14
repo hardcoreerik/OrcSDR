@@ -1094,7 +1094,8 @@ void update(const Snapshot& snapshot) {
 
 // The trace and its axis are drawn off-screen and pushed in one go, the way the FM, AM, CB and P25 scopes do
 // (scope_canvas.hpp). Erasing and redrawing the plot on the display every frame is what made Home flicker.
-scope::Trace g_trace;
+// Its buffer is aligned for the P4's PPA, which clears it each frame instead of the CPU (screen_blit.hpp).
+orcsdr::screen_blit::DmaSprite g_trace;
 
 // Display-only smoothing and peak hold, one value per pixel. Nothing here touches the receive pipeline: the levels
 // come in untouched and are averaged for drawing, the way the FM, AM and other scopes show theirs. (Home used to
@@ -1192,7 +1193,8 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
     const int waterfall_h = popup_over ? kPopY - 2 - (kWaterfallY + 1) : kWaterfallH - 2;
     M5.Display.startWrite();
     M5.Display.setScrollRect(kPlotX + 1, kWaterfallY + 1, kPlotW - 2, waterfall_h, TFT_BLACK);
-    M5.Display.scroll(0, -rows);
+    // Same result as M5.Display.scroll(0, -rows), moved by the PPA instead of a CPU copy of the whole area.
+    orcsdr::screen_blit::scroll_up(kPlotX + 1, kWaterfallY + 1, kPlotW - 2, waterfall_h, rows, TFT_BLACK);
     const float waterfall_range = waterfall_range_db(waterfall_contrast);
     for (int x0 = 0; x0 < w; x0 += 2) {
       const int width = std::min(2, w - x0);
