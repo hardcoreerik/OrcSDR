@@ -83,6 +83,7 @@ idf_component_register(
         "../ui/audio_rec.cpp"
         "../ui/serial_display_bench.cpp"
         "../ui/serial_rec.cpp"
+        "../ui/serial_ui_debug.cpp"
         "../ui/display_bench.cpp"
         "../ui/screen_blit.cpp"
         "../ui/serial_help.cpp"

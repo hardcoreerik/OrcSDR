@@ -100,6 +100,7 @@
 #include "serial_memory.hpp"
 #include "serial_display_bench.hpp"
 #include "serial_rec.hpp"
+#include "serial_ui_debug.hpp"
 #include "display_bench.hpp"
 #include "serial_gain.hpp"
 #include "serial_driver.hpp"
@@ -20811,6 +20812,33 @@ static constexpr orcsdr::serial_rec::Hooks kSerialRecHooks{
     [] { return orc_tool_name(orc_tool_current()); },
 };
 
+// UI_TAP, RTL_TAG_DOC, RTL_SCREEN_STATUS, RTL_UI_REGRESSION (serial_ui_debug.cpp): screen test automation.
+static constexpr orcsdr::serial_ui_debug::Hooks kSerialUiDebugHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    [] { return virtual_tap_live(); },
+    [](int x, int y) {
+      g_tap.x = x;
+      g_tap.y = y;
+      g_tap.start_ms = millis();
+      g_tap.active = true;
+    },
+    [](bool on) { g_tag_in_documentation.store(on, std::memory_order_relaxed); },
+    [] { return g_tag_in_documentation.load(std::memory_order_relaxed); },
+    []() -> orcsdr::serial_ui_debug::ScreenStatus {
+      const auto& state = orcsdr::screens::status();
+      orcsdr::serial_ui_debug::ScreenStatus s;
+      s.active = orcsdr::screens::name(state.active);
+      s.return_to = orcsdr::screens::name(state.return_to);
+      s.transitions = state.transitions;
+      s.rejected_draws = state.rejected_draws;
+      s.visible_updates = state.visible_updates;
+      s.last_transition_ms = state.last_transition_ms;
+      return s;
+    },
+    [](bool run) { run_ui_regression(run); },
+};
+
 void process_command(char* command) {
   if (strncmp(command, "JS8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
     process_js8_command(command + 3);
@@ -21215,57 +21243,7 @@ void process_command(char* command) {
     return;
   }
   if (orcsdr::serial_wifi::handle_command(command, authenticated, kSerialWifiHooks)) return;
-  // UI_TAP x y: one finger press at panel coordinates, through the same path as a real touch (the virtual tap the keyboard's
-  // Enter key uses), so every screen's own touch handling runs unchanged. For hands-off test automation over USB serial:
-  // authenticated, one tap at a time (a new tap while one is still playing is refused), panel is 1280 x 720.
-  if (strncmp(command, "UI_TAP ", 7) == 0) {
-    if (!authenticated) {
-      Serial.println("UI_TAP_ERROR auth_required");
-      return;
-    }
-    int x = -1, y = -1;
-    char trailing = 0;
-    if (sscanf(command + 7, "%d %d %c", &x, &y, &trailing) != 2 || x < 0 || x >= 1280 || y < 0 || y >= 720) {
-      Serial.println("UI_TAP_ERROR usage: UI_TAP <x 0-1279> <y 0-719>");
-      return;
-    }
-    if (virtual_tap_live()) {
-      Serial.println("UI_TAP_ERROR busy");
-      return;
-    }
-    g_tap.x = x;
-    g_tap.y = y;
-    g_tap.start_ms = millis();
-    g_tap.active = true;
-    Serial.printf("UI_TAP_DONE x=%d y=%d\n", x, y);
-    return;
-  }
-  if (strcmp(command, "RTL_TAG_DOC ON") == 0 || strcmp(command, "RTL_TAG_DOC OFF") == 0) {
-    g_tag_in_documentation.store(strcmp(command, "RTL_TAG_DOC ON") == 0, std::memory_order_relaxed);
-    Serial.printf("RTL_TAG_DOC %s (not saved; a reset turns it off)\n",
-                  g_tag_in_documentation.load(std::memory_order_relaxed) ? "ON" : "OFF");
-    return;
-  }
-  if (strcmp(command, "RTL_SCREEN_STATUS") == 0) {
-    const auto& state = orcsdr::screens::status();
-    Serial.printf("RTL_SCREEN_STATUS active=%s return=%s transitions=%u rejected_draws=%u visible_updates=%u last_transition_ms=%u\n",
-                  orcsdr::screens::name(state.active), orcsdr::screens::name(state.return_to),
-                  state.transitions, state.rejected_draws, state.visible_updates,
-                  state.last_transition_ms);
-    return;
-  }
-  if (strcmp(command, "RTL_UI_REGRESSION CHECK") == 0) {
-    run_ui_regression(false);
-    return;
-  }
-  if (strcmp(command, "RTL_UI_REGRESSION RUN") == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_UI_REGRESSION_RESULT mode=RUN pass=0 reason=unauthenticated");
-      return;
-    }
-    run_ui_regression(true);
-    return;
-  }
+  if (orcsdr::serial_ui_debug::handle_command(command, authenticated, kSerialUiDebugHooks)) return;
   if (orcsdr::serial_catalog::handle_command(command, authenticated, kSerialCatalogHooks)) return;
   if (orcsdr::serial_location::handle_command(command, authenticated, kSerialLocationHooks)) return;
   if (orcsdr::serial_adsb::handle_command(command, authenticated, kSerialAdsbHooks)) return;

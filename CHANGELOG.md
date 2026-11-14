@@ -2,6 +2,13 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — screen test-automation commands moved out of process_command — 2026-11-14
+
+No behaviour change intended. Host-tested and built; not flashed.
+
+- **`UI_TAP <x> <y>`, `RTL_TAG_DOC ON|OFF`, `RTL_SCREEN_STATUS`, `RTL_UI_REGRESSION CHECK|RUN`** moved into `apps/orcsdr-tab5/ui/serial_ui_debug.{hpp,cpp}` with `tests/serial_ui_debug_tests.cpp` (sign-in refusals, the tap range and trailing-text checks, the busy reply, counters above 2^31, near misses). Route table unchanged; same replies and write pattern. The screen counters are now printed through an explicit `unsigned` cast (same text).
+- **Measured:** `process_command` complexity 486 to 472, 1,017 to 967 lines; `main.cpp` 22,965 lines. Firmware image 4,523,488 bytes.
+
 ## Unreleased — recording and tool commands moved out of process_command — 2026-11-14
 
 No behaviour change intended. Host-tested and built; not flashed.
