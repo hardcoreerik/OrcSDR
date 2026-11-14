@@ -105,6 +105,7 @@
 #include "serial_iq.hpp"
 #include "serial_iq_transfer.hpp"
 #include "serial_ui_action.hpp"
+#include "serial_radio.hpp"
 #include "display_bench.hpp"
 #include "serial_gain.hpp"
 #include "serial_driver.hpp"
@@ -20982,6 +20983,62 @@ static constexpr orcsdr::serial_ui_action::Hooks kSerialUiActionHooks{
     [](const orcsdr::settings::Action& action) { handle_global_settings_action(action); },
 };
 
+// RTL_STOP, RTL_CAPTURE / RTL_LISTEN and RTL_VOLUME (serial_radio.cpp): the receiver state stays here.
+static constexpr orcsdr::serial_radio::Hooks kSerialRadioHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    // ORCSDR_DSP_LAB is a compile-time zero in the normal build.
+    static_cast<bool>(ORC_LORA_TEST_BUILD || ORCSDR_DSP_LAB),
+    [] {
+      if (!rtl_should_resume_after_disconnect(rtl_capture_state.load(std::memory_order_acquire))) {
+        rtl_stop_requested.store(false, std::memory_order_release);
+        return false;
+      }
+      rtl_hotplug_resume_pending.store(false, std::memory_order_release);
+      rtl_restart_requested.store(false, std::memory_order_release);
+      rtl_stop_requested.store(true, std::memory_order_release);
+      return true;
+    },
+    [](orcsdr::serial_radio::Band which, bool continuous, orcsdr::serial_radio::Queued* out) {
+      using B = orcsdr::serial_radio::Band;
+      const RtlBand band = which == B::wx ? RtlBand::wx : which == B::am ? RtlBand::am
+                         : which == B::lora ? RtlBand::lora : RtlBand::fm;
+      const uint32_t frequency_hz = rtl_band_default_frequency(band);
+      RtlCaptureState expected = RtlCaptureState::ready;
+      const RtlCaptureState current = rtl_capture_state.load(std::memory_order_acquire);
+      if (current == RtlCaptureState::complete || current == RtlCaptureState::failed) {
+        expected = current;
+      }
+      if (!rtl_device_ready() ||
+          !rtl_capture_state.compare_exchange_strong(expected, RtlCaptureState::queued,
+                                                     std::memory_order_acq_rel)) {
+        return false;
+      }
+      rtl_requested_band.store(band, std::memory_order_release);
+      rtl_requested_frequency_hz.store(frequency_hz, std::memory_order_release);
+      rtl_continuous_requested.store(continuous, std::memory_order_release);
+      rtl_stop_requested.store(false, std::memory_order_release);
+      rtl_restart_requested.store(false, std::memory_order_release);
+      rtl_capture_requested.store(true, std::memory_order_release);
+      out->band_name = rtl_band_name(band);
+      out->frequency_hz = frequency_hz;
+      out->sample_rate_sps = kRtlSampleRateSps;
+      out->bytes = kRtlCaptureBytes;
+      out->volume = rtl_requested_volume.load(std::memory_order_acquire);
+      return true;
+    },
+    kRtlVolumeMin,
+    kRtlVolumeMax,
+    [](uint8_t value) {
+      rtl_requested_volume.store(value, std::memory_order_release);
+      rtl_live_volume.store(value, std::memory_order_release);
+      rtl_ui_volume = value;
+      rtl_volume_changed.store(true, std::memory_order_release);
+      apply_speaker_volume(value);
+      bump_rtl_ui();
+    },
+};
+
 void process_command(char* command) {
   if (strncmp(command, "JS8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
     process_js8_command(command + 3);
@@ -21219,79 +21276,7 @@ void process_command(char* command) {
   if (orcsdr::serial_lora::handle_command(command, authenticated, kSerialLoraHooks)) return;
   if (orcsdr::serial_iq_transfer::handle_command(command, authenticated, kSerialIqTransferHooks)) return;
   if (orcsdr::serial_rec::handle_command(command, authenticated, kSerialRecHooks)) return;
-  // ORCSDR_DSP_LAB is a compile-time zero in the normal build.
-  if (strcmp(command, "RTL_STOP") == 0 &&
-      (authenticated || ORC_LORA_TEST_BUILD || ORCSDR_DSP_LAB)) {
-    if (!rtl_should_resume_after_disconnect(
-            rtl_capture_state.load(std::memory_order_acquire))) {
-      rtl_stop_requested.store(false, std::memory_order_release);
-      Serial.println("RTL_STOP_RESULT ESP_OK");
-      return;
-    }
-    rtl_hotplug_resume_pending.store(false, std::memory_order_release);
-    rtl_restart_requested.store(false, std::memory_order_release);
-    rtl_stop_requested.store(true, std::memory_order_release);
-    Serial.println("RTL_STOPPING");
-    return;
-  }
-  const bool continuous_command = strncmp(command, "RTL_LISTEN", 10) == 0;
-  const bool kzel_capture = strcmp(command, "RTL_CAPTURE") == 0 ||
-                            strcmp(command, "RTL_CAPTURE KZEL") == 0 ||
-                            strcmp(command, "RTL_LISTEN KZEL") == 0 ||
-                            strcmp(command, "RTL_LISTEN FM") == 0;
-  const bool noaa_capture = strcmp(command, "RTL_CAPTURE NOAA") == 0 ||
-                            strcmp(command, "RTL_LISTEN NOAA") == 0 ||
-                            strcmp(command, "RTL_LISTEN WX") == 0;
-  const bool am_capture = strcmp(command, "RTL_CAPTURE AM") == 0 ||
-                          strcmp(command, "RTL_LISTEN AM") == 0;
-  const bool lora_capture = strcmp(command, "RTL_CAPTURE LORA") == 0 ||
-                            strcmp(command, "RTL_LISTEN LORA") == 0;
-  if ((kzel_capture || noaa_capture || am_capture || lora_capture) && authenticated) {
-    const RtlBand band =
-        noaa_capture ? RtlBand::wx
-        : am_capture ? RtlBand::am
-        : lora_capture ? RtlBand::lora
-                       : RtlBand::fm;
-    const uint32_t frequency_hz = rtl_band_default_frequency(band);
-    RtlCaptureState expected = RtlCaptureState::ready;
-    const RtlCaptureState current = rtl_capture_state.load(std::memory_order_acquire);
-    if (current == RtlCaptureState::complete || current == RtlCaptureState::failed) {
-      expected = current;
-    }
-    if (!rtl_device_ready() ||
-        !rtl_capture_state.compare_exchange_strong(expected, RtlCaptureState::queued,
-                                                   std::memory_order_acq_rel)) {
-      Serial.println("RTL_CAPTURE_BUSY_OR_UNAVAILABLE");
-      return;
-    }
-    rtl_requested_band.store(band, std::memory_order_release);
-    rtl_requested_frequency_hz.store(frequency_hz, std::memory_order_release);
-    rtl_continuous_requested.store(continuous_command, std::memory_order_release);
-    rtl_stop_requested.store(false, std::memory_order_release);
-    rtl_restart_requested.store(false, std::memory_order_release);
-    rtl_capture_requested.store(true, std::memory_order_release);
-    Serial.printf("RTL_CAPTURE_QUEUED band=%s frequency_hz=%u sample_rate_sps=%u "
-                  "bytes=%u continuous=%s volume=%u\n",
-                  rtl_band_name(band), frequency_hz, kRtlSampleRateSps, kRtlCaptureBytes,
-                  continuous_command ? "true" : "false",
-                  rtl_requested_volume.load(std::memory_order_acquire));
-    return;
-  }
-  if (strncmp(command, "RTL_VOLUME ", 11) == 0 && authenticated) {
-    const int value = atoi(command + 11);
-    if (value < kRtlVolumeMin || value > kRtlVolumeMax) {
-      Serial.println("RTL_VOLUME_INVALID");
-      return;
-    }
-    rtl_requested_volume.store(static_cast<uint8_t>(value), std::memory_order_release);
-    rtl_live_volume.store(static_cast<uint8_t>(value), std::memory_order_release);
-    rtl_ui_volume = static_cast<uint8_t>(value);
-    rtl_volume_changed.store(true, std::memory_order_release);
-    apply_speaker_volume(static_cast<uint8_t>(value));
-    bump_rtl_ui();
-    Serial.printf("RTL_VOLUME_OK volume=%u\n", value);
-    return;
-  }
+  if (orcsdr::serial_radio::handle_command(command, authenticated, kSerialRadioHooks)) return;
   if (orcsdr::serial_status::handle_command(command, authenticated, kSerialStatusHooks)) return;
   if (orcsdr::serial_dsp::handle_command(command, authenticated, kSerialDspHooks)) return;
   if (orcsdr::serial_gain::handle_command(command, authenticated, kSerialGainHooks)) return;

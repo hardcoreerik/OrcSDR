@@ -68,6 +68,7 @@ on:
       - 'tests/serial_iq_tests.cpp'
       - 'tests/serial_iq_transfer_tests.cpp'
       - 'tests/serial_ui_action_tests.cpp'
+      - 'tests/serial_radio_tests.cpp'
       - 'tests/data/serial_help_golden.txt'
       - 'tests/data/serial_help_golden_orcdial.txt'
       - 'tests/data/serial_command_routes.tsv'

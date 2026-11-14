@@ -2,6 +2,15 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — receiver start/stop commands moved out of process_command — 2026-11-14
+
+No behaviour change intended. Host-tested and built; not flashed.
+
+- **`RTL_STOP`, `RTL_CAPTURE [KZEL|NOAA|AM|LORA]`, `RTL_LISTEN <FM|KZEL|NOAA|WX|AM|LORA>` and `RTL_VOLUME <n>`** moved into `apps/orcsdr-tab5/ui/serial_radio.{hpp,cpp}` with `tests/serial_radio_tests.cpp` (every capture and listen spelling with its band and continuous flag, busy, signed-out silence, the volume range and parsing). The receiver state stays in `main.cpp`. The helper statements the route table records are kept word for word; route table unchanged.
+- **`RTL_STOP` without sign-in** is still accepted only in the LoRa test and DSP lab builds; the module gets that as a compile-time constant from `main.cpp`.
+- **Scan, noted not changed:** `RTL_VOLUME` parses with `atoi`, so `RTL_VOLUME x` sets the volume to 0 (silent) and `RTL_VOLUME 12abc` sets 12; signed out, `RTL_STOP`, `RTL_CAPTURE`, `RTL_LISTEN` and `RTL_VOLUME` give no reply at all.
+- **Measured:** `process_command` complexity 240 to 212, 615 to 543 lines; `main.cpp` 22,741 lines. Firmware image 4,520,992 bytes.
+
 ## Unreleased — RTL_UI ACTION moved out of process_command — 2026-11-14
 
 No behaviour change intended. Host-tested and built; not flashed.
