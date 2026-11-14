@@ -2,6 +2,16 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — capture buffers given back when idle — 2026-11-13
+
+Behaviour change, Tab5. Host-tested and built; **not yet flashed or run on a device**.
+
+- **RDS capture buffer (3.84 MB of PSRAM) is now reclaimable:** it used to stay allocated for the rest of the session after one `RTL_RDS_CAPTURE_START`. It is now registered with the memory reclaim registry as `RDS capture`, so `RTL_MEM RECLAIM`, the FT8 screen's FREE MEMORY, opening LoRa, and any screen that runs short of PSRAM get it back. The next `RTL_RDS_CAPTURE_START` allocates it again.
+- **What is never released:** a capture that is running, one the DSP task is still writing, one being written to the SD card, and one that was stopped but is not on the card yet (the `RTL_RDS_CAPTURE_PSRAM_HOLD` case). Unsaved data is not thrown away to make room.
+- **Visible difference:** after the buffer is given back, `RTL_RDS_CAPTURE_STATUS` reports `ready=false samples=0` (the saved file's `last_path` stays), and a repeated `RTL_RDS_CAPTURE_STOP` answers `RTL_RDS_CAPTURE_STOP empty` where it used to write a second copy of the same capture.
+- **Why a lock:** memory can be asked back from two tasks (the main loop, and the radio driver task when a hotplug resume lands on LoRa). New `apps/orcsdr-tab5/ui/buffer_claim.hpp` holds the rule and a try-lock taken to arm, export or free the buffer; a release that finds it busy gives up at once. The DSP task's "I am writing" flag is now set with sequentially consistent ordering (capture-only path; no cost when no capture runs). `dsp_ab_harness.inc` carries the same change.
+- **Tests:** `tests/buffer_claim_tests.cpp` (rule table, lock, and a three-thread model of writer, owner and reclaimer) passes under the address/undefined and thread sanitizers; added to `tools/test-tab5-cadence-history.sh` and the workflow.
+
 ## Unreleased — main.cpp refactor groundwork — 2026-11-12
 
 No behaviour change intended. The state up to the P25 family move was flashed to one Tab5 for a short read-only and signed-in serial check (see **Device check** below); the six families moved after it (Wi-Fi, catalog, location, ADS-B, gain, driver) were flashed to the same Tab5 and checked with status and error-path commands only (see **Device check 2** below). The clock, status, audio, web, tuning, scope, verbosity, health and LoRa families were then flashed too and checked the same way (**Device check 3**). The diagnostics, bench and UI families were flashed and checked the same way afterwards (**Device check 4**).

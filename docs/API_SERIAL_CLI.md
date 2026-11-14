@@ -276,7 +276,7 @@ and RadioText remains open.
 | `RTL_RDS_STATUS` | no | see below |
 | `RTL_RDS_CAPTURE_START` | no | starts an 8-second, 240 kS/s MPX capture in PSRAM |
 | `RTL_RDS_CAPTURE_STOP` / `RTL_RDS_CAPTURE_SAVE` | no | stops and exports `.s16` plus `.json` metadata to SD |
-| `RTL_RDS_CAPTURE_STATUS` | no | capture progress, frequency, SD state, and last path |
+| `RTL_RDS_CAPTURE_STATUS` | no | capture progress, frequency, SD state, and last path. The 3.84 MB buffer is given back on a memory reclaim once the capture is saved (holder `RDS capture`); the line then shows `ready=false samples=0` and keeps `last_path` |
 | `RTL_RDS_REPLAY <path.s16>` | no | resets and replays an MPX capture through the same RDS processor; live radio must be stopped |
 
 ```text

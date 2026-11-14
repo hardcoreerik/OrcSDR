@@ -61,8 +61,8 @@ void demodulate_fm_ref(const uint8_t* iq, size_t bytes, float audio_scale, bool 
   bool capture_mpx = false;
   size_t capture_write = 0;
   if (wbfm && g_rds_capture_active.load(std::memory_order_acquire)) {
-    g_rds_capture_writing.store(true, std::memory_order_release);
-    if (g_rds_capture_active.load(std::memory_order_acquire)) {
+    g_rds_capture_writing.store(true, std::memory_order_seq_cst);
+    if (g_rds_capture_active.load(std::memory_order_seq_cst)) {
       capture_mpx = true;
       capture_write = g_rds_capture_write.load(std::memory_order_relaxed);
     } else {
