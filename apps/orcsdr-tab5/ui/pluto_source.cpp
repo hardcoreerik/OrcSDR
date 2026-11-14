@@ -157,14 +157,16 @@ constexpr int64_t kHealthEveryUs = 60000000;
 void log_health(bool present) {
   pluto_sdr_metrics_t m{};
   if (g_h) pluto_sdr_get_metrics(g_h, &m);
-  std::printf("PLUTO_HEALTH present=%d running=%d alive=%d state=%d samples=%llu src_drops=%u usb_err=%u ring_drops=%u cycles=%u int_free=%u dma_largest=%u psram_free=%u\n",
+  PowerInfo pw;
+  if (g_events.power_info) (void)g_events.power_info(&pw);
+  std::printf("PLUTO_HEALTH present=%d running=%d alive=%d state=%d samples=%llu src_drops=%u usb_err=%u ring_drops=%u cycles=%u int_free=%u dma_largest=%u psram_free=%u batt_pct=%d batt_mv=%d vbus_mv=%d charging=%d\n",
               present ? 1 : 0, g_running.load(std::memory_order_relaxed) ? 1 : 0, g_alive.load(std::memory_order_relaxed) ? 1 : 0,
               g_h ? static_cast<int>(pluto_sdr_get_state(g_h)) : -1, static_cast<unsigned long long>(m.samples_delivered),
               static_cast<unsigned>(m.source_drops), static_cast<unsigned>(m.usb_errors), static_cast<unsigned>(g_ring_drops.load(std::memory_order_relaxed)),
               static_cast<unsigned>(g_cycles.load(std::memory_order_relaxed)),
               static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
               static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_DMA)),
-              static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
+              static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)), pw.battery_pct, pw.battery_mv, pw.vbus_mv, pw.charging);
 }
 
 void watcher_task(void*) {
@@ -310,6 +312,8 @@ void stop() {
   g_running.store(false, std::memory_order_release);
   g_alive.store(false, std::memory_order_release);
 }
+
+uint32_t output_rate_sps() { return g_h && g_running.load(std::memory_order_acquire) ? pluto_sdr_get_sample_rate(g_h) : 0; }
 
 bool retune(uint32_t frequency_hz) { return g_h && pluto_sdr_set_center_freq(g_h, frequency_hz) == PLUTO_SDR_OK; }
 bool set_gain_auto() { return g_h && pluto_sdr_set_gain_auto(g_h) == PLUTO_SDR_OK; }

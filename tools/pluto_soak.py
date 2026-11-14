@@ -34,9 +34,10 @@ EVENT_PATTERNS = {
     "wdt": re.compile(r"Task watchdog|WDT|stack overflow|Stack canary"),
 }
 HEALTH = re.compile(r"PLUTO_HEALTH present=(\d) running=(\d) alive=(\d) state=(-?\d+) samples=(\d+) src_drops=(\d+) usb_err=(\d+) "
-                    r"ring_drops=(\d+) cycles=(\d+) int_free=(\d+) dma_largest=(\d+) psram_free=(\d+)")
+                    r"ring_drops=(\d+) cycles=(\d+) int_free=(\d+) dma_largest=(\d+) psram_free=(\d+)"
+                    r"(?: batt_pct=(-?\d+) batt_mv=(-?\d+) vbus_mv=(-?\d+) charging=(-?\d+))?")  # the host power fields are absent on older firmware
 HEALTH_KEYS = ["present", "running", "alive", "state", "samples", "src_drops", "usb_err", "ring_drops", "cycles", "int_free", "dma_largest",
-               "psram_free"]
+               "psram_free", "batt_pct", "batt_mv", "vbus_mv", "charging"]
 
 
 def ssh_probe(host, key):
@@ -54,6 +55,39 @@ def ssh_probe(host, key):
         return {"ok": False, "error": str(e)[:120]}
 
 
+def ssh_args(host, key):
+    return ["ssh", "-i", key, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "StrictHostKeyChecking=accept-new",
+            f"root@{host}"]
+
+
+def ssh_run(host, key, remote, timeout=40):
+    try:
+        r = subprocess.run(ssh_args(host, key) + [remote], capture_output=True, text=True, timeout=timeout)
+        return r.returncode, (r.stdout + r.stderr).strip()
+    except Exception as e:  # noqa: BLE001
+        return -1, str(e)[:120]
+
+
+def stream_pluto(host, key, path, stop, event, t_start):
+    """Streams the Pluto's journal (J) and orc-diag telemetry (T) to a file on the PC as they happen, so the last seconds before a death
+    survive off the board. Reconnects every 15 s after the link drops (the Pluto rebooted or died)."""
+    remote = ("sh -c 'journalctl -f -n 0 -o short-monotonic --no-pager 2>&1 | sed -u \"s/^/J /\" & "
+              "tail -n 0 -F /var/log/orc-diag/telemetry.log 2>&1 | sed -u \"s/^/T /\" & wait'")
+    with open(path, "a", buffering=1, encoding="utf-8", errors="replace") as out:
+        while not stop.is_set():
+            out.write(f"[{time.time() - t_start:9.1f}s] STREAM_START\n")
+            p = subprocess.Popen(ssh_args(host, key) + [remote], stdout=subprocess.PIPE, stderr=subprocess.STDOUT, text=True, errors="replace")
+            for line in p.stdout:
+                out.write(f"[{time.time() - t_start:9.1f}s] {line.rstrip()}\n")
+                if stop.is_set():
+                    break
+            p.kill()
+            out.write(f"[{time.time() - t_start:9.1f}s] STREAM_END\n")
+            if not stop.is_set():
+                event("stream_ended", "the ssh stream to the Pluto closed; retrying")
+            stop.wait(15)
+
+
 def ping_ok(host):
     try:
         r = subprocess.run(["ping", "-n", "1", "-w", "1500", host], capture_output=True, text=True, timeout=5)
@@ -69,14 +103,19 @@ def main():
     ap.add_argument("--out", required=True)
     ap.add_argument("--host", default="fishball.local")
     ap.add_argument("--key", default="")
+    ap.add_argument("--stream-pluto", action="store_true",
+                    help="stream the Pluto's journal and orc-diag telemetry to the PC over ssh (pluto_stream.log); reconnects after a reboot")
+    ap.add_argument("--pluto-diag", default="",
+                    help="comma list of orc-diag features to switch on for the run (journal-sync,telemetry,reset-cause,watchdog); switched off again at the end")
     a = ap.parse_args()
+    diag = [f for f in a.pluto_diag.split(",") if f]
     os.makedirs(a.out, exist_ok=True)
     t_start = time.time()
     t_end = t_start + a.hours * 3600
     counts = {k: 0 for k in EVENT_PATTERNS}
     state = {"last_health": None, "last_health_at": 0.0, "stalls": 0, "health_missing": 0, "ping_fail": 0, "ping_total": 0, "probe_fail": 0,
              "probe_total": 0, "min_int_free": None, "min_dma_largest": None, "min_psram_free": None, "last_samples": None, "first_health": None}
-    lock = threading.Lock()
+    lock = threading.RLock()  # event() takes the lock and some callers already hold it
     raw = open(os.path.join(a.out, "soak_raw.log"), "w", encoding="utf-8", errors="replace", buffering=1)
     ev = open(os.path.join(a.out, "events.log"), "w", encoding="utf-8", errors="replace", buffering=1)
     hcsv = open(os.path.join(a.out, "health.csv"), "w", newline="")
@@ -118,6 +157,17 @@ def main():
 
     threading.Thread(target=pc_side, daemon=True).start()
 
+    def diag_set(on):
+        for f in diag:
+            rc, out = ssh_run(a.host, a.key, f"/usr/local/sbin/orc-diag {'on' if on else 'off'} {f}")
+            event("diag_on" if on else "diag_off", f"{f}: rc={rc} {out[:80]}")
+
+    if diag and a.key:
+        diag_set(True)
+    if a.stream_pluto and a.key:
+        threading.Thread(target=stream_pluto, args=(a.host, a.key, os.path.join(a.out, "pluto_stream.log"), stop_flag, event, t_start),
+                         daemon=True).start()
+
     def write_status(final=False):
         with lock:
             s = {"elapsed_s": round(time.time() - t_start), "of_s": round(a.hours * 3600), "counts": dict(counts), **{k: v for k, v in state.items()}}
@@ -145,10 +195,15 @@ def main():
                         event(kind, text[:200])
                 m = HEALTH.search(text)
                 if m:
-                    h = dict(zip(HEALTH_KEYS, (int(x) for x in m.groups())))
-                    hw.writerow([round(now - t_start)] + [h[k] for k in HEALTH_KEYS])
+                    h = dict(zip(HEALTH_KEYS, (int(x) if x is not None else None for x in m.groups())))
+                    hw.writerow([round(now - t_start)] + ["" if h[k] is None else h[k] for k in HEALTH_KEYS])
                     hcsv.flush()
+                    if h["batt_pct"] is not None and h["charging"] == 0 and 0 <= h["batt_pct"] <= 15:
+                        event("battery_low", f"{h['batt_pct']}% discharging, battery {h['batt_mv']} mV, VBUS {h['vbus_mv']} mV")
                     with lock:
+                        for key, mk in (("batt_pct", "min_batt_pct"), ("vbus_mv", "min_vbus_mv")):
+                            if h[key] is not None and h[key] >= 0 and (state.get(mk) is None or h[key] < state[mk]):
+                                state[mk] = h[key]
                         if state["first_health"] is None:
                             state["first_health"] = h
                         prev = state["last_samples"]
@@ -160,6 +215,8 @@ def main():
                         for k, key in (("min_int_free", "int_free"), ("min_dma_largest", "dma_largest"), ("min_psram_free", "psram_free")):
                             if state[k] is None or h[key] < state[k]:
                                 state[k] = h[key]
+                        state["min_batt_pct"] = state.get("min_batt_pct")
+                        state["min_vbus_mv"] = state.get("min_vbus_mv")
         if state["last_health_at"] and now - state["last_health_at"] > 150:
             with lock:
                 state["health_missing"] += 1
@@ -168,6 +225,8 @@ def main():
         if now - last_status > 60:
             last_status = now
             write_status()
+    if diag and a.key:
+        diag_set(False)  # undo exactly what this run switched on; if the Pluto is gone the failure is recorded in events.log
     stop_flag.set()
     write_status(final=True)
     ser.close()

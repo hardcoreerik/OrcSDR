@@ -9763,6 +9763,21 @@ static void on_pluto_detached() {
   Serial.printf("PLUTO_DETACHED previous=%u resume_pending=%d\n", static_cast<unsigned>(previous), resume ? 1 : 0);
 }
 
+// The host's battery and USB-rail numbers for the Pluto health line (read-only; the same calls the Home power line uses).
+static bool on_pluto_power_info(orcsdr::pluto_source::PowerInfo* p) {
+  // No PMIC-type guard: the Tab5 reports an unknown type yet reads level, voltage and VBUS fine (the Home power line relies on that).
+  if (p == nullptr) return false;
+  p->battery_pct = M5.Power.getBatteryLevel();
+  p->battery_mv = M5.Power.getBatteryVoltage();
+  p->vbus_mv = M5.Power.getVBUSVoltage();
+  switch (M5.Power.isCharging()) {
+    case m5::Power_Class::is_charging: p->charging = 1; break;
+    case m5::Power_Class::is_discharging: p->charging = 0; break;
+    default: p->charging = -1; break;
+  }
+  return true;
+}
+
 // Recovery hook for a wedged Pluto: remove the USB-A 5 V rail long enough for the board to drop, then restore it. Skipped while anything else
 // uses the port. A Pluto that is also powered from a PC cable never loses power this way; that is a bench-wiring matter, not a firmware one.
 static bool on_pluto_power_cycle() {
@@ -10786,7 +10801,7 @@ void initialize_rtl_sdr_host() {
   // so it is installed only after the RTL driver is.
   Serial.printf("PLUTO_SOURCE install=%d\n",
                 orcsdr::pluto_source::begin({rtl_tcp_sink_acquire, rtl_tcp_sink_submit, rtl_tcp_sink_release, rtl_tcp_sink_discontinuity},
-                                            {on_pluto_attached, on_pluto_detached, on_pluto_power_cycle}) ? 1 : 0);
+                                            {on_pluto_attached, on_pluto_detached, on_pluto_power_cycle, on_pluto_power_info}) ? 1 : 0);
 }
 #endif /* RTL_USE_LEGACY_USB */
 
@@ -13763,6 +13778,11 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
   if (!demo && g_rtl != nullptr && esp_rtl_sdr_get_metrics(g_rtl, &metrics) == ESP_OK)
     snapshot.effective_sps = metrics.effective_sps;
 #endif
+  if (!demo && (rtl_pluto_active() || (!rtl_usb_device_ready() && orcsdr::pluto_source::ready()))) {
+    // A PlutoSDR is the local receiver (a dongle always wins): the tag says so, and the rate is the one its stream delivers.
+    strlcpy(snapshot.receiver, "PLUTO", sizeof(snapshot.receiver));
+    snapshot.effective_sps = orcsdr::pluto_source::output_rate_sps();
+  }
   if (!demo && g_rtl_remote_narrow.load(std::memory_order_acquire)) {
     // A network receiver: say so, show the rate the stream really runs at (it steps with the link), and
     // turn the header state into the link's health. "Ready" now means the stream is flowing, not USB.

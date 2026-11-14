@@ -17,12 +17,23 @@ namespace orcsdr::pluto_source {
 
 using IqSink = rtl_tcp_source::IqSink;
 
+// The host's own power numbers, for the health line: the Pluto runs from the host's USB rail, so a failing battery or rail on the host shows
+// up as a Pluto that dies without a word (seen once in an overnight soak). Unknown values are -1 (charging: -1 unknown, 0 discharging, 1 charging).
+struct PowerInfo {
+  int battery_pct = -1;
+  int battery_mv = -1;
+  int vbus_mv = -1;
+  int charging = -1;
+};
+
 struct Events {
   void (*attached)();  // a Pluto enumerated and can stream (called from the watcher task; must not block)
   void (*detached)();  // the Pluto went away
   // Optional. Cuts and restores the USB port's 5 V rail, the only real reset a wedged Pluto gets. Returns false when it must not run now (a dongle
   // or another stream is using the port). Called from the watcher task, so it may block for a couple of seconds.
   bool (*power_cycle)() = nullptr;
+  // Optional. Fills the host's battery and USB-rail numbers for the once-a-minute health line. Called from the watcher task.
+  bool (*power_info)(PowerInfo*) = nullptr;
 };
 
 // Installs the driver and starts a watcher task. Returns false when the driver would not install. Does nothing on the USB bus until a Pluto
@@ -44,6 +55,9 @@ bool active();  // a stream from the Pluto is running or starting
 bool start_and_wait(uint32_t sample_rate_sps, uint32_t frequency_hz, uint32_t timeout_ms, bool (*cancelled)());
 bool alive();  // the stream is delivering, or has been quiet for less than the driver's recovery window
 void stop();   // bounded wait
+
+// The output rate the running stream delivers (0 when no stream runs). Cheap enough for a screen refresh.
+uint32_t output_rate_sps();
 
 bool retune(uint32_t frequency_hz);
 bool set_gain_auto();
