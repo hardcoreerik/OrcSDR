@@ -1193,8 +1193,10 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
     const int waterfall_h = popup_over ? kPopY - 2 - (kWaterfallY + 1) : kWaterfallH - 2;
     M5.Display.startWrite();
     M5.Display.setScrollRect(kPlotX + 1, kWaterfallY + 1, kPlotW - 2, waterfall_h, TFT_BLACK);
-    // Same result as M5.Display.scroll(0, -rows), moved by the PPA instead of a CPU copy of the whole area.
-    orcsdr::screen_blit::scroll_up(kPlotX + 1, kWaterfallY + 1, kPlotW - 2, waterfall_h, rows, TFT_BLACK);
+    // Stays on the CPU: screen_blit::scroll_up (PPA) is pixel-exact but needs two passes through a scratch copy and
+    // cost Home about 15% of its frame rate (17.7 against 20.6 frames/s, 2026-11-13). A single-pass ring buffer has
+    // to know about every popup and overlay that draws over the waterfall first.
+    M5.Display.scroll(0, -rows);
     const float waterfall_range = waterfall_range_db(waterfall_contrast);
     for (int x0 = 0; x0 < w; x0 += 2) {
       const int width = std::min(2, w - x0);

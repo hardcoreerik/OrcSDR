@@ -2,6 +2,11 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Home waterfall scroll back on the CPU — 2026-11-14
+
+- **Home's waterfall scroll uses M5GFX again** (`M5.Display.scroll`). The owner does not accept a lower Home frame rate, and the two-pass PPA scroll cost about 15% of it. The spectrum copy and clear stay on the PPA. `screen_blit::scroll_up` stays available and tested. Flashed to COM17; Home frame rate and DSP load with this combination are **not yet measured** (the unit was on the ADS-B screen).
+- **Context from the owner:** Home was meant to run at 60 frames/s. For scale, one 60 frames/s frame is 16.7 ms, and the spectrum copy alone takes 12 to 19 ms.
+
 ## Unreleased — Home spectrum clear and waterfall scroll on the PPA — 2026-11-13
 
 Tab5. Flashed to one Tab5 (COM17) and measured. The owner saw no visible difference on Home with the PPA spectrum copy (previous entry); the clear and scroll are not yet looked at.
