@@ -23,3 +23,9 @@ or changing a screen, dashboard, modal, setup page, progress display or redraw p
 Do not rewrite unrelated existing screens or add a full-size framebuffer merely
 to satisfy this rule. Measure and bound any buffer/PSRAM/DMA cost. Record existing
 gaps instead of claiming the whole application has been audited.
+
+## Serial commands
+
+Do not add serial commands to `process_command()` in `main.cpp`. Put each family in its own
+`serial_<family>` module with a host test and a recorded route, as described in
+[the serial command modules guide](../../../docs/SERIAL_COMMAND_MODULES.md).
