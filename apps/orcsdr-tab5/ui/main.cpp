@@ -1636,6 +1636,8 @@ static uint32_t g_sd_last_attempt_ms = 0;
 static char g_audio_rec_last_path[64] = "";
 static std::atomic<uint8_t> g_orc_tool{static_cast<uint8_t>(OrcTool::Radio)};
 static std::atomic<bool> g_audio_rec_export_pending{false};
+static std::atomic<uint32_t> g_audio_rec_writers{0};      // callers inside audio_rec_append right now
+static orcsdr::buffer_claim::Claim g_audio_rec_claim;      // held to arm, export or free g_audio_rec_buf (buffer_claim.hpp)
 
 /* ---- FM multiplex capture for repeatable RDS replay ---- */
 static int16_t* g_rds_capture_buf = nullptr;
@@ -4007,9 +4009,52 @@ bool audio_rec_ensure_buffer() {
   return true;
 }
 
+// The 1.15 MB audio recording buffer used to stay allocated for the rest of the session after one recording. It is now a
+// reclaimable holder: given back on request once the recording is in a file (or nothing was recorded), and allocated
+// again by the next recording. A recording that is running, waiting for its automatic export, being written to the
+// card, or held because no card was present is never released. The status line and the on-screen summary keep the last
+// recording's length and path. Callers of reclaim_all() run on the main loop and on the radio driver task, and the
+// automatic export runs on the radio driver task, hence the claim.
+static orcsdr::buffer_claim::CaptureState audio_rec_buffer_state() {
+  orcsdr::buffer_claim::CaptureState s;
+  s.allocated = g_audio_rec_buf != nullptr;
+  s.active = g_audio_rec_active.load();
+  s.writing = g_audio_rec_writers.load() != 0;
+  s.pending = g_audio_rec_export_pending.load();
+  s.samples = g_audio_rec_write.load();
+  s.saved = g_audio_rec_last_path[0] != '\0';
+  return s;
+}
+
+size_t audio_rec_held_bytes() {
+  return orcsdr::buffer_claim::releasable(audio_rec_buffer_state()) ? g_audio_rec_capacity * sizeof(int16_t) : 0u;
+}
+
+size_t audio_rec_release_buffer() {
+  if (!g_audio_rec_claim.try_take()) return 0;   // being armed or exported right now
+  orcsdr::buffer_claim::Hold hold(g_audio_rec_claim);
+  if (!orcsdr::buffer_claim::releasable(audio_rec_buffer_state())) return 0;
+  const size_t bytes = g_audio_rec_capacity * sizeof(int16_t);
+  int16_t* buffer = g_audio_rec_buf;
+  g_audio_rec_buf = nullptr;   // clear first: every user checks for null and the next recording allocates it again
+  g_audio_rec_capacity = 0;
+  heap_caps_free(buffer);
+  return bytes;
+}
+
+static void audio_rec_append_guarded(const int16_t* samples, size_t count);
+
 void audio_rec_append(const int16_t* samples, size_t count) {
-  if (samples == nullptr || count == 0 || g_audio_rec_buf == nullptr) return;
+  if (samples == nullptr || count == 0) return;
   if (!g_audio_rec_active.load(std::memory_order_relaxed)) return;
+  // Announce the writer, then look at `active` again: a release on another task sees one or the other.
+  g_audio_rec_writers.fetch_add(1, std::memory_order_seq_cst);
+  if (g_audio_rec_active.load(std::memory_order_seq_cst)) audio_rec_append_guarded(samples, count);
+  g_audio_rec_writers.fetch_sub(1, std::memory_order_seq_cst);
+}
+
+static void audio_rec_append_guarded(const int16_t* samples, size_t count) {
+  if (g_audio_rec_buf == nullptr) return;
   size_t w = g_audio_rec_write.load(std::memory_order_relaxed);
   const size_t cap = g_audio_rec_capacity;
   if (w >= cap) {
@@ -5527,6 +5572,9 @@ bool audio_rec_start() {
     Serial.println("RTL_REC_ALREADY");
     return true;
   }
+  (void)orcsdr::memory_reclaim::register_holder({"Audio recording", audio_rec_held_bytes, audio_rec_release_buffer});
+  g_audio_rec_claim.take([] { delay(1); });
+  orcsdr::buffer_claim::Hold hold(g_audio_rec_claim);
   if (!audio_rec_ensure_buffer()) return false;
   g_audio_rec_write.store(0, std::memory_order_release);
   g_audio_rec_full.store(false, std::memory_order_release);
@@ -5541,6 +5589,8 @@ bool audio_rec_start() {
 }
 
 bool audio_rec_stop_and_export() {
+  g_audio_rec_claim.take([] { delay(1); });   // the buffer cannot be released while it is being written to the card
+  orcsdr::buffer_claim::Hold hold(g_audio_rec_claim);
   const bool was = g_audio_rec_active.exchange(false, std::memory_order_acq_rel);
   const size_t samples = g_audio_rec_write.load(std::memory_order_acquire);
   const bool full = g_audio_rec_full.load(std::memory_order_acquire);
