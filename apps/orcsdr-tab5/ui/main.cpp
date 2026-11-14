@@ -80,6 +80,7 @@
 #include "memory_reclaim.hpp"
 #include "memory_ledger.hpp"
 #include "serial_dead_air.hpp"
+#include "serial_ui_status.hpp"
 #include "serial_adsb.hpp"
 #include "serial_location.hpp"
 #include "serial_catalog.hpp"
@@ -20507,6 +20508,33 @@ static constexpr orcsdr::serial_rds::Hooks kSerialRdsHooks{
 #endif
 };
 
+// RTL_UI STATUS lives in serial_ui_status.cpp; the hook reads the same state the reply used to.
+static constexpr orcsdr::serial_ui_status::Hooks kSerialUiStatusHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    []() -> orcsdr::serial_ui_status::UiStatus {
+      orcsdr::serial_ui_status::UiStatus s;
+      s.screen = orcsdr::screens::name(orcsdr::screens::status().active);
+      s.band = rtl_band_name(rtl_ui_band);
+      s.frequency_hz = rtl_ui_frequency_hz;
+      s.settings = orcsdr::settings::active() ? 1 : 0;
+      s.fm = orcsdr::fm::active() ? 1 : 0;
+      s.am = orcsdr::am::active() ? 1 : 0;
+      s.p25 = orcsdr::p25::active() ? 1 : 0;
+      s.adsb = orcsdr::adsb::active() ? 1 : 0;
+      s.lora = orcsdr::lora::active() ? 1 : 0;
+      s.rf24 = orcsdr::rf24::active() ? 1 : 0;
+      s.home_font = M5.Display.getFont() == &fonts::Font0 ? 1 : 0;
+      s.graphics = rtl_graphics_enabled.load(std::memory_order_acquire) ? 1 : 0;
+      s.radio_ui = rtl_ui_active.load(std::memory_order_acquire) ? 1 : 0;
+      s.route = ui_touch_route();
+      s.volume = static_cast<unsigned>(rtl_live_volume.load(std::memory_order_acquire));
+      s.audio_enabled = rtl_audio_user_enabled.load(std::memory_order_acquire) ? 1 : 0;
+      s.tray = rtl_header_audio_control.expanded ? 1 : 0;
+      return s;
+    },
+};
+
 // The RTL_DEAD_AIR commands live in serial_dead_air.cpp; they call the same dead_air_app functions as before.
 static constexpr orcsdr::serial_dead_air::Hooks kSerialDeadAirHooks{
     [](const char* text) { Serial.print(text); },
@@ -21175,24 +21203,7 @@ void process_command(char* command) {
   }
   if (orcsdr::serial_scope::handle_command(command, authenticated, kSerialScopeHooks)) return;
   if (orcsdr::serial_keyboard::handle_command(command, authenticated, kSerialKeyboardHooks)) return;
-  if (strcmp(command, "RTL_UI STATUS") == 0) {
-    Serial.printf("RTL_UI_STATUS screen=%s band=%s frequency_hz=%u settings=%d fm=%d am=%d p25=%d "
-                  "adsb=%d lora=%d rf24=%d home_font=%d graphics=%d radio_ui=%d route=%s volume=%u audio_enabled=%d tray=%d\n",
-                  orcsdr::screens::name(orcsdr::screens::status().active),
-                  rtl_band_name(rtl_ui_band), rtl_ui_frequency_hz,
-                  orcsdr::settings::active() ? 1 : 0, orcsdr::fm::active() ? 1 : 0,
-                  orcsdr::am::active() ? 1 : 0,
-                  orcsdr::p25::active() ? 1 : 0, orcsdr::adsb::active() ? 1 : 0,
-                  orcsdr::lora::active() ? 1 : 0,
-                  orcsdr::rf24::active() ? 1 : 0,
-                  M5.Display.getFont() == &fonts::Font0 ? 1 : 0,
-                  rtl_graphics_enabled.load(std::memory_order_acquire) ? 1 : 0,
-                  rtl_ui_active.load(std::memory_order_acquire) ? 1 : 0, ui_touch_route(),
-                  static_cast<unsigned>(rtl_live_volume.load(std::memory_order_acquire)),
-                  rtl_audio_user_enabled.load(std::memory_order_acquire) ? 1 : 0,
-                  rtl_header_audio_control.expanded ? 1 : 0);
-    return;
-  }
+  if (orcsdr::serial_ui_status::handle_command(command, authenticated, kSerialUiStatusHooks)) return;
   if (orcsdr::serial_verbosity::handle_command(command, authenticated, kSerialVerbosityHooks)) return;
   if (strncmp(command, "RTL_TCP", 7) == 0 && (command[7] == '\0' || command[7] == ' ' || command[7] == '\t')) {
     char reply[320];

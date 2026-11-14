@@ -98,6 +98,7 @@ idf_component_register(
         "../ui/serial_decoder_diag.cpp"
         "../ui/serial_rds.cpp"
         "../ui/serial_dead_air.cpp"
+        "../ui/serial_ui_status.cpp"
         "../ui/serial_p25.cpp"
         "../ui/serial_rtc.cpp"
         "../ui/serial_wifi.cpp"
