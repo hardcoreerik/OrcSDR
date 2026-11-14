@@ -12,11 +12,10 @@ void fill(home::Snapshot& snapshot, bool dongle_ready) {
   snapshot.receiver[sizeof(snapshot.receiver) - 1] = '\0';
   snapshot.effective_sps = pluto_source::output_rate_sps();
   if (pluto_source::battery_low()) {
-    // The host battery has been low over several readings: the chip says so and the stream keeps running. Only when the guard (stop mode) has
-    // stopped the stream does the chip turn orange, the colour of "not ready".
-    std::strncpy(snapshot.link_state, "LOW BATT", sizeof(snapshot.link_state) - 1);
+    // The HOST's battery has been low over several readings. A note only: it changes no colour and no behaviour, and says nothing about how the
+    // Pluto itself is powered, which the host cannot see.
+    std::strncpy(snapshot.link_state, "HOST BATT", sizeof(snapshot.link_state) - 1);
     snapshot.link_state[sizeof(snapshot.link_state) - 1] = '\0';
-    if (pluto_source::guard_stopped()) snapshot.driver_ready = false;
   }
 }
 

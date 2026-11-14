@@ -73,20 +73,38 @@ int main() {
     CHECK(!update(s, 9, 0)); // unplugged while low: counts start again
     CHECK(s.level == Level::ok);
   }
-  // Unknown readings change nothing and do not count, in either direction.
+  // A reading that cannot be trusted (no cell, a battery swapped on external power, a failed read) never warns, and clears a warning: a warning
+  // about a battery that may no longer be there is worse than none. It also restarts the count.
   {
     State s;
     CHECK(!update(s, -1, 0));
     CHECK(!update(s, 5, -1));
     CHECK(!update(s, -1, -1));
+    CHECK(s.level == Level::ok);
     update(s, 9, 0); update(s, 9, 0);
     CHECK(s.level == Level::low);
-    CHECK(!update(s, -1, 1));   // an unknown reading does not clear it
-    CHECK(!update(s, 90, -1));
+    CHECK(update(s, -1, -1));  // the battery was swapped out: the warning goes away
+    CHECK(s.level == Level::ok);
+    CHECK(!update(s, 9, 0));   // and the count starts again from one
+    CHECK(s.level == Level::ok);
+    CHECK(update(s, 9, 0));
     CHECK(s.level == Level::low);
-    update(s, 8, 0);            // the third real reading in a row ...
-    update(s, 8, 0);            // (unknown ones did not break the run) ... counts toward critical
-    CHECK(s.level == Level::critical);
+  }
+  {
+    State t;
+    update(t, 9, 0);
+    CHECK(!update(t, -1, -1));  // an untrusted reading in the middle of a run restarts it
+    CHECK(!update(t, 9, 0));
+    CHECK(t.level == Level::ok);
+  }
+  // The scenario from a bench: on external power the battery is swapped, the new one reads 0% and "discharging" for a moment, then charging.
+  {
+    State s;
+    CHECK(!update(s, 80, 1));   // charging, fine
+    CHECK(!update(s, 0, 0));    // swap glitch: one odd reading is only one reading
+    CHECK(s.level == Level::ok);
+    CHECK(!update(s, 4, 1));    // the new battery is charging: nothing is warned
+    CHECK(s.level == Level::ok);
   }
   // The counters cannot overflow on a long discharge.
   {

@@ -123,8 +123,7 @@ void seen_flag_set(bool seen) {
   nvs_close(nvs);
 }
 
-// The low-battery mode lives in the same small NVS namespace as the "seen" flag: key "guard", 0 off, 1 warn (the default), 2 stop. Anything else
-// reads as warn.
+// The low-battery warning switch lives in the same small NVS namespace as the "seen" flag: key "guard", 0 = off, anything else (the default) = warn.
 uint8_t guard_mode_from_nvs() {
   nvs_handle_t nvs;
   uint8_t v = static_cast<uint8_t>(GuardMode::warn);
@@ -132,15 +131,13 @@ uint8_t guard_mode_from_nvs() {
     (void)nvs_get_u8(nvs, "guard", &v);
     nvs_close(nvs);
   }
-  return v > static_cast<uint8_t>(GuardMode::stop) ? static_cast<uint8_t>(GuardMode::warn) : v;
+  return v == 0 ? static_cast<uint8_t>(GuardMode::off) : static_cast<uint8_t>(GuardMode::warn);
 }
 
-// Power guard state. No timer of its own: it is stepped from the once-a-minute health read, so it adds no polling (the battery takes tens of
-// minutes to run from the critical level to empty). The mutex covers the watcher task and a manual start.
-std::mutex g_guard_mu;
-pluto_power_guard::State g_guard;
-std::atomic<uint8_t> g_guard_level{0};     // pluto_power_guard::Level as a number, for battery_low()
-std::atomic<bool> g_guard_stopped{false};  // stop mode stopped the stream and it has not been cleared or restarted
+// Low-battery warning state. No timer of its own: it is stepped from the once-a-minute health read, so it adds no polling. It only ever feeds the
+// screen text and a log line; nothing reads it to stop, refuse or delay anything.
+pluto_power_guard::State g_guard;  // touched by the watcher task only
+std::atomic<uint8_t> g_guard_level{0};  // pluto_power_guard::Level as a number, for battery_low()
 std::atomic<uint8_t> g_guard_mode{static_cast<uint8_t>(GuardMode::warn)};
 
 std::atomic<int8_t> g_seen_cache{-1};              // -1 = not read yet
@@ -156,8 +153,8 @@ void note_healthy() {
 // One rung of the ladder: runs the application's power-cycle hook if the backoff allows it.
 void try_recovery(const char* reason, int64_t now_us, int64_t* next_cycle_us) {
   if (!g_events.power_cycle || g_gave_up.load(std::memory_order_acquire) || now_us < *next_cycle_us ||
-      now_us < g_hold_off_until_us.load(std::memory_order_acquire) || g_guard_stopped.load(std::memory_order_acquire))
-    return;  // a guard stop means the host supply is the problem: cutting the rail would not help and could make it worse
+      now_us < g_hold_off_until_us.load(std::memory_order_acquire))
+    return;
   const uint32_t done = g_cycles.load(std::memory_order_acquire);
   if (done >= kMaxCycles) {
     g_gave_up.store(true, std::memory_order_release);
@@ -190,47 +187,21 @@ void log_health(bool present, const host_power::Reading& pw) {
               static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)), pw.battery_pct, pw.battery_mv, pw.vbus_mv, pw.charging);
 }
 
-// Steps the power guard with one reading of the host's battery. Unknown values (no battery, a failed read) change nothing and never count. Called
-// from the once-a-minute health read.
+// Steps the low-battery warning with one reading of the host's battery. A reading that cannot be trusted (no cell, a failed read) clears the warning.
+// Called from the once-a-minute health read. It never touches the stream: the only effects are a log line and the Home chip text.
 void guard_step(const host_power::Reading& pw) {
-  std::lock_guard<std::mutex> lock(g_guard_mu);
-  const GuardMode mode = static_cast<GuardMode>(g_guard_mode.load(std::memory_order_acquire));
-  if (mode == GuardMode::off) {
+  if (static_cast<GuardMode>(g_guard_mode.load(std::memory_order_acquire)) == GuardMode::off) {
     g_guard = pluto_power_guard::State{};
     g_guard_level.store(0, std::memory_order_release);
-    if (g_guard_stopped.exchange(false, std::memory_order_acq_rel)) {
-      ESP_LOGW(TAG, "PLUTO_POWER_GUARD switched off while it had stopped the stream; cleared");
-      if (g_events.power_guard) g_events.power_guard(false);
-    }
     return;
   }
   if (!pluto_power_guard::update(g_guard, pw.battery_pct, pw.charging)) return;
   g_guard_level.store(static_cast<uint8_t>(g_guard.level), std::memory_order_release);
-  switch (g_guard.level) {
-    case pluto_power_guard::Level::low:
-      ESP_LOGW(TAG, "PLUTO_POWER_GUARD low battery=%d%% discharging (sustained)", pw.battery_pct);
-      break;
-    case pluto_power_guard::Level::critical:
-      ESP_LOGE(TAG, "PLUTO_POWER_GUARD critical battery=%d%% discharging (sustained): %s", pw.battery_pct,
-               mode == GuardMode::stop ? "stopping the Pluto stream before the host supply fails" : "warning only, the stream keeps running");
-      if (mode == GuardMode::stop && !g_guard_stopped.exchange(true, std::memory_order_acq_rel) && g_events.power_guard) g_events.power_guard(true);
-      break;
-    case pluto_power_guard::Level::ok:
-      ESP_LOGW(TAG, "PLUTO_POWER_GUARD cleared battery=%d%% charging=%d", pw.battery_pct, pw.charging);
-      if (g_guard_stopped.exchange(false, std::memory_order_acq_rel) && g_events.power_guard) g_events.power_guard(false);
-      break;
-  }
-}
-
-// A manual start always works. If the guard had stopped the stream, starting it again is the user's answer: the stop is cleared and the guard
-// needs fresh, sustained readings before it acts again.
-void guard_acknowledge_start() {
-  std::lock_guard<std::mutex> lock(g_guard_mu);
-  if (g_guard_stopped.exchange(false, std::memory_order_acq_rel)) {
-    g_guard = pluto_power_guard::State{};
-    g_guard_level.store(0, std::memory_order_release);
-    ESP_LOGW(TAG, "PLUTO_POWER_GUARD stream started again by request; counting from scratch");
-  }
+  if (g_guard.level == pluto_power_guard::Level::ok)
+    ESP_LOGI(TAG, "PLUTO_POWER_GUARD cleared battery=%d%% charging=%d", pw.battery_pct, pw.charging);
+  else
+    ESP_LOGW(TAG, "PLUTO_POWER_GUARD %s battery=%d%% discharging (sustained); warning only, nothing is stopped",
+             g_guard.level == pluto_power_guard::Level::critical ? "critical" : "low", pw.battery_pct);
 }
 
 void watcher_task(void*) {
@@ -276,6 +247,7 @@ void watcher_task(void*) {
 }
 
 }  // namespace
+
 
 bool begin(const IqSink& sink, const Events& events) {
   if (g_h) return true;
@@ -359,7 +331,6 @@ static bool start_once(uint32_t sample_rate_sps, uint32_t frequency_hz, uint32_t
 }
 
 bool start_and_wait(uint32_t sample_rate_sps, uint32_t frequency_hz, uint32_t timeout_ms, bool (*cancelled)()) {
-  guard_acknowledge_start();  // never refused, whatever the battery says
   const bool ok = start_once(sample_rate_sps, frequency_hz, timeout_ms, cancelled);
   if (ok) {
     note_healthy();
@@ -384,7 +355,6 @@ void stop() {
 void set_guard_mode(GuardMode mode) { g_guard_mode.store(static_cast<uint8_t>(mode), std::memory_order_release); }
 GuardMode guard_mode() { return static_cast<GuardMode>(g_guard_mode.load(std::memory_order_acquire)); }
 bool battery_low() { return g_guard_level.load(std::memory_order_acquire) != static_cast<uint8_t>(pluto_power_guard::Level::ok); }
-bool guard_stopped() { return g_guard_stopped.load(std::memory_order_acquire); }
 
 uint32_t output_rate_sps() { return g_h && g_running.load(std::memory_order_acquire) ? pluto_sdr_get_sample_rate(g_h) : 0; }
 

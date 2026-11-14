@@ -9764,24 +9764,6 @@ static void on_pluto_detached() {
   Serial.printf("PLUTO_DETACHED previous=%u resume_pending=%d\n", static_cast<unsigned>(previous), resume ? 1 : 0);
 }
 
-// Stop mode of the Pluto low-battery guard (ui/pluto_power_guard.hpp, pluto_source): stop the stream, or let it resume. Only sets flags.
-static std::atomic<bool> g_pluto_guard_resume{false};
-static void on_pluto_power_guard(bool stop) {
-  if (stop) {
-    const bool streaming = rtl_pluto_active();
-    g_pluto_guard_resume.store(streaming, std::memory_order_release);
-    if (streaming) {
-      rtl_hotplug_resume_pending.store(false, std::memory_order_release);
-      rtl_restart_requested.store(false, std::memory_order_release);
-      rtl_stop_requested.store(true, std::memory_order_release);
-    }
-    return;
-  }
-  if (g_pluto_guard_resume.exchange(false, std::memory_order_acq_rel) && !rtl_usb_device_ready() && !rtl_remote_active() &&
-      orcsdr::pluto_source::ready())
-    rtl_hotplug_resume_pending.store(true, std::memory_order_release);
-}
-
 // Recovery hook for a wedged Pluto: remove the USB-A 5 V rail long enough for the board to drop, then restore it. Skipped while anything else
 // uses the port. A Pluto that is also powered from a PC cable never loses power this way; that is a bench-wiring matter, not a firmware one.
 static bool on_pluto_power_cycle() {
@@ -10805,7 +10787,7 @@ void initialize_rtl_sdr_host() {
   // so it is installed only after the RTL driver is.
   Serial.printf("PLUTO_SOURCE install=%d\n",
                 orcsdr::pluto_source::begin({rtl_tcp_sink_acquire, rtl_tcp_sink_submit, rtl_tcp_sink_release, rtl_tcp_sink_discontinuity},
-                                            {on_pluto_attached, on_pluto_detached, on_pluto_power_cycle, on_pluto_power_guard}) ? 1 : 0);
+                                            {on_pluto_attached, on_pluto_detached, on_pluto_power_cycle}) ? 1 : 0);
 }
 #endif /* RTL_USE_LEGACY_USB */
 

@@ -1,11 +1,13 @@
 #pragma once
 
-// Low-battery awareness for a bus-powered PlutoSDR. The Pluto runs from the host's USB rail; when a battery-powered host (the Tab5) is
-// discharging and the battery runs out, the rail collapses and the Pluto dies without a word (seen in an overnight soak). This tells the user
-// before that happens, and can optionally stop the stream while there is still battery.
+// Low-battery WARNING for a bus-powered PlutoSDR. The Pluto runs from the host's USB rail; when a battery-powered host (the Tab5) is discharging
+// and the battery runs out, the rail collapses and the Pluto dies without a word (seen in an overnight soak). This only tells the user, so they
+// can plug in; it never stops, refuses or delays anything. Conditions change during development (power supplies come and go, batteries are
+// swapped while the unit is on external power), so no battery reading may ever switch a function off.
 //
-// It never acts on one reading. A level counts only after it is sustained across several readings in a row, one good reading resets the count,
-// and unknown readings change nothing. It never locks the receiver out: the caller decides what a level means, and a manual start always works.
+// It never acts on one reading: a level counts only after it is sustained across several readings in a row, and one good reading resets the count.
+// A reading that cannot be trusted (no cell, mid-swap, a failed read) clears the warning rather than keeping it alive: a warning about a battery
+// that may no longer be there is worse than none.
 //
 // Pure decision logic, no hardware access: pluto_source feeds it the host's battery percent and charge state about once a minute.
 
@@ -29,7 +31,11 @@ struct State {
 
 // battery_pct: 0..100 or -1 unknown. charging: 1 charging, 0 discharging, -1 unknown. Returns true when the level changed.
 inline bool update(State& s, int battery_pct, int charging) {
-  if (battery_pct < 0 || charging < 0) return false;  // unknown: no change, no count
+  if (battery_pct < 0 || charging < 0) {  // not trustworthy: forget everything, warn about nothing
+    const bool changed = s.level != Level::ok;
+    s = State{};
+    return changed;
+  }
   const bool discharging = charging == 0;
   const bool low_now = discharging && battery_pct <= kLowPct;
   const bool critical_now = discharging && battery_pct <= kCriticalPct;

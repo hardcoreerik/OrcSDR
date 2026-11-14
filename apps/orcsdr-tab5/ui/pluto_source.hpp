@@ -23,9 +23,6 @@ struct Events {
   // Optional. Cuts and restores the USB port's 5 V rail, the only real reset a wedged Pluto gets. Returns false when it must not run now (a dongle
   // or another stream is using the port). Called from the watcher task, so it may block for a couple of seconds.
   bool (*power_cycle)() = nullptr;
-  // Optional. In stop mode the power guard went critical and wants the stream stopped (true), or cleared (false) so the application may resume it.
-  // See pluto_power_guard.hpp. Called from the watcher task, so it only sets flags.
-  void (*power_guard)(bool tripped) = nullptr;
 };
 
 // Installs the driver and starts a watcher task. Returns false when the driver would not install. Does nothing on the USB bus until a Pluto
@@ -39,17 +36,16 @@ bool previously_used();
 // The boot sequence cut and restored the USB 5 V rail itself. Holds the recovery ladder off while the Pluto boots, so it does not cut it again.
 void note_power_cycled();
 
-// Low-battery awareness (pluto_power_guard.hpp). It acts only on a level sustained across several readings, never on one, and it never refuses a
-// start: a manual start always works and just clears a guard stop.
+// Low-battery WARNING (pluto_power_guard.hpp), about the HOST's own battery only. The host cannot see how the Pluto is powered (its second port, a
+// PC cable, Ethernet), so this never claims the Pluto is at risk and never acts on it: nothing is stopped, refused or delayed because of a battery
+// reading, whatever the bench conditions, and a reading that cannot be trusted clears the warning. It only sets battery_low() for the screen text
+// after a level has been sustained across several readings.
 //   off   nothing
-//   warn  (default) battery_low() is true while the level is low or critical, so the screen can say so; the stream is never touched
-//   stop  as warn, and when the level goes critical the stream is stopped while there is still battery; it resumes when charging or recovered
-// Switching to off clears any state.
-enum class GuardMode : uint8_t { off = 0, warn = 1, stop = 2 };
+//   warn  (default)
+enum class GuardMode : uint8_t { off = 0, warn = 1 };
 void set_guard_mode(GuardMode mode);
 GuardMode guard_mode();
-bool battery_low();    // the host battery has been low (or critical) and discharging over several readings
-bool guard_stopped();  // the guard stopped the stream (stop mode) and it has not been cleared or restarted
+bool battery_low();  // the host battery has been low (or critical) and discharging over several readings
 
 bool ready();  // a Pluto is attached and can start a stream (or is streaming)
 bool active();  // a stream from the Pluto is running or starting
