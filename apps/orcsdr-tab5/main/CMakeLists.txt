@@ -104,6 +104,7 @@ idf_component_register(
         "../ui/serial_verbosity.cpp"
         "../ui/serial_scope.cpp"
         "../ui/serial_status.cpp"
+        "../ui/serial_bench.cpp"
         "../ui/ft8_hunter.cpp"
         "../ui/ft8_dashboard.cpp"
         "../ui/ft8_map_source.cpp"

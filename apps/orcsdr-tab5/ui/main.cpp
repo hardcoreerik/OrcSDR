@@ -106,6 +106,7 @@
 #include "serial_verbosity.hpp"
 #include "serial_scope.hpp"
 #include "serial_status.hpp"
+#include "serial_bench.hpp"
 #include "esp_memory_utils.h"
 #include "shortwave_model.hpp"
 #include "shortwave_audio_dsp.hpp"
@@ -20966,6 +20967,14 @@ static constexpr orcsdr::serial_health::Hooks kSerialHealthHooks{
     },
 };
 
+// RTL_SD_SELF_CHECK, RTL_SD_BENCH and RTL_WIFI_C6_POWER OFF live in serial_bench.cpp; the hooks do the device actions.
+static constexpr orcsdr::serial_bench::Hooks kSerialBenchHooks{
+    [](const char* text) { Serial.println(text); },
+    []() { (void)orcsdr::storage::run_file_semantics_check(); },
+    [](unsigned file_mib) { (void)orcsdr::storage::run_write_benchmark(file_mib); },
+    []() { M5.getIOExpander(1).digitalWrite(0, false); },
+};
+
 void process_command(char* command) {
   if (strncmp(command, "JS8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
     process_js8_command(command + 3);
@@ -21881,36 +21890,7 @@ void process_command(char* command) {
   // equivalent (state changes require `authenticated`, status queries do
   // not, matching RTL_STATUS/RTL_REC_STATUS/RTL_TOOL above).
   // ---------------------------------------------------------------------
-  if (strcmp(command, "RTL_SD_SELF_CHECK") == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_SD_SELF_CHECK_ERROR auth_required");
-      return;
-    }
-    (void)orcsdr::storage::run_file_semantics_check();
-    return;
-  }
-  if (strncmp(command, "RTL_SD_BENCH", 12) == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_SD_BENCH_ERROR auth_required");
-      return;
-    }
-    unsigned file_mib = 32;
-    if (command[12] != '\0' &&
-        (command[12] != ' ' || sscanf(command + 13, "%u", &file_mib) != 1 ||
-         file_mib < 4 || file_mib > 64)) {
-      Serial.println("RTL_SD_BENCH_INVALID use RTL_SD_BENCH [4..64 MiB]");
-      return;
-    }
-    (void)orcsdr::storage::run_write_benchmark(file_mib);
-    return;
-  }
-  if (strcmp(command, "RTL_WIFI_C6_POWER OFF") == 0) {
-    // Test hook (#106): drop the C6 rail to simulate a dead SDIO link.
-    if (!authenticated) { Serial.println("RTL_WIFI_C6_POWER_ERROR auth_required"); return; }
-    M5.getIOExpander(1).digitalWrite(0, false);
-    Serial.println("RTL_WIFI_C6_POWER off");
-    return;
-  }
+  if (orcsdr::serial_bench::handle_command(command, authenticated, kSerialBenchHooks)) return;
   if (strncmp(command, "RTL_SPLASH_GATE", 15) == 0) {
     const char* argument = command[15] == ' ' ? command + 16 : command + 15;
     if (strcmp(argument, "ON") == 0 || strcmp(argument, "OFF") == 0) {
