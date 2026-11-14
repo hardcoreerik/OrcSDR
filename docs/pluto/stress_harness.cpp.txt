@@ -1,0 +1,40 @@
+#define ORC_PLUTO_STRESS 1  // TEMPORARY: stop/start stress test of the app's own stop and resume path; removed before commit
+#ifdef ORC_PLUTO_STRESS
+static void stress_task(void*) {
+  vTaskDelay(pdMS_TO_TICKS(45000));  // let the first stream start and settle
+  const int gaps[] = {2, 5, 10, 30, 60};
+  int cycle = 0;
+  for (int rep = 0; rep < 4; ++rep) {
+    for (const int gap : gaps) {
+      ++cycle;
+      if (!(g_running.load() && g_first_block.load())) {
+        std::printf("STRESS cycle=%d no running stream to stop: STRESS_END stuck_before_cycle\n", cycle);
+        vTaskDelete(nullptr);
+      }
+      std::printf("STRESS cycle=%d stop gap=%ds\n", cycle, gap);
+      if (g_events.power_guard) g_events.power_guard(true);  // the app's real stop path
+      vTaskDelay(pdMS_TO_TICKS(gap * 1000));
+      const int64_t t0 = esp_timer_get_time();
+      if (g_events.power_guard) g_events.power_guard(false);  // the app's real resume path
+      bool ok = false;
+      while (esp_timer_get_time() - t0 < 45000000) {
+        if (g_running.load() && g_first_block.load() && g_alive.load()) {
+          ok = true;
+          break;
+        }
+        vTaskDelay(pdMS_TO_TICKS(250));
+      }
+      std::printf("STRESS cycle=%d gap=%ds result=%s resume_ms=%lld start_failures=%u ladder_cycles=%u\n", cycle, gap, ok ? "OK" : "FAIL",
+                  static_cast<long long>((esp_timer_get_time() - t0) / 1000), static_cast<unsigned>(g_start_failures.load()),
+                  static_cast<unsigned>(g_cycles.load()));
+      if (!ok) {
+        std::printf("STRESS_END stuck_after_cycle=%d\n", cycle);
+        vTaskDelete(nullptr);
+      }
+      vTaskDelay(pdMS_TO_TICKS(10000));  // let it run between cycles
+    }
+  }
+  std::printf("STRESS_END done cycles=%d\n", cycle);
+  vTaskDelete(nullptr);
+}
+#endif
