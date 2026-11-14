@@ -42,11 +42,18 @@ HEALTH_KEYS = ["present", "running", "alive", "state", "samples", "src_drops", "
 
 
 def ssh_probe(host, key):
+    # The script goes over stdin (`sh -s`): quotes inside a command-line argument are mangled on Windows and the remote shell then waits for a closing
+    # quote until the timeout (every probe of the 2026-11-14 run 2 failed that way).
+    script = ("cut -d. -f1 /proc/uptime; cat /sys/class/udc/*/state; journalctl -p err -b --no-pager 2>/dev/null | wc -l\n"
+              "for d in /sys/bus/iio/devices/iio:device*; do t=$(cat $d/in_temp0_input 2>/dev/null); "
+              "[ -n \"$t\" ] && echo \"$(cat $d/name 2>/dev/null)=$t\"; done\n"
+              "true\n")  # the loop's last test fails on a device without a temperature; do not let that become the exit status
     cmd = ["ssh", "-i", key, "-o", "IdentitiesOnly=yes", "-o", "BatchMode=yes", "-o", "ConnectTimeout=8", "-o", "StrictHostKeyChecking=accept-new",
-           f"root@{host}", "cut -d. -f1 /proc/uptime; cat /sys/class/udc/*/state; journalctl -p err -b --no-pager 2>/dev/null | wc -l; "
-           "for d in /sys/bus/iio/devices/iio:device*; do t=$(cat $d/in_temp0_input 2>/dev/null); [ -n \"$t\" ] && echo \"$(cat $d/name 2>/dev/null)=$t\"; done"]
+           f"root@{host}", "sh -s"]
     try:
-        r = subprocess.run(cmd, capture_output=True, text=True, timeout=25)
+        # Bytes in and out: text mode on Windows would turn the newlines into \r\n and the remote shell would fail on the \r.
+        r = subprocess.run(cmd, input=script.encode(), capture_output=True, timeout=25)
+        r.stdout, r.stderr = r.stdout.decode("utf-8", "replace"), r.stderr.decode("utf-8", "replace")
         parts = r.stdout.split()
         if r.returncode == 0 and len(parts) >= 3:
             # Temperatures (milli-degrees C) of every IIO device that reports one (the Zynq XADC and the AD9361), joined into one cell.
