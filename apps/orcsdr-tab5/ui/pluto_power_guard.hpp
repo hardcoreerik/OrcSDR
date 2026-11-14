@@ -1,52 +1,52 @@
 #pragma once
 
-// Power guard for a bus-powered PlutoSDR. The Pluto runs from the host's USB rail; when a battery-powered host (the Tab5) is discharging and the
-// battery runs out, the rail collapses and the Pluto dies without a word and cannot be restarted (seen in an overnight soak). The guard stops the
-// stream while there is still battery, says why, and lets the stream resume once the host is charging again or has recovered.
+// Low-battery awareness for a bus-powered PlutoSDR. The Pluto runs from the host's USB rail; when a battery-powered host (the Tab5) is
+// discharging and the battery runs out, the rail collapses and the Pluto dies without a word (seen in an overnight soak). This tells the user
+// before that happens, and can optionally stop the stream while there is still battery.
 //
-// Pure decision logic, no hardware access: pluto_source feeds it the host's battery percent and charge state every few seconds. Unknown
-// readings never trip it (a host without a battery, or a failed read, must not block the receiver), and a tripped guard stays tripped until it
-// sees a known reading that clears it.
+// It never acts on one reading. A level counts only after it is sustained across several readings in a row, one good reading resets the count,
+// and unknown readings change nothing. It never locks the receiver out: the caller decides what a level means, and a manual start always works.
+//
+// Pure decision logic, no hardware access: pluto_source feeds it the host's battery percent and charge state about once a minute.
 
 #include <cstdint>
 
 namespace orcsdr::pluto_power_guard {
 
-constexpr int kWarnPct = 20;     // discharging at or below this: one warning
-constexpr int kTripPct = 10;     // discharging at or below this: stop the stream
-constexpr int kRecoverPct = 25;  // a tripped guard clears when charging, or when the level is back at or above this (hysteresis)
+constexpr int kLowPct = 20;            // discharging at or below this ...
+constexpr uint8_t kLowReadings = 2;    // ... for this many readings in a row: level "low"
+constexpr int kCriticalPct = 10;       // discharging at or below this ...
+constexpr uint8_t kCriticalReadings = 3;  // ... for this many readings in a row: level "critical"
+constexpr int kRecoverPct = 25;        // a low or critical level clears when charging, or when the level is back at or above this (hysteresis)
 
-enum class Event : uint8_t { none, warn, trip, recover };
+enum class Level : uint8_t { ok, low, critical };
 
 struct State {
-  bool tripped = false;
-  bool warned = false;
+  Level level = Level::ok;
+  uint8_t low_run = 0;       // consecutive readings at or below kLowPct while discharging
+  uint8_t critical_run = 0;  // consecutive readings at or below kCriticalPct while discharging
 };
 
-// battery_pct: 0..100 or -1 unknown. charging: 1 charging, 0 discharging, -1 unknown.
-inline Event update(State& s, int battery_pct, int charging) {
-  if (battery_pct < 0 || charging < 0) return Event::none;
-  if (s.tripped) {
-    if (charging == 1 || battery_pct >= kRecoverPct) {
-      s.tripped = false;
-      s.warned = false;
-      return Event::recover;
-    }
-    return Event::none;
+// battery_pct: 0..100 or -1 unknown. charging: 1 charging, 0 discharging, -1 unknown. Returns true when the level changed.
+inline bool update(State& s, int battery_pct, int charging) {
+  if (battery_pct < 0 || charging < 0) return false;  // unknown: no change, no count
+  const bool discharging = charging == 0;
+  const bool low_now = discharging && battery_pct <= kLowPct;
+  const bool critical_now = discharging && battery_pct <= kCriticalPct;
+  s.low_run = low_now ? static_cast<uint8_t>(s.low_run < 255 ? s.low_run + 1 : 255) : 0;
+  s.critical_run = critical_now ? static_cast<uint8_t>(s.critical_run < 255 ? s.critical_run + 1 : 255) : 0;
+
+  Level next = s.level;
+  if (s.level != Level::ok && (charging == 1 || battery_pct >= kRecoverPct)) {
+    next = Level::ok;  // plugged in, or comfortably recovered
+  } else if (s.critical_run >= kCriticalReadings) {
+    next = Level::critical;
+  } else if (s.level == Level::ok && s.low_run >= kLowReadings) {
+    next = Level::low;
   }
-  if (charging == 0 && battery_pct <= kTripPct) {
-    s.tripped = true;
-    return Event::trip;
-  }
-  if (charging == 0 && battery_pct <= kWarnPct) {
-    if (!s.warned) {
-      s.warned = true;
-      return Event::warn;
-    }
-    return Event::none;
-  }
-  s.warned = false;  // charging, or comfortably above the warning level: the next dip warns again
-  return Event::none;
+  const bool changed = next != s.level;
+  s.level = next;
+  return changed;
 }
 
 }  // namespace orcsdr::pluto_power_guard

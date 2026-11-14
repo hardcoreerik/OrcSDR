@@ -14,71 +14,87 @@ static int g_failures = 0;
   } while (0)
 
 int main() {
-  // A full battery, discharging or charging, never does anything.
+  // A full battery, discharging or charging, does nothing.
   {
     State s;
-    CHECK(update(s, 100, 0) == Event::none);
-    CHECK(update(s, 100, 1) == Event::none);
-    CHECK(!s.tripped);
+    CHECK(!update(s, 100, 0));
+    CHECK(!update(s, 100, 1));
+    CHECK(s.level == Level::ok);
   }
-  // Discharging down the curve: one warning, then a trip, then nothing more while it stays low.
+  // One low reading is never enough: not for "low", not for "critical", even at 0%.
   {
     State s;
-    CHECK(update(s, 30, 0) == Event::none);
-    CHECK(update(s, 20, 0) == Event::warn);
-    CHECK(update(s, 19, 0) == Event::none);  // warned once only
-    CHECK(update(s, 11, 0) == Event::none);
-    CHECK(update(s, 10, 0) == Event::trip);
-    CHECK(s.tripped);
-    CHECK(update(s, 9, 0) == Event::none);
-    CHECK(update(s, 3, 0) == Event::none);
-    CHECK(s.tripped);
+    CHECK(!update(s, 5, 0));
+    CHECK(s.level == Level::ok);
+    CHECK(!update(s, 0, 0) == false);  // second reading: low (2 in a row)
+    CHECK(s.level == Level::low);      // but critical needs 3
   }
-  // Charging clears a trip at any level; a level at or above the recover threshold clears it too (hysteresis between 10 and 25).
+  // A single dip is forgotten: a good reading resets the count.
   {
     State s;
-    CHECK(update(s, 8, 0) == Event::trip);
-    CHECK(update(s, 12, 0) == Event::none);  // rose a little, still discharging: stays tripped
-    CHECK(update(s, 24, 0) == Event::none);
-    CHECK(s.tripped);
-    CHECK(update(s, 25, 0) == Event::recover);
-    CHECK(!s.tripped);
+    CHECK(!update(s, 8, 0));
+    CHECK(!update(s, 60, 0));  // a normal reading in between
+    CHECK(!update(s, 8, 0));   // count restarts at 1
+    CHECK(s.level == Level::ok);
+    CHECK(!update(s, 60, 1));
+    CHECK(!update(s, 8, 0));
+    CHECK(s.level == Level::ok);
+  }
+  // Sustained: two readings at or below 20% is "low", three at or below 10% is "critical".
+  {
+    State s;
+    CHECK(!update(s, 19, 0));
+    CHECK(update(s, 18, 0));
+    CHECK(s.level == Level::low);
+    CHECK(!update(s, 12, 0));  // still low
+    CHECK(!update(s, 9, 0));   // critical run is 1
+    CHECK(!update(s, 8, 0));   // 2
+    CHECK(update(s, 7, 0));    // 3: critical
+    CHECK(s.level == Level::critical);
+    CHECK(!update(s, 5, 0));   // stays, no repeat event
+  }
+  // Clearing: charging clears at any level; otherwise the level must be back at 25% (hysteresis), not just above the trip level.
+  {
+    State s;
+    update(s, 9, 0); update(s, 9, 0); update(s, 9, 0);
+    CHECK(s.level == Level::critical);
+    CHECK(!update(s, 14, 0));
+    CHECK(!update(s, 24, 0));
+    CHECK(s.level != Level::ok);
+    CHECK(update(s, 25, 0));
+    CHECK(s.level == Level::ok);
   }
   {
     State s;
-    CHECK(update(s, 5, 0) == Event::trip);
-    CHECK(update(s, 5, 1) == Event::recover);  // plugged in
-    CHECK(!s.tripped);
-    CHECK(update(s, 5, 1) == Event::none);     // charging: no trip
-    CHECK(update(s, 5, 0) == Event::trip);     // unplugged again while low
+    update(s, 9, 0); update(s, 9, 0); update(s, 9, 0);
+    CHECK(update(s, 9, 1));  // plugged in
+    CHECK(s.level == Level::ok);
+    CHECK(!update(s, 9, 1)); // charging: stays ok
+    CHECK(!update(s, 9, 0)); // unplugged while low: counts start again
+    CHECK(s.level == Level::ok);
   }
-  // Unknown readings never trip, and never clear a trip.
+  // Unknown readings change nothing and do not count, in either direction.
   {
     State s;
-    CHECK(update(s, -1, 0) == Event::none);
-    CHECK(update(s, 5, -1) == Event::none);
-    CHECK(update(s, -1, -1) == Event::none);
-    CHECK(!s.tripped);
-    CHECK(update(s, 5, 0) == Event::trip);
-    CHECK(update(s, -1, 1) == Event::none);
-    CHECK(update(s, 90, -1) == Event::none);
-    CHECK(s.tripped);
+    CHECK(!update(s, -1, 0));
+    CHECK(!update(s, 5, -1));
+    CHECK(!update(s, -1, -1));
+    update(s, 9, 0); update(s, 9, 0);
+    CHECK(s.level == Level::low);
+    CHECK(!update(s, -1, 1));   // an unknown reading does not clear it
+    CHECK(!update(s, 90, -1));
+    CHECK(s.level == Level::low);
+    update(s, 8, 0);            // the third real reading in a row ...
+    update(s, 8, 0);            // (unknown ones did not break the run) ... counts toward critical
+    CHECK(s.level == Level::critical);
   }
-  // The warning re-arms after the battery has been well above the warning level, or charging.
+  // The counters cannot overflow on a long discharge.
   {
     State s;
-    CHECK(update(s, 18, 0) == Event::warn);
-    CHECK(update(s, 18, 0) == Event::none);
-    CHECK(update(s, 50, 1) == Event::none);
-    CHECK(update(s, 18, 0) == Event::warn);
-  }
-  // Edge values.
-  {
-    State s;
-    CHECK(update(s, 0, 0) == Event::trip);
-    State t;
-    CHECK(update(t, 21, 0) == Event::none);
-    CHECK(update(t, 10, 0) == Event::trip);  // straight to a trip without a warning is fine
+    for (int i = 0; i < 1000; ++i) update(s, 3, 0);
+    CHECK(s.level == Level::critical);
+    CHECK(update(s, 3, 1));
+    CHECK(s.level == Level::ok);
   }
 
   if (g_failures == 0) std::printf("pluto_power_guard_host_test: all passed\n");

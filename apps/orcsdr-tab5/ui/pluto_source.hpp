@@ -17,25 +17,14 @@ namespace orcsdr::pluto_source {
 
 using IqSink = rtl_tcp_source::IqSink;
 
-// The host's own power numbers, for the health line: the Pluto runs from the host's USB rail, so a failing battery or rail on the host shows
-// up as a Pluto that dies without a word (seen once in an overnight soak). Unknown values are -1 (charging: -1 unknown, 0 discharging, 1 charging).
-struct PowerInfo {
-  int battery_pct = -1;
-  int battery_mv = -1;
-  int vbus_mv = -1;
-  int charging = -1;
-};
-
 struct Events {
   void (*attached)();  // a Pluto enumerated and can stream (called from the watcher task; must not block)
   void (*detached)();  // the Pluto went away
   // Optional. Cuts and restores the USB port's 5 V rail, the only real reset a wedged Pluto gets. Returns false when it must not run now (a dongle
   // or another stream is using the port). Called from the watcher task, so it may block for a couple of seconds.
   bool (*power_cycle)() = nullptr;
-  // Optional. Fills the host's battery and USB-rail numbers for the once-a-minute health line. Called from the watcher task.
-  bool (*power_info)(PowerInfo*) = nullptr;
-  // Optional. The power guard tripped (true) or cleared (false); see pluto_power_guard.hpp. On true the application stops the stream; on false it
-  // may resume it. Called from the watcher task, so it only sets flags.
+  // Optional. In stop mode the power guard went critical and wants the stream stopped (true), or cleared (false) so the application may resume it.
+  // See pluto_power_guard.hpp. Called from the watcher task, so it only sets flags.
   void (*power_guard)(bool tripped) = nullptr;
 };
 
@@ -50,11 +39,17 @@ bool previously_used();
 // The boot sequence cut and restored the USB 5 V rail itself. Holds the recovery ladder off while the Pluto boots, so it does not cut it again.
 void note_power_cycled();
 
-// Power guard (pluto_power_guard.hpp): stops the stream while the host battery is low and discharging, and refuses starts until it clears.
-// On by default; a development bench that wants to run the battery down can switch it off. Switching it off clears a tripped guard.
-void set_guard_enabled(bool enabled);
-bool guard_enabled();
-bool power_blocked();  // the guard is tripped: a start is refused, and the screen says why
+// Low-battery awareness (pluto_power_guard.hpp). It acts only on a level sustained across several readings, never on one, and it never refuses a
+// start: a manual start always works and just clears a guard stop.
+//   off   nothing
+//   warn  (default) battery_low() is true while the level is low or critical, so the screen can say so; the stream is never touched
+//   stop  as warn, and when the level goes critical the stream is stopped while there is still battery; it resumes when charging or recovered
+// Switching to off clears any state.
+enum class GuardMode : uint8_t { off = 0, warn = 1, stop = 2 };
+void set_guard_mode(GuardMode mode);
+GuardMode guard_mode();
+bool battery_low();    // the host battery has been low (or critical) and discharging over several readings
+bool guard_stopped();  // the guard stopped the stream (stop mode) and it has not been cleared or restarted
 
 bool ready();  // a Pluto is attached and can start a stream (or is streaming)
 bool active();  // a stream from the Pluto is running or starting

@@ -147,6 +147,7 @@
 #include "settings_remote_source.hpp"
 #include "rtl_tcp_server.hpp"
 #include "rtl_tcp_source.hpp"
+#include "pluto_home.hpp"
 #include "pluto_source.hpp"
 #include "source_capabilities.hpp"
 #include "radio_ui_service.hpp"
@@ -9763,27 +9764,10 @@ static void on_pluto_detached() {
   Serial.printf("PLUTO_DETACHED previous=%u resume_pending=%d\n", static_cast<unsigned>(previous), resume ? 1 : 0);
 }
 
-// The host's battery and USB-rail numbers for the Pluto health line (read-only; the same calls the Home power line uses).
-static bool on_pluto_power_info(orcsdr::pluto_source::PowerInfo* p) {
-  // No PMIC-type guard: the Tab5 reports an unknown type yet reads level, voltage and VBUS fine (the Home power line relies on that).
-  if (p == nullptr) return false;
-  p->battery_pct = M5.Power.getBatteryLevel();
-  p->battery_mv = M5.Power.getBatteryVoltage();
-  p->vbus_mv = M5.Power.getVBUSVoltage();
-  switch (M5.Power.isCharging()) {
-    case m5::Power_Class::is_charging: p->charging = 1; break;
-    case m5::Power_Class::is_discharging: p->charging = 0; break;
-    default: p->charging = -1; break;
-  }
-  return true;
-}
-
-// Power guard hook (pluto_power_guard.hpp): the host battery is low and discharging, so stop the Pluto stream now, while there is still battery, and
-// say so. When the host is charging again (or the level recovered) the stream resumes, but only if it was running when the guard tripped.
-// Only sets flags (called from the pluto_source watcher task).
+// Stop mode of the Pluto low-battery guard (ui/pluto_power_guard.hpp, pluto_source): stop the stream, or let it resume. Only sets flags.
 static std::atomic<bool> g_pluto_guard_resume{false};
-static void on_pluto_power_guard(bool tripped) {
-  if (tripped) {
+static void on_pluto_power_guard(bool stop) {
+  if (stop) {
     const bool streaming = rtl_pluto_active();
     g_pluto_guard_resume.store(streaming, std::memory_order_release);
     if (streaming) {
@@ -9791,15 +9775,11 @@ static void on_pluto_power_guard(bool tripped) {
       rtl_restart_requested.store(false, std::memory_order_release);
       rtl_stop_requested.store(true, std::memory_order_release);
     }
-    set_rtl_sdr_status("PlutoSDR: stopped, host battery low");
-    Serial.printf("PLUTO_POWER_GUARD stop requested streaming=%d\n", streaming ? 1 : 0);
     return;
   }
-  const bool resume = g_pluto_guard_resume.exchange(false, std::memory_order_acq_rel);
-  set_rtl_sdr_status("PlutoSDR: ready");
-  if (resume && !rtl_usb_device_ready() && !rtl_remote_active() && orcsdr::pluto_source::ready())
+  if (g_pluto_guard_resume.exchange(false, std::memory_order_acq_rel) && !rtl_usb_device_ready() && !rtl_remote_active() &&
+      orcsdr::pluto_source::ready())
     rtl_hotplug_resume_pending.store(true, std::memory_order_release);
-  Serial.printf("PLUTO_POWER_GUARD cleared resume=%d\n", resume ? 1 : 0);
 }
 
 // Recovery hook for a wedged Pluto: remove the USB-A 5 V rail long enough for the board to drop, then restore it. Skipped while anything else
@@ -10825,10 +10805,7 @@ void initialize_rtl_sdr_host() {
   // so it is installed only after the RTL driver is.
   Serial.printf("PLUTO_SOURCE install=%d\n",
                 orcsdr::pluto_source::begin({rtl_tcp_sink_acquire, rtl_tcp_sink_submit, rtl_tcp_sink_release, rtl_tcp_sink_discontinuity},
-                                            {on_pluto_attached, on_pluto_detached, on_pluto_power_cycle, on_pluto_power_info,
-                                             on_pluto_power_guard}) ? 1 : 0);
-  // A bench that wants to run the host battery down on purpose can switch the guard off ("pluto_guard" false); it is on by default.
-  orcsdr::pluto_source::set_guard_enabled(preferences.getBool("pluto_guard", true));
+                                            {on_pluto_attached, on_pluto_detached, on_pluto_power_cycle, on_pluto_power_guard}) ? 1 : 0);
 }
 #endif /* RTL_USE_LEGACY_USB */
 
@@ -13805,16 +13782,7 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
   if (!demo && g_rtl != nullptr && esp_rtl_sdr_get_metrics(g_rtl, &metrics) == ESP_OK)
     snapshot.effective_sps = metrics.effective_sps;
 #endif
-  if (!demo && (rtl_pluto_active() || (!rtl_usb_device_ready() && orcsdr::pluto_source::ready()))) {
-    // A PlutoSDR is the local receiver (a dongle always wins): the tag says so, and the rate is the one its stream delivers.
-    strlcpy(snapshot.receiver, "PLUTO", sizeof(snapshot.receiver));
-    snapshot.effective_sps = orcsdr::pluto_source::output_rate_sps();
-    if (orcsdr::pluto_source::power_blocked()) {
-      // The power guard stopped the stream: the chip says why, and turns orange (the colour of "not ready").
-      strlcpy(snapshot.link_state, "LOW BATT", sizeof(snapshot.link_state));
-      snapshot.driver_ready = false;
-    }
-  }
+  if (!demo) orcsdr::pluto_home::fill(snapshot, rtl_usb_device_ready());  // the PLUTO tag, its rate and LOW BATT; a no-op unless a Pluto is the receiver
   if (!demo && g_rtl_remote_narrow.load(std::memory_order_acquire)) {
     // A network receiver: say so, show the rate the stream really runs at (it steps with the link), and
     // turn the header state into the link's health. "Ready" now means the stream is flowing, not USB.

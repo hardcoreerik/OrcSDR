@@ -40,6 +40,8 @@ idf_component_register(
         "../ui/settings_remote_source.cpp"
         "../ui/rtl_tcp_source.cpp"
         "../ui/pluto_source.cpp"
+        "../ui/pluto_home.cpp"
+        "../ui/host_power.cpp"
         "../ui/receiver_source_policy.cpp"
         "../ui/source_capabilities.cpp"
         "../ui/orcsdr_restart.cpp"
