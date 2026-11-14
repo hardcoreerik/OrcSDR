@@ -81,6 +81,8 @@ idf_component_register(
         "../ui/sd_writer_device.cpp"
         "../ui/rds_capture.cpp"
         "../ui/audio_rec.cpp"
+        "../ui/serial_display_bench.cpp"
+        "../ui/display_bench.cpp"
         "../ui/serial_help.cpp"
         "../ui/serial_adsb.cpp"
         "../ui/serial_location.cpp"
@@ -293,6 +295,7 @@ idf_component_register(
         esp_driver_i2c
         esp_driver_gpio
         esp_driver_jpeg
+        esp_driver_ppa
         fatfs
         esp_hosted
         esp_event

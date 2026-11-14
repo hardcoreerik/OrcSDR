@@ -60,6 +60,8 @@ on:
       - 'tests/sd_writer_tests.cpp'
       - 'tests/rds_capture_tests.cpp'
       - 'tests/audio_rec_tests.cpp'
+      - 'tests/display_rotate_tests.cpp'
+      - 'tests/serial_display_bench_tests.cpp'
       - 'tests/data/serial_help_golden.txt'
       - 'tests/data/serial_help_golden_orcdial.txt'
       - 'tests/data/serial_command_routes.tsv'

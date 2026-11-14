@@ -46,185 +46,186 @@ order	guard	match	auth	deny
 44	-	exact:"RTL_MEM BUFFERS"	none	-
 45	-	prefix[12]:"RTL_MEM HOG "	gate-first	RTL_MEM_ERROR auth_required
 46	-	exact:"RTL_MEM RECLAIM"	gate-first	RTL_MEM_ERROR auth_required
-47	#if ORCSDR_ORCDIAL	exact:"RTL_ORCDIAL_STATUS" | exact:"RTL_ORCDIAL_PROBE"	inside	-
-48	#if ORCSDR_ORCDIAL	exact:"RTL_ORCDIAL_PAIR START"	gate-first	RTL_ORCDIAL_ERROR auth_required
-49	#if ORCSDR_ORCDIAL	exact:"RTL_ORCDIAL_PAIR CANCEL"	gate-first	RTL_ORCDIAL_ERROR auth_required
-50	#if ORCSDR_ORCDIAL	prefix[25]:"RTL_ORCDIAL_PAIR CONFIRM "	gate-first	RTL_ORCDIAL_ERROR auth_required
-51	#if ORCSDR_ORCDIAL	exact:"RTL_ORCDIAL_CONNECT"	gate-first	RTL_ORCDIAL_ERROR auth_required
-52	#if ORCSDR_ORCDIAL	exact:"RTL_ORCDIAL_DISCONNECT"	gate-first	RTL_ORCDIAL_ERROR auth_required
-53	#if ORCSDR_ORCDIAL	exact:"RTL_ORCDIAL_FORGET"	gate-first	RTL_ORCDIAL_ERROR auth_required
-54	#if ORCSDR_ORCDIAL	exact:"RTL_ORCDIAL_C6_UPDATE CONFIRM"	gate-first	RTL_ORCDIAL_C6_UPDATE_ERROR auth_required
-55	-	prefix[14]:"RTL_UI ACTION "	condition	-
-56	-	prefix[14]:"RTL_UI ACTION "	none	-
-57	-	exact:"RTL_WIFI_SCAN"	none	-
-58	-	exact:"RTL_WIFI_CONNECT_SAVED" | exact:"RTL_WIFI_CONNECT_SAVED PAUSE"	none	-
-59	-	exact:"RTL_WIFI_RESULTS"	none	-
-60	-	exact:"RTL_WIFI_PROFILES"	none	-
-61	-	prefix[15]:"RTL_WIFI_OUTAGE"	gate-first	RTL_WIFI_OUTAGE_ERROR auth_required
-62	-	exact:"RTL_WIFI_DISCONNECT"	gate-first	RTL_WIFI_DISCONNECT_ERROR auth_required
-63	#if ORCSDR_C6_FAULT_TEST	exact:"RTL_WIFI_TEST_C6_POWER OFF CONFIRM" | exact:"RTL_WIFI_TEST_C6_POWER ON CONFIRM"	gate-first	RTL_WIFI_TEST_C6_POWER_ERROR auth_required
-64	-	exact:"RTL_WIFI_BUS_STATUS"	none	-
-65	-	exact:"RTL_WIFI_STATUS"	none	-
-66	-	exact:"RTL_WIFI_CHANNEL"	none	-
-67	-	exact:"RTL_WIFI_C6_STATUS"	none	-
-68	-	exact:"RTL_WIFI_C6_UPDATE CONFIRM"	gate-first	RTL_WIFI_C6_UPDATE_ERROR auth_required
-69	-	exact:"RTL_WIFI_COEX_STATUS"	none	-
-70	-	prefix[7]:"UI_TAP "	gate-first	UI_TAP_ERROR auth_required
-71	-	exact:"RTL_TAG_DOC ON" | exact:"RTL_TAG_DOC OFF"	none	-
-72	-	exact:"RTL_SCREEN_STATUS"	none	-
-73	-	exact:"RTL_UI_REGRESSION CHECK"	none	-
-74	-	exact:"RTL_UI_REGRESSION RUN"	gate-first	RTL_UI_REGRESSION_RESULT mode=RUN pass=0 reason=unauthenticated
-75	-	exact:"RTL_CATALOG_STATUS" | exact:"RTL_CATALOG_LIST"	none	-
-76	-	exact:"RTL_CATALOG_CHECK" | exact:"RTL_CATALOG_FETCH"	gate-first	RTL_CATALOG_ERROR auth_required
-77	-	prefix[20]:"RTL_CATALOG_INSTALL " | prefix[19]:"RTL_CATALOG_REMOVE "	gate-first	RTL_CATALOG_ERROR auth_required
-78	-	exact:"RTL_LOCATION STATUS"	none	-
-79	-	exact:"RTL_LOCATION IP" | prefix[20]:"RTL_LOCATION LOOKUP " | exact:"RTL_LOCATION CONFIRM"	gate-first	RTL_LOCATION_ERROR auth_required
-80	-	exact:"RTL_ADSB_RANGE"	none	-
-81	-	prefix[15]:"RTL_ADSB_RANGE "	gate-first	RTL_ADSB_RANGE_ERROR auth_required
-82	-	prefix[18]:"RTL_ADSB_LOCATION "	gate-first	RTL_ADSB_LOCATION_ERROR auth_required
-83	-	exact:"RTL_ADSB_STOP"	none	-
-84	-	exact:"RTL_ADSB_START"	none	-
-85	-	exact:"SD_LIST"	none	-
-86	-	prefix[13]:"SD_GET_BEGIN "	none	-
-87	-	exact:"SD_GET_CHUNK"	none	-
-88	-	exact:"SD_GET_ABORT"	none	-
-89	-	prefix[10]:"SD_REMOVE "	none	-
-90	-	prefix[13]:"SD_PUT_BEGIN "	none	-
-91	-	prefix[13]:"SD_PUT_CHUNK "	none	-
-92	-	exact:"SD_PUT_ABORT"	none	-
-93	-	exact:"RTL_CAPTURE_STATUS"	none	-
-94	-	exact:"RTL_IQ_START"	none	-
-95	-	prefix[18]:"RTL_IQ_DIAG_START "	inside	-
-96	-	exact:"RTL_IQ_DIAG_STATUS"	none	-
-97	-	exact:"RTL_IQ_STOP" | exact:"RTL_IQ_SAVE"	none	-
-98	-	exact:"RTL_IQ_STATUS"	none	-
-99	-	exact:"RTL_LORA_NATIVE_STATUS"	none	-
-100	-	exact:"RTL_LORA_PLAN_STATUS"	none	-
-101	-	if:orcsdr::lora_diag::handle_command(command, authenticated, kLoraDiagHooks)	condition	-
-102	-	if:orcsdr::sstv_diag::handle_command(command, authenticated, kSstvDiagHooks)	condition	-
-103	-	if:orcsdr::lora_gain_guard::handle_command(command, authenticated, kLoraGainHooks)	condition	-
-104	-	exact:"RTL_LORA_REGION_LIST"	none	-
-105	-	exact:"RTL_LORA_AUTO ON" | exact:"RTL_LORA_AUTO OFF"	condition	-
-106	-	prefix[14]:"RTL_LORA_TUNE "	condition	-
-107	-	exact:"LORA_SD_LOG ON"	none	-
-108	-	exact:"LORA_SD_LOG OFF"	none	-
-109	-	exact:"LORA_HISTORY FILES"	none	-
-110	-	exact:"LORA_HISTORY STATUS"	none	-
-111	-	prefix[18]:"LORA_HISTORY NODE "	none	-
-112	-	exact:"LORA_SD_LOG STATUS"	none	-
-113	-	prefix[13]:"LORA_MESSAGE "	none	-
-114	-	prefix[12]:"LORA_PACKET "	none	-
-115	-	exact:"LORA_MESSAGE_CLEAR"	none	-
-116	-	exact:"RTL_LORA_MEMORY"	none	-
-117	-	prefix[22]:"RTL_LORA_REPLAY_BEGIN "	inside	-
-118	-	prefix[22]:"RTL_LORA_REPLAY_CHUNK "	inside	-
-119	-	exact:"RTL_LORA_REPLAY_ABORT"	inside	-
-120	-	exact:"RTL_IQ_RETRIEVE_BEGIN"	none	-
-121	-	exact:"RTL_IQ_GET_BEGIN"	none	-
-122	-	exact:"RTL_IQ_GET_CHUNK"	none	-
-123	-	exact:"RTL_IQ_GET_ABORT"	none	-
-124	-	exact:"RTL_IQ_RETRIEVE_END"	none	-
-125	-	exact:"RTL_REC_START"	none	-
-126	-	exact:"RTL_REC_STOP"	none	-
-127	-	exact:"RTL_REC_STATUS"	none	-
-128	-	exact:"RTL_REC_SAVE"	none	-
-129	-	prefix[9]:"RTL_TOOL "	none	-
-130	-	exact:"RTL_TOOL"	none	-
-131	-	exact:"RTL_STOP"	condition	-
-132	-	stmt:const bool continuous_command = strncmp(command, "RTL_LISTEN", 10) == 0;	none	-
-133	-	stmt:const bool kzel_capture = strcmp(command, "RTL_CAPTURE") == 0 || strcmp(command, "RTL_CAPTURE KZEL") == 0 || strcmp(command, "RTL_LISTEN KZEL") == 0 || strcmp(command, "RTL_LISTEN FM") == 0;	none	-
-134	-	stmt:const bool noaa_capture = strcmp(command, "RTL_CAPTURE NOAA") == 0 || strcmp(command, "RTL_LISTEN NOAA") == 0 || strcmp(command, "RTL_LISTEN WX") == 0;	none	-
-135	-	stmt:const bool am_capture = strcmp(command, "RTL_CAPTURE AM") == 0 || strcmp(command, "RTL_LISTEN AM") == 0;	none	-
-136	-	stmt:const bool lora_capture = strcmp(command, "RTL_CAPTURE LORA") == 0 || strcmp(command, "RTL_LISTEN LORA") == 0;	none	-
-137	-	if:(kzel_capture || noaa_capture || am_capture || lora_capture) && authenticated	condition	-
-138	-	prefix[11]:"RTL_VOLUME "	condition	-
-139	-	exact:"RTL_STATUS"	none	-
-140	-	exact:"RTL_HOTPLUG_STATUS"	none	-
-141	-	exact:"RTL_ADSB STATUS"	none	-
-142	-	exact:"AUDIO_CODEC"	none	-
-143	-	exact:"RTL_DRIVER STATUS"	none	-
-144	-	exact:"RTL_AM_SCAN STATUS"	none	-
-145	-	exact:"UI_SELF_CHECK"	none	-
-146	-	exact:"HOME_PLOT STATUS"	none	-
-147	#if ORCSDR_DSP_LAB	prefix[17]:"RTL_DSP LAB RATE "	none	-
-148	#if ORCSDR_DSP_LAB	prefix[11]:"RTL_DSP LAB"	none	-
-149	#if ORCSDR_DSP_AB	prefix[19]:"RTL_DSP AB CAPTURE "	none	-
-150	#if ORCSDR_DSP_AB	prefix[17]:"RTL_DSP AB STORM "	none	-
-151	#if ORCSDR_DSP_AB	exact:"RTL_DSP AB RUN"	none	-
-152	-	exact:"RTL_DSP STATS"	none	-
-153	-	exact:"RTL_GAIN STATUS"	none	-
-154	-	prefix[9]:"RTL_GAIN "	gate-first	RTL_GAIN_ERROR auth_required
-155	-	exact:"RTL_AM_GAIN STATUS"	none	-
-156	-	exact:"RTL_FM_GAIN STATUS"	none	-
-157	-	exact:"RTL_DRIVER SELF_CHECK"	none	-
-158	-	prefix[11]:"RTL_DRIVER "	gate-first	RTL_DRIVER_ERROR auth_required
-159	-	exact:"RTL_SD_SELF_CHECK"	gate-first	RTL_SD_SELF_CHECK_ERROR auth_required
-160	-	prefix[12]:"RTL_SD_BENCH"	gate-first	RTL_SD_BENCH_ERROR auth_required
-161	-	exact:"RTL_WIFI_C6_POWER OFF"	gate-first	RTL_WIFI_C6_POWER_ERROR auth_required
-162	-	prefix[15]:"RTL_SPLASH_GATE"	inside	-
-163	-	exact:"RTL_HELP"	none	-
-164	-	exact:"ORC_RTC_STATUS"	none	-
-165	-	prefix[11]:"ORC_TZ_SET "	gate-first	ORC_TZ_SET_ERROR auth_required
-166	-	prefix[12]:"ORC_RTC_SET "	gate-first	ORC_RTC_SET_ERROR auth_required
-167	-	exact:"RTL_RESET"	gate-first	RTL_RESET_ERROR auth_required
-168	-	exact:"RTL_RESET CPU"	gate-first	RTL_RESET_ERROR auth_required
-169	-	exact:"RTL_USB_SAFE_MODE_STATUS"	none	-
-170	-	exact:"RTL_USB_SAFE_MODE_RESET CONFIRM"	gate-first	RTL_USB_SAFE_MODE_RESET_ERROR auth_required
-171	-	exact:"RTL_P25_IQ_START"	gate-first	RTL_P25_IQ_ERROR auth_required
-172	-	exact:"RTL_P25_IQ_STOP"	gate-first	RTL_P25_IQ_ERROR auth_required
-173	-	exact:"RTL_P25_IQ_STATUS"	none	-
-174	-	prefix[15]:"RTL_P25_REPLAY "	gate-first	RTL_P25_REPLAY_ERROR auth_required
-175	-	exact:"RTL_P25_ENCRYPTION_STATUS"	none	-
-176	-	exact:"RTL_P25_MODULATION"	none	-
-177	-	prefix[19]:"RTL_P25_MODULATION "	gate-first	RTL_P25_MODULATION_ERROR auth_required
-178	-	exact:"RTL_P25_STATUS"	none	-
-179	-	exact:"RTL_P25_PHASE2_STATUS"	none	-
-180	-	exact:"RTL_P25_PHASE2_TRACE"	none	-
-181	-	prefix[21]:"RTL_P25_PHASE2_TRACE "	gate-first	RTL_P25_PHASE2_TRACE_ERROR auth_required
-182	-	exact:"RTL_P25_PROFILE_LIST"	none	-
-183	-	prefix[23]:"RTL_P25_PROFILE_SELECT "	gate-first	RTL_P25_PROFILE_ERROR auth_required
-184	-	prefix[23]:"RTL_P25_PROFILE_IMPORT "	gate-first	RTL_P25_PROFILE_ERROR auth_required
-185	-	prefix[23]:"RTL_P25_PROFILE_EXPORT "	gate-first	RTL_P25_PROFILE_ERROR auth_required
-186	-	prefix[23]:"RTL_P25_PROFILE_RENAME "	gate-first	RTL_P25_PROFILE_ERROR auth_required
-187	-	prefix[23]:"RTL_P25_PROFILE_DELETE "	gate-first	RTL_P25_PROFILE_ERROR auth_required
-188	-	exact:"RTL_P25_CONFIG_RELOAD"	condition	-
-189	-	exact:"RTL_P25_SCAN"	condition	-
-190	-	prefix[9]:"RTL_TUNE "	condition	-
-191	-	exact:"RTL_FREQ"	none	-
-192	-	prefix[9]:"RTL_FREQ "	condition	-
-193	-	exact:"RTL_VOLUME"	none	-
-194	-	exact:"RTL_SOUND"	none	-
-195	-	exact:"RTL_SOUND ON" | exact:"RTL_SOUND OFF"	none	-
-196	-	exact:"RTL_WEB" | exact:"RTL_WEB_STATUS"	none	-
-197	-	exact:"RTL_WEB_AUDIO_STATUS"	none	-
-198	-	exact:"RTL_WEB ON" | exact:"RTL_WEB OFF"	condition	-
-199	-	exact:"RTL_AUDIO_TEST STATUS"	none	-
-200	-	exact:"RTL_AUDIO_TEST TONE"	none	-
-201	-	exact:"RTL_AUDIO_TEST FM"	none	-
-202	-	exact:"RTL_AUDIO_TEST STOP"	none	-
-203	-	exact:"RTL_SIGNAL"	none	-
-204	-	exact:"RTL_PRESET_SCAN"	condition	-
-205	-	exact:"RTL_POCSAG STATUS"	none	-
-206	-	exact:"RTL_POCSAG_SCAN"	condition	-
-207	-	exact:"RTL_POCSAG_SCAN_STOP"	condition	-
-208	-	prefix[20]:"RTL_POCSAG_SET_BAUD "	condition	-
-209	-	prefix[24]:"RTL_POCSAG_SET_POLARITY "	condition	-
-210	-	prefix[16]:"RTL_POCSAG_TUNE "	condition	-
-211	-	exact:"RTL_PRESET_LIST"	none	-
-212	-	prefix[17]:"RTL_PRESET_TUNE "	condition	-
-213	-	exact:"RTL_RDS_CAPTURE_START"	none	-
-214	-	exact:"RTL_RDS_CAPTURE_STOP" | exact:"RTL_RDS_CAPTURE_SAVE"	none	-
-215	-	exact:"RTL_RDS_CAPTURE_STATUS"	none	-
-216	-	prefix[15]:"RTL_RDS_REPLAY "	none	-
-217	#if ORCSDR_DSP_AB	prefix[22]:"RTL_RDS_REPLAY_SAMPLE "	none	-
-218	-	exact:"RTL_RDS_STATUS"	none	-
-219	-	prefix[5]:"PAIR "	none	-
-220	-	prefix[5]:"AUTH "	inside	-
-221	-	exact:"PING"	condition	-
-222	-	prefix[14]:"PREPARE_FLASH "	condition	-
-223	-	prefix[9]:"SET_WIFI "	condition	-
-224	-	prefix[15]:"INSTALL_STATUS "	condition	-
-225	-	prefix[11]:"ROTATE_KEY "	condition	-
-226	-	exact:"TEST_PRESSURE"	condition	-
-227	-	exact:"PRESSURE_ACK"	condition	-
-228	-	prefix[4]:"ACK "	condition	-
+47	-	exact:"RTL_DISPLAY_BENCH" | prefix[18]:"RTL_DISPLAY_BENCH "	gate-first	RTL_DISPLAY_BENCH_ERROR auth_required
+48	#if ORCSDR_ORCDIAL	exact:"RTL_ORCDIAL_STATUS" | exact:"RTL_ORCDIAL_PROBE"	inside	-
+49	#if ORCSDR_ORCDIAL	exact:"RTL_ORCDIAL_PAIR START"	gate-first	RTL_ORCDIAL_ERROR auth_required
+50	#if ORCSDR_ORCDIAL	exact:"RTL_ORCDIAL_PAIR CANCEL"	gate-first	RTL_ORCDIAL_ERROR auth_required
+51	#if ORCSDR_ORCDIAL	prefix[25]:"RTL_ORCDIAL_PAIR CONFIRM "	gate-first	RTL_ORCDIAL_ERROR auth_required
+52	#if ORCSDR_ORCDIAL	exact:"RTL_ORCDIAL_CONNECT"	gate-first	RTL_ORCDIAL_ERROR auth_required
+53	#if ORCSDR_ORCDIAL	exact:"RTL_ORCDIAL_DISCONNECT"	gate-first	RTL_ORCDIAL_ERROR auth_required
+54	#if ORCSDR_ORCDIAL	exact:"RTL_ORCDIAL_FORGET"	gate-first	RTL_ORCDIAL_ERROR auth_required
+55	#if ORCSDR_ORCDIAL	exact:"RTL_ORCDIAL_C6_UPDATE CONFIRM"	gate-first	RTL_ORCDIAL_C6_UPDATE_ERROR auth_required
+56	-	prefix[14]:"RTL_UI ACTION "	condition	-
+57	-	prefix[14]:"RTL_UI ACTION "	none	-
+58	-	exact:"RTL_WIFI_SCAN"	none	-
+59	-	exact:"RTL_WIFI_CONNECT_SAVED" | exact:"RTL_WIFI_CONNECT_SAVED PAUSE"	none	-
+60	-	exact:"RTL_WIFI_RESULTS"	none	-
+61	-	exact:"RTL_WIFI_PROFILES"	none	-
+62	-	prefix[15]:"RTL_WIFI_OUTAGE"	gate-first	RTL_WIFI_OUTAGE_ERROR auth_required
+63	-	exact:"RTL_WIFI_DISCONNECT"	gate-first	RTL_WIFI_DISCONNECT_ERROR auth_required
+64	#if ORCSDR_C6_FAULT_TEST	exact:"RTL_WIFI_TEST_C6_POWER OFF CONFIRM" | exact:"RTL_WIFI_TEST_C6_POWER ON CONFIRM"	gate-first	RTL_WIFI_TEST_C6_POWER_ERROR auth_required
+65	-	exact:"RTL_WIFI_BUS_STATUS"	none	-
+66	-	exact:"RTL_WIFI_STATUS"	none	-
+67	-	exact:"RTL_WIFI_CHANNEL"	none	-
+68	-	exact:"RTL_WIFI_C6_STATUS"	none	-
+69	-	exact:"RTL_WIFI_C6_UPDATE CONFIRM"	gate-first	RTL_WIFI_C6_UPDATE_ERROR auth_required
+70	-	exact:"RTL_WIFI_COEX_STATUS"	none	-
+71	-	prefix[7]:"UI_TAP "	gate-first	UI_TAP_ERROR auth_required
+72	-	exact:"RTL_TAG_DOC ON" | exact:"RTL_TAG_DOC OFF"	none	-
+73	-	exact:"RTL_SCREEN_STATUS"	none	-
+74	-	exact:"RTL_UI_REGRESSION CHECK"	none	-
+75	-	exact:"RTL_UI_REGRESSION RUN"	gate-first	RTL_UI_REGRESSION_RESULT mode=RUN pass=0 reason=unauthenticated
+76	-	exact:"RTL_CATALOG_STATUS" | exact:"RTL_CATALOG_LIST"	none	-
+77	-	exact:"RTL_CATALOG_CHECK" | exact:"RTL_CATALOG_FETCH"	gate-first	RTL_CATALOG_ERROR auth_required
+78	-	prefix[20]:"RTL_CATALOG_INSTALL " | prefix[19]:"RTL_CATALOG_REMOVE "	gate-first	RTL_CATALOG_ERROR auth_required
+79	-	exact:"RTL_LOCATION STATUS"	none	-
+80	-	exact:"RTL_LOCATION IP" | prefix[20]:"RTL_LOCATION LOOKUP " | exact:"RTL_LOCATION CONFIRM"	gate-first	RTL_LOCATION_ERROR auth_required
+81	-	exact:"RTL_ADSB_RANGE"	none	-
+82	-	prefix[15]:"RTL_ADSB_RANGE "	gate-first	RTL_ADSB_RANGE_ERROR auth_required
+83	-	prefix[18]:"RTL_ADSB_LOCATION "	gate-first	RTL_ADSB_LOCATION_ERROR auth_required
+84	-	exact:"RTL_ADSB_STOP"	none	-
+85	-	exact:"RTL_ADSB_START"	none	-
+86	-	exact:"SD_LIST"	none	-
+87	-	prefix[13]:"SD_GET_BEGIN "	none	-
+88	-	exact:"SD_GET_CHUNK"	none	-
+89	-	exact:"SD_GET_ABORT"	none	-
+90	-	prefix[10]:"SD_REMOVE "	none	-
+91	-	prefix[13]:"SD_PUT_BEGIN "	none	-
+92	-	prefix[13]:"SD_PUT_CHUNK "	none	-
+93	-	exact:"SD_PUT_ABORT"	none	-
+94	-	exact:"RTL_CAPTURE_STATUS"	none	-
+95	-	exact:"RTL_IQ_START"	none	-
+96	-	prefix[18]:"RTL_IQ_DIAG_START "	inside	-
+97	-	exact:"RTL_IQ_DIAG_STATUS"	none	-
+98	-	exact:"RTL_IQ_STOP" | exact:"RTL_IQ_SAVE"	none	-
+99	-	exact:"RTL_IQ_STATUS"	none	-
+100	-	exact:"RTL_LORA_NATIVE_STATUS"	none	-
+101	-	exact:"RTL_LORA_PLAN_STATUS"	none	-
+102	-	if:orcsdr::lora_diag::handle_command(command, authenticated, kLoraDiagHooks)	condition	-
+103	-	if:orcsdr::sstv_diag::handle_command(command, authenticated, kSstvDiagHooks)	condition	-
+104	-	if:orcsdr::lora_gain_guard::handle_command(command, authenticated, kLoraGainHooks)	condition	-
+105	-	exact:"RTL_LORA_REGION_LIST"	none	-
+106	-	exact:"RTL_LORA_AUTO ON" | exact:"RTL_LORA_AUTO OFF"	condition	-
+107	-	prefix[14]:"RTL_LORA_TUNE "	condition	-
+108	-	exact:"LORA_SD_LOG ON"	none	-
+109	-	exact:"LORA_SD_LOG OFF"	none	-
+110	-	exact:"LORA_HISTORY FILES"	none	-
+111	-	exact:"LORA_HISTORY STATUS"	none	-
+112	-	prefix[18]:"LORA_HISTORY NODE "	none	-
+113	-	exact:"LORA_SD_LOG STATUS"	none	-
+114	-	prefix[13]:"LORA_MESSAGE "	none	-
+115	-	prefix[12]:"LORA_PACKET "	none	-
+116	-	exact:"LORA_MESSAGE_CLEAR"	none	-
+117	-	exact:"RTL_LORA_MEMORY"	none	-
+118	-	prefix[22]:"RTL_LORA_REPLAY_BEGIN "	inside	-
+119	-	prefix[22]:"RTL_LORA_REPLAY_CHUNK "	inside	-
+120	-	exact:"RTL_LORA_REPLAY_ABORT"	inside	-
+121	-	exact:"RTL_IQ_RETRIEVE_BEGIN"	none	-
+122	-	exact:"RTL_IQ_GET_BEGIN"	none	-
+123	-	exact:"RTL_IQ_GET_CHUNK"	none	-
+124	-	exact:"RTL_IQ_GET_ABORT"	none	-
+125	-	exact:"RTL_IQ_RETRIEVE_END"	none	-
+126	-	exact:"RTL_REC_START"	none	-
+127	-	exact:"RTL_REC_STOP"	none	-
+128	-	exact:"RTL_REC_STATUS"	none	-
+129	-	exact:"RTL_REC_SAVE"	none	-
+130	-	prefix[9]:"RTL_TOOL "	none	-
+131	-	exact:"RTL_TOOL"	none	-
+132	-	exact:"RTL_STOP"	condition	-
+133	-	stmt:const bool continuous_command = strncmp(command, "RTL_LISTEN", 10) == 0;	none	-
+134	-	stmt:const bool kzel_capture = strcmp(command, "RTL_CAPTURE") == 0 || strcmp(command, "RTL_CAPTURE KZEL") == 0 || strcmp(command, "RTL_LISTEN KZEL") == 0 || strcmp(command, "RTL_LISTEN FM") == 0;	none	-
+135	-	stmt:const bool noaa_capture = strcmp(command, "RTL_CAPTURE NOAA") == 0 || strcmp(command, "RTL_LISTEN NOAA") == 0 || strcmp(command, "RTL_LISTEN WX") == 0;	none	-
+136	-	stmt:const bool am_capture = strcmp(command, "RTL_CAPTURE AM") == 0 || strcmp(command, "RTL_LISTEN AM") == 0;	none	-
+137	-	stmt:const bool lora_capture = strcmp(command, "RTL_CAPTURE LORA") == 0 || strcmp(command, "RTL_LISTEN LORA") == 0;	none	-
+138	-	if:(kzel_capture || noaa_capture || am_capture || lora_capture) && authenticated	condition	-
+139	-	prefix[11]:"RTL_VOLUME "	condition	-
+140	-	exact:"RTL_STATUS"	none	-
+141	-	exact:"RTL_HOTPLUG_STATUS"	none	-
+142	-	exact:"RTL_ADSB STATUS"	none	-
+143	-	exact:"AUDIO_CODEC"	none	-
+144	-	exact:"RTL_DRIVER STATUS"	none	-
+145	-	exact:"RTL_AM_SCAN STATUS"	none	-
+146	-	exact:"UI_SELF_CHECK"	none	-
+147	-	exact:"HOME_PLOT STATUS"	none	-
+148	#if ORCSDR_DSP_LAB	prefix[17]:"RTL_DSP LAB RATE "	none	-
+149	#if ORCSDR_DSP_LAB	prefix[11]:"RTL_DSP LAB"	none	-
+150	#if ORCSDR_DSP_AB	prefix[19]:"RTL_DSP AB CAPTURE "	none	-
+151	#if ORCSDR_DSP_AB	prefix[17]:"RTL_DSP AB STORM "	none	-
+152	#if ORCSDR_DSP_AB	exact:"RTL_DSP AB RUN"	none	-
+153	-	exact:"RTL_DSP STATS"	none	-
+154	-	exact:"RTL_GAIN STATUS"	none	-
+155	-	prefix[9]:"RTL_GAIN "	gate-first	RTL_GAIN_ERROR auth_required
+156	-	exact:"RTL_AM_GAIN STATUS"	none	-
+157	-	exact:"RTL_FM_GAIN STATUS"	none	-
+158	-	exact:"RTL_DRIVER SELF_CHECK"	none	-
+159	-	prefix[11]:"RTL_DRIVER "	gate-first	RTL_DRIVER_ERROR auth_required
+160	-	exact:"RTL_SD_SELF_CHECK"	gate-first	RTL_SD_SELF_CHECK_ERROR auth_required
+161	-	prefix[12]:"RTL_SD_BENCH"	gate-first	RTL_SD_BENCH_ERROR auth_required
+162	-	exact:"RTL_WIFI_C6_POWER OFF"	gate-first	RTL_WIFI_C6_POWER_ERROR auth_required
+163	-	prefix[15]:"RTL_SPLASH_GATE"	inside	-
+164	-	exact:"RTL_HELP"	none	-
+165	-	exact:"ORC_RTC_STATUS"	none	-
+166	-	prefix[11]:"ORC_TZ_SET "	gate-first	ORC_TZ_SET_ERROR auth_required
+167	-	prefix[12]:"ORC_RTC_SET "	gate-first	ORC_RTC_SET_ERROR auth_required
+168	-	exact:"RTL_RESET"	gate-first	RTL_RESET_ERROR auth_required
+169	-	exact:"RTL_RESET CPU"	gate-first	RTL_RESET_ERROR auth_required
+170	-	exact:"RTL_USB_SAFE_MODE_STATUS"	none	-
+171	-	exact:"RTL_USB_SAFE_MODE_RESET CONFIRM"	gate-first	RTL_USB_SAFE_MODE_RESET_ERROR auth_required
+172	-	exact:"RTL_P25_IQ_START"	gate-first	RTL_P25_IQ_ERROR auth_required
+173	-	exact:"RTL_P25_IQ_STOP"	gate-first	RTL_P25_IQ_ERROR auth_required
+174	-	exact:"RTL_P25_IQ_STATUS"	none	-
+175	-	prefix[15]:"RTL_P25_REPLAY "	gate-first	RTL_P25_REPLAY_ERROR auth_required
+176	-	exact:"RTL_P25_ENCRYPTION_STATUS"	none	-
+177	-	exact:"RTL_P25_MODULATION"	none	-
+178	-	prefix[19]:"RTL_P25_MODULATION "	gate-first	RTL_P25_MODULATION_ERROR auth_required
+179	-	exact:"RTL_P25_STATUS"	none	-
+180	-	exact:"RTL_P25_PHASE2_STATUS"	none	-
+181	-	exact:"RTL_P25_PHASE2_TRACE"	none	-
+182	-	prefix[21]:"RTL_P25_PHASE2_TRACE "	gate-first	RTL_P25_PHASE2_TRACE_ERROR auth_required
+183	-	exact:"RTL_P25_PROFILE_LIST"	none	-
+184	-	prefix[23]:"RTL_P25_PROFILE_SELECT "	gate-first	RTL_P25_PROFILE_ERROR auth_required
+185	-	prefix[23]:"RTL_P25_PROFILE_IMPORT "	gate-first	RTL_P25_PROFILE_ERROR auth_required
+186	-	prefix[23]:"RTL_P25_PROFILE_EXPORT "	gate-first	RTL_P25_PROFILE_ERROR auth_required
+187	-	prefix[23]:"RTL_P25_PROFILE_RENAME "	gate-first	RTL_P25_PROFILE_ERROR auth_required
+188	-	prefix[23]:"RTL_P25_PROFILE_DELETE "	gate-first	RTL_P25_PROFILE_ERROR auth_required
+189	-	exact:"RTL_P25_CONFIG_RELOAD"	condition	-
+190	-	exact:"RTL_P25_SCAN"	condition	-
+191	-	prefix[9]:"RTL_TUNE "	condition	-
+192	-	exact:"RTL_FREQ"	none	-
+193	-	prefix[9]:"RTL_FREQ "	condition	-
+194	-	exact:"RTL_VOLUME"	none	-
+195	-	exact:"RTL_SOUND"	none	-
+196	-	exact:"RTL_SOUND ON" | exact:"RTL_SOUND OFF"	none	-
+197	-	exact:"RTL_WEB" | exact:"RTL_WEB_STATUS"	none	-
+198	-	exact:"RTL_WEB_AUDIO_STATUS"	none	-
+199	-	exact:"RTL_WEB ON" | exact:"RTL_WEB OFF"	condition	-
+200	-	exact:"RTL_AUDIO_TEST STATUS"	none	-
+201	-	exact:"RTL_AUDIO_TEST TONE"	none	-
+202	-	exact:"RTL_AUDIO_TEST FM"	none	-
+203	-	exact:"RTL_AUDIO_TEST STOP"	none	-
+204	-	exact:"RTL_SIGNAL"	none	-
+205	-	exact:"RTL_PRESET_SCAN"	condition	-
+206	-	exact:"RTL_POCSAG STATUS"	none	-
+207	-	exact:"RTL_POCSAG_SCAN"	condition	-
+208	-	exact:"RTL_POCSAG_SCAN_STOP"	condition	-
+209	-	prefix[20]:"RTL_POCSAG_SET_BAUD "	condition	-
+210	-	prefix[24]:"RTL_POCSAG_SET_POLARITY "	condition	-
+211	-	prefix[16]:"RTL_POCSAG_TUNE "	condition	-
+212	-	exact:"RTL_PRESET_LIST"	none	-
+213	-	prefix[17]:"RTL_PRESET_TUNE "	condition	-
+214	-	exact:"RTL_RDS_CAPTURE_START"	none	-
+215	-	exact:"RTL_RDS_CAPTURE_STOP" | exact:"RTL_RDS_CAPTURE_SAVE"	none	-
+216	-	exact:"RTL_RDS_CAPTURE_STATUS"	none	-
+217	-	prefix[15]:"RTL_RDS_REPLAY "	none	-
+218	#if ORCSDR_DSP_AB	prefix[22]:"RTL_RDS_REPLAY_SAMPLE "	none	-
+219	-	exact:"RTL_RDS_STATUS"	none	-
+220	-	prefix[5]:"PAIR "	none	-
+221	-	prefix[5]:"AUTH "	inside	-
+222	-	exact:"PING"	condition	-
+223	-	prefix[14]:"PREPARE_FLASH "	condition	-
+224	-	prefix[9]:"SET_WIFI "	condition	-
+225	-	prefix[15]:"INSTALL_STATUS "	condition	-
+226	-	prefix[11]:"ROTATE_KEY "	condition	-
+227	-	exact:"TEST_PRESSURE"	condition	-
+228	-	exact:"PRESSURE_ACK"	condition	-
+229	-	prefix[4]:"ACK "	condition	-

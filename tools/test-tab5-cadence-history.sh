@@ -19,6 +19,8 @@ run buffer_claim -pthread tests/buffer_claim_tests.cpp
 run sd_writer -pthread tests/sd_writer_tests.cpp "$ui/sd_writer.cpp"
 run rds_capture -pthread tests/rds_capture_tests.cpp "$ui/rds_capture.cpp" "$ui/sd_writer.cpp" "$ui/memory_reclaim.cpp"
 run audio_rec -pthread tests/audio_rec_tests.cpp "$ui/audio_rec.cpp" "$ui/sd_writer.cpp" "$ui/memory_reclaim.cpp"
+run display_rotate tests/display_rotate_tests.cpp
+run serial_display_bench tests/serial_display_bench_tests.cpp "$ui/serial_display_bench.cpp"
 run serial_help tests/serial_help_tests.cpp "$ui/serial_help.cpp"
 run serial_memory tests/serial_memory_tests.cpp "$ui/serial_memory.cpp" "$ui/memory_ledger.cpp" "$ui/memory_reclaim.cpp"
 run serial_keyboard tests/serial_keyboard_tests.cpp "$ui/serial_keyboard.cpp"

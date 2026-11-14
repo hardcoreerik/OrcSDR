@@ -98,6 +98,8 @@
 #include "serial_keyboard.hpp"
 #include "serial_decoder_diag.hpp"
 #include "serial_memory.hpp"
+#include "serial_display_bench.hpp"
+#include "display_bench.hpp"
 #include "serial_gain.hpp"
 #include "serial_driver.hpp"
 #include "serial_dsp.hpp"
@@ -20784,6 +20786,14 @@ static constexpr orcsdr::serial_bench::Hooks kSerialBenchHooks{
     []() { M5.getIOExpander(1).digitalWrite(0, false); },
 };
 
+// RTL_DISPLAY_BENCH (serial_display_bench.cpp, display_bench.cpp): screen-copy benchmark into the hidden framebuffer.
+static constexpr orcsdr::serial_display_bench::Hooks kSerialDisplayBenchHooks{
+    [](const char* text) { Serial.println(text); },
+    [](unsigned seconds) {
+      orcsdr::display_bench::run(seconds, orcsdr::visualizer::active(), [](const char* line) { Serial.println(line); });
+    },
+};
+
 void process_command(char* command) {
   if (strncmp(command, "JS8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
     process_js8_command(command + 3);
@@ -20985,6 +20995,7 @@ void process_command(char* command) {
   if (orcsdr::serial_decoder_diag::handle_command(command, authenticated, kSerialDecoderDiagHooks)) return;
   if (orcsdr::serial_ui_nav::handle_command(command, authenticated, kSerialUiNavHooks)) return;
   if (orcsdr::serial_memory::handle_command(command, authenticated, kSerialMemoryHooks)) return;
+  if (orcsdr::serial_display_bench::handle_command(command, authenticated, kSerialDisplayBenchHooks)) return;
 #if ORCSDR_ORCDIAL
   if(!strcmp(command,"RTL_ORCDIAL_STATUS")||!strcmp(command,"RTL_ORCDIAL_PROBE")) {
     const auto state=orcdial_secure.status();
