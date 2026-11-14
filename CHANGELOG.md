@@ -2,6 +2,16 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — DSP load measured by screen; screen-copy benchmark — 2026-11-13
+
+Measurement only, Tab5. Nothing on screen changes.
+
+- **Finding (COM17, FM 96.1 MHz):** DSP load depends on the screen. On Home it was 64% (FM demodulator 4.17 ms per block); on the FM dashboard 46% (3.10 ms). Every DSP stage ran about 35% slower on Home. `HOME_PLOT STATUS` on Home: about 20 frames/s, 36 ms of main-loop time per frame (19 ms copying the spectrum picture to the screen, 8.6 ms drawing it, 8.4 ms scrolling the waterfall).
+- **Why the copy is slow:** the Tab5 panel is portrait and OrcSDR turns it on its side, so M5GFX copies each picture one rotated pixel at a time into the framebuffer.
+- **New `RTL_DISPLAY_BENCH [1-10]`** (signed in; `apps/orcsdr-tab5/ui/display_bench.cpp`, `serial_display_bench.cpp`, portable `display_rotate.hpp`): copies a Home-sized 904 x 184 picture into the hidden second framebuffer by M5GFX, by a tiled CPU copy, and by the P4's PPA engine, checks each against M5GFX pixel by pixel, and reads the DSP load during each. Adds `esp_driver_ppa` to the build (image +29.6 KB). Route table: one new route.
+- **Result:** no copy 45% DSP load; M5GFX 18.5 ms per copy, 61%; tiled CPU 17.3 ms, 88%; PPA 12.0 ms, 46%, pixel-exact with a 90-degree rotation. The PPA moves the same pixels without slowing the DSP, and the CPU is free while it runs. No screen uses it yet.
+- **Tests:** `tests/display_rotate_tests.cpp` (all eight rotations against the LovyanGFX mapping) and `tests/serial_display_bench_tests.cpp`, in `tools/test-tab5-cadence-history.sh` and the workflow.
+
 ## Unreleased — audio recordings save in the background — 2026-11-13
 
 Behaviour change, Tab5. Flashed to one Tab5 (COM17) and measured.
