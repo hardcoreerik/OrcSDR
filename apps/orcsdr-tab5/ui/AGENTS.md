@@ -29,3 +29,10 @@ gaps instead of claiming the whole application has been audited.
 Do not add serial commands to `process_command()` in `main.cpp`. Put each family in its own
 `serial_<family>` module with a host test and a recorded route, as described in
 [the serial command modules guide](../../../docs/SERIAL_COMMAND_MODULES.md).
+
+## Saving to the SD card
+
+Do not write large files (more than a few kilobytes) to the SD card from the main loop or the DSP path: a 3.84 MB
+write stalled the loop for 10 to 12 s and starved the receiver. Hand the file to `sd_writer` (one background task,
+pieces with pauses) and poll for the result, as `rds_capture.cpp` does. Keep the data alive until the writer reports
+done or failed.

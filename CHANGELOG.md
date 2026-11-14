@@ -2,6 +2,17 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — RDS capture saves in the background — 2026-11-13
+
+Behaviour change, Tab5. Flashed to one Tab5 (COM17) and measured.
+
+- **Problem:** `RTL_RDS_CAPTURE_STOP` wrote the 3.84 MB capture to the SD card from the main loop. The loop stalled for 10 to 12 s (`RTL_MAIN_STALL stage=serial_dispatch`), the receiver's input fell from 2.4 MS/s to about 0.27 MS/s for that time, and the owner heard the audio stutter. The previous firmware did the same.
+- **New background SD writer** (`apps/orcsdr-tab5/ui/sd_writer.{hpp,cpp}`, device side `sd_writer_device.cpp`): one low-priority task on core 0 writes one file at a time in 32 KB pieces through a cache-aligned PSRAM staging buffer, with a 5 ms pause after each piece. The caller polls for the result and never waits on the card. Meant for every large SD save; the audio recording is the next candidate.
+- **RDS capture moved out of `main.cpp`** into `apps/orcsdr-tab5/ui/rds_capture.{hpp,cpp}`: buffer, state, commands, the save and the memory reclaim holder. `main.cpp` keeps one hook table, the DSP tap (`tap_begin`/`tap_end`, same per-sample write) and one `service()` line in the loop; 193 lines removed, 36 added. Reply strings are unchanged.
+- **What changes for the user:** STOP answers at once and `RTL_RDS_CAPTURE_SAVED` follows when the card write ends. New replies while a save is still running: `RTL_RDS_CAPTURE_STOP busy=saving` and `RTL_RDS_CAPTURE_ERROR saving` (START).
+- **Measured on the Tab5:** a full 3.84 MB capture saved in about 2.0 s (was 10 to 12 s), no `RTL_MAIN_STALL`, receiver input stayed at 2.40 MS/s through the save, no dropped audio chunks. DSP load with no capture running is the same as the previous build in the same conditions (63% and 4,325 us per block against 64% and 4,400 us). The owner's listening check of the new build is still to do.
+- **Tests:** `tests/sd_writer_tests.cpp` and `tests/rds_capture_tests.cpp` (ASan/UBSan and ThreadSanitizer), in `tools/test-tab5-cadence-history.sh` and the workflow; route table unchanged.
+
 ## Unreleased — capture buffers given back when idle — 2026-11-13
 
 Behaviour change, Tab5. Host-tested, built, and run on one Tab5 (COM17) with the serial commands below.
