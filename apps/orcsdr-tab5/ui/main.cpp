@@ -23759,12 +23759,17 @@ void begin_boot_device_staging() {
 // A PlutoSDR boots in 20 to 25 s after power, so a unit that has used one waits for it (and cuts the rail for 3 s, not 1 s) before giving up.
 // Dongle-only units keep the original 8 s and 1 s.
 constexpr uint32_t kBootPlutoCutMs = 3000;
-constexpr uint32_t kBootPlutoFirstWaitMs = 10000;  // before the first rail cut; 8 s for dongle-only units
+// Before the first rail cut. A Tab5 reset drops the USB-A rail, so the Pluto reboots (about 25 s to network); cutting it earlier restarts that
+// boot. Dongle-only units keep 8 s.
+constexpr uint32_t kBootPlutoFirstWaitMs = 35000;
+constexpr uint32_t kBootSplashOpenAfterMs = 8000;  // a dongle enumerates well inside this, so it never sees the "waiting for PlutoSDR" text
 constexpr uint32_t kBootPlutoWaitMs = 35000;
 bool boot_receiver_ready() { return rtl_device_ready() || orcsdr::pluto_source::ready(); }
-// The splash may show its button while a remembered Pluto is still booting, but only once the rail is back on: the splash wait blocks the staging.
+// The splash may show its button while a remembered Pluto is still booting. Staging resumes from loop() afterwards; the rail is on throughout
+// the wait, and a rail cut can only happen from the staging code, never while the splash blocks.
 bool boot_splash_may_open() {
-  return boot_init_stage == BootInitStage::rtl_enumerating && boot_rtl_power_recovered && orcsdr::pluto_source::previously_used();
+  return boot_init_stage == BootInitStage::rtl_enumerating && orcsdr::pluto_source::previously_used() &&
+         millis() - boot_init_stage_started_ms >= kBootSplashOpenAfterMs;
 }
 
 void service_boot_device_staging() {
