@@ -1,2 +1,5 @@
 *.sh text eol=lf
 *.patch text eol=lf
+
+# Pluto-side scripts run on Linux: keep LF so the shebang works.
+tools/pluto/* text eol=lf
