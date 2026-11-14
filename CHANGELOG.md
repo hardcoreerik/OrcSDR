@@ -2,6 +2,15 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Home spectrum copied by the PPA — 2026-11-13
+
+Tab5. Flashed to one Tab5 (COM17) and measured; the owner's visual check of Home is still to do.
+
+- **New `apps/orcsdr-tab5/ui/screen_blit.{hpp,cpp}`:** copies a finished 16-bit sprite to the rotated screen with the P4's PPA engine instead of M5GFX's per-pixel rotated copy. It first writes the target framebuffer rows back from the CPU cache (the PPA driver discards them), and falls back to `pushSprite` for any other rotation, colour depth, an off-screen rectangle or a PPA error. Only the Home spectrum uses it.
+- **Checked:** `RTL_DISPLAY_BENCH` now also copies with screen_blit's angle for both landscape rotations (Settings can turn the screen over): pixel-exact for rotation 1 (270 degrees) and rotation 3 (90 degrees). On Home, 1,529 copies by the PPA, 0 fallbacks.
+- **Measured on Home:** spectrum copy 12.7 to 13.1 ms (was 19 ms), whole frame 31 ms (was 36 ms), about 24 frames/s (was 20.6). DSP load 60% (was 64%); the FM dashboard and the no-drawing baseline are 45 to 46%.
+- **What is left:** the remaining Home load comes from CPU work that still runs every frame in PSRAM: drawing the spectrum picture (8.6 to 9.2 ms, including clearing 333 KB) and scrolling the waterfall (9.4 to 9.7 ms, a CPU copy of the whole waterfall area). Home also draws more frames now, which adds to it. Correction to the earlier description: M5GFX's rotated copy writes each framebuffer row in order and reads the source picture one pixel per row; the panel itself does not rotate (only a colour-order bit is sent).
+
 ## Unreleased — DSP load measured by screen; screen-copy benchmark — 2026-11-13
 
 Measurement only, Tab5. Nothing on screen changes.
