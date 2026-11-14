@@ -152,7 +152,23 @@ void try_recovery(const char* reason, int64_t now_us, int64_t* next_cycle_us) {
            static_cast<unsigned>(kMaxCycles), static_cast<int>(kBackoffUs[step] / 1000000));
 }
 
+// One line a minute for soak tests and field logs: stream state, counters and the heap numbers that have mattered on this board.
+constexpr int64_t kHealthEveryUs = 60000000;
+void log_health(bool present) {
+  pluto_sdr_metrics_t m{};
+  if (g_h) pluto_sdr_get_metrics(g_h, &m);
+  std::printf("PLUTO_HEALTH present=%d running=%d alive=%d state=%d samples=%llu src_drops=%u usb_err=%u ring_drops=%u cycles=%u int_free=%u dma_largest=%u psram_free=%u\n",
+              present ? 1 : 0, g_running.load(std::memory_order_relaxed) ? 1 : 0, g_alive.load(std::memory_order_relaxed) ? 1 : 0,
+              g_h ? static_cast<int>(pluto_sdr_get_state(g_h)) : -1, static_cast<unsigned long long>(m.samples_delivered),
+              static_cast<unsigned>(m.source_drops), static_cast<unsigned>(m.usb_errors), static_cast<unsigned>(g_ring_drops.load(std::memory_order_relaxed)),
+              static_cast<unsigned>(g_cycles.load(std::memory_order_relaxed)),
+              static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL)),
+              static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_DMA)),
+              static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)));
+}
+
 void watcher_task(void*) {
+  int64_t last_health_us = 0;
   bool seen_before = seen_flag_get();
   int64_t lost_at = esp_timer_get_time(), next_cycle_us = 0;  // a Pluto used before this boot gets the same grace period from boot
   for (;;) {
@@ -160,6 +176,10 @@ void watcher_task(void*) {
     const bool now = pluto_sdr_device_present(g_h);
     const bool was = g_present.exchange(now, std::memory_order_acq_rel);
     const int64_t t = esp_timer_get_time();
+    if (t - last_health_us >= kHealthEveryUs) {
+      last_health_us = t;
+      log_health(now);
+    }
     if (now && !was) {
       ESP_LOGI(TAG, "PlutoSDR attached");
       if (!seen_before) {
