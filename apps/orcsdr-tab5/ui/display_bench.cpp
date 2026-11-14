@@ -18,6 +18,7 @@
 
 #include "display_rotate.hpp"
 #include "dsp_stats.hpp"
+#include "screen_blit.hpp"
 
 namespace orcsdr::display_bench {
 namespace {
@@ -155,6 +156,9 @@ void run(unsigned seconds, bool visualizer_active, Emit emit) {
   target.setSwapBytes(true);
   target.setRotation(g.rotation);
 
+  const screen_blit::Counters live = screen_blit::counters();
+  say(emit, "RTL_DISPLAY_BENCH_SCREEN_BLIT ppa=%lu fallback=%lu last_error=%s", live.ppa, live.fallback,
+      live.last_error ? esp_err_to_name(live.last_error) : "none");
   say(emit, "RTL_DISPLAY_BENCH_BEGIN w=%d h=%d x=%d y=%d rotation=%u panel=%dx%d region=%d,%d,%dx%d seconds=%u", kW,
       kH, kX0, kY0, static_cast<unsigned>(g.rotation), g.panel_w, g.panel_h, r.x, r.y, r.w, r.h, seconds);
 
@@ -243,6 +247,28 @@ void run(unsigned seconds, bool visualizer_active, Emit emit) {
     } else {
       emit("RTL_DISPLAY_BENCH_ERROR ppa=no_exact_match");
     }
+    // Both landscape rotations with the angle screen_blit uses (Settings can turn the screen over).
+    for (const uint8_t rotation : {static_cast<uint8_t>(1), static_cast<uint8_t>(3)}) {
+      display_rotate::Geometry gr = g;
+      gr.rotation = rotation;
+      const display_rotate::Rect rr = display_rotate::panel_rect(gr, kX0, kY0, kW, kH);
+      const int degrees = display_rotate::ppa_ccw_degrees(rotation);
+      target.setRotation(rotation);
+      clear(fb, gr, rr);
+      source.pushSprite(&target, kX0, kY0);
+      capture(fb, gr, rr, reference);
+      op.rotation_angle = degrees == 90 ? PPA_SRM_ROTATION_ANGLE_90 : PPA_SRM_ROTATION_ANGLE_270;
+      op.mirror_x = false;
+      op.mirror_y = false;
+      op.out.block_offset_x = rr.x;
+      op.out.block_offset_y = rr.y;
+      clear(fb, gr, rr);
+      err = ppa_do_scale_rotate_mirror(client, &op);
+      say(emit, "RTL_DISPLAY_BENCH_CHECK method=screen_blit rotation=%u angle=%d result=%s mismatches=%ld",
+          static_cast<unsigned>(rotation), degrees, esp_err_to_name(err),
+          err == ESP_OK ? static_cast<long>(mismatches(fb, gr, rr, reference)) : -1L);
+    }
+    target.setRotation(g.rotation);
     (void)ppa_unregister_client(client);
   }
 

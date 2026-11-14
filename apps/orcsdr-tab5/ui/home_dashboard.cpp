@@ -4,6 +4,7 @@
 #include "plot_cadence.hpp"
 #include "freq_keypad.hpp"
 #include "scope_canvas.hpp"
+#include "screen_blit.hpp"
 
 #include "dashboard_audio_control.hpp"
 #include "orc_badge.hpp"
@@ -1177,9 +1178,9 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
   draw_spectrum_axis(*canvas, w, h);
   const int64_t push_started_us = esp_timer_get_time();
   plot_stats.raster_us = static_cast<uint32_t>(push_started_us - draw_started_us);
-  M5.Display.startWrite();
-  canvas->pushSprite(origin_x, origin_y);
-  M5.Display.endWrite();
+  // The P4's PPA copies the finished picture to the rotated screen (same pixels as M5GFX's pushSprite, which it falls
+  // back to); the per-pixel rotated copy slowed the DSP on the other core by about a third while Home was showing.
+  orcsdr::screen_blit::push(canvas, origin_x, origin_y);
   const int64_t waterfall_started_us = esp_timer_get_time();
   plot_stats.push_us = static_cast<uint32_t>(waterfall_started_us - push_started_us);
 
