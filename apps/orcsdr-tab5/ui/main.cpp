@@ -101,6 +101,7 @@
 #include "serial_display_bench.hpp"
 #include "serial_rec.hpp"
 #include "serial_ui_debug.hpp"
+#include "serial_lab_vis.hpp"
 #include "display_bench.hpp"
 #include "serial_gain.hpp"
 #include "serial_driver.hpp"
@@ -20839,6 +20840,17 @@ static constexpr orcsdr::serial_ui_debug::Hooks kSerialUiDebugHooks{
     [](bool run) { run_ui_regression(run); },
 };
 
+// RTL_LAB and RTL_VIS (serial_lab_vis.cpp): sign-in gate and "open" handling; rf_lab and the visualizer parse the rest.
+static constexpr orcsdr::serial_lab_vis::Hooks kSerialLabVisHooks{
+    [](const char* text) { Serial.println(text); },
+    orcsdr::rf_lab::process_command,
+    [] { open_rf_lab(); },
+    [] { return orcsdr::rf_lab::active(); },
+    orcsdr::visualizer::process_command,
+    [] { open_visualizer(); },
+    [] { return orcsdr::visualizer::active(); },
+};
+
 void process_command(char* command) {
   if (strncmp(command, "JS8", 3) == 0 && (command[3] == '\0' || command[3] == ' ')) {
     process_js8_command(command + 3);
@@ -20852,53 +20864,7 @@ void process_command(char* command) {
   // This also keeps long-running CLI/soak workflows from expiring while polling status.
   if (authenticated) last_ping_ms = millis();
 
-  if (strncmp(command, "RTL_LAB", 7) == 0) {
-    const bool read_only = strcmp(command, "RTL_LAB STATUS") == 0 ||
-                           strcmp(command, "RTL_LAB SELF_CHECK") == 0 ||
-                           strncmp(command, "RTL_LAB GET ", 12) == 0 ||
-                           strcmp(command, "RTL_LAB RECIPE LIST") == 0 ||
-                           strcmp(command, "RTL_LAB RECORDS LIST") == 0;
-    if (!read_only && !authenticated) {
-      Serial.println("RTL_LAB_ERROR auth_required");
-      return;
-    }
-    char response[512]{};
-    if (!orcsdr::rf_lab::process_command(command, response, sizeof(response))) {
-      Serial.println("RTL_LAB_ERROR unknown_command");
-      return;
-    }
-    if (strcmp(response, "RTL_LAB_OPEN_REQUEST") == 0) {
-      open_rf_lab();
-      Serial.println(orcsdr::rf_lab::active() ? "RTL_LAB_OK" : "RTL_LAB_ERROR init_failed");
-    } else {
-      Serial.println(response);
-    }
-    return;
-  }
-
-  if (strncmp(command, "RTL_VIS", 7) == 0) {
-    const bool read_only = strcmp(command, "RTL_VIS STATUS") == 0 ||
-                           strcmp(command, "RTL_VIS SELF_CHECK") == 0 ||
-                           strncmp(command, "RTL_VIS GET ", 12) == 0 ||
-                           strcmp(command, "RTL_VIS PRESET LIST") == 0;
-    if (!read_only && !authenticated) {
-      Serial.println("RTL_VIS_ERROR auth_required");
-      return;
-    }
-    char response[320]{};
-    if (!orcsdr::visualizer::process_command(command, response, sizeof(response))) {
-      Serial.println("RTL_VIS_ERROR unknown_command");
-      return;
-    }
-    if (strcmp(response, "RTL_VIS_OPEN_REQUEST") == 0) {
-      open_visualizer();
-      Serial.println(orcsdr::visualizer::active() ? "RTL_VIS_OK" :
-                                                   "RTL_VIS_ERROR source_unavailable");
-    } else {
-      Serial.println(response);
-    }
-    return;
-  }
+  if (orcsdr::serial_lab_vis::handle_command(command, authenticated, kSerialLabVisHooks)) return;
 
   if (strncmp(command, "UI_DOC_", 7) == 0 || strncmp(command, "UI_CAPTURE ", 11) == 0) {
     if (!authenticated) {

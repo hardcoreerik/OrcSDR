@@ -2,6 +2,14 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — RF Lab and Visualizer commands moved out of process_command — 2026-11-14
+
+No behaviour change intended. Host-tested and built; not flashed.
+
+- **`RTL_LAB ...` and `RTL_VIS ...`** (the sign-in gate, the read-only subcommands that work without it, the unknown and open replies) moved into `apps/orcsdr-tab5/ui/serial_lab_vis.{hpp,cpp}` with `tests/serial_lab_vis_tests.cpp`. The subcommands are still parsed by `rf_lab.cpp` and `rf_visualizer.cpp`. Route table unchanged; same replies.
+- **Scan, noted not changed:** an unknown `UI_DOC_...` subcommand (for example `UI_DOC_FOO`) is not answered by its block and falls through the rest of the dispatcher; `RTL_LAB` and `RTL_VIS` also match longer words such as `RTL_LABX` (which then answer `unknown_command`, or `auth_required` when not signed in).
+- **Measured:** `process_command` complexity 472 to 454, 967 to 921 lines; `main.cpp` 22,931 lines. Firmware image 4,520,800 bytes.
+
 ## Unreleased — screen test-automation commands moved out of process_command — 2026-11-14
 
 No behaviour change intended. Host-tested and built; not flashed.

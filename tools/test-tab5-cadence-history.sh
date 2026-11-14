@@ -23,6 +23,7 @@ run display_rotate tests/display_rotate_tests.cpp
 run serial_display_bench tests/serial_display_bench_tests.cpp "$ui/serial_display_bench.cpp"
 run serial_rec tests/serial_rec_tests.cpp "$ui/serial_rec.cpp"
 run serial_ui_debug tests/serial_ui_debug_tests.cpp "$ui/serial_ui_debug.cpp"
+run serial_lab_vis tests/serial_lab_vis_tests.cpp "$ui/serial_lab_vis.cpp"
 run serial_help tests/serial_help_tests.cpp "$ui/serial_help.cpp"
 run serial_memory tests/serial_memory_tests.cpp "$ui/serial_memory.cpp" "$ui/memory_ledger.cpp" "$ui/memory_reclaim.cpp"
 run serial_keyboard tests/serial_keyboard_tests.cpp "$ui/serial_keyboard.cpp"
