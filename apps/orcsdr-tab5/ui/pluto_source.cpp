@@ -120,6 +120,10 @@ void seen_flag_set(bool seen) {
   nvs_close(nvs);
 }
 
+std::atomic<int8_t> g_seen_cache{-1};              // -1 = not read yet
+std::atomic<int64_t> g_hold_off_until_us{0};        // the ladder waits until this time (the boot sequence just cycled the rail)
+constexpr int64_t kBootHoldOffUs = 60000000;        // 25 s boot plus enumeration plus margin
+
 void note_healthy() {
   g_start_failures.store(0, std::memory_order_release);
   g_cycles.store(0, std::memory_order_release);
@@ -128,11 +132,14 @@ void note_healthy() {
 
 // One rung of the ladder: runs the application's power-cycle hook if the backoff allows it.
 void try_recovery(const char* reason, int64_t now_us, int64_t* next_cycle_us) {
-  if (!g_events.power_cycle || g_gave_up.load(std::memory_order_acquire) || now_us < *next_cycle_us) return;
+  if (!g_events.power_cycle || g_gave_up.load(std::memory_order_acquire) || now_us < *next_cycle_us ||
+      now_us < g_hold_off_until_us.load(std::memory_order_acquire))
+    return;
   const uint32_t done = g_cycles.load(std::memory_order_acquire);
   if (done >= kMaxCycles) {
     g_gave_up.store(true, std::memory_order_release);
     seen_flag_set(false);
+    g_seen_cache.store(0, std::memory_order_release);
     ESP_LOGE(TAG, "PLUTO_RECOVERY gave_up cycles=%u: the board needs a manual power cycle", static_cast<unsigned>(done));
     return;
   }
@@ -155,7 +162,10 @@ void watcher_task(void*) {
     const int64_t t = esp_timer_get_time();
     if (now && !was) {
       ESP_LOGI(TAG, "PlutoSDR attached");
-      if (!seen_before) seen_flag_set(true);
+      if (!seen_before) {
+        seen_flag_set(true);
+        g_seen_cache.store(1, std::memory_order_release);
+      }
       seen_before = true;
       if (g_events.attached) g_events.attached();
     } else if (!now && was) {
@@ -207,6 +217,17 @@ bool begin(const IqSink& sink, const Events& events) {
   ESP_LOGI(TAG, "PlutoSDR source ready (esp-pluto-sdr %s, receive only)", pluto_sdr_get_version_string());
   return true;
 }
+
+bool previously_used() {
+  int8_t v = g_seen_cache.load(std::memory_order_acquire);
+  if (v < 0) {
+    v = seen_flag_get() ? 1 : 0;
+    g_seen_cache.store(v, std::memory_order_release);
+  }
+  return v != 0;
+}
+
+void note_power_cycled() { g_hold_off_until_us.store(esp_timer_get_time() + kBootHoldOffUs, std::memory_order_release); }
 
 bool ready() { return g_h != nullptr && g_present.load(std::memory_order_acquire); }
 bool active() { return g_running.load(std::memory_order_acquire); }

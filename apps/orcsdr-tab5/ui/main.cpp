@@ -23756,8 +23756,19 @@ void begin_boot_device_staging() {
   set_boot_init_stage(BootInitStage::usb_power_settle);
 }
 
+// A PlutoSDR boots in 20 to 25 s after power, so a unit that has used one waits for it (and cuts the rail for 3 s, not 1 s) before giving up.
+// Dongle-only units keep the original 8 s and 1 s.
+constexpr uint32_t kBootPlutoCutMs = 3000;
+constexpr uint32_t kBootPlutoWaitMs = 35000;
+bool boot_receiver_ready() { return rtl_device_ready() || orcsdr::pluto_source::ready(); }
+// The splash may show its button while a remembered Pluto is still booting, but only once the rail is back on: the splash wait blocks the staging.
+bool boot_splash_may_open() {
+  return boot_init_stage == BootInitStage::rtl_enumerating && boot_rtl_power_recovered && orcsdr::pluto_source::previously_used();
+}
+
 void service_boot_device_staging() {
   const uint32_t elapsed_ms = millis() - boot_init_stage_started_ms;
+  const bool pluto_known = orcsdr::pluto_source::previously_used();
   switch (boot_init_stage) {
     case BootInitStage::usb_power_settle:
       if (elapsed_ms < 350) return;
@@ -23771,8 +23782,8 @@ void service_boot_device_staging() {
       set_boot_init_stage(BootInitStage::rtl_enumerating);
       return;
     case BootInitStage::rtl_enumerating:
-      if (!rtl_device_ready()) {
-        if (elapsed_ms >= 8000) {
+      if (!boot_receiver_ready()) {
+        if (elapsed_ms >= (boot_rtl_power_recovered && pluto_known ? kBootPlutoWaitMs : 8000u)) {
           Serial.println("BOOT_RTL_TIMEOUT no_device");
           // A P4 reset does not reset the IO-expander USB-A rail, so after a
           // warm reboot the dongle is still powered and may be wedged
@@ -23782,7 +23793,8 @@ void service_boot_device_staging() {
             boot_rtl_power_recovered = true;
             M5.Power.setExtOutput(false, m5::ext_USB);
             set_rtl_sdr_status("Boot: power-cycling RTL-SDR");
-            Serial.println("BOOT_RTL_RECOVERY power_cycle off_ms=1000");
+            Serial.printf("BOOT_RTL_RECOVERY power_cycle off_ms=%u pluto_known=%d\n",
+                          pluto_known ? static_cast<unsigned>(kBootPlutoCutMs) : 1000u, pluto_known ? 1 : 0);
             set_boot_init_stage(BootInitStage::rtl_power_recover);
             return;
           }
@@ -23798,9 +23810,10 @@ void service_boot_device_staging() {
       return;
     case BootInitStage::rtl_power_recover:
       // 1 s off lets the dongle's supply capacitors discharge fully.
-      if (elapsed_ms < 1000) return;
+      if (elapsed_ms < (pluto_known ? kBootPlutoCutMs : 1000u)) return;
       M5.Power.setExtOutput(true, m5::ext_USB);
-      set_rtl_sdr_status("Boot: detecting RTL-SDR");
+      if (pluto_known) orcsdr::pluto_source::note_power_cycled();
+      set_rtl_sdr_status(pluto_known ? "Boot: waiting for PlutoSDR" : "Boot: detecting RTL-SDR");
       set_boot_init_stage(BootInitStage::rtl_enumerating);
       return;
     case BootInitStage::speaker_settle:
@@ -24191,14 +24204,17 @@ void setup() {
    * transfer or authenticated host session ends the splash early and loop()
    * finishes the staging. */
   BootInitStage shown_stage = BootInitStage::idle;
-  while (boot_init_stage != BootInitStage::ready && orcsdr_splash_is_active()) {
+  const bool pluto_known_at_boot = orcsdr::pluto_source::previously_used();
+  while (boot_init_stage != BootInitStage::ready && orcsdr_splash_is_active() && !boot_splash_may_open()) {
     if (boot_init_stage != shown_stage) {
       shown_stage = boot_init_stage;
       orcsdr_splash_set_status(
           shown_stage == BootInitStage::usb_power_settle ? "Powering RTL-SDR USB port…"
           : shown_stage == BootInitStage::rtl_enumerating
-              ? (boot_rtl_power_recovered ? "Retrying RTL-SDR detection…" : "Detecting RTL-SDR…")
-          : shown_stage == BootInitStage::rtl_power_recover ? "Power-cycling RTL-SDR…"
+              ? (pluto_known_at_boot ? "Detecting receiver…"
+                 : boot_rtl_power_recovered ? "Retrying RTL-SDR detection…" : "Detecting RTL-SDR…")
+          : shown_stage == BootInitStage::rtl_power_recover
+              ? (pluto_known_at_boot ? "Power-cycling the PlutoSDR…" : "Power-cycling RTL-SDR…")
           : shown_stage == BootInitStage::speaker_settle ? "Starting audio…"
                                                           : "Starting…");
     }
@@ -24208,15 +24224,21 @@ void setup() {
   }
   orcsdr_splash_set_ready(true);
   char boot_summary[96];
-  snprintf(boot_summary, sizeof(boot_summary), "SD card: %s   |   Wi-Fi: %s   |   RTL-SDR: %s",
+  const bool pluto_ready_now = orcsdr::pluto_source::ready();
+  const bool pluto_wait = pluto_known_at_boot && !boot_receiver_ready() && boot_init_stage != BootInitStage::ready;
+  snprintf(boot_summary, sizeof(boot_summary), "SD card: %s   |   Wi-Fi: %s   |   %s",
            g_sd_ready ? "ready" : "not found",
            wifi_connected ? "connected"
            : settings_wifi_power_enabled && settings_wifi_start_at_boot ? "retrying"
                                                                         : "off",
-           rtl_device_ready() ? "ready" : "not detected");
+           rtl_device_ready() ? "RTL-SDR: ready"
+           : pluto_ready_now  ? "Receiver: PlutoSDR ready"
+           : pluto_wait       ? "Receiver: waiting for PlutoSDR"
+           : pluto_known_at_boot ? "Receiver: not detected"
+                                 : "RTL-SDR: not detected");
   orcsdr_splash_set_status(boot_summary);
-  Serial.printf("BOOT_SPLASH_SUMMARY sd=%d wifi=%d rtl=%d\n", g_sd_ready ? 1 : 0,
-                wifi_connected ? 1 : 0, rtl_device_ready() ? 1 : 0);
+  Serial.printf("BOOT_SPLASH_SUMMARY sd=%d wifi=%d rtl=%d pluto=%d\n", g_sd_ready ? 1 : 0,
+                wifi_connected ? 1 : 0, rtl_device_ready() ? 1 : 0, pluto_ready_now ? 1 : 0);
   /* Unattended reboots (panic, C6 update) still land on Home. */
   constexpr uint32_t kSplashAutoEnterMs = 30000;
   // RTL_SPLASH_GATE OFF (regression runs that reboot the device) skips the

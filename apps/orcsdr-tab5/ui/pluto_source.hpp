@@ -29,6 +29,13 @@ struct Events {
 // appears, and never starts a stream by itself.
 bool begin(const IqSink& sink, const Events& events);
 
+// True when a Pluto has been used with this unit before (a flag kept in NVS; cleared when the recovery ladder gives up). The boot sequence uses
+// it to wait for a Pluto, which needs 20 to 25 s to boot, instead of treating the missing dongle as the end of the search. Cheap after the first call.
+bool previously_used();
+
+// The boot sequence cut and restored the USB 5 V rail itself. Holds the recovery ladder off while the Pluto boots, so it does not cut it again.
+void note_power_cycled();
+
 bool ready();  // a Pluto is attached and can start a stream (or is streaming)
 bool active();  // a stream from the Pluto is running or starting
 
