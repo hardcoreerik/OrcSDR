@@ -1,0 +1,70 @@
+name: D-STAR and YSF receive-only metadata host tests
+on:
+  push:
+    branches:
+      - feature/dstar-ysf-rx-foundation-20261114
+    paths:
+      - '.github/workflows/dstar-ysf-rx-host-foundation.yml'
+      - 'components/orcsdr_digital_voice_rx/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  metadata-verified:
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [Release, Sanitizers]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build the actual first-party D-STAR and YSF host protocol receiver
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo "Source commit: $GITHUB_SHA"
+          c++ --version | head -1
+          if [ "${{ matrix.variant }}" = "Sanitizers" ]; then
+            cmake -S components/orcsdr_digital_voice_rx -B build/dv-rx-host \
+              -DCMAKE_BUILD_TYPE=Debug -DORC_DV_SANITIZERS=ON
+          else
+            cmake -S components/orcsdr_digital_voice_rx -B build/dv-rx-host \
+              -DCMAKE_BUILD_TYPE=Release
+          fi
+          cmake --build build/dv-rx-host --parallel 2
+      - name: Execute independently encoded positive and adversarial negative gates
+        shell: bash
+        run: |
+          set -euo pipefail
+          ctest --test-dir build/dv-rx-host --output-on-failure -V
+      - name: Reject malformed bitstream in the real replay CLI
+        shell: bash
+        run: |
+          set -euo pipefail
+          for mode in dstar ysf; do
+            set +e
+            printf '\002' | build/dv-rx-host/orcsdr_dv_rx_cli "$mode" > /tmp/dv-output 2> /tmp/dv-stderr
+            status=$?
+            set -e
+            test "$status" -eq 3 || { echo "Unsafe accepted hard bit: $mode exit=$status"; exit 1; }
+            test ! -s /tmp/dv-output || { echo "Invalid input emitted metadata: $mode"; exit 1; }
+          done
+      - name: Explain acceptance boundary
+        if: always()
+        shell: bash
+        run: |
+          {
+            echo "## YSF/D-STAR host-only receive metadata"
+            echo ""
+            echo "Source commit: \`$GITHUB_SHA\`"
+            echo ""
+            echo "This gate compiles actual independently implemented YSF FICH and D-STAR DV header"
+            echo "parsers in ${{ matrix.variant }}. Synthetic frame-oracle and negative tests are executed."
+            echo ""
+            echo "**This is NOT** RF/IQ reception, a hardware benchmark, an AMBE voice decoder,"
+            echo "a Tab5 firmware integration, a DMR decoder modification, or TX."
+            echo ""
+            echo "The host hard-bit input and CRC/FEC evidence status are described in"
+            echo "\`components/orcsdr_digital_voice_rx/README.md\`."
+          } >> "$GITHUB_STEP_SUMMARY"
