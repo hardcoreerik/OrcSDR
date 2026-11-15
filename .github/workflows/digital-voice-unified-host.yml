@@ -1,0 +1,57 @@
+name: Unified digital voice receive-only host regression
+on:
+  push:
+    branches:
+      - feature/dmr-digital-voice-foundation
+    paths:
+      - '.github/workflows/digital-voice-unified-host.yml'
+      - '.github/workflows/dstar-ysf-rx-host-foundation.yml'
+      - 'components/orcsdr_dmr/**'
+      - 'components/orcsdr_digital_voice_rx/**'
+      - 'tests/dmr_protocol_conformance/**'
+  workflow_dispatch:
+permissions:
+  contents: read
+
+jobs:
+  native-rx-cross-protocol:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        config: [Release, Sanitizers]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the original DMR and D-STAR/YSF source-linked C++ host suites
+        env:
+          VARIANT: ${{ matrix.config }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "$VARIANT" = Sanitizers ]; then
+            cmake -S tests/dmr_protocol_conformance -B build/dv-combined-dmr-protocol -DCMAKE_BUILD_TYPE=Debug -DDMR_CONFORMANCE_SANITIZERS=ON
+            cmake -S components/orcsdr_dmr/d1_integration -B build/dv-combined-dmr-iq -DCMAKE_BUILD_TYPE=Debug -DDMR_D1_INTEGRATION_SANITIZE=ON
+            cmake -S components/orcsdr_digital_voice_rx -B build/dv-combined-ysf-dstar -DCMAKE_BUILD_TYPE=Debug -DORC_DV_SANITIZERS=ON
+          else
+            cmake -S tests/dmr_protocol_conformance -B build/dv-combined-dmr-protocol -DCMAKE_BUILD_TYPE=Release
+            cmake -S components/orcsdr_dmr/d1_integration -B build/dv-combined-dmr-iq -DCMAKE_BUILD_TYPE=Release
+            cmake -S components/orcsdr_digital_voice_rx -B build/dv-combined-ysf-dstar -DCMAKE_BUILD_TYPE=Release
+          fi
+          for dir in dv-combined-dmr-protocol dv-combined-dmr-iq dv-combined-ysf-dstar; do
+            cmake --build "build/$dir" --parallel 2
+            ctest --test-dir "build/$dir" --output-on-failure --verbose
+          done
+      - name: Clarify metadata-only host acceptance
+        if: always()
+        env:
+          VARIANT: ${{ matrix.config }}
+        shell: bash
+        run: |
+          {
+            echo "## Unified portable digital voice RX — $VARIANT"
+            echo "Source commit: $GITHUB_SHA."
+            echo "Actual DMR D0/D1 tests and YSF/D-STAR synthetic hard-bit metadata tests."
+            echo "**Not proven:** D1-N full acceptance, YSF/D-STAR real-air RF reception,"
+            echo "Tab5 reception, audio vocoder, Pluto, or transmit."
+          } >> "$GITHUB_STEP_SUMMARY"

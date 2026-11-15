@@ -1,6 +1,6 @@
 # OrcSDR — D-STAR and Yaesu System Fusion receive-only protocol foundation
 
-**Engineering status: HOST SYNTHETIC METADATA VERIFIED (subject to CI); NOT REAL-AIR/DEVICE VALIDATED.**
+**Engineering status: HOST SYNTHETIC METADATA VERIFIED (source-branch Release/ASan CI PASS); NOT REAL-AIR/DEVICE VALIDATED.**
 
 This module is an independently implemented C++17, fixed-memory **already-demodulated bitstream** metadata receiver for two important amateur-radio digital-voice formats. It deliberately does **not** transmit RF, select a tuner, own USB/IQ, create another SDR stack, play AMBE voice, decode encrypted speech, modify P25 or DMR, or wire itself into Tab5 firmware. This is a foundation, **not** complete D-STAR or Fusion reception on OrcSDR hardware.
 
@@ -61,4 +61,4 @@ OrcSDR implementation is AGPL-3.0-or-later; license compatibility and vocoder ri
 
 ## Delivery boundary
 
-**Host protocol metadata complete as an initial foundation; receive IQ frontend and device integration explicitly NOT IMPLEMENTED.** This is a separate branch for review. Do not merge into main or label the built-in Tab5 application as D-STAR/YSF-capable until recorded-IQ and device acceptance have been executed.
+**Host protocol metadata complete as an initial foundation; receive IQ frontend and device integration explicitly NOT IMPLEMENTED.** This module is integrated into the canonical receive-only digital-voice development branch, `feature/dmr-digital-voice-foundation`, from the original D-STAR/YSF branch. This is **not merged to main**. Do not label the Tab5 application D-STAR/YSF-capable until recorded-IQ and device qualification pass. See `docs/digital-voice/CONSOLIDATION_2026-11-15.md`.

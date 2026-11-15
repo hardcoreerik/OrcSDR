@@ -2,7 +2,7 @@ name: D-STAR and YSF receive-only metadata host tests
 on:
   push:
     branches:
-      - feature/dstar-ysf-rx-foundation-20261114
+      - feature/dmr-digital-voice-foundation
     paths:
       - '.github/workflows/dstar-ysf-rx-host-foundation.yml'
       - 'components/orcsdr_digital_voice_rx/**'
