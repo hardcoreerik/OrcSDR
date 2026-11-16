@@ -7,6 +7,11 @@
 namespace orcsdr::serial_session {
 namespace {
 
+// Ends a line built from several writes. It is exactly what Serial.println() wrote here before the move; write_line("")
+// would first write 0 bytes, which the USB-JTAG driver logs as an error in the middle of the reply line (seen on COM17
+// after AUTH_OK, 2026-11-15).
+constexpr const char* kLineEnd = "\r\n";
+
 // Constant time: the loop always runs over every byte.
 bool same_bytes(const uint8_t* a, const uint8_t* b, size_t size) {
   uint8_t difference = 0;
@@ -79,7 +84,7 @@ bool handle_command(char* command, bool authenticated, const Hooks& hooks) {
     }
     hooks.write("AUTH_OK ");
     hooks.write_hex(signature, sizeof(signature));
-    hooks.write_line("");
+    hooks.write(kLineEnd);
     hooks.set_authenticated(true);
     // An authenticated host (e.g. the UI regression scripts) takes over from the boot splash.
     hooks.session_started();
@@ -99,7 +104,7 @@ bool handle_command(char* command, bool authenticated, const Hooks& hooks) {
     hooks.journal("firmware_approved");
     hooks.write("FLASH_READY ");
     hooks.write_hex(digest, sizeof(digest));
-    hooks.write_line("");
+    hooks.write(kLineEnd);
     hooks.emit_identity();
     hooks.emit_pending_journal();
     return true;

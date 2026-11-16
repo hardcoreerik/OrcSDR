@@ -2,6 +2,14 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — session, FORGET COMPUTER and SD batch device-checked; AUTH_OK line fix — 2026-11-15
+
+Tab5, flashed on COM17 and checked.
+
+- **Fix:** the session move ended the `AUTH_OK <signature>` and `FLASH_READY <digest>` lines with `write_line("")` where the old code used `Serial.println()`. `println("")` first writes 0 bytes, and the USB-JTAG driver then logs `usb_serial_jtag_write_bytes(267): invalid buffer or size` in the middle of the reply line, so a host could not match `AUTH_OK`. Both lines now end with exactly `\r\n`, and `tests/serial_session_tests.cpp` fails on any empty `write_line`.
+- **Device check (COM17):** 35 of 35 refusals; 18 of 18 in `refactor-workspace` device check. Signed out, `PING` is silent and `SD_LIST` / `SD_GET_ABORT` / `SD_PUT_ABORT` answer. A wrong key gives `PAIR_LOCKED` then `PAIR_HINT`. With the key file, `AUTH_OK` carries the right device signature. Bad `ROTATE_KEY`, `INSTALL_STATUS`, `SET_WIFI` and `PREPARE_FLASH` lines are refused. Tapping FORGET COMPUTER twice prints `PAIR_FORGOTTEN` and ends the session; the same key then pairs as a first use and signs in. SD round trip: 70,000 bytes up and back with the same SHA-256 (the radio has to be stopped first: `SD_PUT_ERROR radio_busy` otherwise, as intended). Main-task free stack 6,364 bytes after the run (baseline 6,336). Radio state restored afterwards.
+- **Not checked:** how the FORGET COMPUTER button looks on the screen; a real `SET_WIFI` / `INSTALL_STATUS` / `ROTATE_KEY` with a valid signature.
+
 ## Unreleased — SD transfer commands moved out of process_command — 2026-11-15
 
 No behaviour change intended (owner ruling: plain move, still no sign-in). Host-tested and built.

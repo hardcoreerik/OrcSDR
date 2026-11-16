@@ -110,6 +110,7 @@ bool decode_hex_text(const char* text, char* out, size_t size) {
 
 // ---- device state the hooks reach ----
 std::string g_out;
+int g_empty_line_writes = 0;
 std::vector<std::string> g_calls;
 bool g_paired = false;
 uint8_t g_key[32];
@@ -121,7 +122,11 @@ std::string g_ssid, g_password;
 const orcsdr::serial_session::Hooks kHooks = [] {
   orcsdr::serial_session::Hooks h;
   h.write = [](const char* t) { g_out += t; };
-  h.write_line = [](const char* t) { g_out += t; g_out += "\n"; };
+  h.write_line = [](const char* t) {
+    if (t[0] == '\0') ++g_empty_line_writes;   // Serial.println("") writes 0 bytes first: USB-JTAG logs an error
+    g_out += t;
+    g_out += "\n";
+  };
   h.write_hex = [](const uint8_t* v, size_t n) { g_out += hex(std::vector<uint8_t>(v, v + n)); };
   h.decode_hex = decode_hex;
   h.decode_hex_text = decode_hex_text;
@@ -214,7 +219,9 @@ int main() {
   g_hmac_fails = true;
   CHECK(run(good_auth, false) && g_out == "AUTH_ERROR\n" && !g_authenticated);
   g_hmac_fails = false;
-  CHECK(run(good_auth, false) && g_out == "AUTH_OK " + hex(hmac(key, device_in)) + "\n");
+  // Ended with "\r\n" through write(), as Serial.println() did; never an empty write_line().
+  CHECK(run(good_auth, false) && g_out == "AUTH_OK " + hex(hmac(key, device_in)) + "\r\n");
+  CHECK(g_empty_line_writes == 0);
   CHECK(g_authenticated && calls() == "auth on;session_started;");
   g_paired = false;
   CHECK(!run(good_auth, false) && g_out.empty());   // not paired: not this route
@@ -232,7 +239,8 @@ int main() {
   // PREPARE_FLASH.
   const std::string digest = hex(key_of(50));
   CHECK(run("PREPARE_FLASH 1234", true) && g_out == "FLASH_INVALID\n" && calls().empty());
-  CHECK(run("PREPARE_FLASH " + digest, true) && g_out == "FLASH_READY " + digest + "\n");
+  CHECK(run("PREPARE_FLASH " + digest, true) && g_out == "FLASH_READY " + digest + "\r\n");
+  CHECK(g_empty_line_writes == 0);
   CHECK(calls() == "cyan Approved firmware update starting;journal firmware_approved;identity;pending;");
 
   // SET_WIFI: the signature covers "wifi|<ssid hex>|<password hex>".
