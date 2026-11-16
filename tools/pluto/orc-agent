@@ -1,0 +1,230 @@
+#!/usr/bin/env python3
+"""orc-agent: a small authenticated command agent for the Pluto's Linux, for development. Runs as root, off by default, fully reversible.
+
+The Tab5 (or the PC, for tests) sends one line per request and gets a framed reply, so there is no login prompt to scrape:
+
+  request :  ORC1 <token> <VERB> [args]\\n
+  reply   :  ORC1 BEGIN <verb>\\n <output lines> \\nORC1 END <rc>\\n      (or a single line  ORC1 ERR <reason>\\n)
+
+Verbs
+  PING                       reply "pong"; checks the link and the token
+  REPORT status|usb|thermal|journal [n]|iiod|diag     read-only reports (fixed commands, no shell input from the caller)
+  DIAG <feature> on|off      switch one orc-diag feature (the existing, reversible development tool)
+  ACTION restart-iiod        restart iiod and rebind the USB gadget (replies first: the USB link drops while it happens)
+  ACTION reboot              reboot the Pluto (replies first)
+  SH <command>               a raw shell command, only when the file /etc/orc-agent/allow-raw exists (off by default)
+
+ACTION needs the file /etc/orc-agent/allow-actions. The token is the file /etc/orc-agent/token (mode 0600). A wrong token is answered after a delay and
+logged. One request at a time, 10 s per command, 8 KB of output.
+
+  orc-agent serve --dev /dev/ttyGS0          serve on the USB gadget serial port (replaces the login console on it while running)
+  orc-agent serve --tcp 127.0.0.1:47000      serve on a local TCP port (tests)
+  orc-agent client --tcp 127.0.0.1:47000 --token-file F REPORT status      reference client, and a way to test from the Pluto itself
+"""
+import argparse
+import hmac
+import os
+import select
+import socket
+import subprocess
+import sys
+import time
+
+CONF = "/etc/orc-agent"
+MAX_OUT = 8192
+CMD_TIMEOUT = 10
+MAX_LINE = 512
+
+REPORTS = {
+    "status": "echo uptime_s=$(cut -d. -f1 /proc/uptime); echo load=$(cut -d' ' -f1 /proc/loadavg); "
+              "echo mem_avail_mb=$(( $(grep MemAvailable /proc/meminfo | tr -s ' ' | cut -d' ' -f2) / 1024 )); "
+              "echo udc=$(cat /sys/class/udc/*/state); echo eth0=$(cat /sys/class/net/eth0/operstate); "
+              "echo iiod=$(systemctl is-active iiod)",
+    "usb": "echo udc=$(cat /sys/class/udc/*/state); echo gadget_udc=$(cat /sys/kernel/config/usb_gadget/composite_gadget/UDC); "
+           "P=$(pidof iiod | cut -d' ' -f1); echo iiod_pid=$P; echo iiod_threads=$(ls /proc/$P/task 2>/dev/null | wc -l); "
+           "echo iiod_fds=$(ls /proc/$P/fd 2>/dev/null | wc -l); echo iiod_ep_files_open=$(ls -l /proc/$P/fd 2>/dev/null | grep -c iio_ffs/ep); "
+           "dmesg | grep -i -E 'gadget|ffs|ci_hdrc|udc' | tail -6",
+    "thermal": "for d in /sys/bus/iio/devices/iio:device*; do n=$(cat $d/name 2>/dev/null); t=$(cat $d/in_temp0_input 2>/dev/null); "
+               "[ -n \"$t\" ] && echo \"$n temp_mdegC=$t\"; r=$(cat $d/in_temp0_raw 2>/dev/null); o=$(cat $d/in_temp0_offset 2>/dev/null); "
+               "s=$(cat $d/in_temp0_scale 2>/dev/null); [ -n \"$r\" ] && echo \"$n temp_raw=$r offset=$o scale=$s\"; "
+               "for f in $d/in_voltage*_raw; do [ -e $f ] && echo \"$n $(basename $f)=$(cat $f)\"; done; done; true",
+    "iiod": "systemctl status iiod --no-pager -n 0; journalctl -u iiod -n 15 --no-pager -o short-monotonic",
+    "diag": "/usr/local/sbin/orc-diag status",
+}
+DIAG_FEATURES = ("journal-sync", "watchdog", "telemetry", "reset-cause")
+
+
+def have(name):
+    return os.path.exists(os.path.join(CONF, name))
+
+
+def run(cmd, shell):
+    try:
+        r = subprocess.run(cmd, shell=shell, capture_output=True, text=True, timeout=CMD_TIMEOUT)
+        out = (r.stdout + r.stderr)
+        return r.returncode, out
+    except subprocess.TimeoutExpired:
+        return 124, "timed out after %d s\n" % CMD_TIMEOUT
+
+
+def later(cmd):
+    """Runs a command a moment from now, detached, so the reply is sent before the USB link drops."""
+    subprocess.Popen(["sh", "-c", "sleep 1; " + cmd], stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     start_new_session=True)
+
+
+def reply(verb, rc, out):
+    out = out[:MAX_OUT]
+    if out and not out.endswith("\n"):
+        out += "\n"
+    return ("ORC1 BEGIN %s\n%sORC1 END %d\n" % (verb, out, rc)).encode()
+
+
+def err(reason):
+    return ("ORC1 ERR %s\n" % reason).encode()
+
+
+def handle(line, token):
+    parts = line.strip().split(" ", 3)
+    if len(parts) < 3 or parts[0] != "ORC1":
+        return err("format")
+    if not hmac.compare_digest(parts[1].encode(), token.encode()):
+        time.sleep(1)  # slows guessing
+        sys.stderr.write("orc-agent: bad token\n")
+        return err("auth")
+    verb = parts[2].upper()
+    rest = parts[3] if len(parts) > 3 else ""
+    if verb == "PING":
+        return reply("PING", 0, "pong\n")
+    if verb == "REPORT":
+        words = rest.split()
+        kind = words[0].lower() if words else ""
+        if kind == "journal":
+            n = 20
+            if len(words) > 1 and words[1].isdigit():
+                n = max(1, min(int(words[1]), 100))
+            rc, out = run("journalctl -n %d --no-pager -o short-monotonic | grep -v pam_env" % n, True)
+            return reply("REPORT journal", rc, out)
+        if kind in REPORTS:
+            rc, out = run(REPORTS[kind], True)
+            return reply("REPORT " + kind, rc, out)
+        return err("unknown-report")
+    if verb == "DIAG":
+        words = rest.split()
+        if len(words) != 2 or words[0] not in DIAG_FEATURES or words[1] not in ("on", "off"):
+            return err("usage")
+        rc, out = run(["/usr/local/sbin/orc-diag", words[1], words[0]], False)
+        return reply("DIAG", rc, out)
+    if verb == "ACTION":
+        if not have("allow-actions"):
+            return err("actions-disabled")
+        what = rest.strip().lower()
+        if what == "restart-iiod":
+            later("systemctl restart iiod")
+            return reply("ACTION", 0, "scheduled: restart-iiod (the USB link will drop and return)\n")
+        if what == "reboot":
+            later("systemctl reboot")
+            return reply("ACTION", 0, "scheduled: reboot\n")
+        return err("unknown-action")
+    if verb == "SH":
+        if not have("allow-raw"):
+            return err("raw-disabled")
+        rc, out = run(rest, True)
+        return reply("SH", rc, out)
+    return err("unknown-verb")
+
+
+def serve_tcp(addr, token):
+    host, port = addr.rsplit(":", 1)
+    srv = socket.socket()
+    srv.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    srv.bind((host, int(port)))
+    srv.listen(1)
+    sys.stderr.write("orc-agent: serving on %s\n" % addr)
+    while True:
+        conn, _ = srv.accept()
+        conn.settimeout(30)
+        try:
+            buf = b""
+            while b"\n" not in buf and len(buf) < MAX_LINE:
+                chunk = conn.recv(256)
+                if not chunk:
+                    break
+                buf += chunk
+            conn.sendall(handle(buf.split(b"\n", 1)[0].decode("utf-8", "replace"), token))
+        except OSError:
+            pass
+        finally:
+            conn.close()
+
+
+def serve_dev(dev, token):
+    import termios
+    import tty
+    fd = os.open(dev, os.O_RDWR | os.O_NOCTTY)
+    tty.setraw(fd)
+    attrs = termios.tcgetattr(fd)
+    attrs[3] &= ~termios.ECHO
+    termios.tcsetattr(fd, termios.TCSANOW, attrs)
+    sys.stderr.write("orc-agent: serving on %s\n" % dev)
+    buf = b""
+    while True:
+        ready, _, _ = select.select([fd], [], [], 5)
+        if not ready:
+            continue
+        data = os.read(fd, 256)
+        if not data:
+            time.sleep(0.2)
+            continue
+        buf += data
+        if len(buf) > MAX_LINE:
+            buf = b""
+        while b"\n" in buf:
+            line, buf = buf.split(b"\n", 1)
+            os.write(fd, handle(line.decode("utf-8", "replace"), token).replace(b"\n", b"\r\n"))
+
+
+def client(args):
+    token = open(args.token_file).read().strip()
+    line = ("ORC1 %s %s\n" % (token, " ".join(args.request))).encode()
+    host, port = args.tcp.rsplit(":", 1)
+    with socket.create_connection((host, int(port)), timeout=20) as s:
+        s.sendall(line)
+        data = b""
+        while True:
+            chunk = s.recv(4096)
+            if not chunk:
+                break
+            data += chunk
+    sys.stdout.write(data.decode("utf-8", "replace"))
+
+
+def main():
+    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    sub = ap.add_subparsers(dest="cmd", required=True)
+    sv = sub.add_parser("serve")
+    sv.add_argument("--dev")
+    sv.add_argument("--tcp")
+    sv.add_argument("--token-file", default=os.path.join(CONF, "token"))
+    cl = sub.add_parser("client")
+    cl.add_argument("--tcp", required=True)
+    cl.add_argument("--token-file", required=True)
+    cl.add_argument("request", nargs="+")
+    a = ap.parse_args()
+    if a.cmd == "client":
+        client(a)
+        return 0
+    if bool(a.dev) == bool(a.tcp):
+        ap.error("give exactly one of --dev or --tcp")
+    token = open(a.token_file).read().strip()
+    if len(token) < 16:
+        sys.exit("orc-agent: the token must be at least 16 characters")
+    if a.tcp:
+        serve_tcp(a.tcp, token)
+    else:
+        serve_dev(a.dev, token)
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(main())
