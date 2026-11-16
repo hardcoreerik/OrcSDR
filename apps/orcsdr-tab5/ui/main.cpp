@@ -109,6 +109,7 @@
 #include "serial_digimodes.hpp"
 #include "serial_splash.hpp"
 #include "serial_session.hpp"
+#include "serial_sd.hpp"
 #include "display_bench.hpp"
 #include "serial_gain.hpp"
 #include "serial_driver.hpp"
@@ -20176,6 +20177,21 @@ static constexpr orcsdr::serial_location::Hooks kSerialLocationHooks{
 };
 
 // The RTL_ADSB range, location, start and stop commands live in serial_adsb.cpp; they call the same functions as before.
+// SD_LIST / SD_GET_* / SD_REMOVE / SD_PUT_* (serial_sd.cpp): the transfer code and path rules stay here.
+static constexpr orcsdr::serial_sd::Hooks kSerialSdHooks{
+    [](const char* text) { Serial.println(text); },
+    [] { sd_list(); },
+    [](const char* path_hex) { sd_get_begin(path_hex); },
+    [] { sd_get_chunk(); },
+    [] { return g_sd_get.active; },
+    [](const char* reason) { sd_get_abort(reason); },
+    [](const char* path_hex) { sd_remove(path_hex); },
+    [](char* arguments) { sd_put_begin(arguments); },
+    [](const char* length_text) { sd_put_chunk(length_text); },
+    [] { return g_sd_put.active; },
+    [](const char* reason) { sd_put_abort(reason); },
+};
+
 static constexpr orcsdr::serial_adsb::Hooks kSerialAdsbHooks{
     [](const char* text) { Serial.print(text); },
     [](const char* text) { Serial.println(text); },
@@ -21321,43 +21337,7 @@ void process_command(char* command) {
   if (orcsdr::serial_catalog::handle_command(command, authenticated, kSerialCatalogHooks)) return;
   if (orcsdr::serial_location::handle_command(command, authenticated, kSerialLocationHooks)) return;
   if (orcsdr::serial_adsb::handle_command(command, authenticated, kSerialAdsbHooks)) return;
-  if (strcmp(command, "SD_LIST") == 0) {
-    sd_list();
-    return;
-  }
-  if (strncmp(command, "SD_GET_BEGIN ", 13) == 0) {
-    sd_get_begin(command + 13);
-    return;
-  }
-  if (strcmp(command, "SD_GET_CHUNK") == 0) {
-    sd_get_chunk();
-    return;
-  }
-  if (strcmp(command, "SD_GET_ABORT") == 0) {
-    if (g_sd_get.active) sd_get_abort("host_abort");
-    else Serial.println("SD_GET_ABORTED");
-    return;
-  }
-  if (strncmp(command, "SD_REMOVE ", 10) == 0) {
-    sd_remove(command + 10);
-    return;
-  }
-  if (strncmp(command, "SD_PUT_BEGIN ", 13) == 0) {
-    sd_put_begin(command + 13);
-    return;
-  }
-  if (strncmp(command, "SD_PUT_CHUNK ", 13) == 0) {
-    sd_put_chunk(command + 13);
-    return;
-  }
-  if (strcmp(command, "SD_PUT_ABORT") == 0) {
-    if (g_sd_put.active) {
-      sd_put_abort("host_abort");
-    } else {
-      Serial.println("SD_PUT_ABORTED");
-    }
-    return;
-  }
+  if (orcsdr::serial_sd::handle_command(command, authenticated, kSerialSdHooks)) return;
   if (orcsdr::serial_iq::handle_command(command, authenticated, kSerialIqHooks)) return;
   if (orcsdr::serial_lora_status::handle_command(command, authenticated, kSerialLoraStatusHooks)) return;
   if (orcsdr::lora_diag::handle_command(command, authenticated, kLoraDiagHooks)) return;

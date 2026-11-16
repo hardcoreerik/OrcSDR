@@ -2,6 +2,14 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — SD transfer commands moved out of process_command — 2026-11-15
+
+No behaviour change intended (owner ruling: plain move, still no sign-in). Host-tested and built.
+
+- **`SD_LIST`, `SD_GET_BEGIN/CHUNK/ABORT`, `SD_REMOVE` and `SD_PUT_BEGIN/CHUNK/ABORT`** moved into `apps/orcsdr-tab5/ui/serial_sd.{hpp,cpp}` with `tests/serial_sd_tests.cpp`. The transfer code, the `/orcsdr/` path rules, the radio-busy refusal and the SHA-256 checks stay in `main.cpp`. Route table unchanged (229 routes).
+- **Measured:** `process_command` 448 bytes of stack (was 480), complexity 141 to 132, 290 to 254 lines.
+- **Docs, noted not changed:** `docs/API_SERIAL_CLI.md` names the upload command `SD_PUT_DATA`; the command is `SD_PUT_CHUNK <bytes>` and `SD_PUT_DATA` is its reply.
+
 ## Unreleased — forget the paired computer from Settings; PAIR_LOCKED explains itself — 2026-11-14
 
 Tab5. Owner-approved behaviour change. Host-tested and built; not flashed.

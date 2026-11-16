@@ -68,6 +68,7 @@ FAMILIES = {
     "orcsdr::serial_digimodes": "apps/orcsdr-tab5/ui/serial_digimodes.cpp",
     "orcsdr::serial_splash": "apps/orcsdr-tab5/ui/serial_splash.cpp",
     "orcsdr::serial_session": "apps/orcsdr-tab5/ui/serial_session.cpp",
+    "orcsdr::serial_sd": "apps/orcsdr-tab5/ui/serial_sd.cpp",
     "orcsdr::serial_driver": "apps/orcsdr-tab5/ui/serial_driver.cpp",
     "orcsdr::serial_gain": "apps/orcsdr-tab5/ui/serial_gain.cpp",
     "orcsdr::serial_pocsag": "apps/orcsdr-tab5/ui/serial_pocsag.cpp",
@@ -221,7 +222,7 @@ def extract_function(source_text: str, signature: str, is_family: bool, known, l
                 if squeeze(body) != "return;":
                     raise SystemExit(f"family call {call[1]} must be followed by a bare 'return;'")
                 family_text = load(call[1])
-                # serial_session takes a writable line (AUTH, SET_WIFI, ... split it in place); the rest take const.
+                # serial_session and serial_sd take a writable line (AUTH, SD_PUT_BEGIN, ... split it in place).
                 signature = next((s for s in FAMILY_SIGNATURES if s in family_text), FAMILY_SIGNATURES[0])
                 for r in extract_function(family_text, signature, True, known, load):
                     here = list(guards) + ([r["guard"]] if r["guard"] != "-" else [])
