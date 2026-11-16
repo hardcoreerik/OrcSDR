@@ -74,6 +74,7 @@ on:
       - 'tests/serial_sd_tests.cpp'
       - 'tests/serial_reset_tests.cpp'
       - 'tests/serial_ui_doc_tests.cpp'
+      - 'tests/sd_paths_tests.cpp'
       - 'tests/data/serial_help_golden.txt'
       - 'tests/data/serial_help_golden_orcdial.txt'
       - 'tests/data/serial_command_routes.tsv'

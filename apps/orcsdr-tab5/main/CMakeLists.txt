@@ -95,6 +95,8 @@ idf_component_register(
         "../ui/serial_sd.cpp"
         "../ui/serial_reset.cpp"
         "../ui/serial_ui_doc.cpp"
+        "../ui/sd_paths.cpp"
+        "../ui/sd_transfer.cpp"
         "../ui/display_bench.cpp"
         "../ui/screen_blit.cpp"
         "../ui/serial_help.cpp"

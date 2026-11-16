@@ -112,6 +112,8 @@
 #include "serial_sd.hpp"
 #include "serial_reset.hpp"
 #include "serial_ui_doc.hpp"
+#include "sd_paths.hpp"
+#include "sd_transfer.hpp"
 #include "display_bench.hpp"
 #include "serial_gain.hpp"
 #include "serial_driver.hpp"
@@ -1762,31 +1764,6 @@ WorkflowState workflow{};
 uint8_t pairing_key[32];
 char serial_input[384];
 size_t serial_input_length = 0;
-constexpr size_t kSdPutChunkBytes = 16 * 1024;
-// USB Serial/JTAG has a 4 KiB TX queue; smaller reads avoid producer deadlock.
-constexpr size_t kSdGetChunkBytes = 2 * 1024;
-constexpr uint64_t kSdPutMaxBytes = 64ULL * 1024ULL * 1024ULL;
-struct SdPutState {
-  File file;
-  bool active = false;
-  uint64_t expected = 0;
-  uint64_t received = 0;
-  char target[128]{};
-  char temporary[136]{};
-  uint8_t expected_sha[32]{};
-  mbedtls_sha256_context sha;
-};
-SdPutState g_sd_put;
-struct SdGetState {
-  File file;
-  bool active = false;
-  uint64_t size = 0;
-  uint64_t sent = 0;
-  char path[128]{};
-  mbedtls_sha256_context sha;
-};
-SdGetState g_sd_get;
-static std::atomic<bool> g_sd_transfer_active{false};
 struct IqGetState {
   bool active = false;
   size_t sent = 0;
@@ -1805,9 +1782,6 @@ struct LoraReplayPutState {
   mbedtls_sha256_context sha;
 };
 LoraReplayPutState g_lora_replay_put;
-// PSRAM: only the serial SD get/put commands use it, and the serial link,
-// not memory, sets their speed.
-EXT_RAM_BSS_ATTR uint8_t g_sd_put_chunk[kSdPutChunkBytes];
 bool wifi_station_ready = false;
 bool wifi_hosted_versions_match = false;
 bool wifi_hosted_update_required = false;
@@ -2648,7 +2622,6 @@ void lora_store_packet(const LoraDisplayPacket& packet);
 bool lora_native_decoder_start();
 uint64_t sd_total_bytes();
 void enrich_one_adsb_track();
-bool sd_put_path_allowed(const char* path);
 void bump_rtl_ui();
 const char* orc_tool_name(OrcTool tool);
 OrcTool orc_tool_current();
@@ -5469,7 +5442,7 @@ bool dsp_ab_replay_per_sample = false;  // RTL_RDS_REPLAY_SAMPLE: old per-sample
 
 bool rds_replay(const char* path) {
   const size_t path_len = path == nullptr ? 0 : strlen(path);
-  if (!sd_put_path_allowed(path) || path_len < 4 || strcmp(path + path_len - 4, ".s16") != 0) {
+  if (!orcsdr::sd_paths::transfer_allowed(path) || path_len < 4 || strcmp(path + path_len - 4, ".s16") != 0) {
     Serial.println("RTL_RDS_REPLAY_ERROR invalid_path");
     return false;
   }
@@ -5651,185 +5624,10 @@ bool handle_tool_tab_touch(int32_t x, int32_t y) {
   return false;
 }
 
-bool sd_put_path_allowed(const char* path) {
-  if (path == nullptr || strncmp(path, "/orcsdr/", 8) != 0 ||
-      strlen(path) >= sizeof(g_sd_put.target) || strstr(path, "..") != nullptr ||
-      strchr(path, '\\') != nullptr) {
-    return false;
-  }
-  for (const unsigned char* p = reinterpret_cast<const unsigned char*>(path); *p; ++p) {
-    if (*p < 0x20 || *p > 0x7e) return false;
-  }
-  return path[8] != '\0';
-}
-
-bool sd_remove_path_allowed(const char* path) {
-  // The retired animated splash lived at the card root; keep it removable.
-  return sd_put_path_allowed(path) ||
-         strcmp(path, "/OrcSDR_Splash_1280x720_60fps_10s.orsplash") == 0;
-}
-
 bool sd_transfer_radio_busy() {
   const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
   return state == RtlCaptureState::queued || state == RtlCaptureState::running ||
          orcsdr::audio_rec::active();
-}
-
-void sd_list() {
-  if (sd_transfer_radio_busy()) {
-    Serial.println("SD_LIST_ERROR radio_busy");
-    return;
-  }
-  if (g_sd_put.active || g_sd_get.active) {
-    Serial.println("SD_LIST_ERROR transfer_busy");
-    return;
-  }
-  if (orcsdr_splash_is_active()) orcsdr_splash_end();
-  if (!ensure_tab5_sd()) {
-    Serial.println("SD_LIST_ERROR sd_unavailable");
-    return;
-  }
-  File directory = g_sd_fs->open("/orcsdr");
-  if (!directory || !directory.isDirectory()) {
-    Serial.println("SD_LIST_ERROR open_failed");
-    return;
-  }
-  size_t count = 0;
-  for (File entry = directory.openNextFile(); entry; entry = directory.openNextFile()) {
-    if (!entry.isDirectory()) {
-      char path[128];
-      const char* name = entry.name();
-      if (name[0] == '/') strlcpy(path, name, sizeof(path));
-      else snprintf(path, sizeof(path), "/orcsdr/%s", name);
-      if (strlen(path) < sizeof(path) - 1) {
-        Serial.printf("SD_LIST_ENTRY bytes=%llu modified=%llu pathhex=",
-                      static_cast<unsigned long long>(entry.size()),
-                      static_cast<unsigned long long>(entry.getLastWrite()));
-        print_hex(reinterpret_cast<const uint8_t*>(path), strlen(path));
-        Serial.println();
-        ++count;
-      }
-    }
-    entry.close();
-  }
-  directory.close();
-  Serial.printf("SD_LIST_DONE count=%u\n", static_cast<unsigned>(count));
-}
-
-void reset_sd_get_state() {
-  g_sd_get.active = false;
-  g_sd_get.size = 0;
-  g_sd_get.sent = 0;
-  g_sd_get.path[0] = '\0';
-}
-
-void reset_sd_put_state() {
-  g_sd_put.active = false;
-  g_sd_put.expected = 0;
-  g_sd_put.received = 0;
-  g_sd_put.target[0] = '\0';
-  g_sd_put.temporary[0] = '\0';
-  std::memset(g_sd_put.expected_sha, 0, sizeof(g_sd_put.expected_sha));
-}
-
-void sd_get_abort(const char* reason) {
-  if (g_sd_get.file) g_sd_get.file.close();
-  if (g_sd_get.active) mbedtls_sha256_free(&g_sd_get.sha);
-  reset_sd_get_state();
-  Serial.printf("SD_GET_ERROR %s\n", reason ? reason : "aborted");
-  g_sd_transfer_active.store(false, std::memory_order_release);
-}
-
-void sd_get_begin(const char* path_hex) {
-  if (g_sd_get.active || g_sd_put.active) {
-    Serial.println("SD_GET_ERROR transfer_busy");
-    return;
-  }
-  g_sd_transfer_active.store(true, std::memory_order_release);
-  char path[sizeof(g_sd_get.path)];
-  const bool path_ok = decode_hex_text(path_hex, path, sizeof(path)) && sd_put_path_allowed(path);
-  // The ACARS log is only appended to, so reading it while the receiver runs is safe: the read stops at the size seen here.
-  const bool acars_log = path_ok && strncmp(path, "/orcsdr/acars/", 14) == 0 && !strstr(path, "..");
-  if (sd_transfer_radio_busy() && !acars_log) {
-    Serial.println("SD_GET_ERROR radio_busy");
-    g_sd_transfer_active.store(false, std::memory_order_release);
-    return;
-  }
-  if (!path_ok) {
-    Serial.println("SD_GET_ERROR invalid_path");
-    g_sd_transfer_active.store(false, std::memory_order_release);
-    return;
-  }
-  if (orcsdr_splash_is_active()) orcsdr_splash_end();
-  if (!ensure_tab5_sd()) {
-    Serial.println("SD_GET_ERROR sd_unavailable");
-    g_sd_transfer_active.store(false, std::memory_order_release);
-    return;
-  }
-  g_sd_get.file = g_sd_fs->open(path, FILE_READ);
-  if (!g_sd_get.file || g_sd_get.file.isDirectory()) {
-    if (g_sd_get.file) g_sd_get.file.close();
-    reset_sd_get_state();
-    Serial.println("SD_GET_ERROR open_failed");
-    g_sd_transfer_active.store(false, std::memory_order_release);
-    return;
-  }
-  g_sd_get.size = g_sd_get.file.size();
-  if (g_sd_get.size == 0 || g_sd_get.size > kSdPutMaxBytes) {
-    g_sd_get.file.close();
-    reset_sd_get_state();
-    Serial.println("SD_GET_ERROR invalid_size");
-    g_sd_transfer_active.store(false, std::memory_order_release);
-    return;
-  }
-  strlcpy(g_sd_get.path, path, sizeof(g_sd_get.path));
-  mbedtls_sha256_init(&g_sd_get.sha);
-  if (mbedtls_sha256_starts(&g_sd_get.sha, 0) != 0) {
-    g_sd_get.active = true;
-    sd_get_abort("sha_start");
-    return;
-  }
-  g_sd_get.active = true;
-  Serial.printf("SD_GET_READY chunk=%u bytes=%llu path=\"%s\"\n",
-                static_cast<unsigned>(kSdGetChunkBytes),
-                static_cast<unsigned long long>(g_sd_get.size), g_sd_get.path);
-}
-
-void sd_get_chunk() {
-  if (!g_sd_get.active) {
-    Serial.println("SD_GET_ERROR not_active");
-    return;
-  }
-  const uint64_t remaining = g_sd_get.size - g_sd_get.sent;
-  const size_t wanted = static_cast<size_t>(
-      remaining < kSdGetChunkBytes ? remaining : kSdGetChunkBytes);
-  const size_t got = g_sd_get.file.read(g_sd_put_chunk, wanted);
-  if (got != wanted || mbedtls_sha256_update(&g_sd_get.sha, g_sd_put_chunk, got) != 0) {
-    sd_get_abort("read_failed");
-    return;
-  }
-  Serial.printf("SD_GET_DATA bytes=%u\n", static_cast<unsigned>(got));
-  if (Serial.writeBytes(g_sd_put_chunk, got) != got) {
-    sd_get_abort("serial_write");
-    return;
-  }
-  g_sd_get.sent += got;
-  if (g_sd_get.sent != g_sd_get.size) return;
-
-  uint8_t digest[32];
-  if (mbedtls_sha256_finish(&g_sd_get.sha, digest) != 0) {
-    sd_get_abort("sha_finish");
-    return;
-  }
-  mbedtls_sha256_free(&g_sd_get.sha);
-  g_sd_get.file.close();
-  g_sd_get.active = false;
-  Serial.printf("SD_GET_DONE bytes=%llu sha256=",
-                static_cast<unsigned long long>(g_sd_get.sent));
-  print_hex(digest, sizeof(digest));
-  Serial.printf(" path=\"%s\"\n", g_sd_get.path);
-  reset_sd_get_state();
-  g_sd_transfer_active.store(false, std::memory_order_release);
 }
 
 void iq_get_reset() {
@@ -5863,7 +5661,7 @@ void iq_get_begin() {
   g_iq_get.active = true;
   g_iq_get.sent = 0;
   Serial.printf("RTL_IQ_GET_READY chunk=%u bytes=%u\n",
-                static_cast<unsigned>(kSdGetChunkBytes), static_cast<unsigned>(bytes));
+                static_cast<unsigned>(orcsdr::sd_transfer::kGetChunkBytes), static_cast<unsigned>(bytes));
 }
 
 void iq_get_chunk() {
@@ -5873,7 +5671,7 @@ void iq_get_chunk() {
   }
   const size_t total = g_iq_rec_write.load(std::memory_order_acquire);
   const size_t remaining = total - g_iq_get.sent;
-  const size_t count = min(remaining, kSdGetChunkBytes);
+  const size_t count = min(remaining, orcsdr::sd_transfer::kGetChunkBytes);
   const uint8_t* data = g_iq_rec_buf + g_iq_get.sent;
   if (mbedtls_sha256_update(&g_iq_get.sha, data, count) != 0) {
     iq_get_abort("sha_update");
@@ -5946,7 +5744,7 @@ void lora_replay_put_begin(const char* arguments) {
   }
   g_lora_replay_put.active = true;
   Serial.printf("RTL_LORA_REPLAY_READY chunk=%u bytes=%u\n",
-                static_cast<unsigned>(kSdPutChunkBytes), bytes);
+                static_cast<unsigned>(orcsdr::sd_transfer::kPutChunkBytes), bytes);
 }
 
 void lora_replay_put_chunk(const char* length_text) {
@@ -5955,7 +5753,7 @@ void lora_replay_put_chunk(const char* length_text) {
     return;
   }
   const size_t length = static_cast<size_t>(strtoul(length_text, nullptr, 10));
-  if (length == 0 || length > kSdPutChunkBytes ||
+  if (length == 0 || length > orcsdr::sd_transfer::kPutChunkBytes ||
       g_lora_replay_put.received + length > g_lora_replay_put.expected) {
     lora_replay_put_abort("invalid_chunk");
     return;
@@ -6006,182 +5804,6 @@ void lora_replay_put_chunk(const char* length_text) {
   const size_t queued = g_lora_replay_put.received;
   lora_replay_put_reset();
   Serial.printf("RTL_LORA_REPLAY_QUEUED bytes=%u\n", static_cast<unsigned>(queued));
-}
-
-void sd_remove(const char* path_hex) {
-  if (sd_transfer_radio_busy()) {
-    Serial.println("SD_REMOVE_ERROR radio_busy");
-    return;
-  }
-  char path[sizeof(g_sd_put.target)];
-  if (!decode_hex_text(path_hex, path, sizeof(path)) || !sd_remove_path_allowed(path)) {
-    Serial.println("SD_REMOVE_ERROR invalid_path");
-    return;
-  }
-  if (orcsdr_splash_is_active()) orcsdr_splash_end();
-  if (!ensure_tab5_sd()) {
-    Serial.println("SD_REMOVE_ERROR sd_unavailable");
-    return;
-  }
-  if (!g_sd_fs->exists(path)) {
-    Serial.printf("SD_REMOVE_MISSING path=\"%s\"\n", path);
-    return;
-  }
-  Serial.printf(g_sd_fs->remove(path) ? "SD_REMOVE_DONE path=\"%s\"\n"
-                                     : "SD_REMOVE_ERROR remove_failed path=\"%s\"\n",
-                path);
-}
-
-void sd_put_abort(const char* reason) {
-  if (g_sd_put.file) g_sd_put.file.close();
-  if (g_sd_put.temporary[0]) g_sd_fs->remove(g_sd_put.temporary);
-  if (g_sd_put.active) mbedtls_sha256_free(&g_sd_put.sha);
-  reset_sd_put_state();
-  Serial.printf("SD_PUT_ERROR %s\n", reason ? reason : "aborted");
-  g_sd_transfer_active.store(false, std::memory_order_release);
-}
-
-bool sd_put_commit() {
-  uint8_t digest[32];
-  if (mbedtls_sha256_finish(&g_sd_put.sha, digest) != 0) {
-    sd_put_abort("sha_finish");
-    return false;
-  }
-  mbedtls_sha256_free(&g_sd_put.sha);
-  g_sd_put.active = false;
-  g_sd_put.file.flush();
-  g_sd_put.file.close();
-
-  uint8_t difference = 0;
-  for (size_t i = 0; i < sizeof(digest); ++i) {
-    difference |= digest[i] ^ g_sd_put.expected_sha[i];
-  }
-  if (difference != 0) {
-    g_sd_fs->remove(g_sd_put.temporary);
-    Serial.println("SD_PUT_ERROR sha_mismatch");
-    reset_sd_put_state();
-    g_sd_transfer_active.store(false, std::memory_order_release);
-    return false;
-  }
-
-  char backup[136];
-  snprintf(backup, sizeof(backup), "%s.bak", g_sd_put.target);
-  g_sd_fs->remove(backup);
-  const bool had_target = g_sd_fs->exists(g_sd_put.target);
-  if (had_target && !g_sd_fs->rename(g_sd_put.target, backup)) {
-    g_sd_fs->remove(g_sd_put.temporary);
-    Serial.println("SD_PUT_ERROR backup_failed");
-    reset_sd_put_state();
-    g_sd_transfer_active.store(false, std::memory_order_release);
-    return false;
-  }
-  if (!g_sd_fs->rename(g_sd_put.temporary, g_sd_put.target)) {
-    if (had_target) (void)g_sd_fs->rename(backup, g_sd_put.target);
-    g_sd_fs->remove(g_sd_put.temporary);
-    Serial.println("SD_PUT_ERROR rename_failed");
-    reset_sd_put_state();
-    g_sd_transfer_active.store(false, std::memory_order_release);
-    return false;
-  }
-  if (had_target) g_sd_fs->remove(backup);
-  Serial.printf("SD_PUT_DONE bytes=%llu sha256=",
-                static_cast<unsigned long long>(g_sd_put.received));
-  print_hex(digest, sizeof(digest));
-  Serial.printf(" path=\"%s\"\n", g_sd_put.target);
-  reset_sd_put_state();
-  g_sd_transfer_active.store(false, std::memory_order_release);
-  return true;
-}
-
-void sd_put_begin(char* arguments) {
-  if (g_sd_put.active || g_sd_get.active) {
-    Serial.println("SD_PUT_ERROR already_active");
-    return;
-  }
-  g_sd_transfer_active.store(true, std::memory_order_release);
-  if (sd_transfer_radio_busy()) {
-    Serial.println("SD_PUT_ERROR radio_busy");
-    g_sd_transfer_active.store(false, std::memory_order_release);
-    return;
-  }
-  char* sha_text = strchr(arguments, ' ');
-  if (sha_text == nullptr) {
-    Serial.println("SD_PUT_ERROR invalid_begin");
-    g_sd_transfer_active.store(false, std::memory_order_release);
-    return;
-  }
-  *sha_text++ = '\0';
-  char* path_hex = strchr(sha_text, ' ');
-  if (path_hex == nullptr) {
-    Serial.println("SD_PUT_ERROR invalid_begin");
-    g_sd_transfer_active.store(false, std::memory_order_release);
-    return;
-  }
-  *path_hex++ = '\0';
-  char target[sizeof(g_sd_put.target)];
-  const uint64_t size = strtoull(arguments, nullptr, 10);
-  uint8_t digest[32];
-  if (size == 0 || size > kSdPutMaxBytes || !decode_hex(sha_text, digest, sizeof(digest)) ||
-      !decode_hex_text(path_hex, target, sizeof(target)) || !sd_put_path_allowed(target)) {
-    Serial.println("SD_PUT_ERROR invalid_begin");
-    g_sd_transfer_active.store(false, std::memory_order_release);
-    return;
-  }
-  /* Stop the SD-backed loading animation before taking exclusive card ownership. */
-  if (orcsdr_splash_is_active()) orcsdr_splash_end();
-  if (!ensure_tab5_sd() ||
-      (!g_sd_fs->exists("/orcsdr") && !g_sd_fs->mkdir("/orcsdr"))) {
-    Serial.println("SD_PUT_ERROR sd_unavailable");
-    g_sd_transfer_active.store(false, std::memory_order_release);
-    return;
-  }
-
-  strlcpy(g_sd_put.target, target, sizeof(g_sd_put.target));
-  snprintf(g_sd_put.temporary, sizeof(g_sd_put.temporary), "%s.part", target);
-  g_sd_fs->remove(g_sd_put.temporary);
-  g_sd_put.file = g_sd_fs->open(g_sd_put.temporary, FILE_WRITE);
-  if (!g_sd_put.file) {
-    reset_sd_put_state();
-    Serial.println("SD_PUT_ERROR open_failed");
-    g_sd_transfer_active.store(false, std::memory_order_release);
-    return;
-  }
-  g_sd_put.expected = size;
-  memcpy(g_sd_put.expected_sha, digest, sizeof(digest));
-  mbedtls_sha256_init(&g_sd_put.sha);
-  if (mbedtls_sha256_starts(&g_sd_put.sha, 0) != 0) {
-    g_sd_put.active = true;
-    sd_put_abort("sha_start");
-    return;
-  }
-  g_sd_put.active = true;
-  Serial.printf("SD_PUT_READY chunk=%u bytes=%llu path=\"%s\"\n",
-                static_cast<unsigned>(kSdPutChunkBytes),
-                static_cast<unsigned long long>(size), target);
-}
-
-void sd_put_chunk(const char* length_text) {
-  if (!g_sd_put.active) {
-    Serial.println("SD_PUT_ERROR not_active");
-    return;
-  }
-  const size_t length = static_cast<size_t>(strtoul(length_text, nullptr, 10));
-  if (length == 0 || length > kSdPutChunkBytes ||
-      g_sd_put.received + length > g_sd_put.expected) {
-    sd_put_abort("invalid_chunk");
-    return;
-  }
-  Serial.printf("SD_PUT_DATA bytes=%u\n", static_cast<unsigned>(length));
-  const size_t got = Serial.readBytes(g_sd_put_chunk, length, 3000);
-  if (got != length || g_sd_put.file.write(g_sd_put_chunk, length) != length ||
-      mbedtls_sha256_update(&g_sd_put.sha, g_sd_put_chunk, length) != 0) {
-    sd_put_abort(got != length ? "chunk_timeout" : "write_failed");
-    return;
-  }
-  g_sd_put.received += length;
-  Serial.printf("SD_PUT_ACK bytes=%llu\n",
-                static_cast<unsigned long long>(g_sd_put.received));
-  if (g_sd_put.received == g_sd_put.expected) (void)sd_put_commit();
 }
 
 void draw_capture_tool_panel() {
@@ -9125,7 +8747,7 @@ static void rtl_dsp_task(void *) {
 
 static void rtl_driver_app_task(void *) {
   while (true) {
-    if (g_sd_transfer_active.load(std::memory_order_acquire)) {
+    if (orcsdr::sd_transfer::active()) {
       vTaskDelay(pdMS_TO_TICKS(20));
       continue;
     }
@@ -20247,19 +19869,36 @@ static constexpr orcsdr::serial_reset::Hooks kSerialResetHooks{
     [] { reset_rtl_usb_safe_mode_and_restart(); },
 };
 
-// SD_LIST / SD_GET_* / SD_REMOVE / SD_PUT_* (serial_sd.cpp): the transfer code and path rules stay here.
+// The SD transfer engine (sd_transfer.cpp): console, card and radio-busy rule from here, as the moved code used them.
+static constexpr orcsdr::sd_transfer::Hooks kSdTransferHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    [](const uint8_t* value, size_t size) { print_hex(value, size); },
+    [](const uint8_t* data, size_t size) -> size_t { return Serial.writeBytes(data, size); },
+    [](uint8_t* out, size_t size, uint32_t timeout_ms) -> size_t { return Serial.readBytes(out, size, timeout_ms); },
+    [](const char* text, uint8_t* out, size_t size) { return decode_hex(text, out, size); },
+    [](const char* text, char* out, size_t size) { return decode_hex_text(text, out, size); },
+    [] { return sd_transfer_radio_busy(); },
+    [] {
+      if (orcsdr_splash_is_active()) orcsdr_splash_end();
+    },
+    [] { return ensure_tab5_sd(); },
+    []() -> orcsdr::storage::FileSystem* { return g_sd_fs; },
+};
+
+// SD_LIST / SD_GET_* / SD_REMOVE / SD_PUT_* (serial_sd.cpp) on the engine above.
 static constexpr orcsdr::serial_sd::Hooks kSerialSdHooks{
     [](const char* text) { Serial.println(text); },
-    [] { sd_list(); },
-    [](const char* path_hex) { sd_get_begin(path_hex); },
-    [] { sd_get_chunk(); },
-    [] { return g_sd_get.active; },
-    [](const char* reason) { sd_get_abort(reason); },
-    [](const char* path_hex) { sd_remove(path_hex); },
-    [](char* arguments) { sd_put_begin(arguments); },
-    [](const char* length_text) { sd_put_chunk(length_text); },
-    [] { return g_sd_put.active; },
-    [](const char* reason) { sd_put_abort(reason); },
+    [] { orcsdr::sd_transfer::list(kSdTransferHooks); },
+    [](const char* path_hex) { orcsdr::sd_transfer::get_begin(kSdTransferHooks, path_hex); },
+    [] { orcsdr::sd_transfer::get_chunk(kSdTransferHooks); },
+    [] { return orcsdr::sd_transfer::get_active(); },
+    [](const char* reason) { orcsdr::sd_transfer::get_abort(kSdTransferHooks, reason); },
+    [](const char* path_hex) { orcsdr::sd_transfer::remove(kSdTransferHooks, path_hex); },
+    [](char* arguments) { orcsdr::sd_transfer::put_begin(kSdTransferHooks, arguments); },
+    [](const char* length_text) { orcsdr::sd_transfer::put_chunk(kSdTransferHooks, length_text); },
+    [] { return orcsdr::sd_transfer::put_active(); },
+    [](const char* reason) { orcsdr::sd_transfer::put_abort(kSdTransferHooks, reason); },
 };
 
 static constexpr orcsdr::serial_adsb::Hooks kSerialAdsbHooks{

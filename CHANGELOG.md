@@ -2,6 +2,23 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — SD transfer engine moved out of main.cpp — 2026-11-16
+
+No behaviour change intended. Flashed and checked on COM17.
+
+- **The SD transfer code** moved verbatim into `apps/orcsdr-tab5/ui/sd_transfer.{hpp,cpp}`: list, chunked download with SHA-256, upload to `.part` with checksum, then `.bak` and rename, remove, abort, and the transfer state and buffers. The console, the card and the radio-busy rule come in through hooks that call the same `Serial` functions as before.
+- **The path rules** (`/orcsdr/` only, no `..`, printable ASCII, under 128 bytes; the old splash file removable) are now `sd_paths.{hpp,cpp}` with `tests/sd_paths_tests.cpp`. The RDS replay check uses them too.
+- **`main.cpp`:** 22,495 to 22,145 lines.
+- **Stack:** the engine formats replies with a 320-byte buffer where `Serial.printf()` used a 2 KB one, so the SD paths now use less stack. `process_command` stays at 448 bytes.
+- **Device check (COM17), 20 of 20:**
+  - While the radio runs, upload and list are refused with `radio_busy`.
+  - With the radio stopped:
+    - A 40,000-byte upload and download match.
+    - Overwriting with 20,001 bytes (the backup and rename path) works.
+    - A wrong checksum gives `sha_mismatch` and leaves the old file in place.
+    - Abort, `not_active`, `invalid_path`, `invalid_begin`, remove, and remove again (`SD_REMOVE_MISSING`) all reply correctly.
+  - 35 of 35 refusals; main-task free stack 6,468 bytes; reception resumed after reset.
+
 ## Unreleased — UI documentation mode commands moved out of process_command — 2026-11-15
 
 No behaviour change intended. Host-tested and built.
