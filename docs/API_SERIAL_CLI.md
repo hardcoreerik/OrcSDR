@@ -373,7 +373,7 @@ written under `/orcsdr/rec_NNN_<BAND>_<HZ>.wav`.
 ## SD card file transfer
 
 Chunked binary protocol (`SD_LIST`, `SD_GET_BEGIN`/`_CHUNK`/`_ABORT`,
-`SD_PUT_BEGIN`/`_DATA`/`_ABORT`, `SD_REMOVE`) with SHA-256 verification and
+`SD_PUT_BEGIN`/`_CHUNK`/`_ABORT`, `SD_REMOVE`) with SHA-256 verification and
 staged-write rollback on failure. All paths must be under `/orcsdr/`.
 
 Use `tools/copy_to_tab5_sd.ps1` and `tools/copy_from_tab5_sd.ps1` rather than

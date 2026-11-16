@@ -36,7 +36,7 @@ No behaviour change intended (owner ruling: plain move, still no sign-in). Host-
 
 - **`SD_LIST`, `SD_GET_BEGIN/CHUNK/ABORT`, `SD_REMOVE` and `SD_PUT_BEGIN/CHUNK/ABORT`** moved into `apps/orcsdr-tab5/ui/serial_sd.{hpp,cpp}` with `tests/serial_sd_tests.cpp`. The transfer code, the `/orcsdr/` path rules, the radio-busy refusal and the SHA-256 checks stay in `main.cpp`. Route table unchanged (229 routes).
 - **Measured:** `process_command` 448 bytes of stack (was 480), complexity 141 to 132, 290 to 254 lines.
-- **Docs, noted not changed:** `docs/API_SERIAL_CLI.md` names the upload command `SD_PUT_DATA`; the command is `SD_PUT_CHUNK <bytes>` and `SD_PUT_DATA` is its reply.
+- **Docs fixed:** `docs/API_SERIAL_CLI.md` named the upload command `SD_PUT_DATA`; the command is `SD_PUT_CHUNK <bytes>` and `SD_PUT_DATA` is its reply.
 
 ## Unreleased — forget the paired computer from Settings; PAIR_LOCKED explains itself — 2026-11-14
 
