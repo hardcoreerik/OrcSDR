@@ -139,7 +139,7 @@ int main() {
   const std::string slug63(63, 'a');
   CHECK(run(("UI_CAPTURE " + slug63).c_str()) ==
         "UI_CAPTURE_DONE slug=" + slug63 + " path=\"/orcsdr/screenshots/" + slug63 +
-        ".bmp\" bytes=2764854 width=1280 height=720 firmware=\"v9.9.9\" sha256=" + sha + "\r\n");
+        ".bmp\" bytes=2764854 width=1280 height=720 firmware=\"v9.9.9\" sha256=" + sha + "\n");
   CHECK(calls() == "ping;pause;save " + slug63 + ";");
   // Visualizer / Dead Air: allowed outside documentation mode and reception keeps running.
   g_doc_shown = false;

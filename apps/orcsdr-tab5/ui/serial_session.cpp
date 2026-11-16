@@ -7,10 +7,10 @@
 namespace orcsdr::serial_session {
 namespace {
 
-// Ends a line built from several writes. It is exactly what Serial.println() wrote here before the move; write_line("")
-// would first write 0 bytes, which the USB-JTAG driver logs as an error in the middle of the reply line (seen on COM17
-// after AUTH_OK, 2026-11-15).
-constexpr const char* kLineEnd = "\r\n";
+// Ends a line built from several writes: "\n", exactly what Serial.println() (OrcConsole in main.cpp) wrote here
+// before the move. write_line("") would first write 0 bytes, which the USB-JTAG driver logs as an error in the middle
+// of the reply line (seen on COM17 after AUTH_OK, 2026-11-15).
+constexpr const char* kLineEnd = "\n";
 
 // Constant time: the loop always runs over every byte.
 bool same_bytes(const uint8_t* a, const uint8_t* b, size_t size) {

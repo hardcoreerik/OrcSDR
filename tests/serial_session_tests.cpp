@@ -219,8 +219,8 @@ int main() {
   g_hmac_fails = true;
   CHECK(run(good_auth, false) && g_out == "AUTH_ERROR\n" && !g_authenticated);
   g_hmac_fails = false;
-  // Ended with "\r\n" through write(), as Serial.println() did; never an empty write_line().
-  CHECK(run(good_auth, false) && g_out == "AUTH_OK " + hex(hmac(key, device_in)) + "\r\n");
+  // Ended with "\n" through write(), as Serial.println() (OrcConsole) did; never an empty write_line().
+  CHECK(run(good_auth, false) && g_out == "AUTH_OK " + hex(hmac(key, device_in)) + "\n");
   CHECK(g_empty_line_writes == 0);
   CHECK(g_authenticated && calls() == "auth on;session_started;");
   g_paired = false;
@@ -239,7 +239,7 @@ int main() {
   // PREPARE_FLASH.
   const std::string digest = hex(key_of(50));
   CHECK(run("PREPARE_FLASH 1234", true) && g_out == "FLASH_INVALID\n" && calls().empty());
-  CHECK(run("PREPARE_FLASH " + digest, true) && g_out == "FLASH_READY " + digest + "\r\n");
+  CHECK(run("PREPARE_FLASH " + digest, true) && g_out == "FLASH_READY " + digest + "\n");
   CHECK(g_empty_line_writes == 0);
   CHECK(calls() == "cyan Approved firmware update starting;journal firmware_approved;identity;pending;");
 

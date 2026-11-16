@@ -30,7 +30,7 @@ __attribute__((noinline)) void write_capture_done(const Hooks& hooks, const char
            slug, slug, static_cast<unsigned>(result.bytes), result.width, result.height, hooks.firmware_version());
   hooks.write(done);
   hooks.write_hex(result.sha256, sizeof(result.sha256));
-  hooks.write("\r\n");   // what Serial.println() wrote; never an empty write_line (USB-JTAG logs 0-byte writes)
+  hooks.write("\n");   // what Serial.println() (OrcConsole) wrote; never an empty write_line (USB-JTAG logs 0-byte writes)
 }
 
 }  // namespace
