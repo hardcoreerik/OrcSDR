@@ -2,6 +2,12 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — reset and USB safe-mode commands moved out of process_command — 2026-11-15
+
+No behaviour change intended. Host-tested and built.
+
+- **`RTL_RESET`, `RTL_RESET CPU`, `RTL_USB_SAFE_MODE_STATUS` and `RTL_USB_SAFE_MODE_RESET CONFIRM`** moved into `apps/orcsdr-tab5/ui/serial_reset.{hpp,cpp}` with `tests/serial_reset_tests.cpp`. The restarts stay in `main.cpp` behind hooks. Route table unchanged (229 routes).
+
 ## Unreleased — session, FORGET COMPUTER and SD batch device-checked; AUTH_OK line fix — 2026-11-15
 
 Tab5, flashed on COM17 and checked.

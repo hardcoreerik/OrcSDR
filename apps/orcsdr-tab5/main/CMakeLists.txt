@@ -93,6 +93,7 @@ idf_component_register(
         "../ui/serial_splash.cpp"
         "../ui/serial_session.cpp"
         "../ui/serial_sd.cpp"
+        "../ui/serial_reset.cpp"
         "../ui/display_bench.cpp"
         "../ui/screen_blit.cpp"
         "../ui/serial_help.cpp"

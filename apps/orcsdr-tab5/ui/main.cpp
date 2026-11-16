@@ -110,6 +110,7 @@
 #include "serial_splash.hpp"
 #include "serial_session.hpp"
 #include "serial_sd.hpp"
+#include "serial_reset.hpp"
 #include "display_bench.hpp"
 #include "serial_gain.hpp"
 #include "serial_driver.hpp"
@@ -20177,6 +20178,19 @@ static constexpr orcsdr::serial_location::Hooks kSerialLocationHooks{
 };
 
 // The RTL_ADSB range, location, start and stop commands live in serial_adsb.cpp; they call the same functions as before.
+// RTL_RESET [CPU] and the USB safe-mode commands (serial_reset.cpp): the restarts stay here.
+static constexpr orcsdr::serial_reset::Hooks kSerialResetHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    [] { orcsdr_restart_clean(); },
+    [] {
+      delay(25);
+      esp_restart();
+    },
+    [] { return esp_rtl_sdr_usb_safe_mode_active(); },
+    [] { reset_rtl_usb_safe_mode_and_restart(); },
+};
+
 // SD_LIST / SD_GET_* / SD_REMOVE / SD_PUT_* (serial_sd.cpp): the transfer code and path rules stay here.
 static constexpr orcsdr::serial_sd::Hooks kSerialSdHooks{
     [](const char* text) { Serial.println(text); },
@@ -21363,37 +21377,7 @@ void process_command(char* command) {
   if (orcsdr::serial_splash::handle_command(command, authenticated, kSerialSplashHooks)) return;
   if (orcsdr::serial_help::handle_command(command, authenticated, kSerialHelpHooks)) return;
   if (orcsdr::serial_rtc::handle_command(command, authenticated, kSerialRtcHooks)) return;
-  if (strcmp(command, "RTL_RESET") == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_RESET_ERROR auth_required");
-      return;
-    }
-    Serial.println("RTL_RESETTING");
-    orcsdr_restart_clean();
-  }
-  if (strcmp(command, "RTL_RESET CPU") == 0) {
-    // Diagnostic: the plain CPU-level restart, to exercise the boot-time normalisation (issue #127).
-    if (!authenticated) {
-      Serial.println("RTL_RESET_ERROR auth_required");
-      return;
-    }
-    Serial.println("RTL_RESETTING cpu");
-    delay(25);
-    esp_restart();
-  }
-  if (strcmp(command, "RTL_USB_SAFE_MODE_STATUS") == 0) {
-    Serial.printf("RTL_USB_SAFE_MODE_STATUS active=%d\n",
-                  esp_rtl_sdr_usb_safe_mode_active() ? 1 : 0);
-    return;
-  }
-  if (strcmp(command, "RTL_USB_SAFE_MODE_RESET CONFIRM") == 0) {
-    if (!authenticated) {
-      Serial.println("RTL_USB_SAFE_MODE_RESET_ERROR auth_required");
-      return;
-    }
-    reset_rtl_usb_safe_mode_and_restart();
-    return;
-  }
+  if (orcsdr::serial_reset::handle_command(command, authenticated, kSerialResetHooks)) return;
   if (orcsdr::serial_p25::handle_command(command, authenticated, kSerialP25Hooks)) return;
   if (orcsdr::serial_tune::handle_command(command, authenticated, kSerialTuneHooks)) return;
   if (orcsdr::serial_audio::handle_command(command, authenticated, kSerialAudioHooks)) return;
