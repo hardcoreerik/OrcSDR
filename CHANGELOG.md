@@ -2,6 +2,15 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — UI documentation mode commands moved out of process_command — 2026-11-15
+
+No behaviour change intended. Host-tested and built.
+
+- **`UI_DOC_LIST`, `UI_DOC_SHOW <screen-id> <live|demo>`, `UI_CAPTURE <slug>` and `UI_DOC_EXIT`** moved into `apps/orcsdr-tab5/ui/serial_ui_doc.{hpp,cpp}` with `tests/serial_ui_doc_tests.cpp`. Only the parsing and replies moved (option B). The screen catalogue, `ui_doc_render()`, the settings renderer, reception pause and BMP capture stay in `main.cpp` behind hooks: they touch most dashboards' state. Moving them too (option C) belongs with the later screen/receiver decomposition. Route table unchanged (229 routes).
+- **Stack:** `ui_doc_enter()` / `ui_doc_render()` stay `noinline`. The `UI_CAPTURE_DONE` line is built in its own `noinline` helper so `UI_DOC_SHOW`, which goes on into the ~6 KB renderer, carries only 224 bytes for the handler. `process_command` stays at 448 bytes.
+- **Scan, noted not changed:** a signed-in line such as `UI_DOC_WHATEVER` or `UI_DOC_LIST ` (trailing space) restarts the ping clock and gets no reply.
+- **Measured:** `process_command` complexity 132 to 91, 254 to 125 lines; `main.cpp` 22,495 lines.
+
 ## Unreleased — reset and USB safe-mode commands moved out of process_command — 2026-11-15
 
 No behaviour change intended. Host-tested and built.

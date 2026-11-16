@@ -111,6 +111,7 @@
 #include "serial_session.hpp"
 #include "serial_sd.hpp"
 #include "serial_reset.hpp"
+#include "serial_ui_doc.hpp"
 #include "display_bench.hpp"
 #include "serial_gain.hpp"
 #include "serial_driver.hpp"
@@ -20178,6 +20179,50 @@ static constexpr orcsdr::serial_location::Hooks kSerialLocationHooks{
 };
 
 // The RTL_ADSB range, location, start and stop commands live in serial_adsb.cpp; they call the same functions as before.
+// UI_DOC_* / UI_CAPTURE (serial_ui_doc.cpp): the screen catalogue, rendering and capture stay here. ui_doc_enter()
+// and ui_doc_render() stay noinline (see their comments): their locals must not land on the dispatcher's stack.
+static constexpr orcsdr::serial_ui_doc::Hooks kSerialUiDocHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    [](const uint8_t* value, size_t size) { print_hex(value, size); },
+    [] { last_ping_ms = millis(); },
+    []() -> const char* { return esp_app_get_description()->version; },
+    []() -> size_t { return std::size(kUiDocScreens); },
+    [](size_t index, const char** id, const char** modes) {
+      *id = kUiDocScreens[index].id;
+      *modes = kUiDocScreens[index].modes;
+    },
+    [](const char* id, const char* mode) { return ui_doc_screen_exists(id, mode); },
+    [] { ui_doc_enter(); },
+    [] { return ui_doc_pause_reception(); },
+    [](const char* screen_id) {
+      RtlBand band;
+      uint32_t frequency_hz = 0;
+      if (ui_doc_live_band(screen_id, &band, &frequency_hz) &&
+          (rtl_capture_state.load(std::memory_order_acquire) != RtlCaptureState::running ||
+           rtl_ui_band != band || rtl_ui_frequency_hz != frequency_hz))
+        queue_local_rtl_listen(band, frequency_hz, false);
+    },
+    [](const char* screen_id, bool demo) { return ui_doc_render(screen_id, demo); },
+    [](const char* screen_id, bool demo) { return ui_doc_render_settings(screen_id, demo); },
+    [] { rtl_graphics_enabled.store(true, std::memory_order_release); },
+    [] { return orcsdr::visualizer::active() || orcsdr::dead_air_app::active(); },
+    [] { return orcsdr::rf_lab::active(); },
+    [] { return ui_doc.active && ui_doc.current_screen[0] != '\0'; },
+    [](const char* slug) { return orcsdr::ui_capture::valid_slug(slug); },
+    [] { return ensure_tab5_sd() && g_sd_fs != nullptr; },
+    [](const char* slug, orcsdr::serial_ui_doc::CaptureResult* out) {
+      const auto result = orcsdr::ui_capture::save_bmp(M5.Display, *g_sd_fs, slug);
+      out->ok = result.ok;
+      out->error = result.error;
+      out->bytes = result.bytes;
+      out->width = result.width;
+      out->height = result.height;
+      memcpy(out->sha256, result.sha256, sizeof(out->sha256));
+    },
+    [] { ui_doc_exit(); },
+};
+
 // RTL_RESET [CPU] and the USB safe-mode commands (serial_reset.cpp): the restarts stay here.
 static constexpr orcsdr::serial_reset::Hooks kSerialResetHooks{
     [](const char* text) { Serial.print(text); },
@@ -21174,106 +21219,7 @@ void process_command(char* command) {
 
   if (orcsdr::serial_lab_vis::handle_command(command, authenticated, kSerialLabVisHooks)) return;
 
-  if (strncmp(command, "UI_DOC_", 7) == 0 || strncmp(command, "UI_CAPTURE ", 11) == 0) {
-    if (!authenticated) {
-      Serial.println("UI_DOC_ERROR auth_required");
-      return;
-    }
-    last_ping_ms = millis();
-    if (strcmp(command, "UI_DOC_LIST") == 0) {
-      const esp_app_desc_t* app = esp_app_get_description();
-      Serial.printf("UI_DOC_LIST_BEGIN count=%u firmware=\"%s\"\n",
-                    static_cast<unsigned>(std::size(kUiDocScreens)), app->version);
-      for (const auto& screen : kUiDocScreens)
-        Serial.printf("UI_DOC_SCREEN id=%s modes=%s\n", screen.id, screen.modes);
-      Serial.println("UI_DOC_LIST_DONE");
-      return;
-    }
-    if (strncmp(command, "UI_DOC_SHOW ", 12) == 0) {
-      char screen[40]{};
-      char mode[8]{};
-      char trailing = 0;
-      if (sscanf(command + 12, "%39s %7s %c", screen, mode, &trailing) != 2 ||
-          (strcmp(mode, "live") != 0 && strcmp(mode, "demo") != 0)) {
-        Serial.println("UI_DOC_ERROR usage: UI_DOC_SHOW <screen-id> <live|demo>");
-        return;
-      }
-      if (!ui_doc_screen_exists(screen, mode)) {
-        Serial.println("UI_DOC_ERROR unknown_screen_or_mode");
-        return;
-      }
-      ui_doc_enter();
-      if (strcmp(mode, "demo") == 0) {
-        if (!ui_doc_pause_reception()) {
-          Serial.println("UI_DOC_ERROR reception_stop_timeout");
-          return;
-        }
-      } else {
-        RtlBand band;
-        uint32_t frequency_hz = 0;
-        if (ui_doc_live_band(screen, &band, &frequency_hz) &&
-            (rtl_capture_state.load(std::memory_order_acquire) != RtlCaptureState::running ||
-             rtl_ui_band != band || rtl_ui_frequency_hz != frequency_hz))
-          queue_local_rtl_listen(band, frequency_hz, false);
-      }
-      const bool settings_screen = strncmp(screen, "settings.", 9) == 0 ||
-          strncmp(screen, "overlay.wifi-", 13) == 0 ||
-          strcmp(screen, "overlay.masked-keyboard") == 0;
-      const bool rendered = settings_screen
-          ? ui_doc_render_settings(screen, strcmp(mode, "demo") == 0)
-          : ui_doc_render(screen, strcmp(mode, "demo") == 0);
-      if (!rendered) {
-        Serial.println("UI_DOC_ERROR unknown_screen_or_mode");
-        return;
-      }
-      /* Live captures keep the scope painting so a 10 s settle fills waterfall. */
-      if (strcmp(mode, "live") == 0)
-        rtl_graphics_enabled.store(true, std::memory_order_release);
-      Serial.printf("UI_DOC_SHOW_DONE id=%s mode=%s\n", screen, mode);
-      return;
-    }
-    if (strncmp(command, "UI_CAPTURE ", 11) == 0) {
-      const char* slug = command + 11;
-      // The live Visualizer and Dead Air screens capture as they are, without pausing reception.
-      const bool visualizer_capture = orcsdr::visualizer::active() || orcsdr::dead_air_app::active();
-      const bool lab_capture = orcsdr::rf_lab::active();
-      if ((!ui_doc.active || !ui_doc.current_screen[0]) && !visualizer_capture &&
-          !lab_capture) {
-        Serial.println("UI_CAPTURE_ERROR documentation_mode_inactive");
-        return;
-      }
-      if (!orcsdr::ui_capture::valid_slug(slug)) {
-        Serial.println("UI_CAPTURE_ERROR invalid_slug");
-        return;
-      }
-      if (!visualizer_capture && !ui_doc_pause_reception()) {
-        Serial.println("UI_CAPTURE_ERROR reception_stop_timeout");
-        return;
-      }
-      if (!ensure_tab5_sd() || g_sd_fs == nullptr) {
-        Serial.println("UI_CAPTURE_ERROR sd_unavailable");
-        return;
-      }
-      const auto result = orcsdr::ui_capture::save_bmp(M5.Display, *g_sd_fs, slug);
-      if (!result.ok) {
-        Serial.printf("UI_CAPTURE_ERROR %s\n", result.error ? result.error : "capture_failed");
-        return;
-      }
-      const esp_app_desc_t* app = esp_app_get_description();
-      Serial.printf("UI_CAPTURE_DONE slug=%s path=\"/orcsdr/screenshots/%s.bmp\" "
-                    "bytes=%u width=%u height=%u firmware=\"%s\" sha256=",
-                    slug, slug, static_cast<unsigned>(result.bytes), result.width,
-                    result.height, app->version);
-      print_hex(result.sha256, sizeof(result.sha256));
-      Serial.println();
-      return;
-    }
-    if (strcmp(command, "UI_DOC_EXIT") == 0) {
-      ui_doc_exit();
-      Serial.println("UI_DOC_EXIT_DONE restored=true");
-      return;
-    }
-  }
+  if (orcsdr::serial_ui_doc::handle_command(command, authenticated, kSerialUiDocHooks)) return;
   if (orcsdr::serial_scope::handle_command(command, authenticated, kSerialScopeHooks)) return;
   if (orcsdr::serial_keyboard::handle_command(command, authenticated, kSerialKeyboardHooks)) return;
   if (orcsdr::serial_ui_status::handle_command(command, authenticated, kSerialUiStatusHooks)) return;

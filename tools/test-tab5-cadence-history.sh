@@ -32,6 +32,7 @@ run serial_small_families tests/serial_small_families_tests.cpp "$ui/serial_digi
 run serial_session tests/serial_session_tests.cpp "$ui/serial_session.cpp"
 run serial_sd tests/serial_sd_tests.cpp "$ui/serial_sd.cpp"
 run serial_reset tests/serial_reset_tests.cpp "$ui/serial_reset.cpp"
+run serial_ui_doc tests/serial_ui_doc_tests.cpp "$ui/serial_ui_doc.cpp"
 run serial_help tests/serial_help_tests.cpp "$ui/serial_help.cpp"
 run serial_memory tests/serial_memory_tests.cpp "$ui/serial_memory.cpp" "$ui/memory_ledger.cpp" "$ui/memory_reclaim.cpp"
 run serial_keyboard tests/serial_keyboard_tests.cpp "$ui/serial_keyboard.cpp"
