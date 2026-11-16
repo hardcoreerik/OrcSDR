@@ -1,10 +1,24 @@
 #include "serial_ui_doc.hpp"
 
+#include <cstdarg>
 #include <cstdio>
 #include <cstring>
 
 namespace orcsdr::serial_ui_doc {
 namespace {
+
+// One formatted reply in one write. noinline, like write_capture_done(): UI_DOC_SHOW calls the ~6 KB renderer from
+// handle_command(), so the handler's own frame stays as small as possible (only the screen and mode words).
+// 128 bytes: the longest reply is UI_DOC_SHOW_DONE with a 39-character id, or UI_DOC_LIST_BEGIN with a 31-character
+// firmware name.
+__attribute__((noinline, format(printf, 2, 3))) void write_format(const Hooks& hooks, const char* format, ...) {
+  char line[128];
+  va_list args;
+  va_start(args, format);
+  vsnprintf(line, sizeof(line), format, args);
+  va_end(args);
+  hooks.write(line);
+}
 
 // UI_CAPTURE_DONE in one write, as the dispatcher's printf. valid_slug() allows at most 63 characters, so it always
 // fits. noinline: UI_DOC_SHOW goes on to call the ~6 KB renderer, so its frame must not carry this buffer.
@@ -28,17 +42,14 @@ bool handle_command(const char* command, bool authenticated, const Hooks& hooks)
       return true;
     }
     hooks.ping();
-    char line[128];   // longest: UI_DOC_SHOW_DONE with a 39-character id, or a firmware name of up to 31
     if (strcmp(command, "UI_DOC_LIST") == 0) {
-      snprintf(line, sizeof(line), "UI_DOC_LIST_BEGIN count=%u firmware=\"%s\"\n",
-               static_cast<unsigned>(hooks.screen_count()), hooks.firmware_version());
-      hooks.write(line);
+      write_format(hooks, "UI_DOC_LIST_BEGIN count=%u firmware=\"%s\"\n",
+                   static_cast<unsigned>(hooks.screen_count()), hooks.firmware_version());
       for (size_t i = 0; i < hooks.screen_count(); ++i) {
         const char* id = "";
         const char* modes = "";
         hooks.screen_at(i, &id, &modes);
-        snprintf(line, sizeof(line), "UI_DOC_SCREEN id=%s modes=%s\n", id, modes);
-        hooks.write(line);
+        write_format(hooks, "UI_DOC_SCREEN id=%s modes=%s\n", id, modes);
       }
       hooks.write_line("UI_DOC_LIST_DONE");
       return true;
@@ -76,8 +87,7 @@ bool handle_command(const char* command, bool authenticated, const Hooks& hooks)
       }
       /* Live captures keep the scope painting so a 10 s settle fills waterfall. */
       if (!demo) hooks.keep_graphics_on();
-      snprintf(line, sizeof(line), "UI_DOC_SHOW_DONE id=%s mode=%s\n", screen, mode);
-      hooks.write(line);
+      write_format(hooks, "UI_DOC_SHOW_DONE id=%s mode=%s\n", screen, mode);
       return true;
     }
     if (strncmp(command, "UI_CAPTURE ", 11) == 0) {
@@ -104,8 +114,7 @@ bool handle_command(const char* command, bool authenticated, const Hooks& hooks)
       CaptureResult result;
       hooks.save_capture(slug, &result);
       if (!result.ok) {
-        snprintf(line, sizeof(line), "UI_CAPTURE_ERROR %s\n", result.error ? result.error : "capture_failed");
-        hooks.write(line);
+        write_format(hooks, "UI_CAPTURE_ERROR %s\n", result.error ? result.error : "capture_failed");
         return true;
       }
       write_capture_done(hooks, slug, result);

@@ -18114,6 +18114,19 @@ bool ui_doc_view_for_suffix(const char* suffix, orcsdr::p25::View* view) {
   return true;
 }
 
+/* The dashboards' snapshots are large structs. Built inside ui_doc_render() they were all reserved on its entry
+ * (about 6.3 KB) for every screen, Home included; in these out-of-line helpers each costs stack only for its own
+ * screen. Measured on COM17, 2026-11-15: UI_DOC_SHOW home demo left the main task 3,900 bytes free before. */
+__attribute__((noinline)) void ui_doc_show_fm(orcsdr::fm::View view, bool demo, bool volume_overlay) {
+  orcsdr::fm::show_documentation_view(view, ui_doc_fm_snapshot(demo), volume_overlay);
+}
+__attribute__((noinline)) void ui_doc_show_p25(orcsdr::p25::View view, bool demo) {
+  orcsdr::p25::show_documentation_view(view, ui_doc_p25_snapshot(demo));
+}
+__attribute__((noinline)) void ui_doc_show_lora(orcsdr::lora::View view) {
+  orcsdr::lora::show_documentation_view(view, lora_dashboard_snapshot());
+}
+
 /* noinline: inlined into process_command it put its frame on every serial command's stack (see ui_doc_enter). */
 __attribute__((noinline)) bool ui_doc_render(const char* screen_id, bool demo) {
   if (!ui_doc_screen_exists(screen_id, demo ? "demo" : "live")) return false;
@@ -18143,12 +18156,11 @@ __attribute__((noinline)) bool ui_doc_render(const char* screen_id, bool demo) {
     orcsdr::fm::View view = orcsdr::fm::View::listen;
     if (strncmp(screen_id, "fm.", 3) == 0 &&
         !ui_doc_view_for_suffix(screen_id + 3, &view)) return false;
-    orcsdr::fm::show_documentation_view(view, ui_doc_fm_snapshot(demo),
-                                        strcmp(screen_id, "overlay.volume") == 0);
+    ui_doc_show_fm(view, demo, strcmp(screen_id, "overlay.volume") == 0);
   } else if (strncmp(screen_id, "p25.", 4) == 0) {
     orcsdr::p25::View view;
     if (!ui_doc_view_for_suffix(screen_id + 4, &view)) return false;
-    orcsdr::p25::show_documentation_view(view, ui_doc_p25_snapshot(demo));
+    ui_doc_show_p25(view, demo);
   } else if (strncmp(screen_id, "adsb.", 5) == 0) {
     static constexpr const char* names[] = {"radar", "list", "target", "stats"};
     uint8_t view = 0;
@@ -18187,8 +18199,7 @@ __attribute__((noinline)) bool ui_doc_render(const char* screen_id, bool demo) {
       lora_trigger_dbfs.store(-71.0f, std::memory_order_relaxed);
       rtl_signal_dbfs_smooth = -54.0f;
     }
-    orcsdr::lora::show_documentation_view(static_cast<orcsdr::lora::View>(view),
-                                          lora_dashboard_snapshot());
+    ui_doc_show_lora(static_cast<orcsdr::lora::View>(view));
   } else {
     struct GenericBand { const char* name; RtlBand band; uint32_t frequency; };
     static constexpr GenericBand bands[] = {{"am.", RtlBand::am, kRtlAmDefaultHz},

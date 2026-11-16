@@ -7,7 +7,12 @@ This is the **project-level release and current-source index**. It links the aut
 No behaviour change intended. Host-tested and built.
 
 - **`UI_DOC_LIST`, `UI_DOC_SHOW <screen-id> <live|demo>`, `UI_CAPTURE <slug>` and `UI_DOC_EXIT`** moved into `apps/orcsdr-tab5/ui/serial_ui_doc.{hpp,cpp}` with `tests/serial_ui_doc_tests.cpp`. Only the parsing and replies moved (option B). The screen catalogue, `ui_doc_render()`, the settings renderer, reception pause and BMP capture stay in `main.cpp` behind hooks: they touch most dashboards' state. Moving them too (option C) belongs with the later screen/receiver decomposition. Route table unchanged (229 routes).
-- **Stack:** `ui_doc_enter()` / `ui_doc_render()` stay `noinline`. The `UI_CAPTURE_DONE` line is built in its own `noinline` helper so `UI_DOC_SHOW`, which goes on into the ~6 KB renderer, carries only 224 bytes for the handler. `process_command` stays at 448 bytes.
+- **Stack, measured on COM17:** the first version of this move made `UI_DOC_SHOW home demo` 208 bytes deeper (main task 3,900 → 3,692 bytes free). Two changes fixed it:
+  - The handler formats its replies in small `noinline` helpers, so its own frame is 96 bytes.
+  - `ui_doc_render()` no longer builds the FM, P25 and LoRa snapshots itself. They are built in `noinline` `ui_doc_show_fm/p25/lora()`, so the renderer's frame fell from 6,320 to 1,360 bytes and each snapshot costs stack only on its own screen.
+
+  Result: `UI_DOC_SHOW home demo` no longer dips at all (6,468 free), and the deepest point over list/show/capture/settings/FM/P25/exit is 4,028 bytes free, against 3,900 before the move. `process_command` stays at 448 bytes. `ui_doc_enter()` / `ui_doc_render()` stay `noinline`.
+- **Device check (COM17):** `UI_DOC_LIST`, `UI_DOC_SHOW` (home, settings.system, fm.listen, p25.monitor; demo), `UI_CAPTURE` (BMP saved, 2,764,854 bytes), `UI_DOC_EXIT` (radio restarts), an unknown `UI_DOC_` line (no reply), and `RTL_RESET` (reboots) and `RTL_USB_SAFE_MODE_STATUS` from the reset move.
 - **Scan, noted not changed:** a signed-in line such as `UI_DOC_WHATEVER` or `UI_DOC_LIST ` (trailing space) restarts the ping clock and gets no reply.
 - **Measured:** `process_command` complexity 132 to 91, 254 to 125 lines; `main.cpp` 22,495 lines.
 
