@@ -2,6 +2,17 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — IQ download and LoRa replay upload engine moved out of main.cpp — 2026-11-16
+
+No behaviour change intended. Flashed and checked on COM17.
+
+- **The `RTL_IQ_GET_*` download and `RTL_LORA_REPLAY_*` upload code** moved verbatim into `apps/orcsdr-tab5/ui/iq_transfer_engine.{hpp,cpp}`. The capture buffer, the readiness rule, the decoder start and the native-decoder queue stay in `main.cpp` behind hooks. `main.cpp`: 22,145 to 21,993 lines.
+- **Device check (COM17), same steps before and after:**
+  - Replaying the LoRa capture `iq_serial_1786302153794_906875000_sf11_bw250000.orciq` gives the same result: 1 packet, CRC good, encrypted, CFO 366.2 Hz. Every field of the decoded packet is identical. Only `elapsed_ms` and the per-boot `sequence` differ.
+  - A 4 s LoRa IQ capture downloads in full: 7,680,000 bytes, SHA-256 matching, 126.8 s both times. The idle abort, not-active and already-active replies are unchanged.
+  - 35 of 35 refusals; main-task free stack 6,468 bytes.
+- **Found, not caused by this change:** a LoRa replay started in the first seconds after boot fails with `RTL_LORA_REPLAY_ERROR chunk_timeout` on both this build and the previous one (`7511d9cc`). The same replay works once the unit has been up about 40 s. Filed as hardcoreerik/OrcSDR issue 255.
+
 ## Unreleased — SD transfer engine moved out of main.cpp — 2026-11-16
 
 No behaviour change intended. Flashed and checked on COM17.

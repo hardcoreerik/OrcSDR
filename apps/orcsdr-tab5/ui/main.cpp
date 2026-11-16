@@ -114,6 +114,7 @@
 #include "serial_ui_doc.hpp"
 #include "sd_paths.hpp"
 #include "sd_transfer.hpp"
+#include "iq_transfer_engine.hpp"
 #include "display_bench.hpp"
 #include "serial_gain.hpp"
 #include "serial_driver.hpp"
@@ -1764,24 +1765,6 @@ WorkflowState workflow{};
 uint8_t pairing_key[32];
 char serial_input[384];
 size_t serial_input_length = 0;
-struct IqGetState {
-  bool active = false;
-  size_t sent = 0;
-  mbedtls_sha256_context sha;
-};
-IqGetState g_iq_get;
-struct LoraReplayPutState {
-  bool active = false;
-  size_t expected = 0;
-  size_t received = 0;
-  uint32_t rate = 0;
-  uint32_t frequency_hz = 0;
-  uint32_t bandwidth_hz = 0;
-  uint8_t sf = 0;
-  uint8_t expected_sha[32]{};
-  mbedtls_sha256_context sha;
-};
-LoraReplayPutState g_lora_replay_put;
 bool wifi_station_ready = false;
 bool wifi_hosted_versions_match = false;
 bool wifi_hosted_update_required = false;
@@ -4600,7 +4583,8 @@ size_t lora_iq_release_buffers() {
     return orcsdr::screens::owns(orcsdr::screens::Id::lora) || rtl_ui_band == RtlBand::lora ||
            g_iq_rec_active.load(std::memory_order_acquire) || g_iq_rec_ready.load(std::memory_order_acquire) ||
            g_iq_rec_export_pending.load(std::memory_order_acquire) || lora_native_decode_busy.load(std::memory_order_acquire) ||
-           g_iq_get.active || g_lora_replay_put.active;   // a serial download or replay upload is reading or filling the buffer
+           orcsdr::iq_transfer_engine::get_active() ||   // a serial download or replay upload is reading or filling the buffer
+           orcsdr::iq_transfer_engine::replay_active();
   };
   if (in_use_elsewhere()) return 0;
   // Tell the DSP task to stay out, then wait for a call that is already inside lora_iq_offer() to finish (a few milliseconds).
@@ -5628,182 +5612,6 @@ bool sd_transfer_radio_busy() {
   const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
   return state == RtlCaptureState::queued || state == RtlCaptureState::running ||
          orcsdr::audio_rec::active();
-}
-
-void iq_get_reset() {
-  if (g_iq_get.active) mbedtls_sha256_free(&g_iq_get.sha);
-  g_iq_get = {};
-}
-
-void iq_get_abort(const char* reason) {
-  iq_get_reset();
-  Serial.printf("RTL_IQ_GET_ERROR %s\n", reason ? reason : "aborted");
-}
-
-void iq_get_begin() {
-  if (g_iq_get.active) {
-    Serial.println("RTL_IQ_GET_ERROR already_active");
-    return;
-  }
-  const size_t bytes = g_iq_rec_write.load(std::memory_order_acquire);
-  if (g_iq_rec_active.load(std::memory_order_acquire) ||
-      lora_native_decode_busy.load(std::memory_order_acquire) || g_iq_rec_buf == nullptr ||
-      g_iq_rec_auto_triggered.load(std::memory_order_acquire) || bytes == 0) {
-    Serial.println("RTL_IQ_GET_ERROR capture_not_ready");
-    return;
-  }
-  mbedtls_sha256_init(&g_iq_get.sha);
-  if (mbedtls_sha256_starts(&g_iq_get.sha, 0) != 0) {
-    g_iq_get.active = true;
-    iq_get_abort("sha_start");
-    return;
-  }
-  g_iq_get.active = true;
-  g_iq_get.sent = 0;
-  Serial.printf("RTL_IQ_GET_READY chunk=%u bytes=%u\n",
-                static_cast<unsigned>(orcsdr::sd_transfer::kGetChunkBytes), static_cast<unsigned>(bytes));
-}
-
-void iq_get_chunk() {
-  if (!g_iq_get.active) {
-    Serial.println("RTL_IQ_GET_ERROR not_active");
-    return;
-  }
-  const size_t total = g_iq_rec_write.load(std::memory_order_acquire);
-  const size_t remaining = total - g_iq_get.sent;
-  const size_t count = min(remaining, orcsdr::sd_transfer::kGetChunkBytes);
-  const uint8_t* data = g_iq_rec_buf + g_iq_get.sent;
-  if (mbedtls_sha256_update(&g_iq_get.sha, data, count) != 0) {
-    iq_get_abort("sha_update");
-    return;
-  }
-  Serial.printf("RTL_IQ_GET_DATA bytes=%u\n", static_cast<unsigned>(count));
-  if (Serial.writeBytes(data, count) != count) {
-    iq_get_abort("serial_write");
-    return;
-  }
-  g_iq_get.sent += count;
-  if (g_iq_get.sent != total) return;
-
-  uint8_t digest[32];
-  if (mbedtls_sha256_finish(&g_iq_get.sha, digest) != 0) {
-    iq_get_abort("sha_finish");
-    return;
-  }
-  mbedtls_sha256_free(&g_iq_get.sha);
-  g_iq_get.active = false;
-  Serial.printf("RTL_IQ_GET_DONE bytes=%u sha256=", static_cast<unsigned>(total));
-  print_hex(digest, sizeof(digest));
-  Serial.println();
-  g_iq_get = {};
-}
-
-void lora_replay_put_reset() {
-  if (g_lora_replay_put.active) mbedtls_sha256_free(&g_lora_replay_put.sha);
-  g_lora_replay_put = {};
-}
-
-void lora_replay_put_abort(const char* reason) {
-  lora_replay_put_reset();
-  Serial.printf("RTL_LORA_REPLAY_ERROR %s\n", reason ? reason : "aborted");
-}
-
-void lora_replay_put_begin(const char* arguments) {
-  unsigned bytes = 0, rate = 0, frequency_hz = 0, sf = 0, bandwidth_hz = 0;
-  char sha_text[65]{};
-  char trailing = 0;
-  if (g_lora_replay_put.active ||
-      sscanf(arguments, "%u %64s %u %u %u %u %c", &bytes, sha_text, &rate,
-             &frequency_hz, &sf, &bandwidth_hz, &trailing) != 6 ||
-      bytes == 0 || bytes > kIqRecMaxBytes || (bytes & 1u) != 0 ||
-      rate != kRtlSampleRateSps || sf < 7 || sf > 12 || bandwidth_hz == 0 ||
-      !decode_hex(sha_text, g_lora_replay_put.expected_sha,
-                  sizeof(g_lora_replay_put.expected_sha))) {
-    Serial.println("RTL_LORA_REPLAY_ERROR invalid_begin");
-    return;
-  }
-  if (sd_transfer_radio_busy() || g_iq_rec_active.load(std::memory_order_acquire) ||
-      lora_native_decode_busy.load(std::memory_order_acquire)) {
-    Serial.println("RTL_LORA_REPLAY_ERROR radio_or_decoder_busy");
-    return;
-  }
-  if (!lora_iq_ensure_buffers() || !lora_native_decoder_start()) {
-    Serial.println("RTL_LORA_REPLAY_ERROR decoder_unavailable");
-    return;
-  }
-  g_lora_replay_put.expected = bytes;
-  g_lora_replay_put.rate = rate;
-  g_lora_replay_put.frequency_hz = frequency_hz;
-  g_lora_replay_put.sf = static_cast<uint8_t>(sf);
-  g_lora_replay_put.bandwidth_hz = bandwidth_hz;
-  mbedtls_sha256_init(&g_lora_replay_put.sha);
-  if (mbedtls_sha256_starts(&g_lora_replay_put.sha, 0) != 0) {
-    g_lora_replay_put.active = true;
-    lora_replay_put_abort("sha_start");
-    return;
-  }
-  g_lora_replay_put.active = true;
-  Serial.printf("RTL_LORA_REPLAY_READY chunk=%u bytes=%u\n",
-                static_cast<unsigned>(orcsdr::sd_transfer::kPutChunkBytes), bytes);
-}
-
-void lora_replay_put_chunk(const char* length_text) {
-  if (!g_lora_replay_put.active) {
-    Serial.println("RTL_LORA_REPLAY_ERROR not_active");
-    return;
-  }
-  const size_t length = static_cast<size_t>(strtoul(length_text, nullptr, 10));
-  if (length == 0 || length > orcsdr::sd_transfer::kPutChunkBytes ||
-      g_lora_replay_put.received + length > g_lora_replay_put.expected) {
-    lora_replay_put_abort("invalid_chunk");
-    return;
-  }
-  Serial.println("RTL_LORA_REPLAY_DATA");
-  uint8_t* destination = g_iq_rec_buf + g_lora_replay_put.received;
-  const size_t got = Serial.readBytes(destination, length, 5000);
-  if (got != length ||
-      mbedtls_sha256_update(&g_lora_replay_put.sha, destination, length) != 0) {
-    lora_replay_put_abort(got != length ? "chunk_timeout" : "sha_update");
-    return;
-  }
-  g_lora_replay_put.received += length;
-  if (g_lora_replay_put.received != g_lora_replay_put.expected) {
-    Serial.printf("RTL_LORA_REPLAY_ACK bytes=%u\n",
-                  static_cast<unsigned>(g_lora_replay_put.received));
-    return;
-  }
-
-  uint8_t digest[32];
-  if (mbedtls_sha256_finish(&g_lora_replay_put.sha, digest) != 0) {
-    lora_replay_put_abort("sha_finish");
-    return;
-  }
-  uint8_t difference = 0;
-  for (size_t i = 0; i < sizeof(digest); ++i)
-    difference |= digest[i] ^ g_lora_replay_put.expected_sha[i];
-  if (difference != 0) {
-    lora_replay_put_abort("sha_mismatch");
-    return;
-  }
-  const LoraNativeDecodeWork work{
-      g_iq_rec_buf, g_lora_replay_put.received, g_lora_replay_put.sf,
-      g_lora_replay_put.bandwidth_hz, g_lora_replay_put.frequency_hz, false,
-      lora_capture_sequence.fetch_add(1, std::memory_order_relaxed) + 1,
-      millis(), millis(), 0};
-  bool idle = false;
-  if (!lora_native_decode_busy.compare_exchange_strong(
-          idle, true, std::memory_order_acq_rel)) {
-    lora_replay_put_abort("queue_failed");
-    return;
-  }
-  if (xQueueSend(lora_native_decode_queue, &work, 0) != pdTRUE) {
-    lora_native_decode_busy.store(false, std::memory_order_release);
-    lora_replay_put_abort("queue_failed");
-    return;
-  }
-  const size_t queued = g_lora_replay_put.received;
-  lora_replay_put_reset();
-  Serial.printf("RTL_LORA_REPLAY_QUEUED bytes=%u\n", static_cast<unsigned>(queued));
 }
 
 void draw_capture_tool_panel() {
@@ -20655,13 +20463,52 @@ static constexpr orcsdr::serial_iq::Hooks kSerialIqHooks{
     },
 };
 
-// RTL_LORA_REPLAY_* and RTL_IQ_RETRIEVE / RTL_IQ_GET_* (serial_iq_transfer.cpp): the transfers stay here.
+// The IQ download / LoRa replay engine (iq_transfer_engine.cpp): console, capture buffer and decoder queue from here.
+static constexpr orcsdr::iq_transfer_engine::Hooks kIqTransferEngineHooks{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+    [](const uint8_t* value, size_t size) { print_hex(value, size); },
+    [](const uint8_t* data, size_t size) -> size_t { return Serial.writeBytes(data, size); },
+    [](uint8_t* out, size_t size, uint32_t timeout_ms) -> size_t { return Serial.readBytes(out, size, timeout_ms); },
+    [](const char* text, uint8_t* out, size_t size) { return decode_hex(text, out, size); },
+    [](size_t* bytes) {
+      *bytes = g_iq_rec_write.load(std::memory_order_acquire);
+      return !(g_iq_rec_active.load(std::memory_order_acquire) ||
+               lora_native_decode_busy.load(std::memory_order_acquire) || g_iq_rec_buf == nullptr ||
+               g_iq_rec_auto_triggered.load(std::memory_order_acquire) || *bytes == 0);
+    },
+    []() -> size_t { return g_iq_rec_write.load(std::memory_order_acquire); },
+    []() -> const uint8_t* { return g_iq_rec_buf; },
+    []() -> size_t { return kIqRecMaxBytes; },
+    []() -> uint32_t { return kRtlSampleRateSps; },
+    [] {
+      return sd_transfer_radio_busy() || g_iq_rec_active.load(std::memory_order_acquire) ||
+             lora_native_decode_busy.load(std::memory_order_acquire);
+    },
+    [] { return lora_iq_ensure_buffers() && lora_native_decoder_start(); },
+    []() -> uint8_t* { return g_iq_rec_buf; },
+    [](size_t bytes, uint8_t sf, uint32_t bandwidth_hz, uint32_t frequency_hz) {
+      const LoraNativeDecodeWork work{
+          g_iq_rec_buf, bytes, sf, bandwidth_hz, frequency_hz, false,
+          lora_capture_sequence.fetch_add(1, std::memory_order_relaxed) + 1,
+          millis(), millis(), 0};
+      bool idle = false;
+      if (!lora_native_decode_busy.compare_exchange_strong(idle, true, std::memory_order_acq_rel)) return false;
+      if (xQueueSend(lora_native_decode_queue, &work, 0) != pdTRUE) {
+        lora_native_decode_busy.store(false, std::memory_order_release);
+        return false;
+      }
+      return true;
+    },
+};
+
+// RTL_LORA_REPLAY_* and RTL_IQ_RETRIEVE / RTL_IQ_GET_* (serial_iq_transfer.cpp) on the engine above.
 static constexpr orcsdr::serial_iq_transfer::Hooks kSerialIqTransferHooks{
     [](const char* text) { Serial.print(text); },
     [](const char* text) { Serial.println(text); },
-    [](const char* args) { lora_replay_put_begin(args); },
-    [](const char* args) { lora_replay_put_chunk(args); },
-    [] { lora_replay_put_abort("host_abort"); },
+    [](const char* args) { orcsdr::iq_transfer_engine::replay_begin(kIqTransferEngineHooks, args); },
+    [](const char* args) { orcsdr::iq_transfer_engine::replay_chunk(kIqTransferEngineHooks, args); },
+    [] { orcsdr::iq_transfer_engine::replay_abort(kIqTransferEngineHooks, "host_abort"); },
     [](orcsdr::serial_iq_transfer::RetrieveInfo* info) {
       if (g_iq_rec_active.load(std::memory_order_acquire) ||
           lora_native_decode_busy.load(std::memory_order_acquire) || g_iq_rec_buf == nullptr ||
@@ -20677,17 +20524,18 @@ static constexpr orcsdr::serial_iq_transfer::Hooks kSerialIqTransferHooks{
       info->bandwidth_hz = g_iq_rec_bandwidth_hz;
       return true;
     },
-    [] { iq_get_begin(); },
-    [] { iq_get_chunk(); },
+    [] { orcsdr::iq_transfer_engine::get_begin(kIqTransferEngineHooks); },
+    [] { orcsdr::iq_transfer_engine::get_chunk(kIqTransferEngineHooks); },
     []() -> orcsdr::serial_iq_transfer::AbortInfo {
-      iq_get_reset();
+      orcsdr::iq_transfer_engine::get_reset();
       orcsdr::serial_iq_transfer::AbortInfo a;
       a.ready = g_iq_rec_ready.load(std::memory_order_acquire);
       a.bytes = static_cast<uint32_t>(g_iq_rec_write.load(std::memory_order_acquire));
       return a;
     },
     [] {
-      if (g_iq_get.active) iq_get_abort("host_end");
+      if (orcsdr::iq_transfer_engine::get_active())
+        orcsdr::iq_transfer_engine::get_abort(kIqTransferEngineHooks, "host_end");
       g_iq_rec_ready.store(false, std::memory_order_release);
       g_iq_rec_write.store(0, std::memory_order_release);
       g_iq_rec_auto_triggered.store(false, std::memory_order_release);
