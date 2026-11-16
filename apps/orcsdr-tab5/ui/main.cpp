@@ -2855,13 +2855,8 @@ bool rtl_is_e4000() {
 bool rtl_frequency_supported(uint32_t frequency_hz) {
   // The capability bits describe a dongle on the Tab5's own USB port. With a remote rtl_tcp source there
   // may be none, and the server's dongle sets the range: do not refuse here (the server's tuner decides).
-  if (rtl_pluto_active() || (!rtl_usb_device_ready() && orcsdr::pluto_source::ready())) {
-    // A PlutoSDR states its own range (70 MHz to 6 GHz); this console's frequency type stops at 32 bits.
-    const auto pluto = orcsdr::pluto_source::status();
-    // The range is only known after the device has been read once; until then the driver decides when the stream starts.
-    if (pluto.tune_max_hz == 0) return true;
-    return frequency_hz >= pluto.tune_min_hz && frequency_hz <= pluto.tune_max_hz;
-  }
+  if (rtl_pluto_active() || (!rtl_usb_device_ready() && orcsdr::pluto_source::ready()))
+    return orcsdr::pluto_source::tunable(frequency_hz);  // the driver's range (nominal before the device is read), never one of ours
   if (rtl_remote_tuning_selected()) return true;
   if (rtl_is_e4000()) return rtl_e4000_frequency_supported(frequency_hz);
   return rtl_frequency_supported_for_caps(frequency_hz, rtl_device_capabilities());
@@ -2900,6 +2895,11 @@ void set_rtl_profile_status(const char* state) {
 
 void report_unsupported_frequency(uint32_t frequency_hz) {
   const bool e4000 = rtl_is_e4000();
+  if (orcsdr::pluto_home::applies(rtl_usb_device_ready())) {
+    set_rtl_sdr_status("PlutoSDR: frequency outside its range");
+    Serial.printf("RTL_TUNE_UNAVAILABLE receiver=pluto frequency_hz=%u reason=receiver_range\n", static_cast<unsigned>(frequency_hz));
+    return;
+  }
   if (rtl_capture_state.load(std::memory_order_acquire) != RtlCaptureState::running) {
     set_rtl_profile_status(e4000 ? "outside 64-1700 MHz" : "below 24 MHz unavailable");
   }
@@ -2923,6 +2923,22 @@ bool validate_rtl_tune_frequency(uint32_t frequency_hz, bool user_request = true
   if (supported) return true;
   report_unsupported_frequency(frequency_hz);
   return false;
+}
+
+// A receiver that cannot tune this frequency (a dongle below its floor, a Pluto outside 70 MHz to 6 GHz) still lets the screen show the requested
+// frequency, stops the previous band's stream instead of playing it underneath, and keeps the request so a capable receiver plugged in later can
+// resume it. Shared by the dashboards' open path and, for a Pluto, the Home tune paths.
+void rtl_park_untunable(RtlBand band, uint32_t frequency_hz) {
+  const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
+  rtl_capture_requested.store(false, std::memory_order_release);
+  rtl_restart_requested.store(false, std::memory_order_release);
+  if (state == RtlCaptureState::running || state == RtlCaptureState::queued)
+    rtl_stop_requested.store(true, std::memory_order_release);
+  rtl_ui_active.store(true, std::memory_order_release);
+  rtl_ui_band = band;
+  rtl_ui_frequency_hz = frequency_hz;
+  rtl_requested_band.store(band, std::memory_order_release);
+  rtl_requested_frequency_hz.store(frequency_hz, std::memory_order_release);
 }
 
 orcsdr::map_download_notice::TuneWarning rtl_dashboard_tune_warning() {
@@ -3472,7 +3488,11 @@ bool home_tune_to(uint32_t frequency_hz, bool any_band = false) {
     return queue_local_rtl_listen(rtl_ui_band, clamped, false);
   }
   const uint32_t hz = constrain(frequency_hz, kRtlBrowseMinHz, kRtlBrowseMaxHz);
-  if (!validate_rtl_tune_frequency(hz)) return false;
+  if (!validate_rtl_tune_frequency(hz)) {
+    // A Pluto shows the requested frequency, stops its stream and warns on Home; a dongle keeps its old behaviour (the last valid stream stays).
+    if (orcsdr::pluto_home::applies(rtl_usb_device_ready())) rtl_park_untunable(rtl_ui_band, hz);
+    return false;
+  }
   const auto& profile = orcsdr::band_profile::resolve(kBandRegion, hz);
   // Below the tuner's own floor the dongle runs its HF path, which the Shortwave band owns (AM/USB/LSB, HF filters).
   const RtlBand band = hz < kRtlNoHfMinHz ? RtlBand::shortwave : home_band_for(profile);
@@ -16706,16 +16726,7 @@ bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
     // than the previous band's, and stop the previous band's stream instead of
     // playing it underneath. The requested band lets a capable receiver that
     // is plugged in later resume this dashboard.
-    const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
-    rtl_capture_requested.store(false, std::memory_order_release);
-    rtl_restart_requested.store(false, std::memory_order_release);
-    if (state == RtlCaptureState::running || state == RtlCaptureState::queued)
-      rtl_stop_requested.store(true, std::memory_order_release);
-    rtl_ui_active.store(true, std::memory_order_release);
-    rtl_ui_band = band;
-    rtl_ui_frequency_hz = frequency_hz;
-    rtl_requested_band.store(band, std::memory_order_release);
-    rtl_requested_frequency_hz.store(frequency_hz, std::memory_order_release);
+    rtl_park_untunable(band, frequency_hz);
     return false;
   }
 #endif
@@ -17209,7 +17220,10 @@ bool request_hot_retune_for(orcsdr::radio::Token token, uint32_t frequency_hz,
   frequency_hz = rtl_clamp_frequency(rtl_ui_band, frequency_hz);
   if (frequency_hz == 0) return false;
 #if !RTL_USE_LEGACY_USB
-  if (!validate_rtl_tune_frequency(frequency_hz, user_request)) return false;
+  if (!validate_rtl_tune_frequency(frequency_hz, user_request)) {
+    if (orcsdr::pluto_home::applies(rtl_usb_device_ready())) rtl_park_untunable(rtl_ui_band, frequency_hz);  // Pluto: show it, stop, warn
+    return false;
+  }
 #endif
   const uint32_t ui_quant_hz =
       rtl_ui_band == RtlBand::airband

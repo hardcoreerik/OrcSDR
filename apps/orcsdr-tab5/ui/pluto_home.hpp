@@ -7,6 +7,9 @@
 
 namespace orcsdr::pluto_home {
 
+// True when a Pluto is the local receiver (its stream is running, or it is attached and no dongle is ready; a dongle always wins).
+bool applies(bool dongle_ready);
+
 // Fills the receiver-related fields of a Home snapshot when a Pluto is the local receiver: its stream is running, or it is attached and no
 // dongle is ready (a dongle always wins). Does nothing otherwise, so the caller can call it unconditionally.
 void fill(home::Snapshot& snapshot, bool dongle_ready);

@@ -37,6 +37,7 @@ std::atomic<bool> g_first_block{false};
 std::atomic<bool> g_reader_run{false};
 std::atomic<bool> g_reader_exited{true};
 std::atomic<uint32_t> g_ring_drops{0};
+std::atomic<bool> g_request_refused{false};  // the last start was refused for its frequency or rate, before anything touched the device
 
 // Recovery ladder. A Pluto's USB gadget can stay wedged after the host resets, and nothing short of removing its 5 V brings it back. The IDF host
 // library has no per-device reset, so the ladder is: let the driver retry on its own, then cycle the port's 5 V rail through the application's
@@ -295,12 +296,15 @@ bool active() { return g_running.load(std::memory_order_acquire); }
 
 static bool start_once(uint32_t sample_rate_sps, uint32_t frequency_hz, uint32_t timeout_ms, bool (*cancelled)()) {
   if (!g_h || g_running.load(std::memory_order_acquire)) return false;
+  g_request_refused.store(false, std::memory_order_release);
   if (pluto_sdr_set_sample_rate(g_h, sample_rate_sps) != PLUTO_SDR_OK) {
     ESP_LOGE(TAG, "rate %u refused", static_cast<unsigned>(sample_rate_sps));
+    g_request_refused.store(true, std::memory_order_release);
     return false;
   }
   if (pluto_sdr_set_center_freq(g_h, frequency_hz) != PLUTO_SDR_OK) {
-    ESP_LOGE(TAG, "frequency %u refused", static_cast<unsigned>(frequency_hz));
+    ESP_LOGE(TAG, "frequency %u refused (outside the Pluto's range)", static_cast<unsigned>(frequency_hz));
+    g_request_refused.store(true, std::memory_order_release);
     return false;
   }
   g_first_block.store(false, std::memory_order_release);
@@ -334,8 +338,10 @@ bool start_and_wait(uint32_t sample_rate_sps, uint32_t frequency_hz, uint32_t ti
   const bool ok = start_once(sample_rate_sps, frequency_hz, timeout_ms, cancelled);
   if (ok) {
     note_healthy();
-  } else if (g_present.load(std::memory_order_acquire) && !(cancelled && cancelled())) {
-    g_last_failure_us.store(esp_timer_get_time(), std::memory_order_release);  // a cancelled start is the user's doing, not a fault
+  } else if (g_present.load(std::memory_order_acquire) && !(cancelled && cancelled()) && !g_request_refused.load(std::memory_order_acquire)) {
+    // Neither a cancelled start (the user's doing) nor a refused request (an out-of-range frequency or rate: a configuration problem) is a device
+    // fault, so neither may feed the recovery ladder that power-cycles the Pluto.
+    g_last_failure_us.store(esp_timer_get_time(), std::memory_order_release);
     g_start_failures.fetch_add(1, std::memory_order_acq_rel);
   }
   return ok;
@@ -355,6 +361,13 @@ void stop() {
 void set_guard_mode(GuardMode mode) { g_guard_mode.store(static_cast<uint8_t>(mode), std::memory_order_release); }
 GuardMode guard_mode() { return static_cast<GuardMode>(g_guard_mode.load(std::memory_order_acquire)); }
 bool battery_low() { return g_guard_level.load(std::memory_order_acquire) != static_cast<uint8_t>(pluto_power_guard::Level::ok); }
+
+bool tunable(uint32_t frequency_hz) {
+  if (!g_h) return true;  // no driver, no opinion
+  pluto_sdr_caps_t c;
+  if (pluto_sdr_get_capabilities(g_h, &c) != PLUTO_SDR_OK || c.tune_max_hz == 0) return true;
+  return frequency_hz >= c.tune_min_hz && frequency_hz <= c.tune_max_hz;
+}
 
 uint32_t output_rate_sps() { return g_h && g_running.load(std::memory_order_acquire) ? pluto_sdr_get_sample_rate(g_h) : 0; }
 
@@ -395,7 +408,7 @@ Status status() {
   pluto_sdr_get_capabilities(g_h, &c);
   pluto_sdr_get_device_info(g_h, &info);
   pluto_sdr_get_metrics(g_h, &m);
-  if (c.valid) {
+  if (c.tune_max_hz != 0) {  // the driver reports its nominal range before a session has read the device's own
     s.tune_min_hz = clamp32(c.tune_min_hz);
     s.tune_max_hz = clamp32(c.tune_max_hz);
   }

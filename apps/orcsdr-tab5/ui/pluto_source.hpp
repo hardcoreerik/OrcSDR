@@ -47,6 +47,10 @@ void set_guard_mode(GuardMode mode);
 GuardMode guard_mode();
 bool battery_low();  // the host battery has been low (or critical) and discharging over several readings
 
+// True when the Pluto can tune this frequency. Uses the driver's range: the device's own once a session has read it, the AD9361's nominal range before
+// that, so even the first request after a boot is checked. The app never clamps or invents a limit of its own.
+bool tunable(uint32_t frequency_hz);
+
 bool ready();  // a Pluto is attached and can start a stream (or is streaming)
 bool active();  // a stream from the Pluto is running or starting
 
