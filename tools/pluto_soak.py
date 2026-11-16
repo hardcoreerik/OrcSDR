@@ -33,6 +33,8 @@ EVENT_PATTERNS = {
     "start_fail": re.compile(r"RTL_START ESP_ERR|RTL_START cancelled"),
     "wdt": re.compile(r"Task watchdog|WDT|stack overflow|Stack canary"),
     "power_guard": re.compile(r"PLUTO_POWER_GUARD"),
+    "serial_lost": re.compile(r"^$(?!x)x"),  # never matches a line; the logger counts these itself
+    "serial_back": re.compile(r"^$(?!x)x"),
 }
 HEALTH = re.compile(r"PLUTO_HEALTH present=(\d) running=(\d) alive=(\d) state=(-?\d+) samples=(\d+) src_drops=(\d+) usb_err=(\d+) "
                     r"ring_drops=(\d+) cycles=(\d+) int_free=(\d+) dma_largest=(\d+) psram_free=(\d+)"
@@ -190,7 +192,25 @@ def main():
     buf = b""
     last_status = 0.0
     while time.time() < t_end and not os.path.exists(os.path.join(a.out, "STOP")):
-        chunk = ser.read(4096)
+        try:
+            chunk = ser.read(4096)
+        except (serial.SerialException, OSError) as e:
+            # The Tab5's USB serial port vanished (cable pulled, unit reset or out of power). In run 2 this crashed the logger 5 h 14 min in, before its cleanup ran.
+            # Record it, keep the PC-side watchers going, and keep trying to reopen the port.
+            event("serial_lost", str(e)[:120])
+            try:
+                ser.close()
+            except Exception:  # noqa: BLE001
+                pass
+            while time.time() < t_end and not os.path.exists(os.path.join(a.out, "STOP")):
+                time.sleep(5)
+                try:
+                    ser.open()
+                    event("serial_back", a.port)
+                    break
+                except (serial.SerialException, OSError):
+                    pass
+            continue
         now = time.time()
         if chunk:
             buf += chunk
