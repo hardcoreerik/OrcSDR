@@ -5,6 +5,7 @@ on:
     branches:
       - codex/cardputer-zero-linux-bringup-20261102
       - agents/cardputer-zero-orcdec-20261106
+      - codex/cardputer-zero-ui-audio-controls
     paths:
       - 'apps/orcsdr-cardputer-zero/**'
       - 'core/portable/**'
@@ -76,6 +77,33 @@ jobs:
         with:
           name: cardputer-zero-${{ matrix.os }}-rtl-${{ matrix.rtl }}
           path: cardputer-zero-*.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  zero-gui-audio-toolchain:
+    name: Cardputer Linux GUI/audio dependency probe
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GUI / audio / receiver SDK headers
+        run: |
+          set -o pipefail
+          bash apps/orcsdr-cardputer-zero/tools/bootstrap_gui_audio_dev.sh 2>&1 | tee cardputer-zero-deps-install.log
+      - name: Compile and link graphics/audio/USB toolchain probe
+        run: |
+          set -o pipefail
+          cc -Wall -Wextra -Werror -std=c11 \
+            apps/orcsdr-cardputer-zero/tools/dependency_probe.c \
+            $(pkg-config --cflags --libs sdl2 alsa libevdev libdrm librtlsdr fftw3f) \
+            -o /tmp/cardputer-zero-dependency-probe 2>&1 | tee cardputer-zero-deps-build.log
+          /tmp/cardputer-zero-dependency-probe 2>&1 | tee cardputer-zero-deps-run.log
+      - name: Upload dependency probe logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cardputer-zero-gui-audio-dev-probe
+          path: cardputer-zero-deps-*.log
           if-no-files-found: warn
           retention-days: 14
 
