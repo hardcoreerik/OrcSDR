@@ -86,7 +86,12 @@ struct CompactRenderer {
       for(int x=0;x<316;++x){int bin=x*256/316;int amp=s.spectrum[bin];int y=109-amp*35/255;
         if(x) line(prevx,prevy,2+x,y,green);
         prevx=x+2;prevy=y;}
+      // 300 kHz center-tuned RF span; vertical cyan lines approximate
+      // the existing 260 kHz WFM channel, not a user-configurable filter.
+      line(23,73,23,110,cyan);line(297,73,297,110,cyan);
       line(160,72,160,151,yellow);
+      text(5,74,"-150K",muted,1);
+      text(280,74,"+150K",muted,1);
       // 36 bounded real historical rows, newest at top.
       for(int yy=0;yy<36;++yy){int sy=111+yy;if(s.waterfall_rows<=yy)break;
         for(int x=0;x<316;++x){int bin=x*256/316;

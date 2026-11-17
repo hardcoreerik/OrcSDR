@@ -114,8 +114,9 @@ void relay_controls(ControlModel& m,FmSession& session,const FmTelemetry& observ
  session.set_volume(unsigned(m.s.volume));session.set_mute(m.s.muted);
 }
 void action(ControlModel& m,FmSession* session,Key key,char digit=0){
+ const auto before=m.s.page;
  m.handle(key,digit);
- if(session&&key==Key::reconnect){
+ if(session&&key==Key::reconnect&&before!=orc::zero::Page::entry){
   const auto desired=m.s.requested_hz;
   // Reconnect is deliberately explicit. Do not spin hot on unplugged hardware.
   session->restart(desired);session->set_volume(unsigned(m.s.volume));session->set_mute(m.s.muted);m.s.connection=Connection::connecting;
