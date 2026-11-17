@@ -221,6 +221,51 @@ class D1NMatrixTests(unittest.TestCase):
         self.assertNotEqual(result['builds']['release']['identity']['sha256'],
                             result['builds']['asan_ubsan']['identity']['sha256'])
 
+    def test_upstream_review_is_not_native_decoder_failure(self):
+        measured = {'source_ids': [3024109], 'talkgroups': [99],
+                    'color_codes': [1], 'check_and_fec_valid': 10}
+        base = {'status': 'REVIEW', 'issues': [],
+                'upstream_disagreements': ['MS voice sync 1 below upstream 2']}
+        verdict = matrix._assess_positive(measured, base)
+        self.assertEqual(verdict['status'], 'PASS')
+        self.assertEqual(verdict['upstream_review_status'], 'REVIEW')
+        self.assertEqual(verdict['upstream_disagreements'], base['upstream_disagreements'])
+
+    def test_extra_unexpected_identity_must_fail(self):
+        measured = {'source_ids': [3024109, 9999999], 'talkgroups': [99],
+                    'color_codes': [1], 'check_and_fec_valid': 10}
+        verdict = matrix._assess_positive(measured,
+                                          {'status': 'PASS', 'issues': [],
+                                           'upstream_disagreements': []})
+        self.assertEqual(verdict['status'], 'FAIL')
+        self.assertIn('source_ids', str(verdict['issues']))
+
+    def test_ms_simplex_native_gate_with_unknown_slot_completes_40(self):
+        # Use the real acceptance semantics with only a FAKE bridge and
+        # synthetic fixture data; never present this test as real-air proof.
+        import real_iq_gate
+        self.release.chmod(0o755)
+        self.sanitize.chmod(0o755)
+        def tweak(result, fid, chunk):
+            if fid in matrix.IDS[:2]:
+                metrics = result['metrics']
+                metrics['sync'] = {'ms_data': 10, 'ms_voice': 1}
+                metrics['sync_total'] = 11
+                metrics['slots_observed'] = []
+                metrics['slots_check_fec_bursts'] = []
+        report = matrix.build_matrix(self.manifest, self.root, self.release,
+                                     self.sanitize, gate=real_iq_gate,
+                                     api=FakeAPI(tweak))
+        self.assertEqual(report['status'], 'PASS')
+        self.assertEqual(len(report['native_replay_matrix']), 40)
+        self.assertTrue(all(r['status'] == 'MEASURED'
+                            for r in report['native_replay_matrix']))
+        first = report['native_replay_matrix'][0]
+        self.assertEqual(first['metrics']['slots_observed'], [])
+        self.assertEqual(first['fixture_assessment']['status'], 'PASS')
+        self.assertEqual(first['fixture_assessment']['upstream_review_status'], 'REVIEW')
+        self.assertTrue(first['fixture_assessment']['upstream_disagreements'])
+
     def test_missing_real_capture_preflight_blocks_before_any_decoder_call(self):
         (self.root / json.loads(self.manifest.read_text())['files'][0]['path']).unlink()
         fake = FakeAPI()

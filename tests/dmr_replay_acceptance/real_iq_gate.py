@@ -130,8 +130,17 @@ def assess_fixture(fid: str, metrics: dict, upstream: dict) -> dict:
     else:
         if not metrics["sync_total"]:
             failures.append("no OrcSDR synchronization observed in real capture")
-        if not metrics["slots_observed"]:
-            failures.append("no DMR time slot attributed")
+        # DMR mobile-station sync carries no trustworthy TS1/TS2 identity.
+        # Only an exclusive explicit direct-TS sync provides enough evidence
+        # to require an attributed slot. A mixture of MS/direct or a BS sync
+        # without independently corroborated CACH cannot establish one from
+        # this aggregate JSONL v1 summary.
+        syncs = metrics["sync"]
+        direct = sum(n for name, n in syncs.items() if name.startswith(("direct_ts1_", "direct_ts2_")))
+        mobile = sum(n for name, n in syncs.items() if name.startswith("ms_"))
+        require_direct_slot = direct > 0 and mobile == 0
+        if require_direct_slot and not metrics["slots_observed"]:
+            failures.append("explicit direct-TS sync has no attributed time slot")
         if fid == IDS[0]:
             if not metrics["check_and_fec_valid"]:
                 failures.append("no burst passed both FEC and integrity check")
@@ -139,8 +148,8 @@ def assess_fixture(fid: str, metrics: dict, upstream: dict) -> dict:
                 failures.append("no integrity-gated source ID and group/talkgroup recovered")
             if not metrics["color_codes"]:
                 failures.append("no checked color-code observation")
-            if not metrics["slots_check_fec_bursts"]:
-                failures.append("no time-slot attribution on an integrity-checked burst")
+            if require_direct_slot and not metrics["slots_check_fec_bursts"]:
+                failures.append("explicit direct-TS sync has no integrity-checked burst with a slot")
         for prop, key in (("source_id", "source_ids"), ("group_id", "talkgroups"),
                           ("color_code", "color_codes")):
             if prop in upstream and upstream[prop] not in metrics[key]:
@@ -148,10 +157,13 @@ def assess_fixture(fid: str, metrics: dict, upstream: dict) -> dict:
         for prop in ("min_data_sync", "min_voice_sync"):
             if prop in upstream:
                 kind = "_data" if prop == "min_data_sync" else "_voice"
+                # These captured keyups actually use MS_DATA/MS_VOICE;
+                # the upstream fixture name is not proof of TS1/TS2 sync.
                 observed = sum(n for key, n in metrics["sync"].items()
-                               if key.startswith("direct_") and key.endswith(kind))
+                               if (key.startswith("direct_ts") or key.startswith("ms_"))
+                               and key.endswith(kind))
                 if observed < upstream[prop]:
-                    reviews.append(f"OrcSDR direct-mode {prop}={observed} below upstream-only {upstream[prop]}")
+                    reviews.append(f"OrcSDR MS/direct {prop}={observed} below upstream-only {upstream[prop]}")
     return {"issues": failures, "upstream_disagreements": reviews,
             "status": "FAIL" if failures else "REVIEW" if reviews else "PASS"}
 

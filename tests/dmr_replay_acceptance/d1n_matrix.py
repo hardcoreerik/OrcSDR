@@ -73,12 +73,20 @@ def _assess_positive(measured: dict, base: dict) -> dict:
     for key, observed in (('source_ids', EXPECTED_POSITIVE['source_id']),
                           ('talkgroups', EXPECTED_POSITIVE['talkgroup']),
                           ('color_codes', EXPECTED_POSITIVE['color_code'])):
-        if observed not in measured.get(key, []):
-            issues.append(f'recorded-IQ checked {key} missing required {observed}')
+        actual = measured.get(key, [])
+        # All two pinned positives have a single independently established
+        # source, talkgroup and color code. A second identity is not a PASS.
+        if actual != [observed]:
+            issues.append(f'recorded-IQ checked {key} must be exactly {[observed]}, got {actual}')
     if not measured.get('check_and_fec_valid_bursts', measured.get('check_and_fec_valid', 0)):
         issues.append('no FEC-plus-integrity validated burst')
-    return {'status': 'FAIL' if issues else 'REVIEW' if reviews else 'PASS',
-            'issues': issues, 'upstream_disagreements': reviews}
+    # The D1-N *native evidence* gate and upstream's unverified frequency/
+    # sync expectations are independent verdicts. Preserve every upstream
+    # mismatch without turning a valid integrity-gated IQ decode into a
+    # false decoder failure or silently claiming upstream agreement.
+    return {'status': 'FAIL' if issues else 'PASS',
+            'issues': issues, 'upstream_disagreements': reviews,
+            'upstream_review_status': 'REVIEW' if reviews else 'NONE'}
 
 
 def _assess_negative(measured: dict) -> dict:

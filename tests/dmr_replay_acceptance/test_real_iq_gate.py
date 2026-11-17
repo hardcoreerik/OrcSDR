@@ -175,6 +175,58 @@ class D1RTests(unittest.TestCase):
         r = self.run_gate(FakeAPI(tweak))
         self.assertEqual(r["status"], "FAIL")
 
+    def test_ms_sync_unknown_slot_is_not_fabricated(self):
+        def tweak(result, fid, chunk):
+            if fid in gate.POSITIVE:
+                m = result["metrics"]
+                m["sync"] = {"ms_data": 10, "ms_voice": 1}
+                m["sync_total"] = 11
+                m["slots_observed"] = []
+                m["slots_check_fec_bursts"] = []
+        r = self.run_gate(FakeAPI(tweak))
+        # First fixture's upstream min_voice_sync=2 is a review observation;
+        # it must not become an invented TS1/TS2 or an integrity failure.
+        self.assertEqual(r["status"], "REVIEW")
+        first = r["fixtures"][0]
+        self.assertEqual(first["assessment"]["issues"], [])
+        self.assertEqual(first["assessment"]["status"], "REVIEW")
+        self.assertEqual(first["orcsdr_observed"]["slots_observed"], [])
+        self.assertTrue(any("min_voice_sync=1" in item for item in
+                            first["assessment"]["upstream_disagreements"]))
+
+    def test_explicit_direct_slot_without_attribution_is_failure(self):
+        def tweak(result, fid, chunk):
+            if fid == gate.IDS[0]:
+                result["metrics"]["slots_observed"] = []
+                result["metrics"]["slots_check_fec_bursts"] = []
+        r = self.run_gate(FakeAPI(tweak))
+        self.assertEqual(r["status"], "FAIL")
+        self.assertTrue(any("direct-TS" in item for item in
+                            r["fixtures"][0]["assessment"]["issues"]))
+
+    def test_base_station_sync_without_confident_cach_stays_unknown(self):
+        def tweak(result, fid, chunk):
+            if fid in gate.POSITIVE:
+                result["metrics"]["sync"] = {"bs_data": 9, "bs_voice": 3}
+                result["metrics"]["slots_observed"] = []
+                result["metrics"]["slots_check_fec_bursts"] = []
+        r = self.run_gate(FakeAPI(tweak))
+        self.assertEqual(r["status"], "REVIEW")
+        self.assertFalse(r["fixtures"][0]["assessment"]["issues"])
+        self.assertEqual(r["fixtures"][0]["orcsdr_observed"]["slots_observed"], [])
+
+    def test_ms_sync_with_missing_integrity_still_fails(self):
+        def tweak(result, fid, chunk):
+            if fid == gate.IDS[0]:
+                m = result["metrics"]
+                m["sync"] = {"ms_data": 10, "ms_voice": 1}
+                m["slots_observed"] = []
+                m["slots_check_fec_bursts"] = []
+                m["check_and_fec_valid"] = 0
+        r = self.run_gate(FakeAPI(tweak))
+        self.assertEqual(r["status"], "FAIL")
+        self.assertIn("FEC", str(r["fixtures"][0]["assessment"]["issues"]))
+
     def test_missing_native_executable_blocked(self):
         self.bridge.unlink()
         r = self.run_gate(FakeAPI())
