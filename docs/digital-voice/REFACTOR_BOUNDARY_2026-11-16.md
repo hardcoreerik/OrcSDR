@@ -29,3 +29,9 @@ The in-progress refactor branch `claude/orcsdr-main-cpp-refactor-dcac06` already
 The two pinned DMR MS-sync recordings do not independently identify TS1 or TS2. The acceptance harness must not manufacture time slots. Exclusive direct-slot sync plus checked bursts retains stronger slot evidence requirements. `real_iq_gate.py` retains upstream capture disagreements as reviews; `d1n_matrix.py` independently judges verified native identity/integrity evidence, preserving those upstream reviews in separate fields. This is a **host test change**, not receiver DSP change.
 
 See `docs/dmr/D1N_CLOUD_NATIVE_40_RUN_FINDINGS_2026-11-13.md` for the measured 40-run failure that motivated the correction. Any final PASS claim requires a fresh native CI run on the revised branch commit. No RF hardware, D-STAR/YSF IQ frontends or firmware paths were modified as part of this fix.
+
+## Verified follow-up: D1-N closure and compiler regression (2026-11-16)
+
+- The native D1-N gate on `feature/dmr-digital-voice-foundation` is now **PASS**: [40/40 source-verified native IQ runs, Release and ASan CI 44028198169](https://github.com/hardcoreerik/OrcSDR/actions/runs/44028198169). Upstream-only voice-sync discrepancy remains visible as REVIEW.
+- A separate GCC 15 `-Werror=stringop-overflow` warning in `components/orcsdr_dmr/d1_protocol/tests/test_cach_stream.cpp` was eliminated by replacing two adjacent `std::vector::insert` calls from fixed arrays with bounded `push_back` loops. That edit changes only **host test-fixture construction**, not decoder behavior. [DMR host conformance CI 44028198471](https://github.com/hardcoreerik/OrcSDR/actions/runs/44028198471) is green in both configurations.
+- The [unified DMR + D-STAR + YSF source-linked host regression 44028198172](https://github.com/hardcoreerik/OrcSDR/actions/runs/44028198172) remains green in Release and sanitizers. **No** `main.cpp`, board/driver, P25, Pluto or TX files were edited in these follow-up commits.
