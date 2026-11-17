@@ -1,4 +1,5 @@
 #include "rtl_receiver.hpp"
+#include <algorithm>
 #include <limits>
 #include <stdexcept>
 #include <string>
@@ -135,4 +136,48 @@ ReceiverCapabilities RtlReceiver::capabilities() const {
   unsupported();
 #endif
 }
+
+void RtlReceiver::retune(std::uint32_t hz){
+#ifdef ORC_HAVE_RTLSDR
+  if(!device_)throw std::logic_error("receiver not open");
+  auto* d=static_cast<rtlsdr_dev_t*>(device_);
+  int rc=rtlsdr_set_center_freq(d,hz);
+  if(rc)fail("retune",rc);
+  if(rtlsdr_get_center_freq(d)!=hz)throw std::runtime_error("retune readback mismatch");
+  rc=rtlsdr_reset_buffer(d);if(rc)fail("reset buffer on retune",rc);
+#else
+  (void)hz;unsupported();
+#endif
+}
+void RtlReceiver::set_tuner_gain_auto(){
+#ifdef ORC_HAVE_RTLSDR
+  if(!device_)throw std::logic_error("receiver not open");
+  const int rc=rtlsdr_set_tuner_gain_mode(static_cast<rtlsdr_dev_t*>(device_),0);
+  if(rc)fail("enable automatic gain",rc);
+#else
+  unsupported();
+#endif
+}
+void RtlReceiver::set_tuner_gain_tenth_db(int gain){
+#ifdef ORC_HAVE_RTLSDR
+  if(!device_)throw std::logic_error("receiver not open");
+  const auto c=capabilities().tuner_gains_tenth_db;
+  if(std::find(c.begin(),c.end(),gain)==c.end())throw std::invalid_argument("unsupported manual gain step");
+  auto* d=static_cast<rtlsdr_dev_t*>(device_);
+  int rc=rtlsdr_set_tuner_gain_mode(d,1);if(rc)fail("manual gain mode",rc);
+  rc=rtlsdr_set_tuner_gain(d,gain);if(rc)fail("manual gain",rc);
+  if(rtlsdr_get_tuner_gain(d)!=gain)throw std::runtime_error("manual gain readback mismatch");
+#else
+  (void)gain;unsupported();
+#endif
+}
+int RtlReceiver::tuner_gain_tenth_db()const{
+#ifdef ORC_HAVE_RTLSDR
+  if(!device_)throw std::logic_error("receiver not open");
+  return rtlsdr_get_tuner_gain(static_cast<rtlsdr_dev_t*>(device_));
+#else
+  unsupported();
+#endif
+}
+
 }

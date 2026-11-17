@@ -25,6 +25,10 @@ class RtlReceiver {
   static std::vector<ReceiverInfo> enumerate();
   void open(std::uint32_t index);
   void configure(std::uint32_t freq_hz,std::uint32_t rate_sps);
+  void retune(std::uint32_t freq_hz);
+  void set_tuner_gain_auto();
+  void set_tuner_gain_tenth_db(int tenth_db);
+  int tuner_gain_tenth_db() const;
   std::size_t read_cu8(std::uint8_t* data,std::size_t max_bytes);
   void close() noexcept;
   bool is_open() const { return device_!=nullptr; }

@@ -113,7 +113,7 @@ struct CompactRenderer {
       case Page::menu:{
         text(42,39,"ORCSDR MENU",cyan,2);
         const char* a[]={"FM RADIO","RF GAIN","AUDIO","RECEIVER","HELP"};
-        for(int i=0;i<5;++i){if(i==0)continue;const int y=60+(i-1)*18;rect(40,y,240,16,i==1?0x1264:panel);text(50,y+4,std::string(a[i]),i==1?green:white,1);}
+        for(int i=0;i<5;++i){if(i==0)continue;const int y=60+(i-1)*18;rect(40,y,240,16,i==s.menu_selection?0x1264:panel);text(50,y+4,std::string(a[i]),i==s.menu_selection?green:white,1);}
         break;}
       case Page::gain:{
         text(43,39,"RF GAIN",cyan,2);

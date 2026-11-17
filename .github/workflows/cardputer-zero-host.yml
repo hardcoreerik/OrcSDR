@@ -107,6 +107,59 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  zero-gui-audio-build:
+    name: Compact native UI + audio build and simulator
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install developer dependencies
+        run: bash apps/orcsdr-cardputer-zero/tools/bootstrap_gui_audio_dev.sh
+      - name: Configure native graphics, SDR and audio
+        run: |
+          set -o pipefail
+          cmake -S apps/orcsdr-cardputer-zero -B build/zero-gui -DCMAKE_BUILD_TYPE=Release -DORC_ENABLE_GUI=ON -DORC_ENABLE_ALSA=ON -DORC_ENABLE_SDL=ON -DORC_ENABLE_RTLSDR=ON 2>&1 | tee cardputer-zero-gui-config.log
+      - name: Build and test GUI/audio and original CLI
+        run: |
+          set -o pipefail
+          cmake --build build/zero-gui --parallel 2 2>&1 | tee cardputer-zero-gui-build.log
+          ctest --test-dir build/zero-gui --output-on-failure --verbose 2>&1 | tee cardputer-zero-gui-test.log
+      - name: Render real native UI through SDL (headless graphics)
+        env:
+          SDL_VIDEODRIVER: dummy
+        run: |
+          set -o pipefail
+          mkdir -p build/zero-gui/screens
+          ./build/zero-gui/orcsdr_cardputer_zero_gui --demo --display sdl --frames 2 --screenshot build/zero-gui/screens/main.ppm 2>&1 | tee cardputer-zero-gui-sdl.log
+          for screen in weak disconnected entry menu gain audio muted noaudio help long; do
+            ./build/zero-gui/orcsdr_cardputer_zero_gui --demo --view "$screen" --screenshot "build/zero-gui/screens/$screen.ppm"
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageDraw
+          p=Path('build/zero-gui/screens')
+          names=['main','weak','disconnected','entry','menu','gain','audio','muted','noaudio','help','long']
+          out=Image.new('RGB',(1280,3*190),'#181818'); d=ImageDraw.Draw(out)
+          for i,name in enumerate(names):
+            im=Image.open(p/f'{name}.ppm')
+            if im.size!=(320,170): raise SystemExit(f'{name}: invalid dimensions {im.size}')
+            im.save(p/f'{name}.png')
+            x=(i%4)*320; y=(i//4)*190
+            out.paste(im,(x,y+18));d.text((x+3,y+2),name,fill='white')
+          out.save(p/'contact.png')
+          print('11 exact 320x170 renderer captures verified')
+          PY
+      - name: Upload GUI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cardputer-zero-native-gui-audio
+          path: |
+            cardputer-zero-gui-*.log
+            build/zero-gui/screens/*.png
+          if-no-files-found: warn
+          retention-days: 14
+
   integrated-core-contract:
     name: Shared core + Radio Service v1 integration
     runs-on: ubuntu-24.04

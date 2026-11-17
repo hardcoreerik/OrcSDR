@@ -22,7 +22,7 @@ struct Snapshot {
   std::vector<int> gains;
   std::array<uint8_t,256> spectrum{};
   std::array<std::array<uint8_t,256>,36> waterfall{};
-  int waterfall_rows=0;
+  int waterfall_rows=0,menu_selection=0;
 };
 class ControlModel {
  public:
@@ -67,12 +67,13 @@ class ControlModel {
     if(key==Key::volume_up||key==Key::volume_down){s.volume=std::clamp(s.volume+(key==Key::volume_up?5:-5),0,100);dirty_settings=true;return;}
     if(key==Key::frequency|| (key==Key::enter&&s.page==Page::receive)) {s.page=Page::entry;s.entry.clear();s.error.clear();return;}
     if(key==Key::help){s.page=Page::help;return;}
-    if(key==Key::menu){s.page=Page::menu;menu_index=0;return;}
+    if(key==Key::menu){s.page=Page::menu;menu_index=0;s.menu_selection=0;return;}
     if(key==Key::gain){s.page=Page::gain;return;}
     if(key==Key::step){step_index=(step_index+1)%int(kSteps.size());s.step_hz=kSteps[step_index];dirty_settings=true;return;}
     if(s.page==Page::menu) {
       if(key==Key::up)menu_index=(menu_index+4)%5;
       if(key==Key::down)menu_index=(menu_index+1)%5;
+      s.menu_selection=menu_index;
       if(key==Key::enter){constexpr Page pages[]={Page::receive,Page::gain,Page::audio,Page::receiver,Page::help};s.page=pages[menu_index];}
       return;
     }
