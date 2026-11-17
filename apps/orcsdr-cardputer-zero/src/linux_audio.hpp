@@ -23,6 +23,7 @@ class AudioSink {
   uint64_t underruns() const noexcept { return underruns_; }
   uint64_t short_writes() const noexcept { return short_writes_; }
   uint64_t frames_written() const noexcept { return frames_written_; }
+  const std::vector<int16_t>& diagnostic_output() const noexcept { return scratch_; }
  private:
   void* pcm_=nullptr;
   bool null_=false;

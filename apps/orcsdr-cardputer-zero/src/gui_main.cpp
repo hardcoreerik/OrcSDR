@@ -1,5 +1,6 @@
 #include "compact_renderer.hpp"
 #include "fm_session.hpp"
+#include "settings.hpp"
 #include <algorithm>
 #include <cmath>
 #include <cstdlib>
@@ -30,7 +31,7 @@ using orc::zero::Connection;
 using orc::zero::FmSession;
 using orc::zero::FmTelemetry;
 using orc::zero::CompactRenderer;
-struct Options { bool demo=false,null_audio=false;uint32_t device=0,freq=96100000;
+struct Options { bool demo=false,null_audio=false;uint32_t device=0,freq=96100000;bool freq_explicit=false,audio_explicit=false;
  std::string display="sdl",audio="default",screenshot,view="main",input;unsigned frames=0; };
 unsigned parse_unsigned(const std::string& s){size_t used=0;auto v=std::stoul(s,&used);if(used!=s.size()||v>UINT32_MAX)throw std::invalid_argument("bad integer");return static_cast<unsigned>(v);}
 Options parse(int argc,char** argv){
@@ -45,8 +46,8 @@ Options parse(int argc,char** argv){
   if(++i>=argc)throw std::invalid_argument("missing option value for "+x);
   const std::string y=argv[i];
   if(x=="--device")a.device=parse_unsigned(y);
-  else if(x=="--freq")a.freq=parse_unsigned(y);
-  else if(x=="--audio")a.audio=y;
+  else if(x=="--freq"){a.freq=parse_unsigned(y);a.freq_explicit=true;}
+  else if(x=="--audio"){a.audio=y;a.audio_explicit=true;}
   else if(x=="--display")a.display=y;
   else if(x=="--screenshot")a.screenshot=y;
   else if(x=="--view")a.view=y;
@@ -96,8 +97,10 @@ void sync_model(ControlModel& m,const FmTelemetry& s){
   u.waterfall=s.waterfall;u.waterfall_rows=s.waterfall_rows;
  }else {u.live_spectrum=false;u.waterfall_rows=0;}
  u.known_dropped_samples=s.known_queue_dropped_samples;u.audio_ready=s.audio_ready;
- if(s.connection==Connection::error&&u.page!=orc::zero::Page::error){
-  u.page=orc::zero::Page::error;u.error=s.last_error;
+ static std::string last_error_displayed;
+ if(s.last_error!=last_error_displayed){
+  last_error_displayed=s.last_error;
+  if(!s.last_error.empty()){u.page=orc::zero::Page::error;u.error=s.last_error;}
  }
 }
 void relay_controls(ControlModel& m,FmSession& session,const FmTelemetry& observed){
@@ -109,7 +112,7 @@ void relay_controls(ControlModel& m,FmSession& session,const FmTelemetry& observ
 }
 void action(ControlModel& m,FmSession* session,Key key,char digit=0){
  m.handle(key,digit);
- if(session&&key==Key::reconnect&&m.s.connection!=Connection::ready){
+ if(session&&key==Key::reconnect){
   const auto desired=m.s.requested_hz;
   // Reconnect is deliberately explicit. Do not spin hot on unplugged hardware.
   session->start(0,desired);session->set_volume(unsigned(m.s.volume));session->set_mute(m.s.muted);m.s.connection=Connection::connecting;
@@ -247,10 +250,15 @@ int run_fb(const Options& a,ControlModel& model,FmSession* session){
 int main(int argc,char**argv){
  try{
   Options a=parse(argc,argv);ControlModel model;
-  model.restore(a.freq,30,false,2);
+  orc::zero::UserSettings saved{};
+  if(!a.demo&&orc::zero::load_settings(orc::zero::settings_path(),saved)){
+    if(!a.freq_explicit)a.freq=saved.frequency_hz;
+    if(!a.audio_explicit)a.audio=saved.audio_device;
+  }
+  model.restore(a.freq,a.demo?30:int(saved.volume),a.demo?false:saved.mute,a.demo?2:int(saved.step_index));
   FmSession session;FmSession* owner=nullptr;
   if(a.demo)demo_state(model,a.view);
-  else{session.start(a.device,a.freq,a.audio,a.null_audio);owner=&session;}
+  else{session.start(a.device,a.freq,a.audio,a.null_audio);session.set_volume(unsigned(model.s.volume));session.set_mute(model.s.muted);owner=&session;}
   if(!a.screenshot.empty()&&a.frames==0){
    CompactRenderer r;r.render(model.s);
    if(!r.save_ppm(a.screenshot))throw std::runtime_error("Could not write PPM screenshot");
@@ -269,6 +277,16 @@ int main(int argc,char**argv){
 #else
     throw std::runtime_error("SDL2 development headers not built; install libsdl2-dev");
 #endif
+  }
+  if(!a.demo){
+    orc::zero::UserSettings settings{};
+    settings.frequency_hz=(model.s.applied_hz>=orc::zero::kFmMinHz&&model.s.applied_hz<=orc::zero::kFmMaxHz)?model.s.applied_hz:a.freq;
+    settings.volume=unsigned(model.s.volume);settings.mute=model.s.muted;
+    settings.step_index=unsigned(model.step_index);
+    settings.audio_device=a.audio;
+    settings.gain_auto=model.s.gain_auto;settings.gain_tenth_db=model.s.gain_tenth_db;
+    if(model.dirty_settings && !orc::zero::save_settings(orc::zero::settings_path(),settings))
+      std::cerr<<"Could not save per-user OrcSDR settings; continuing clean shutdown.\n";
   }
   session.stop();return rc;
  }catch(const std::exception& e){std::cerr<<"orc-zero-gui: "<<e.what()<<'\n';return 1;}

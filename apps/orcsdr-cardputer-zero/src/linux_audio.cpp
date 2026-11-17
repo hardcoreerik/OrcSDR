@@ -54,7 +54,8 @@ bool AudioSink::write_mono(const int16_t* mono,size_t frames,int volume,bool mut
   const float target=(mute?0.0f:static_cast<float>(std::clamp(volume,0,100))/100.0f);
   for(size_t i=0;i<frames;++i){
     // 10 ms approximate gain smoothing at 48k to avoid mute/tune clicks.
-    gain_+=(target-gain_)*0.002f;
+    if(mute||volume<=0)gain_=0.0f; // mute and zero-volume always produce exact silence
+    else gain_+=(target-gain_)*0.002f;
     const auto s=static_cast<int16_t>(std::clamp(std::lround(double(mono[i])*gain_),-32768l,32767l));
     for(unsigned c=0;c<channels_;++c)scratch_[i*channels_+c]=s;
   }

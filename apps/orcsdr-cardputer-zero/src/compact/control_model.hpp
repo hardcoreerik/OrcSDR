@@ -87,7 +87,7 @@ class ControlModel {
       return;
     }
     if(s.page==Page::audio||s.page==Page::help||s.page==Page::receiver||s.page==Page::error){
-      if(key==Key::reconnect&&s.page==Page::error){s.connection=Connection::connecting;s.error.clear();s.page=Page::receive;}
+      if(key==Key::reconnect&&(s.page==Page::error||s.page==Page::audio||s.page==Page::receiver)){s.connection=Connection::connecting;s.error.clear();s.page=Page::receive;}
       return;
     }
     if(s.page==Page::receive&&(key==Key::left||key==Key::right)) {
