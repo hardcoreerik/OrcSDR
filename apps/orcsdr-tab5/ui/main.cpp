@@ -124,6 +124,9 @@
 #include "serial_signal.hpp"
 #include "serial_preset.hpp"
 #include "serial_rds.hpp"
+#include "hex_codec.hpp"
+#include "session_identity.hpp"
+#include "session_journal.hpp"
 #include "serial_p25.hpp"
 #include "serial_rtc.hpp"
 #include "serial_wifi.hpp"
@@ -389,9 +392,6 @@ constexpr int kButtonX = 390;
 constexpr int kButtonY = 300;
 constexpr int kButtonWidth = 500;
 constexpr int kButtonHeight = 120;
-constexpr uint32_t kJournalMagic = 0x4f4a4e32;
-constexpr uint32_t kWorkflowMagic = 0x4f574631;
-constexpr size_t kJournalCapacity = 8;
 constexpr uint32_t kSessionTimeoutMs = 5000;
 constexpr int kWifiClockPin = 12;
 constexpr int kWifiCommandPin = 13;
@@ -1722,30 +1722,6 @@ static_assert(rtl_should_resume_after_disconnect(RtlCaptureState::queued));
 static_assert(rtl_should_resume_after_disconnect(RtlCaptureState::running));
 static_assert(!rtl_should_resume_after_disconnect(RtlCaptureState::ready));
 
-struct JournalEntry {
-  uint32_t sequence;
-  char kind[20];
-  int16_t x;
-  int16_t y;
-};
-
-struct JournalState {
-  uint32_t magic;
-  uint32_t next_sequence;
-  uint32_t acknowledged_sequence;
-  uint8_t head;
-  uint8_t count;
-  uint32_t dropped_events;
-  JournalEntry entries[kJournalCapacity];
-};
-
-struct WorkflowState {
-  uint32_t magic;
-  uint32_t config_revision;
-  uint16_t max_runs;
-  uint16_t runs;
-};
-
 char node_id[32];
 uint64_t heartbeat_sequence = 0;
 uint32_t last_heartbeat_ms = 0;
@@ -1760,8 +1736,6 @@ orcsdr::NvsStore preferences;
 orcsdr::adsb::Settings adsb_settings;
 orcsdr::pocsag::Settings pocsag_dashboard_settings;
 std::atomic<bool> adsb_settings_persist_pending{false};
-JournalState journal{};
-WorkflowState workflow{};
 uint8_t pairing_key[32];
 char serial_input[384];
 size_t serial_input_length = 0;
@@ -2510,8 +2484,6 @@ void print_adsb_status() {
 
 void emit_identity();
 void forget_pairing();
-bool decode_hex(const char* value, uint8_t* output, size_t output_size);
-bool decode_hex_text(const char* value, char* output, size_t output_size);
 void print_hex(const uint8_t* value, size_t size);
 void reset_spectrum_renderer();
 void draw_spectrum_grid();
@@ -4022,8 +3994,8 @@ void load_lora_config() {
     } else if (strcmp(key, "region") == 0 && strlen(value) < sizeof(lora_region_name)) {
       strlcpy(lora_region_name, value, sizeof(lora_region_name));
     } else if (strcmp(key, "authorized_receive_key") == 0 && strlen(value) == 64) {
-      lora_authorized_key_loaded = decode_hex(value, lora_authorized_key,
-                                              sizeof(lora_authorized_key));
+      lora_authorized_key_loaded = orcsdr::hex_codec::decode(value, lora_authorized_key,
+                                                             sizeof(lora_authorized_key));
       lora_authorized_key_bytes = lora_authorized_key_loaded ? sizeof(lora_authorized_key) : 0;
     }
   }
@@ -14539,51 +14511,6 @@ void handle_global_settings_touch(int32_t x, int32_t y) {
   handle_global_settings_action(orcsdr::settings::handle_touch(x, y));
 }
 
-bool decode_hex(const char* value, uint8_t* output, size_t output_size) {
-  auto digit = [](char value) -> int {
-    if (value >= '0' && value <= '9') return value - '0';
-    if (value >= 'a' && value <= 'f') return value - 'a' + 10;
-    if (value >= 'A' && value <= 'F') return value - 'A' + 10;
-    return -1;
-  };
-  if (strlen(value) != output_size * 2) return false;
-  for (size_t index = 0; index < output_size; ++index) {
-    const int high = digit(value[index * 2]);
-    const int low = digit(value[index * 2 + 1]);
-    if (high < 0 || low < 0) return false;
-    output[index] = static_cast<uint8_t>((high << 4) | low);
-  }
-  return true;
-}
-
-bool decode_hex_text(const char* value, char* output, size_t output_size) {
-  const size_t length = strlen(value);
-  if (length % 2 != 0 || length / 2 >= output_size) return false;
-  auto digit = [](char value) -> int {
-    if (value >= '0' && value <= '9') return value - '0';
-    if (value >= 'a' && value <= 'f') return value - 'a' + 10;
-    if (value >= 'A' && value <= 'F') return value - 'A' + 10;
-    return -1;
-  };
-  for (size_t index = 0; index < length / 2; ++index) {
-    const int high = digit(value[index * 2]);
-    const int low = digit(value[index * 2 + 1]);
-    if (high < 0 || low < 0) return false;
-    output[index] = static_cast<char>((high << 4) | low);
-  }
-  output[length / 2] = '\0';
-  return true;
-}
-
-bool parse_hex_u32_exact(const char* value, uint32_t* output) {
-  if (value == nullptr || output == nullptr || strlen(value) != 8) return false;
-  char* end = nullptr;
-  const unsigned long parsed = strtoul(value, &end, 16);
-  if (end == nullptr || *end != '\0') return false;
-  *output = static_cast<uint32_t>(parsed);
-  return true;
-}
-
 void lora_store_packet(const LoraDisplayPacket& input) {
   LoraDisplayPacket packet = input;
   if (packet.received_ms == 0) packet.received_ms = millis();
@@ -14660,9 +14587,9 @@ bool lora_present_host_message(char* fields) {
   uint32_t sender = 0;
   uint32_t packet_id = 0;
   char message[sizeof(lora_display_packets[0].text)];
-  if (!parse_hex_u32_exact(sender_text, &sender) ||
-      !parse_hex_u32_exact(packet_text, &packet_id) ||
-      !decode_hex_text(message_hex, message, sizeof(message)) || message[0] == '\0') {
+  if (!orcsdr::hex_codec::parse_u32_exact(sender_text, &sender) ||
+      !orcsdr::hex_codec::parse_u32_exact(packet_text, &packet_id) ||
+      !orcsdr::hex_codec::decode_text(message_hex, message, sizeof(message)) || message[0] == '\0') {
     return false;
   }
   for (char* p = message; *p; ++p) {
@@ -14693,9 +14620,9 @@ bool lora_present_host_packet(char* fields) {
   uint32_t packet_id = 0;
   char* end = nullptr;
   const unsigned long port = strtoul(values[3], &end, 10);
-  if (!parse_hex_u32_exact(values[0], &sender) ||
-      !parse_hex_u32_exact(values[1], &destination) ||
-      !parse_hex_u32_exact(values[2], &packet_id) || end == nullptr || *end != '\0' || port > UINT16_MAX) {
+  if (!orcsdr::hex_codec::parse_u32_exact(values[0], &sender) ||
+      !orcsdr::hex_codec::parse_u32_exact(values[1], &destination) ||
+      !orcsdr::hex_codec::parse_u32_exact(values[2], &packet_id) || end == nullptr || *end != '\0' || port > UINT16_MAX) {
     return false;
   }
   const long snr = strtol(values[4], &end, 10);
@@ -14707,7 +14634,7 @@ bool lora_present_host_packet(char* fields) {
   const long longitude = strtol(values[7], &end, 10);
   if (end == nullptr || *end != '\0') return false;
   char text[sizeof(lora_display_packets[0].text)]{};
-  if (strcmp(values[8], "-") != 0 && !decode_hex_text(values[8], text, sizeof(text))) return false;
+  if (strcmp(values[8], "-") != 0 && !orcsdr::hex_codec::decode_text(values[8], text, sizeof(text))) return false;
   for (char* p = text; *p; ++p) {
     const unsigned char value = static_cast<unsigned char>(*p);
     if (value < 0x20 || value == 0x7f) *p = ' ';
@@ -14728,20 +14655,17 @@ bool lora_present_host_packet(char* fields) {
 }
 
 void print_hex(const uint8_t* value, size_t size) {
-  static constexpr char kHex[] = "0123456789abcdef";
-  for (size_t index = 0; index < size; ++index) {
-    Serial.print(kHex[value[index] >> 4]);
-    Serial.print(kHex[value[index] & 0x0f]);
-  }
+  orcsdr::hex_codec::write(value, size, [](char digit) { Serial.print(digit); });
 }
 
-void persist_journal() {
-  preferences.putBytes("journal", &journal, sizeof(journal));
-}
-
-void persist_workflow() {
-  preferences.putBytes("workflow", &workflow, sizeof(workflow));
-}
+// The session journal and offline workflow counters (session_journal.cpp): the settings store and console stay here.
+static constexpr orcsdr::session_journal::Hooks kSessionJournalHooks{
+    [](const char* key) -> size_t { return preferences.getBytesLength(key); },
+    [](const char* key, void* out, size_t size) { preferences.getBytes(key, out, size); },
+    [](const char* key, const void* data, size_t size) { preferences.putBytes(key, data, size); },
+    [](const char* text) { Serial.print(text); },
+    []() -> const char* { return node_id; },
+};
 
 void load_state() {
   preferences.begin("orclink", false);
@@ -14760,23 +14684,7 @@ void load_state() {
   Serial.printf("RTL_SERIAL_VERBOSITY mode=%s\n", serial_verbosity_name(stored_verbosity));
   paired = preferences.getBytesLength("pair_key") == sizeof(pairing_key);
   if (paired) preferences.getBytes("pair_key", pairing_key, sizeof(pairing_key));
-  if (preferences.getBytesLength("journal") == sizeof(journal)) {
-    preferences.getBytes("journal", &journal, sizeof(journal));
-  }
-  if (journal.magic != kJournalMagic || journal.head >= kJournalCapacity ||
-      journal.count > kJournalCapacity) {
-    memset(&journal, 0, sizeof(journal));
-    journal.magic = kJournalMagic;
-    persist_journal();
-  }
-  if (preferences.getBytesLength("workflow") == sizeof(workflow)) {
-    preferences.getBytes("workflow", &workflow, sizeof(workflow));
-  }
-  if (workflow.magic != kWorkflowMagic) {
-    memset(&workflow, 0, sizeof(workflow));
-    workflow.magic = kWorkflowMagic;
-    persist_workflow();
-  }
+  orcsdr::session_journal::load(kSessionJournalHooks);
   const std::string stored_ssid = preferences.isKey("wifi_ssid")
                                  ? preferences.getString("wifi_ssid", "")
                                  : std::string();
@@ -14963,23 +14871,7 @@ void load_waterfall_styles() {
 }
 
 uint32_t append_journal(const char* kind, int16_t x = -1, int16_t y = -1) {
-  size_t index;
-  if (journal.count < kJournalCapacity) {
-    index = (journal.head + journal.count) % kJournalCapacity;
-    ++journal.count;
-  } else {
-    index = journal.head;
-    journal.head = (journal.head + 1) % kJournalCapacity;
-    ++journal.dropped_events;
-  }
-  JournalEntry& entry = journal.entries[index];
-  entry.sequence = ++journal.next_sequence;
-  strncpy(entry.kind, kind, sizeof(entry.kind) - 1);
-  entry.kind[sizeof(entry.kind) - 1] = '\0';
-  entry.x = x;
-  entry.y = y;
-  persist_journal();
-  return entry.sequence;
+  return orcsdr::session_journal::append(kSessionJournalHooks, kind, x, y);
 }
 
 // HMAC-SHA256 keyed with the pairing key: the session protocol's proofs and signatures (serial_session.cpp).
@@ -15003,36 +14895,13 @@ void forget_pairing() {
 }
 
 void run_offline_workflow() {
-  if (workflow.config_revision == 0 || workflow.runs >= workflow.max_runs) return;
-  ++workflow.runs;
-  persist_workflow();
+  if (!orcsdr::session_journal::begin_workflow_run(kSessionJournalHooks)) return;
   draw_session_state("Host offline - local status workflow active", TFT_ORANGE);
   append_journal("workflow_run");
 }
 
-void acknowledge_journal(uint32_t sequence) {
-  while (journal.count > 0 && journal.entries[journal.head].sequence <= sequence) {
-    journal.head = (journal.head + 1) % kJournalCapacity;
-    --journal.count;
-  }
-  if (sequence > journal.acknowledged_sequence) {
-    journal.acknowledged_sequence = sequence;
-    persist_journal();
-  }
-}
-
 void emit_pending_journal() {
-  if (!authenticated) return;
-  for (size_t offset = 0; offset < journal.count; ++offset) {
-    const JournalEntry& entry = journal.entries[(journal.head + offset) % kJournalCapacity];
-    Serial.printf(
-        "{\"type\":\"event\",\"message_id\":\"m5tab5_journal_%lu\","
-        "\"protocol_version\":{\"major\":1,\"minor\":0},"
-        "\"payload\":{\"node_id\":\"%s\",\"kind\":\"local_journal\","
-        "\"journal_sequence\":%lu,\"event_kind\":\"%s\",\"x\":%d,\"y\":%d}}\n",
-        static_cast<unsigned long>(entry.sequence), node_id,
-        static_cast<unsigned long>(entry.sequence), entry.kind, entry.x, entry.y);
-  }
+  orcsdr::session_journal::emit_pending(kSessionJournalHooks, authenticated);
 }
 
 bool point_in_button(int32_t x, int32_t y) {
@@ -17168,44 +17037,40 @@ void emit_identity() {
   const int16_t battery_mv = M5.Power.getBatteryVoltage();
   const int32_t battery_ma = M5.Power.getBatteryCurrent();
   const int16_t vbus_mv = M5.Power.getVBUSVoltage();
-  Serial.printf(
-      "{\"type\":\"hello\",\"message_id\":\"m5tab5_hello_01\","
-      "\"protocol_version\":{\"major\":1,\"minor\":0},"
-      "\"payload\":{\"adapter\":{\"id\":\"m5tab5.serial\",\"version\":\"0.8.31\"},"
-      "\"features\":[\"telemetry\",\"display\",\"touch\",\"authenticated_session\",\"journal\",\"network_inventory\",\"wifi_provisioning\",\"power_telemetry\",\"usb_host\",\"rtl_sdr_probe\",\"rtl_sdr_radio_ui\",\"rtl_sdr_scope_scroll\"],"
-      "\"capability_namespaces\":[\"m5tab5\"],\"config_schema_version\":1}}\n");
-  Serial.printf(
-      "{\"type\":\"node_snapshot\",\"message_id\":\"m5tab5_snapshot_%lu\","
-      "\"protocol_version\":{\"major\":1,\"minor\":0},"
-      "\"payload\":{\"node_id\":\"%s\",\"connection_state\":\"online\","
-      "\"hardware\":{\"chip\":\"%s\",\"revision\":%u,\"cores\":%u,"
-      "\"flash_bytes\":%u,\"psram_bytes\":%u,\"free_heap_bytes\":%u,"
-      "\"display\":{\"width\":%d,\"height\":%d,\"touch_ready\":%s}},"
-      "\"network\":{\"transport\":\"esp_hosted_sdio\",\"station_ready\":%s,"
-      "\"configured\":%s,\"scan_result\":%d,\"connected\":%s,\"ip\":\"%s\"},"
-      "\"power\":{\"source\":\"m5unified\",\"pmic_detected\":%s,\"pmic_type\":%d,"
-      "\"battery_level\":%ld,\"battery_mv\":%d,"
-      "\"battery_ma\":%ld,\"vbus_mv\":%d,\"charging\":\"%s\"},"
-      "\"journal\":{\"latest_sequence\":%lu,\"acknowledged_sequence\":%lu,\"pending\":%u,\"dropped\":%lu},"
-      "\"offline_workflow\":{\"id\":\"status_on_disconnect\",\"config_revision\":%lu,"
-      "\"runs\":%u,\"max_runs\":%u},"
-      "\"capabilities\":[\"m5tab5.device.info\",\"m5tab5.health.read\","
-      "\"m5tab5.display.status\",\"m5tab5.input.touch\",\"m5tab5.event.journal.sync\","
-      "\"m5tab5.network.inventory\",\"m5tab5.network.configure\","
-      "\"m5tab5.power.read\"]}}\n",
-      static_cast<unsigned long>(millis()), node_id, CONFIG_IDF_TARGET,
-      chip.revision, chip.cores, flash_size,
-      esp_psram_get_size(), esp_get_free_heap_size(), M5.Display.width(), M5.Display.height(),
-      M5.Touch.isEnabled() ? "true" : "false",
-      wifi_station_ready ? "true" : "false", wifi_configured ? "true" : "false",
-      wifi_network_count, wifi_connected ? "true" : "false", wifi_ip,
-      M5.Power.getType() == m5::Power_Class::pmic_unknown ? "false" : "true",
-      static_cast<int>(M5.Power.getType()), static_cast<long>(battery_level), battery_mv,
-      static_cast<long>(battery_ma), vbus_mv, charging_state(),
-      static_cast<unsigned long>(journal.next_sequence),
-      static_cast<unsigned long>(journal.acknowledged_sequence), journal.count,
-      static_cast<unsigned long>(journal.dropped_events),
-      static_cast<unsigned long>(workflow.config_revision), workflow.runs, workflow.max_runs);
+  const auto& journal = orcsdr::session_journal::journal();
+  const auto& workflow = orcsdr::session_journal::workflow();
+  orcsdr::session_identity::Snapshot snapshot;
+  snapshot.uptime_ms = static_cast<unsigned long>(millis());
+  snapshot.node_id = node_id;
+  snapshot.chip = CONFIG_IDF_TARGET;
+  snapshot.revision = chip.revision;
+  snapshot.cores = chip.cores;
+  snapshot.flash_bytes = static_cast<unsigned>(flash_size);
+  snapshot.psram_bytes = static_cast<unsigned>(esp_psram_get_size());
+  snapshot.free_heap_bytes = static_cast<unsigned>(esp_get_free_heap_size());
+  snapshot.display_width = M5.Display.width();
+  snapshot.display_height = M5.Display.height();
+  snapshot.touch_ready = M5.Touch.isEnabled();
+  snapshot.station_ready = wifi_station_ready;
+  snapshot.wifi_configured = wifi_configured;
+  snapshot.scan_result = wifi_network_count;
+  snapshot.wifi_connected = wifi_connected;
+  snapshot.ip = wifi_ip;
+  snapshot.pmic_detected = M5.Power.getType() != m5::Power_Class::pmic_unknown;
+  snapshot.pmic_type = static_cast<int>(M5.Power.getType());
+  snapshot.battery_level = static_cast<long>(battery_level);
+  snapshot.battery_mv = battery_mv;
+  snapshot.battery_ma = static_cast<long>(battery_ma);
+  snapshot.vbus_mv = vbus_mv;
+  snapshot.charging = charging_state();
+  snapshot.journal_latest_sequence = static_cast<unsigned long>(journal.next_sequence);
+  snapshot.journal_acknowledged_sequence = static_cast<unsigned long>(journal.acknowledged_sequence);
+  snapshot.journal_pending = journal.count;
+  snapshot.journal_dropped = static_cast<unsigned long>(journal.dropped_events);
+  snapshot.workflow_revision = static_cast<unsigned long>(workflow.config_revision);
+  snapshot.workflow_runs = workflow.runs;
+  snapshot.workflow_max_runs = workflow.max_runs;
+  orcsdr::session_identity::emit(snapshot, [](const char* text) { Serial.print(text); });
 }
 
 void set_online() {
@@ -19282,7 +19147,7 @@ static constexpr orcsdr::serial_lora::Hooks kSerialLoraHooks{
       status.error = unsigned(lora_log_error.load());
       return status;
     },
-    [](const char* text, uint32_t* value) -> bool { return parse_hex_u32_exact(text, value); },
+    orcsdr::hex_codec::parse_u32_exact,
     [](uint32_t id, orcsdr::serial_lora::HistoryNode* out) -> bool {
       orcsdr::lora_history::Node node{}; bool found = false;
       portENTER_CRITICAL(&lora_message_mux);
@@ -19684,8 +19549,8 @@ static constexpr orcsdr::sd_transfer::Hooks kSdTransferHooks{
     [](const uint8_t* value, size_t size) { print_hex(value, size); },
     [](const uint8_t* data, size_t size) -> size_t { return Serial.writeBytes(data, size); },
     [](uint8_t* out, size_t size, uint32_t timeout_ms) -> size_t { return Serial.readBytes(out, size, timeout_ms); },
-    [](const char* text, uint8_t* out, size_t size) { return decode_hex(text, out, size); },
-    [](const char* text, char* out, size_t size) { return decode_hex_text(text, out, size); },
+    orcsdr::hex_codec::decode,
+    orcsdr::hex_codec::decode_text,
     [] { return sd_transfer_radio_busy(); },
     [] {
       if (orcsdr_splash_is_active()) orcsdr_splash_end();
@@ -20470,7 +20335,7 @@ static constexpr orcsdr::iq_transfer_engine::Hooks kIqTransferEngineHooks{
     [](const uint8_t* value, size_t size) { print_hex(value, size); },
     [](const uint8_t* data, size_t size) -> size_t { return Serial.writeBytes(data, size); },
     [](uint8_t* out, size_t size, uint32_t timeout_ms) -> size_t { return Serial.readBytes(out, size, timeout_ms); },
-    [](const char* text, uint8_t* out, size_t size) { return decode_hex(text, out, size); },
+    orcsdr::hex_codec::decode,
     [](size_t* bytes) {
       *bytes = g_iq_rec_write.load(std::memory_order_acquire);
       return !(g_iq_rec_active.load(std::memory_order_acquire) ||
@@ -20586,7 +20451,8 @@ static constexpr orcsdr::serial_splash::Hooks kSerialSplashHooks{
     [] { return preferences.getBool("splash_gate", true); },
 };
 
-// PAIR / AUTH / PING and the signed session commands (serial_session.cpp): the key, settings and journal stay here.
+// PAIR / AUTH / PING and the signed session commands (serial_session.cpp): the key and settings stay here; the
+// journal and workflow counters are in session_journal.cpp.
 static_assert(sizeof(pairing_key) == orcsdr::serial_session::kPairingKeySize);
 static_assert(sizeof(wifi_ssid) == orcsdr::serial_session::kWifiSsidSize);
 static_assert(sizeof(wifi_password) == orcsdr::serial_session::kWifiPasswordSize);
@@ -20594,8 +20460,8 @@ static constexpr orcsdr::serial_session::Hooks kSerialSessionHooks{
     [](const char* text) { Serial.print(text); },
     [](const char* text) { Serial.println(text); },
     [](const uint8_t* value, size_t size) { print_hex(value, size); },
-    [](const char* text, uint8_t* out, size_t size) { return decode_hex(text, out, size); },
-    [](const char* text, char* out, size_t size) { return decode_hex_text(text, out, size); },
+    orcsdr::hex_codec::decode,
+    orcsdr::hex_codec::decode_text,
     [](const uint8_t* data, size_t size, uint8_t out[32]) { return pairing_hmac(data, size, out); },
     [] { return paired; },
     []() -> const uint8_t* { return pairing_key; },
@@ -20637,20 +20503,14 @@ static constexpr orcsdr::serial_session::Hooks kSerialSessionHooks{
       wifi_configured = true;
     },
     [] { start_wifi_connection(); },
-    [] { return workflow.config_revision; },
+    [] { return orcsdr::session_journal::workflow().config_revision; },
     [](uint32_t revision, uint16_t max_runs) {
-      workflow.config_revision = revision;
-      workflow.max_runs = max_runs;
-      workflow.runs = 0;
-      persist_workflow();
+      orcsdr::session_journal::install_workflow(kSessionJournalHooks, revision, max_runs);
     },
-    [] { return journal.dropped_events; },
-    [] {
-      journal.dropped_events = 0;
-      persist_journal();
-    },
-    [] { return journal.next_sequence; },
-    [](uint32_t sequence) { acknowledge_journal(sequence); },
+    [] { return orcsdr::session_journal::journal().dropped_events; },
+    [] { orcsdr::session_journal::clear_dropped_events(kSessionJournalHooks); },
+    [] { return orcsdr::session_journal::journal().next_sequence; },
+    [](uint32_t sequence) { orcsdr::session_journal::acknowledge(kSessionJournalHooks, sequence); },
 };
 
 // RTL_STOP, RTL_CAPTURE / RTL_LISTEN and RTL_VOLUME (serial_radio.cpp): the receiver state stays here.
@@ -21972,7 +21832,7 @@ void loop() {
         "\"uptime_ms\":%u,\"free_heap_bytes\":%u,\"journal_pending\":%u}}\n",
         static_cast<unsigned long long>(heartbeat_sequence), node_id,
         static_cast<unsigned long long>(heartbeat_sequence), now, esp_get_free_heap_size(),
-        journal.count);
+        orcsdr::session_journal::journal().count);
   }
 
   // HOME's 33 ms plot budget includes drawing and FFT work; do not add a

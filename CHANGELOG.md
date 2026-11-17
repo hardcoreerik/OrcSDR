@@ -2,6 +2,24 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Session journal, identity lines and hex helpers moved out of main.cpp — 2026-11-16
+
+No behaviour change intended. Flashed and checked on COM17 (M5Stack Tab5 dev unit).
+
+- **Three new modules, each with a host test** (in the CI script and workflow):
+  - `apps/orcsdr-tab5/ui/hex_codec.{hpp,cpp}`: `decode_hex`, `decode_hex_text`, `parse_hex_u32_exact` and the digit loop of `print_hex`, moved verbatim. The session, SD transfer, IQ transfer and LoRa hook tables now point straight at these functions.
+  - `apps/orcsdr-tab5/ui/session_journal.{hpp,cpp}`: the 8-entry event journal and the offline workflow counters, with their two stored records. `main.cpp` supplies the settings store, the console and the node id through a hook table (`kSessionJournalHooks`) and keeps a one-line `append_journal()` for its callers.
+  - `apps/orcsdr-tab5/ui/session_identity.{hpp,cpp}`: the text of the `hello` and `node_snapshot` lines. `emit_identity()` in `main.cpp` now only reads the device into a struct.
+- **Measured:** `main.cpp` 21,993 to 21,853 lines. Firmware image 4,523,760 to 4,524,928 bytes (code +768, constants -8, static RAM unchanged: `.dram1.bss` 149,940, `.ext_ram.bss` 817,912). `process_command()` frame 448 bytes, unchanged. The snapshot line is now built in a 1,280-byte buffer (frame 1,296 bytes) where it used the console's 2,048-byte one (frame 2,112), and a journal event line in 320 bytes (frame 368).
+- **Stored format:** the journal and workflow records are still the same raw structs under the same keys (sizes pinned by `static_assert`: 244 and 12 bytes). On COM17 the journal written by the previous firmware was read back by this one (acknowledged sequence 12,940 carried across the flash).
+- **Device check (COM17), same script before (`9ce92c03`) and after:** 26 of 26 checks both times: pairing refusal and hint, sign-in with the device signature, the `hello` and `node_snapshot` lines, `TEST_PRESSURE` (10 events into the 8-entry ring, dropped count, consecutive sequences), `ACK`, `PRESSURE_ACK`. With every number masked, the set of line shapes printed is identical. The golden file `tests/data/session_identity_golden.txt` holds the lines the previous firmware printed (node id and address replaced). 35 of 35 refusals; main-task free stack 6,468 bytes after boot and after the commands.
+- **Seen while moving, not changed:**
+  - `parse_hex_u32_exact` accepts any 8 characters `strtoul` takes in base 16, so `0x00beef`, `+0000012`, `-0000001` and two leading spaces pass as LoRa node or packet ids.
+  - `print_hex` writes one character per console write (64 writes for a 32-byte value).
+  - The journal is saved to flash settings on every event, including each `session_degraded` and `session_online`. The dev unit had counted 12,922 dropped events with no host ever acknowledging them.
+  - `node_snapshot` on the Tab5 reports `"pmic_detected":false`, `"vbus_mv":-1` and `"charging":"unknown"`.
+- **Not checked:** on the device, the hex paths of `SD_GET` / `SD_PUT`, `RTL_IQ_GET`, `LORA_MESSAGE` / `LORA_PACKET` and the LoRa key file (host tests only); a valid signed `INSTALL_STATUS` (workflow install and offline run are host-tested only); the touch journal entry (`operator_touch`). The check itself cleared the unit's dropped-event counter and acknowledged its pending journal entries.
+
 ## Unreleased — IQ download and LoRa replay upload engine moved out of main.cpp — 2026-11-16
 
 No behaviour change intended. Flashed and checked on COM17.
