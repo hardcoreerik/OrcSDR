@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(orcsdr_cardputer_zero LANGUAGES CXX)
+project(orcsdr_cardputer_zero LANGUAGES C CXX)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -28,6 +28,24 @@ add_executable(orcsdr_cardputer_zero src/main.cpp)
 target_link_libraries(orcsdr_cardputer_zero PRIVATE orc_linux_runtime)
 target_compile_options(orcsdr_cardputer_zero PRIVATE -Wall -Wextra -Wpedantic)
 
+
+# Original portable DSP and 320x170 compact native framebuffer renderer.
+# These targets do not depend on SDL, ALSA or a physical SDR.
+set(ORC_ZERO_RADIO_SOURCE "${ORC_REPO_ROOT}/core/portable/cardputer_radio")
+add_library(orc_zero_fm_dsp STATIC
+  "${ORC_ZERO_RADIO_SOURCE}/fm_dsp.c"
+  "${ORC_ZERO_RADIO_SOURCE}/scan_dsp.c")
+target_include_directories(orc_zero_fm_dsp PUBLIC "${ORC_ZERO_RADIO_SOURCE}")
+target_link_libraries(orc_zero_fm_dsp PUBLIC m)
+add_library(orc_zero_waterfall_style STATIC "${ORC_NATIVE_DECODER_DIR}/waterfall_style.cpp")
+target_include_directories(orc_zero_waterfall_style PUBLIC "${ORC_NATIVE_DECODER_DIR}")
+add_library(orc_zero_compact INTERFACE)
+target_include_directories(orc_zero_compact INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/src/compact")
+target_link_libraries(orc_zero_compact INTERFACE orc_zero_waterfall_style)
+add_executable(orc_zero_screenshot src/compact/screenshot_main.cpp)
+target_link_libraries(orc_zero_screenshot PRIVATE orc_zero_compact)
+target_compile_options(orc_zero_screenshot PRIVATE -Wall -Wextra -Wpedantic)
+
 option(ORC_ENABLE_RTLSDR "Enable optional system librtlsdr receiver" ON)
 if(ORC_ENABLE_RTLSDR)
   find_package(PkgConfig QUIET)
@@ -45,6 +63,10 @@ endif()
 
 include(CTest)
 if(BUILD_TESTING)
+  add_executable(orc_compact_control_test tests/compact_control_test.cpp)
+  target_link_libraries(orc_compact_control_test PRIVATE orc_zero_compact)
+  add_test(NAME compact_control_state COMMAND orc_compact_control_test)
+  add_test(NAME compact_render_snapshot COMMAND orc_zero_screenshot main "${CMAKE_CURRENT_BINARY_DIR}/orc-zero-main.ppm")
   add_executable(orc_linux_iq_test tests/metrics_test.cpp)
   target_link_libraries(orc_linux_iq_test PRIVATE orc_linux_iq)
   target_compile_options(orc_linux_iq_test PRIVATE -Wall -Wextra -Wpedantic)
