@@ -118,7 +118,11 @@ bool corrupted_and_breaks(){
 bool direct_mode_independent(){
     std::vector<std::uint8_t> wire;
     auto a=voice(SyncKind::direct_ts1_voice),b=voice(SyncKind::direct_ts2_voice);
-    wire.insert(wire.end(),a.begin(),a.end());wire.insert(wire.end(),b.begin(),b.end());
+    // GCC 15's optimized std::vector range-insert path reports a false
+    // stringop-overflow for adjacent 132-dibit array appends under -Werror.
+    // Append individual bounded dibits here; this is test-fixture setup only.
+    for(const auto dibit:a)wire.push_back(dibit);
+    for(const auto dibit:b)wire.push_back(dibit);
     const auto ev=run(wire,3);CHECK(ev.size()==2);
     CHECK(ev[0].slot==1&&ev[1].slot==2);
     for(const auto&e:ev){CHECK(e.cach_confidence==CachConfidence::none);
@@ -127,7 +131,7 @@ bool direct_mode_independent(){
     // A non-BS sync between two BS bursts cannot preserve a BS CACH lock.
     wire.clear();
     add(wire,make_cach(1),voice(SyncKind::bs_voice));
-    wire.insert(wire.end(),a.begin(),a.end());
+    for(const auto dibit:a)wire.push_back(dibit);
     add(wire,make_cach(2),voice(SyncKind::bs_voice));
     const auto mixed=run(wire,1);
     CHECK(mixed.size()==3&&not_confirmed(mixed[0])&&not_confirmed(mixed[2]));
