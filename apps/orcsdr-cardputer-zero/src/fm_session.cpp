@@ -42,7 +42,7 @@ void FmSession::set_error(const std::string& text){
 void FmSession::start(std::uint32_t device,std::uint32_t initial,std::string audio_device,bool null_audio){
   stop();
   if(initial<kFmMinHz||initial>kFmMaxHz)throw std::invalid_argument("WFM frequency outside 87.5-108 MHz");
-  audio_device_=std::move(audio_device);null_audio_=null_audio;
+  device_index_=device;audio_device_=std::move(audio_device);null_audio_=null_audio;
   requested_hz_.store(initial);muted_.store(false);volume_.store(30);
   gain_auto_.store(true);gain_request_seq_.store(0);stream_generation_.store(0);
   queue_.flush_discontinuity();
@@ -53,6 +53,10 @@ void FmSession::start(std::uint32_t device,std::uint32_t initial,std::string aud
   running_.store(true);
   dsp_thread_=std::thread(&FmSession::dsp_worker,this);
   capture_thread_=std::thread(&FmSession::capture_worker,this,device);
+}
+void FmSession::restart(std::uint32_t hz){
+  const auto device=device_index_;const auto audio=audio_device_;const bool silent=null_audio_;
+  start(device,hz,audio,silent);
 }
 void FmSession::stop(){
   running_.store(false);queue_.flush_discontinuity();wake_.notify_all();

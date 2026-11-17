@@ -118,7 +118,7 @@ void action(ControlModel& m,FmSession* session,Key key,char digit=0){
  if(session&&key==Key::reconnect){
   const auto desired=m.s.requested_hz;
   // Reconnect is deliberately explicit. Do not spin hot on unplugged hardware.
-  session->start(0,desired);session->set_volume(unsigned(m.s.volume));session->set_mute(m.s.muted);m.s.connection=Connection::connecting;
+  session->restart(desired);session->set_volume(unsigned(m.s.volume));session->set_mute(m.s.muted);m.s.connection=Connection::connecting;
  }
  if(session&&m.s.connection==Connection::ready)
   relay_controls(m,*session,session->snapshot());

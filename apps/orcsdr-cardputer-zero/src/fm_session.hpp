@@ -34,6 +34,7 @@ class FmSession {
   void start(std::uint32_t device,std::uint32_t initial_hz,
              std::string audio_device="default",bool null_audio=false);
   void stop();
+  void restart(std::uint32_t hz);
   bool request_tune(std::uint32_t hz);
   bool request_gain(bool automatic,int tenth_db);
   void set_volume(unsigned percent);
@@ -56,5 +57,6 @@ class FmSession {
   FmTelemetry state_;
   std::string audio_device_="default";
   bool null_audio_=false;
+  std::uint32_t device_index_=0;
 };
 }
