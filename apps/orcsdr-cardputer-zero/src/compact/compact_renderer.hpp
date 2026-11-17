@@ -64,18 +64,18 @@ struct CompactRenderer {
   static std::string format_mhz(uint32_t hz){char b[24];std::snprintf(b,sizeof(b),"%03u.%03u",hz/1000000,(hz%1000000)/1000);return b;}
   void render(const Snapshot& s) {
     fill(bg);
-    rect(0,0,320,16,panel);text(4,4,"OrcSDR",green,1);
-    text(64,4,"FM BROADCAST",cyan,1);
+    rect(0,0,320,16,panel);text(4,1,"OrcSDR",green,2);
+    text(80,1,"FM BROADCAST",cyan,2);
     const std::string conn=s.simulated?"DEMO":s.connection==Connection::ready?"RTL ON":s.connection==Connection::connecting?"OPEN...":"NO RX";
-    text(320-int(conn.size())*6-5,4,conn,s.connection==Connection::ready?green:yellow,1);
+    text(320-int(conn.size())*12-4,1,conn,s.connection==Connection::ready?green:yellow,2);
     const bool pending=s.requested_hz!=s.applied_hz && s.connection==Connection::ready;
     text(12,21,format_mhz(pending?s.requested_hz:(s.applied_hz?s.applied_hz:s.requested_hz)),pending?yellow:white,3);
     text(165,26,"MHZ",cyan,2);text(223,25,"WFM",green,2);
     text(223,44,pending?"TUNING":s.simulated?"SIMULATED":"MONO",pending?yellow:muted,1);
     rect(0,54,320,18,panel);
-    char buf[64];std::snprintf(buf,sizeof(buf),"STEP %uK",s.step_hz/1000);text(4,59,buf,cyan,1);
-    std::snprintf(buf,sizeof(buf),"VOL %d%%",s.volume);text(104,59,s.muted?"MUTED":buf,s.muted?yellow:green,1);
-    text(200,59,s.gain_auto?"GAIN AUTO":"GAIN MAN",white,1);
+    char buf[64];std::snprintf(buf,sizeof(buf),"STEP %uK",s.step_hz/1000);text(3,56,buf,cyan,2);
+    std::snprintf(buf,sizeof(buf),"VOL %d%%",s.volume);text(119,56,s.muted?"MUTED":buf,s.muted?yellow:green,2);
+    text(210,56,s.gain_auto?"GAIN AUTO":"GAIN MAN",white,2);
     // Visuals are NEVER synthesized in live mode. DEMO is explicit.
     if(s.live_spectrum||s.simulated){
       rect(2,72,316,39,0x0021);
@@ -84,7 +84,8 @@ struct CompactRenderer {
       // 256 source bins are mapped with the same x coordinate in spectrum and waterfall.
       int prevx=2,prevy=110;
       for(int x=0;x<316;++x){int bin=x*256/316;int amp=s.spectrum[bin];int y=109-amp*35/255;
-        if(x)line(prevx,prevy,2+x,y,green);prevx=x+2;prevy=y;}
+        if(x) line(prevx,prevy,2+x,y,green);
+        prevx=x+2;prevy=y;}
       line(160,72,160,151,yellow);
       // 36 bounded real historical rows, newest at top.
       for(int yy=0;yy<36;++yy){int sy=111+yy;if(s.waterfall_rows<=yy)break;
@@ -113,7 +114,7 @@ struct CompactRenderer {
       case Page::menu:{
         text(42,39,"ORCSDR MENU",cyan,2);
         const char* a[]={"FM RADIO","RF GAIN","AUDIO","RECEIVER","HELP"};
-        for(int i=0;i<5;++i){const int y=58+i*16;rect(40,y,240,15,i==s.menu_selection?0x1264:panel);text(50,y+4,std::string(a[i]),i==s.menu_selection?green:white,1);}
+        for(int i=0;i<5;++i){const int y=58+i*16;rect(40,y,240,15,i==s.menu_selection?0x1264:panel);text(50,y,std::string(a[i]),i==s.menu_selection?green:white,2);}
         break;}
       case Page::gain:{
         text(43,39,"RF GAIN",cyan,2);
@@ -122,7 +123,7 @@ struct CompactRenderer {
         text(44,122,"LEFT/RIGHT: SUPPORTED STEPS",muted,1);break;}
       case Page::audio:{
         text(43,39,"AUDIO OUTPUT",cyan,2);
-        text(44,75,s.audio_ready?"PCM 48K S16 MONO":"NO AUDIO DEVICE",s.audio_ready?green:yellow,1);
+        text(44,73,s.audio_ready?"PCM 48K S16 MONO":"NO AUDIO DEVICE",s.audio_ready?green:yellow,2);
         text(44,98,s.muted?"MUTED":"VOLUME "+std::to_string(s.volume)+"%",white,2);break;}
       case Page::receiver:{
         text(43,39,"RECEIVER",cyan,2);

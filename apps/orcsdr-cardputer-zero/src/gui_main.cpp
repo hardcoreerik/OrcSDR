@@ -3,6 +3,7 @@
 #include "settings.hpp"
 #include <algorithm>
 #include <cmath>
+#include <csignal>
 #include <cstdlib>
 #include <chrono>
 #include <cstdint>
@@ -25,6 +26,8 @@
 #endif
 
 namespace {
+volatile std::sig_atomic_t g_quit_signal=0;
+extern "C" void request_signal_exit(int) { g_quit_signal=1; }
 using orc::zero::ControlModel;
 using orc::zero::Key;
 using orc::zero::Connection;
@@ -156,7 +159,7 @@ int run_sdl(Options a,ControlModel& model,FmSession* session){
  if(!tex)throw std::runtime_error(SDL_GetError());
  CompactRenderer frame;
  unsigned ticks=0;
- while(!model.exit_requested){
+ while(!model.exit_requested&&!g_quit_signal){
   SDL_Event e{};
   while(SDL_PollEvent(&e)){
    if(e.type==SDL_QUIT){model.exit_requested=true;break;}
@@ -214,11 +217,15 @@ int run_fb(const Options& a,ControlModel& model,FmSession* session){
  const auto bytes=static_cast<size_t>(f.smem_len);
  auto* mapped=static_cast<std::uint8_t*>(mmap(nullptr,bytes,PROT_READ|PROT_WRITE,MAP_SHARED,fd,0));
  if(mapped==MAP_FAILED){::close(fd);throw std::runtime_error("Framebuffer mmap failed");}
+ if(!v.red.length||!v.green.length||!v.blue.length||v.red.length>8||v.green.length>8||v.blue.length>8||
+    (size_t(v.yoffset)+170)*f.line_length>bytes){
+    munmap(mapped,bytes);::close(fd);throw std::runtime_error("Unsupported framebuffer color/stride configuration");
+ }
  const int keys=choose_input(a.input);
  if(keys<0)std::cerr<<"No matching evdev keyboard. Use --input /dev/input/eventN and check device permissions.\n";
  CompactRenderer renderer;
  unsigned ticks=0;
- while(!model.exit_requested){
+ while(!model.exit_requested&&!g_quit_signal){
   if(keys>=0){pollfd pfd{keys,POLLIN,0};if(poll(&pfd,1,0)>0&&(pfd.revents&POLLIN)){
     input_event event{};
     while(::read(keys,&event,sizeof(event))==sizeof(event)){
@@ -234,21 +241,36 @@ int run_fb(const Options& a,ControlModel& model,FmSession* session){
    }}
   if(session){const auto s=session->snapshot();sync_model(model,s);relay_controls(model,*session,s);}
   renderer.render(model.s);
-  for(int y=0;y<170;++y){auto* row=mapped+y*f.line_length;
-   if(v.bits_per_pixel==16)std::memcpy(row,renderer.pixels.data()+size_t(y)*320,320*2);
-   else for(int x=0;x<320;++x){const auto color=renderer.pixels[size_t(y)*320+x];
-    const uint32_t rgb=uint32_t((color>>11)&31)*255/31<<16 |uint32_t((color>>5)&63)*255/63<<8 |uint32_t(color&31)*255/31;
-    std::memcpy(row+x*4,&rgb,sizeof(rgb));}}
+  for(int y=0;y<170;++y){
+   const auto offset=(size_t(y)+v.yoffset)*f.line_length+size_t(v.xoffset)*(v.bits_per_pixel/8);
+   if(offset+320*(v.bits_per_pixel/8)>bytes)continue;
+   auto* row=mapped+offset;
+   for(int x=0;x<320;++x){
+    const auto color=renderer.pixels[size_t(y)*320+x];
+    const unsigned r=((color>>11)&31u)*255u/31u;
+    const unsigned g=((color>>5)&63u)*255u/63u;
+    const unsigned b=(color&31u)*255u/31u;
+    const auto quant=[](unsigned value,unsigned bits){return value*((1u<<bits)-1u)/255u;};
+    const std::uint32_t encoded=(quant(r,v.red.length)<<v.red.offset)|
+      (quant(g,v.green.length)<<v.green.offset)|(quant(b,v.blue.length)<<v.blue.offset);
+    std::memcpy(row+x*(v.bits_per_pixel/8),&encoded,v.bits_per_pixel/8);
+   }
+  }
   if(++ticks==a.frames&&a.frames)break;
   std::this_thread::sleep_for(std::chrono::milliseconds(80));
  }
  if(!a.screenshot.empty())renderer.save_ppm(a.screenshot);
- if(keys>=0)::close(keys);munmap(mapped,bytes);::close(fd);return 0;
+ if(keys>=0) ::close(keys);
+ munmap(mapped,bytes);
+ ::close(fd);
+ return 0;
 }
 #endif
 }
 int main(int argc,char**argv){
  try{
+  std::signal(SIGINT,request_signal_exit);
+  std::signal(SIGTERM,request_signal_exit);
   Options a=parse(argc,argv);ControlModel model;
   orc::zero::UserSettings saved{};
   if(!a.demo&&orc::zero::load_settings(orc::zero::settings_path(),saved)){

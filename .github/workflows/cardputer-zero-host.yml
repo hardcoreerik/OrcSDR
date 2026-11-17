@@ -107,6 +107,25 @@ jobs:
           if-no-files-found: warn
           retention-days: 14
 
+  zero-vendor-gui-sdk:
+    name: Pinned Cardputer Zero vendor SDK/LVGL sources
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch and verify pinned vendor GUI SDK sources
+        run: |
+          set -o pipefail
+          bash apps/orcsdr-cardputer-zero/tools/bootstrap_vendor_sdk.sh "$RUNNER_TEMP/orc-zero-sdk" 2>&1 | tee cardputer-zero-vendor-sdk.log
+      - name: Preserve vendor toolchain provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cardputer-zero-vendor-sdk-provenance
+          path: cardputer-zero-vendor-sdk.log
+          if-no-files-found: warn
+          retention-days: 14
+
   zero-gui-audio-build:
     name: Compact native UI + audio build and simulator
     runs-on: ubuntu-24.04

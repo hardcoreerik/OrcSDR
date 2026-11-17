@@ -96,3 +96,26 @@ To serve original gzipped Web assets for LOCAL preview (radio APIs currently ret
     curl -i http://127.0.0.1:8780/api/v1/health
 
 The asset preview is NOT the full web radio service. It is always bound to 127.0.0.1 and must not be reconfigured for remote use without authenticated, encrypted access. No private Headless artifacts are included in this public repo.
+
+## Native graphical FM receiver (experimental, physical acceptance pending)
+
+Build the new `orcsdr_cardputer_zero_gui` executable alongside the existing
+`orcsdr_cardputer_zero` command line program. The native graphic path uses
+one RTL-SDR owner, the original FM/FFT source-pinned from OrcSDR-Headless,
+ALSA 48 kHz PCM, a native 320 x 170 RGB565 renderer, SDL2 desktop simulation,
+Linux fbdev and evdev keyboard input. There is no browser engine on the LCD.
+
+```bash
+bash apps/orcsdr-cardputer-zero/tools/bootstrap_gui_audio_dev.sh
+cmake -S apps/orcsdr-cardputer-zero -B build/cardputer-zero -DCMAKE_BUILD_TYPE=Release -DORC_ENABLE_GUI=ON
+cmake --build build/cardputer-zero --parallel 1
+ctest --test-dir build/cardputer-zero --output-on-failure
+./build/cardputer-zero/orcsdr_cardputer_zero_gui --demo --screenshot demo.ppm
+./build/cardputer-zero/orcsdr_cardputer_zero_gui --display fb --device 0 --audio default
+```
+
+The demo generates explicitly labeled synthetic visuals and emits **no**
+unlabelled radio reception. The physical GUI is not yet tested on a Zero;
+check real framebuffer, keyboard, ALSA speaker/headphone routing, USB
+reconnect and controlled exit before product claims. Read
+[the architecture and device handoff](../../../docs/hardware/cardputer-zero/UI_AUDIO_CONTROLS_IMPLEMENTATION.md).

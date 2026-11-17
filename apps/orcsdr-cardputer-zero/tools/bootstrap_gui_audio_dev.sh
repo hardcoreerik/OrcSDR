@@ -16,7 +16,7 @@ export DEBIAN_FRONTEND=noninteractive
   build-essential cmake ninja-build git pkg-config ca-certificates \
   libsdl2-dev libasound2-dev libevdev-dev libdrm-dev \
   libfreetype-dev libpng-dev libjpeg-dev zlib1g-dev libfmt-dev \
-  libfftw3-dev librtlsdr-dev xvfb python3 python3-pil dpkg-dev
+  libfftw3-dev librtlsdr-dev alsa-utils xvfb python3 python3-pil dpkg-dev
 if [[ ${1:-} == --cross ]]; then
   "${SUDO[@]}" apt-get install -y --no-install-recommends \
     gcc-aarch64-linux-gnu g++-aarch64-linux-gnu
