@@ -49,6 +49,11 @@ struct CatalogPackView {
 };
 
 struct State {
+  // What this device can do. The defaults are the Tab5's; a port that lacks a feature clears the flag so Settings says so instead of
+  // showing a control that does nothing.
+  bool maps_available = true;             // map packs, downloads, local maps and the location map
+  bool setup_available = true;            // the first-run setup flow (RUN SETUP)
+  bool wifi_antenna_selectable = true;    // an internal / external Wi-Fi antenna switch
   bool wifi_power_enabled = true;
   bool wifi_start_at_boot = false;
   bool wifi_external_antenna = false;

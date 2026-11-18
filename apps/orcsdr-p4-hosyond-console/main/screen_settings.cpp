@@ -215,6 +215,9 @@ const st::State& build() {
   g_state.sd_free_bytes=sd.free_bytes;
   g_state.sd_capacity_known=sd.free_known;
   g_state.companion_supported = false;
+  g_state.maps_available = false;            // no map engine on the P4 console yet (MAPS is not ported)
+  g_state.setup_available = false;           // the first-run setup flow is not ported; Settings has Location and Wi-Fi pages
+  g_state.wifi_antenna_selectable = false;   // the LilyGO has no external-antenna switch for the C6
   const auto web=web_server::status();
   g_state.web_console_enabled=web.enabled;
   g_state.web_console_listening=web.listening;

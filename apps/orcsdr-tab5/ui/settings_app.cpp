@@ -272,7 +272,8 @@ void draw_wifi_primary() {
   wifi_button("ADD HIDDEN",l.hidden,TFT_NAVY,g_state.wifi_power_enabled);
   wifi_button(g_state.wifi_power_enabled?"POWER OFF":"POWER ON",l.power,TFT_MAROON);
   wifi_button(g_state.wifi_start_at_boot?"AT BOOT: ON":"AT BOOT: OFF",l.boot,TFT_DARKGREEN);
-  wifi_button(g_state.wifi_external_antenna?"ANT: EXTERNAL":"ANT: INTERNAL",l.antenna,TFT_NAVY);
+  if(g_state.wifi_antenna_selectable) wifi_button(g_state.wifi_external_antenna?"ANT: EXTERNAL":"ANT: INTERNAL",l.antenna,TFT_NAVY);
+  else wifi_button("ANT: INTERNAL",l.antenna,TFT_NAVY,false);
 }
 void draw_wifi_saved(int i) {
   const auto l=make_connectivity_layout(g_layout.content);const auto r=l.saved[i];
@@ -517,7 +518,7 @@ void draw_compact_location() {
     wifi_button(value,l.coordinate(false),TFT_NAVY);
     snprintf(value,sizeof(value),"LON: %.7f",g_state.longitude_e7/10000000.0);
     wifi_button(value,l.coordinate(true),TFT_NAVY);
-    wifi_button("CHOOSE ON MAP",l.location_map(),TFT_DARKGREEN);
+    if(g_state.maps_available) wifi_button("CHOOSE ON MAP",l.location_map(),TFT_DARKGREEN);
   } else if(page_index()==1) {
     snprintf(value,sizeof(value),"MAP PACK: %s",g_state.map_pack[0]?g_state.map_pack:"NOT INSTALLED");
     const int used=wrapped_text(value,l.line(28,g_layout.content.w<800?240:112),kMuted);
@@ -551,7 +552,12 @@ void draw_compact_data_maps() {
   page_index()=std::min(page_index(),page_count()-1);
   const SettingsFormLayout l{g_layout.content};const int index=compact_pack_index();
   if(index<0) {
-    wrapped_text("DATA & MAPS",l.line(0),kBlue);draw_compact_catalog_status();
+    wrapped_text("DATA & MAPS",l.line(0),kBlue);
+    if(!g_state.maps_available) {   // no map engine on this device: say so, show no control that does nothing
+      wrapped_text("Map packs and map downloads are not available on this device yet.",l.catalog_status(),kMuted);
+      return;
+    }
+    draw_compact_catalog_status();
     wifi_button("LOCAL MAPS",l.catalog_local(),TFT_NAVY);
     wrapped_text("Downloads pause reception.",l.catalog_notice(),kMuted);
   } else {
@@ -1256,7 +1262,7 @@ void draw_compact_system() {
   const auto layout = system_layout();
   text("SYSTEM", layout.title.x, layout.title.y+layout.title.h/2, kBlue, 3);
   button("SET CLOCK", layout.set_clock, TFT_DARKCYAN);
-  button("RUN SETUP", layout.run_setup, TFT_NAVY);
+  if (g_state.setup_available) button("RUN SETUP", layout.run_setup, TFT_NAVY);
   if (layout.shallow) {
     if (layout.page == 0) {
       const bool local_known = g_state.rtc_valid && g_state.rtc_local[0];
@@ -2242,7 +2248,7 @@ Action handle_touch(int32_t x, int32_t y) {
       start_clock_edit();
       return {};
     }
-    if (hit(x, y, layout.run_setup)) return {ActionKind::run_setup, 0};
+    if (g_state.setup_available && hit(x, y, layout.run_setup)) return {ActionKind::run_setup, 0};
     // The shallow toggle is only 26 px tall; the rows are 30 px apart, so two pixels of slop each side stay in the gap.
     const int slop = layout.shallow ? 2 : 0;
     if (layout.has_gps_time &&
@@ -2299,7 +2305,7 @@ Action handle_touch(int32_t x, int32_t y) {
     if(page_index()==0) {
       if(hit(x,y,l.coordinate(false))) {start_edit(EditField::latitude);draw_keypad();}
       else if(hit(x,y,l.coordinate(true))) {start_edit(EditField::longitude);draw_keypad();}
-      else if(hit(x,y,l.location_map())) return {ActionKind::open_location_picker,0};
+      else if(g_state.maps_available && hit(x,y,l.location_map())) return {ActionKind::open_location_picker,0};
     } else if(page_index()==2) {
       if(hit(x,y,l.half(28)) && !g_state.ip_location_busy) {
         g_location_edit=true;set_wifi_editor_viewport();text_editor::begin("ZIP CODE OR ADDRESS",g_location_query,sizeof(g_location_query)-1,false,"LOOK UP");text_editor::draw();
@@ -2315,6 +2321,7 @@ Action handle_touch(int32_t x, int32_t y) {
   if(!g_layout.legacy && g_section==Section::data_maps) {
     const SettingsFormLayout l{g_layout.content};const int index=compact_pack_index();
     if(index<0) {
+      if(!g_state.maps_available) return {};
       if(hit(x,y,l.catalog_check()) && !g_state.catalog_busy) return {ActionKind::catalog_check,0};
       if(hit(x,y,l.catalog_local())) return {ActionKind::open_local_maps,0};
     } else {
@@ -2339,7 +2346,7 @@ Action handle_touch(int32_t x, int32_t y) {
       return {ActionKind::wifi_power_changed, g_state.wifi_power_enabled ? 0 : 1};
     if (primary(c.boot,930,262,288,48))
       return {ActionKind::wifi_start_at_boot_changed, g_state.wifi_start_at_boot ? 0 : 1};
-    if (primary(c.antenna,930,326,288,48))
+    if (g_state.wifi_antenna_selectable && primary(c.antenna,930,326,288,48))
       return {ActionKind::wifi_antenna_changed, g_state.wifi_external_antenna ? 0 : 1};
     if (!g_state.wifi_power_enabled) return {};
     if (primary(c.scan,330,198,280,48) && !g_state.wifi_scanning)
