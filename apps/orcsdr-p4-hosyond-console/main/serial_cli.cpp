@@ -32,6 +32,8 @@
 #include "nvs_flash.h"
 #include "radio_service.hpp"
 #include "orcsdr_restart.hpp"
+#include "ais_app.hpp"
+#include "ais_radio.hpp"
 #include "pocsag_dashboard.hpp"
 #include "screens.hpp"
 #include "orcsdr_storage.hpp"
@@ -378,6 +380,21 @@ void cmd_sd(char* args) {
   std::printf("RTL_SD_INVALID use STATUS | CHECK\n");
 }
 
+// RTL_AIS STATUS: the AIS screen's state (open, page) and the radio adapter's link, counters and decoder statistics.
+void cmd_ais() {
+  constexpr size_t kLine = 1400;   // PSRAM, not the console task's stack
+  char* line = static_cast<char*>(heap_caps_malloc(kLine, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!line) {
+    std::printf("RTL_AIS_STATUS error=no_memory\n");
+    return;
+  }
+  orcsdr::ais_app::describe(line, kLine);
+  std::printf("%s\n", line);
+  orcsdr::ais_radio::format_status(line, kLine);
+  std::printf("%s\n", line);
+  heap_caps_free(line);
+}
+
 void cmd_cpu() {
   static TaskStatus_t before[48], after[48];
   uint32_t t1 = 0, t2 = 0;
@@ -691,12 +708,12 @@ void cmd_ui(char* args) {
     }
     const char* name = args + 5;
     static const char* const kValid[] = {"HOME", "FM", "AM", "SHORTWAVE", "P25", "ADSB", "LORA", "RF_LAB", "WIFI_ANALYSIS",
-                                         "FT8", "SETTINGS", "WEATHER", "CB", "POCSAG", "AIRBAND", "ACARS", "DEAD_AIR",
+                                         "FT8", "AIS", "SETTINGS", "WEATHER", "CB", "POCSAG", "AIRBAND", "ACARS", "DEAD_AIR",
                                          "MARINE", "SATELLITE", "UTILITIES"};
     bool valid = false;
     for (const char* v : kValid) valid |= std::strcmp(v, name) == 0;
     if (!valid) {
-      std::printf("RTL_UI_OPEN_INVALID use HOME|FM|AM|SHORTWAVE|P25|ADSB|LORA|RF_LAB|WIFI_ANALYSIS|FT8|SETTINGS|WEATHER|CB|POCSAG|AIRBAND|ACARS|DEAD_AIR|MARINE|SATELLITE|UTILITIES\n");
+      std::printf("RTL_UI_OPEN_INVALID use HOME|FM|AM|SHORTWAVE|P25|ADSB|LORA|RF_LAB|WIFI_ANALYSIS|FT8|AIS|SETTINGS|WEATHER|CB|POCSAG|AIRBAND|ACARS|DEAD_AIR|MARINE|SATELLITE|UTILITIES\n");
       return;
     }
     if (!home_app::open_screen(name)) {
@@ -989,6 +1006,7 @@ void handle_line(char* line) {
   if (std::strncmp(line, "RTL_AUDIO ", 10) == 0) return cmd_audio(line + 10);
   if (std::strncmp(line, "RTL_UI ", 7) == 0) return cmd_ui(line + 7);
   if (std::strncmp(line,"RTL_POCSAG ",11)==0) return cmd_pocsag(line+11);
+  if (std::strcmp(line,"RTL_AIS STATUS")==0) return cmd_ais();
   if(std::strncmp(line,"RTL_LORA CONTROL ",17)==0){
     if(!authed()){std::printf("RTL_LORA_CONTROL_ERROR auth_required\n");return;}
     const char* action=line+17;unsigned control=0,value=0;

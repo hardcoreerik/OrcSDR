@@ -53,6 +53,7 @@ bool lora_control_request(unsigned control,unsigned value); // view/page/details
 bool lora_tx_page_request(unsigned page); // queued to the active UI owner
 const Screen& p25_screen();
 const Screen& ft8_screen();
+const Screen& ais_screen();
 bool p25_tune_request(uint32_t hz);
 bool p25_span_request(int step);
 
