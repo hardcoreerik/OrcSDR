@@ -1,0 +1,4 @@
+# LilyGO T-Display-P4 V1.0 AMOLED / RM69A10 / GT9895 / SX1262.
+# Apply AFTER the shared P4 console defaults: tools/lilygo.py handles the order.
+# Board profile is documentary only; display, VBUS, SD and C6 enable remain unverified.
+CONFIG_ORCSDR_BOARD_LILYGO_T_DISPLAY_P4_AMOLED=y
