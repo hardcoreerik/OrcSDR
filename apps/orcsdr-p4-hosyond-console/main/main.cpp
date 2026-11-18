@@ -47,6 +47,19 @@ extern "C" void app_main(void) {
     return;
   }
   if (!serial_cli_start(&M5.Display)) ESP_LOGE(TAG, "serial command interface failed");
+
+  // The LilyGO profile is documentation-only. Its XL9535-driven USB PHY,
+  // C6 enable, SD power, codec amplifier and native AMOLED reset lines have
+  // NOT been brought up. Keep this target in a non-radiating, no-peripheral
+  // serial/headless mode rather than starting board-specific hardware with
+  // the Waveshare defaults. This is intentionally NOT a working SDR port.
+  if (strcmp(orcsdr_board_profile()->name, "lilygo-t-display-p4-amoled") == 0) {
+    ESP_LOGW(TAG, "LilyGO safe bring-up only: USB, Wi-Fi, SD, audio, LoRa and display disabled");
+    ESP_LOGW(TAG, "Verify the actual board/revision; AMOLED and XL9535 backends remain unfinished");
+    ESP_LOGI(TAG, "boot complete (LilyGO safe headless mode)");
+    return;
+  }
+
   if (!headless && hosyond_board_touch_start() != ESP_OK) ESP_LOGE(TAG, "touch start failed");
 
   // The receiver task still takes the 4B-era command queue; tuning now goes through radio::tune().
