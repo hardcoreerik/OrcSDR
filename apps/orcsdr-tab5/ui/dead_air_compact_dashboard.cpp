@@ -32,6 +32,7 @@ struct State {
   uint16_t* waterfall = nullptr;   // PSRAM canvas, waterfall.w x waterfall.h RGB565
   float lo = -100.0f, hi = -40.0f;  // smoothed display range of the spectrum
   uint32_t epoch = 0xffffffffu;
+  uint32_t drawn_freq = 0;
   uint32_t drawn_revision = 0xffffffffu, drawn_hist_seq = 0xffffffffu, drawn_elapsed = 0xffffffffu, drawn_events = 0xffffffffu;
 };
 State* g_state = nullptr;   // PSRAM
@@ -183,6 +184,7 @@ void draw_spectrum_static(State& st) {
   char line[48];
   std::snprintf(line, sizeof(line), "%.3f MHz", s.frequency_hz / 1e6);
   button(l.frequency, line, false, false);
+  st.drawn_freq = s.frequency_hz;
   if (!s.spectrum_valid) text("waiting for the spectrum...", l.plot.x + 10, l.plot.y + l.plot.h / 2, kMuted, 0, middle_left);
 }
 
@@ -309,7 +311,15 @@ void update(const Snapshot& snapshot) {
   if (g_state == nullptr || !g_state->active) return;
   State& st = *g_state;
   st.snapshot = &snapshot;
-  if (st.page == Page::spectrum) return;   // the spectrum frames repaint this page
+  if (st.page == Page::spectrum) {   // the spectrum frames repaint the plot; only the frequency read-out is redrawn here
+    if (snapshot.frequency_hz != st.drawn_freq) {
+      st.drawn_freq = snapshot.frequency_hz;
+      char line[48];
+      std::snprintf(line, sizeof(line), "%.3f MHz", snapshot.frequency_hz / 1e6);
+      button(st.layout.frequency, line, false, false);
+    }
+    return;
+  }
   const uint32_t events = st.events ? st.events->total() : 0;
   if (snapshot.revision == st.drawn_revision && snapshot.rf_history_seq == st.drawn_hist_seq &&
       snapshot.session_elapsed_s == st.drawn_elapsed && events == st.drawn_events) return;
