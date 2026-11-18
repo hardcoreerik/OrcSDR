@@ -125,6 +125,8 @@
 #include "serial_preset.hpp"
 #include "serial_rds.hpp"
 #include "serial_ft8.hpp"
+#include "shortwave_actions.hpp"
+#include "p25_actions.hpp"
 #include "hex_codec.hpp"
 #include "session_identity.hpp"
 #include "session_journal.hpp"
@@ -10309,360 +10311,100 @@ orcsdr::shortwave::Snapshot shortwave_dashboard_snapshot() {
   return snapshot;
 }
 
+static constexpr orcsdr::action_io::Io kActionIo{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+};
+
+// The Shortwave dashboard's actions live in shortwave_actions / shortwave_library_actions; these are the device
+// operations they ask for.
+static const char* shortwave_set_tuner_gain_mode(bool automatic) {
+  return esp_rtl_sdr_err_to_name(esp_rtl_sdr_set_tuner_gain_mode(
+      g_rtl, automatic ? ESP_RTL_SDR_GAIN_MODE_AUTO : ESP_RTL_SDR_GAIN_MODE_MANUAL));
+}
+
+static bool shortwave_tuner_gain_is_auto() {
+  esp_rtl_sdr_gain_mode_t mode = ESP_RTL_SDR_GAIN_MODE_AUTO;
+  (void)esp_rtl_sdr_get_tuner_gain_mode(g_rtl, &mode);
+  return mode == ESP_RTL_SDR_GAIN_MODE_AUTO;
+}
+
+static void shortwave_snapshot_device(char* out, size_t capacity) {
+  const auto snapshot = shortwave_dashboard_snapshot();
+  strlcpy(out, snapshot.device, capacity);
+}
+
+static constexpr orcsdr::shortwave_actions::Hooks kShortwaveActionHooks{
+    kActionIo,
+    &rtl_ui_frequency_hz,
+    &rtl_shortwave_step_hz,
+    &rtl_filter_bandwidth_hz,
+    &rtl_scope_span_hz,
+    &rtl_shortwave_audio_boost,
+    &shortwave_hunt_requested,
+    &shortwave_hunt_cancel_requested,
+    &shortwave_hunt_band_index,
+    kRtlScopeSpanMinHz,
+    static_cast<int>(kRtlVolumeStep),
+    [](uint32_t hz) { return rtl_clamp_frequency(RtlBand::shortwave, hz); },
+    []() { return rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running; },
+    [](uint32_t hz) { request_hot_retune(hz); },
+    [](uint32_t hz) { queue_local_rtl_listen(RtlBand::shortwave, hz); },
+    [](uint32_t hz) { orcsdr::shortwave::note_tuned(hz); },
+    [](int direction) { return rtl_step_frequency(RtlBand::shortwave, rtl_ui_frequency_hz, direction); },
+    [](uint32_t step_hz) { return orcsdr::shortwave::next_tuning_step(step_hz); },
+    []() { rtl_audio_reset_demod_filters(); },
+    []() { reset_spectrum_renderer(); },
+    [](uint32_t hz) { return rtl_clamp_filter_hz(RtlBand::shortwave, hz); },
+    []() { return rtl_span_cap_hz(); },
+    []() { return rtl_audio_user_enabled.load(std::memory_order_acquire); },
+    [](bool enabled) { set_rtl_audio_user_enabled(enabled); },
+    [](int delta) { adjust_rtl_volume(delta); },
+    []() { return g_rtl != nullptr && rtl_tuner_gain_available(rtl_ui_frequency_hz); },
+    shortwave_tuner_gain_is_auto,
+    shortwave_set_tuner_gain_mode,
+    []() { (void)esp_rtl_sdr_set_tuner_gain_mode(g_rtl, ESP_RTL_SDR_GAIN_MODE_MANUAL); },
+    [](int tenth_db) { return esp_rtl_sdr_err_to_name(esp_rtl_sdr_set_tuner_gain(g_rtl, tenth_db)); },
+    []() { return g_rtl != nullptr && rtl_has_device_capability(ESP_RTL_SDR_CAP_RTL_AGC); },
+    [](bool enabled) { return esp_rtl_sdr_err_to_name(esp_rtl_sdr_set_rtl_agc(g_rtl, enabled)); },
+    []() { return orcsdr::shortwave::band_count(); },
+    []() { open_global_settings(orcsdr::settings::Section::radio_defaults); },
+    []() { orcsdr::shortwave::leave(); },
+    []() { show_home(); },
+    []() { refresh_active_screen(); },
+    {
+        kActionIo,
+        &shortwave_library_state,
+        []() { ensure_shortwave_library_loaded(); },
+        [](const orcsdr::shortwave::MemoryTable& memories, char* error, size_t capacity) {
+          return g_sd_fs != nullptr && orcsdr::shortwave::save_memories(*g_sd_fs, memories, error, capacity);
+        },
+        [](const orcsdr::shortwave::LogTable& logs, char* error, size_t capacity) {
+          return g_sd_fs != nullptr && orcsdr::shortwave::save_logs(*g_sd_fs, logs, error, capacity);
+        },
+        [](const orcsdr::shortwave::LogTable& logs, char* error, size_t capacity) {
+          return g_sd_fs != nullptr && orcsdr::shortwave::export_logs(*g_sd_fs, logs, error, capacity);
+        },
+        []() {
+          const auto clock = orcsdr::time_service::now();
+          return orcsdr::shortwave_library_actions::Clock{clock.utc, clock.wallclock_valid};
+        },
+        []() { return rtl_ui_frequency_hz; },
+        []() { return rtl_filter_bandwidth_hz.load(std::memory_order_relaxed); },
+        []() { return rtl_signal_dbfs_smooth; },
+        [](uint32_t frequency_hz) {
+          return orcsdr::shortwave_ssb::mode_name(orcsdr::shortwave_ssb::current(frequency_hz));
+        },
+        shortwave_snapshot_device,
+        []() { return orcsdr::shortwave::pending_memory_label(); },
+        []() { return orcsdr::shortwave::pending_memory_notes(); },
+        []() { return orcsdr::shortwave::pending_log_antenna(); },
+        []() { return orcsdr::shortwave::pending_log_notes(); },
+    },
+};
+
 void handle_shortwave_dashboard_action(const orcsdr::shortwave::Action& action) {
-  using orcsdr::shortwave::ActionKind;
-  auto tune = [](uint32_t hz) {
-    const uint32_t frequency = rtl_clamp_frequency(RtlBand::shortwave, hz);
-    orcsdr::shortwave::note_tuned(frequency);
-    if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running)
-      request_hot_retune(frequency);
-    else
-      queue_local_rtl_listen(RtlBand::shortwave, frequency);
-  };
-  switch (action.kind) {
-    case ActionKind::tune_hz: tune(static_cast<uint32_t>(action.value)); break;
-    case ActionKind::open_frequency:
-      return;  // the Shortwave dashboard opens its own keypad
-    case ActionKind::step_down:
-      tune(rtl_step_frequency(RtlBand::shortwave, rtl_ui_frequency_hz, -1));
-      break;
-    case ActionKind::step_up:
-      tune(rtl_step_frequency(RtlBand::shortwave, rtl_ui_frequency_hz, 1));
-      break;
-    case ActionKind::step_cycle:
-      rtl_shortwave_step_hz = orcsdr::shortwave::next_tuning_step(rtl_shortwave_step_hz);
-      break;
-    case ActionKind::filter_cycle: {
-      const uint32_t current = rtl_filter_bandwidth_hz.load(std::memory_order_relaxed);
-      const uint32_t next = current <= 4000u ? 6000u : current <= 6000u ? 9000u : 4000u;
-      rtl_filter_bandwidth_hz.store(next, std::memory_order_relaxed);
-      rtl_audio_reset_demod_filters();
-      reset_spectrum_renderer();
-      break;
-    }
-    case ActionKind::filter_down:
-    case ActionKind::filter_up: {
-      const uint32_t current = rtl_filter_bandwidth_hz.load(std::memory_order_relaxed);
-      const uint32_t next = action.kind == ActionKind::filter_down
-                                ? (current <= 6000u ? 4000u : 6000u)
-                                : (current < 6000u ? 6000u : 9000u);
-      rtl_filter_bandwidth_hz.store(next, std::memory_order_relaxed);
-      rtl_audio_reset_demod_filters();
-      reset_spectrum_renderer();
-      break;
-    }
-    case ActionKind::filter_bandwidth_hz:
-      rtl_filter_bandwidth_hz.store(
-          rtl_clamp_filter_hz(RtlBand::shortwave,
-                              static_cast<uint32_t>(action.value)),
-          std::memory_order_relaxed);
-      rtl_audio_reset_demod_filters();
-      reset_spectrum_renderer();
-      break;
-    case ActionKind::span_down:
-    case ActionKind::span_up: {
-      const uint32_t current = rtl_scope_span_hz.load(std::memory_order_relaxed);
-      rtl_scope_span_hz.store(action.kind == ActionKind::span_down
-                                  ? std::max(kRtlScopeSpanMinHz, current / 2)
-                                  : std::min(rtl_span_cap_hz(), current * 2),
-                              std::memory_order_relaxed);
-      reset_spectrum_renderer();
-      break;
-    }
-    case ActionKind::span_hz:
-      rtl_scope_span_hz.store(
-          std::clamp(static_cast<uint32_t>(action.value), kRtlScopeSpanMinHz,
-                     rtl_span_cap_hz()),
-          std::memory_order_relaxed);
-      reset_spectrum_renderer();
-      break;
-    case ActionKind::sound_toggle:
-      set_rtl_audio_user_enabled(!rtl_audio_user_enabled.load(std::memory_order_acquire));
-      break;
-    case ActionKind::volume_down: adjust_rtl_volume(-static_cast<int>(kRtlVolumeStep)); break;
-    case ActionKind::volume_up: adjust_rtl_volume(static_cast<int>(kRtlVolumeStep)); break;
-    case ActionKind::gain_auto:
-      if (g_rtl != nullptr && rtl_tuner_gain_available(rtl_ui_frequency_hz)) {
-        esp_rtl_sdr_gain_mode_t mode = ESP_RTL_SDR_GAIN_MODE_AUTO;
-        (void)esp_rtl_sdr_get_tuner_gain_mode(g_rtl, &mode);
-        const auto next = mode == ESP_RTL_SDR_GAIN_MODE_AUTO
-                              ? ESP_RTL_SDR_GAIN_MODE_MANUAL
-                              : ESP_RTL_SDR_GAIN_MODE_AUTO;
-        const esp_err_t result = esp_rtl_sdr_set_tuner_gain_mode(g_rtl, next);
-        Serial.printf("RTL_SHORTWAVE_TUNER_AGC enabled=%d result=%s\n",
-                      next == ESP_RTL_SDR_GAIN_MODE_AUTO,
-                      esp_rtl_sdr_err_to_name(result));
-      }
-      break;
-    case ActionKind::gain_tenth_db:
-      if (g_rtl != nullptr && rtl_tuner_gain_available(rtl_ui_frequency_hz)) {
-        (void)esp_rtl_sdr_set_tuner_gain_mode(g_rtl, ESP_RTL_SDR_GAIN_MODE_MANUAL);
-        Serial.printf("RTL_SHORTWAVE_RF_GAIN gain_tenth_db=%ld result=%s\n",
-                      static_cast<long>(action.value),
-                      esp_rtl_sdr_err_to_name(esp_rtl_sdr_set_tuner_gain(
-                          g_rtl, static_cast<int>(action.value))));
-      }
-      break;
-    case ActionKind::rtl_agc:
-      if (g_rtl != nullptr && rtl_has_device_capability(ESP_RTL_SDR_CAP_RTL_AGC))
-        Serial.printf("RTL_SHORTWAVE_RTL_AGC enabled=%ld result=%s\n",
-                      static_cast<long>(action.value),
-                      esp_rtl_sdr_err_to_name(esp_rtl_sdr_set_rtl_agc(
-                          g_rtl, action.value != 0)));
-      break;
-    case ActionKind::mode_cycle: {
-      namespace ssb = orcsdr::shortwave_ssb;
-      const auto next = ssb::next_choice(static_cast<ssb::Choice>(ssb::control().choice.load(std::memory_order_relaxed)));
-      ssb::control().choice.store(static_cast<uint8_t>(next), std::memory_order_relaxed);
-      Serial.printf("RTL_SHORTWAVE_MODE choice=%u mode=%s\n", static_cast<unsigned>(next),
-                    ssb::mode_name(ssb::current(rtl_ui_frequency_hz)));
-      break;
-    }
-    case ActionKind::clarifier_down:
-    case ActionKind::clarifier_up: {
-      namespace ssb = orcsdr::shortwave_ssb;
-      const int32_t step = action.kind == ActionKind::clarifier_up ? ssb::kClarifierStepHz : -ssb::kClarifierStepHz;
-      ssb::control().clarifier_hz.store(
-          ssb::clamp_clarifier(ssb::control().clarifier_hz.load(std::memory_order_relaxed) + step),
-          std::memory_order_relaxed);
-      break;
-    }
-    case ActionKind::audio_boost:
-      rtl_shortwave_audio_boost.store(action.value != 0, std::memory_order_release);
-      Serial.printf("RTL_SHORTWAVE_AUDIO_BOOST enabled=%ld gain_db=12\n",
-                    static_cast<long>(action.value));
-      break;
-    case ActionKind::clean_audio:
-      rtl_filter_bandwidth_hz.store(6000, std::memory_order_relaxed);
-      rtl_shortwave_audio_boost.store(false, std::memory_order_release);
-      orcsdr::shortwave::audio_dsp::apply_clean_preset();
-      orcsdr::shortwave::audio_dsp::reset();
-      rtl_audio_reset_demod_filters();
-      reset_spectrum_renderer();
-      Serial.println("RTL_SHORTWAVE_DSP clean=1 bandwidth_hz=6000 nr=low notch=auto sql=off");
-      break;
-    case ActionKind::noise_reduction_cycle:
-      orcsdr::shortwave::audio_dsp::cycle_noise_reduction();
-      Serial.printf("RTL_SHORTWAVE_DSP nr=%u\n", static_cast<unsigned>(
-          orcsdr::shortwave::audio_dsp::settings().noise_reduction));
-      break;
-    case ActionKind::auto_notch_toggle:
-      orcsdr::shortwave::audio_dsp::toggle_auto_notch();
-      Serial.printf("RTL_SHORTWAVE_DSP notch=%d\n",
-                    orcsdr::shortwave::audio_dsp::settings().auto_notch);
-      break;
-    case ActionKind::squelch_cycle:
-      orcsdr::shortwave::audio_dsp::cycle_squelch();
-      Serial.printf("RTL_SHORTWAVE_DSP squelch=%u\n", static_cast<unsigned>(
-          orcsdr::shortwave::audio_dsp::settings().squelch));
-      break;
-    case ActionKind::squelch_down:
-      orcsdr::shortwave::audio_dsp::adjust_squelch(-5);
-      break;
-    case ActionKind::squelch_up:
-      orcsdr::shortwave::audio_dsp::adjust_squelch(5);
-      break;
-    case ActionKind::hunt_start:
-      if (action.value >= 0 && static_cast<size_t>(action.value) <
-                                   orcsdr::shortwave::band_count()) {
-        shortwave_hunt_band_index.store(static_cast<uint8_t>(action.value),
-                                        std::memory_order_release);
-        shortwave_hunt_requested.store(true, std::memory_order_release);
-      }
-      break;
-    case ActionKind::hunt_cancel:
-      shortwave_hunt_requested.store(false, std::memory_order_release);
-      shortwave_hunt_cancel_requested.store(true, std::memory_order_release);
-      break;
-    case ActionKind::save_memory: {
-      ensure_shortwave_library_loaded();
-      orcsdr::shortwave::Memory memory{};
-      memory.frequency_hz = rtl_ui_frequency_hz;
-      memory.bandwidth_hz = rtl_filter_bandwidth_hz.load(std::memory_order_relaxed);
-      memory.saved_utc = orcsdr::time_service::now().utc;
-      strlcpy(memory.mode, orcsdr::shortwave_ssb::mode_name(orcsdr::shortwave_ssb::current(memory.frequency_hz)),
-              sizeof(memory.mode));
-      strlcpy(memory.station, orcsdr::shortwave::pending_memory_label(),
-              sizeof(memory.station));
-      strlcpy(memory.notes, orcsdr::shortwave::pending_memory_notes(),
-              sizeof(memory.notes));
-      const auto result = shortwave_library_state.memories.upsert(memory);
-      char error[96]{};
-      if (result == orcsdr::shortwave::RecordResult::ok && g_sd_fs != nullptr &&
-          orcsdr::shortwave::save_memories(*g_sd_fs,
-                                            shortwave_library_state.memories,
-                                            error, sizeof(error))) {
-        shortwave_library_state.status = orcsdr::shortwave::StorageStatus::ready;
-        Serial.printf("RTL_SHORTWAVE_MEMORY saved frequency_hz=%lu label=%s\n",
-                      static_cast<unsigned long>(memory.frequency_hz), memory.station);
-      } else if (result != orcsdr::shortwave::RecordResult::duplicate) {
-        if (result == orcsdr::shortwave::RecordResult::ok)
-          shortwave_library_state.memories.discard_last();
-        shortwave_library_state.status = orcsdr::shortwave::StorageStatus::write_failed;
-        Serial.printf("RTL_SHORTWAVE_MEMORY save_failed result=%u error=%s\n",
-                      static_cast<unsigned>(result), error);
-      }
-      break;
-    }
-    case ActionKind::update_memory:
-    case ActionKind::favorite_memory:
-    case ActionKind::delete_memory: {
-      ensure_shortwave_library_loaded();
-      const size_t index = action.value < 0 ? SIZE_MAX : static_cast<size_t>(action.value);
-      orcsdr::shortwave::Memory before{};
-      const auto* existing = shortwave_library_state.memories.at(index);
-      const bool had_record = existing != nullptr;
-      if (existing) before = *existing;
-      auto result = orcsdr::shortwave::RecordResult::missing;
-      if (action.kind == ActionKind::update_memory) {
-        if (existing) {
-          auto edited = *existing;
-          strlcpy(edited.station, orcsdr::shortwave::pending_memory_label(),
-                  sizeof(edited.station));
-          strlcpy(edited.notes, orcsdr::shortwave::pending_memory_notes(),
-                  sizeof(edited.notes));
-          result = shortwave_library_state.memories.replace(index, edited);
-        }
-      } else if (action.kind == ActionKind::favorite_memory) {
-        result = shortwave_library_state.memories.toggle_favorite(index);
-      } else {
-        result = shortwave_library_state.memories.erase(index);
-      }
-      char error[96]{};
-      if (result == orcsdr::shortwave::RecordResult::ok && g_sd_fs != nullptr &&
-          orcsdr::shortwave::save_memories(*g_sd_fs,
-                                            shortwave_library_state.memories,
-                                            error, sizeof(error))) {
-        shortwave_library_state.status = orcsdr::shortwave::StorageStatus::ready;
-        Serial.printf("RTL_SHORTWAVE_MEMORY changed action=%u index=%u\n",
-                      static_cast<unsigned>(action.kind),
-                      static_cast<unsigned>(index));
-      } else {
-        if (result == orcsdr::shortwave::RecordResult::ok && had_record) {
-          if (action.kind == ActionKind::delete_memory)
-            shortwave_library_state.memories.insert(index, before);
-          else
-            shortwave_library_state.memories.replace(index, before);
-        }
-        shortwave_library_state.status = orcsdr::shortwave::StorageStatus::write_failed;
-        Serial.printf("RTL_SHORTWAVE_MEMORY change_failed action=%u index=%u error=%s\n",
-                      static_cast<unsigned>(action.kind),
-                      static_cast<unsigned>(index), error);
-      }
-      break;
-    }
-    case ActionKind::save_log: {
-      ensure_shortwave_library_loaded();
-      const auto clock = orcsdr::time_service::now();
-      if (!clock.wallclock_valid) {
-        Serial.println("RTL_SHORTWAVE_LOG save_failed error=utc_clock_not_set");
-        break;
-      }
-      orcsdr::shortwave::LogEntry entry{};
-      entry.timestamp_utc = clock.utc;
-      entry.frequency_hz = rtl_ui_frequency_hz;
-      entry.bandwidth_hz = rtl_filter_bandwidth_hz.load(std::memory_order_relaxed);
-      entry.signal_dbfs = rtl_signal_dbfs_smooth;
-      strlcpy(entry.mode, orcsdr::shortwave_ssb::mode_name(orcsdr::shortwave_ssb::current(entry.frequency_hz)),
-              sizeof(entry.mode));
-      const auto snapshot = shortwave_dashboard_snapshot();
-      strlcpy(entry.device, snapshot.device, sizeof(entry.device));
-      strlcpy(entry.antenna,
-              orcsdr::shortwave::pending_log_antenna()[0]
-                  ? orcsdr::shortwave::pending_log_antenna()
-                  : "Not recorded",
-              sizeof(entry.antenna));
-      strlcpy(entry.notes, orcsdr::shortwave::pending_log_notes(), sizeof(entry.notes));
-      for (size_t i = 0; i < shortwave_library_state.memories.size(); ++i) {
-        const auto* memory = shortwave_library_state.memories.at(i);
-        if (memory && memory->frequency_hz == entry.frequency_hz) {
-          strlcpy(entry.station, memory->station, sizeof(entry.station));
-          break;
-        }
-      }
-      const auto result = shortwave_library_state.logs.append(entry);
-      char error[96]{};
-      if (result == orcsdr::shortwave::RecordResult::ok && g_sd_fs != nullptr &&
-          orcsdr::shortwave::save_logs(*g_sd_fs, shortwave_library_state.logs,
-                                      error, sizeof(error))) {
-        shortwave_library_state.status = orcsdr::shortwave::StorageStatus::ready;
-        Serial.printf("RTL_SHORTWAVE_LOG saved frequency_hz=%lu antenna=%s\n",
-                      static_cast<unsigned long>(entry.frequency_hz), entry.antenna);
-      } else {
-        if (result == orcsdr::shortwave::RecordResult::ok)
-          shortwave_library_state.logs.discard_last();
-        shortwave_library_state.status = orcsdr::shortwave::StorageStatus::write_failed;
-        Serial.printf("RTL_SHORTWAVE_LOG save_failed result=%u error=%s\n",
-                      static_cast<unsigned>(result), error);
-      }
-      break;
-    }
-    case ActionKind::update_log:
-    case ActionKind::delete_log: {
-      ensure_shortwave_library_loaded();
-      const size_t index = action.value < 0 ? SIZE_MAX : static_cast<size_t>(action.value);
-      orcsdr::shortwave::LogEntry before{};
-      const auto* existing = shortwave_library_state.logs.at(index);
-      const bool had_record = existing != nullptr;
-      if (existing) before = *existing;
-      auto result = orcsdr::shortwave::RecordResult::missing;
-      if (action.kind == ActionKind::update_log) {
-        if (existing) {
-          auto edited = *existing;
-          strlcpy(edited.antenna, orcsdr::shortwave::pending_log_antenna(),
-                  sizeof(edited.antenna));
-          strlcpy(edited.notes, orcsdr::shortwave::pending_log_notes(),
-                  sizeof(edited.notes));
-          result = shortwave_library_state.logs.replace(index, edited);
-        }
-      } else {
-        result = shortwave_library_state.logs.erase(index);
-      }
-      char error[96]{};
-      if (result == orcsdr::shortwave::RecordResult::ok && g_sd_fs != nullptr &&
-          orcsdr::shortwave::save_logs(*g_sd_fs, shortwave_library_state.logs,
-                                      error, sizeof(error))) {
-        shortwave_library_state.status = orcsdr::shortwave::StorageStatus::ready;
-        Serial.printf("RTL_SHORTWAVE_LOG changed action=%u index=%u\n",
-                      static_cast<unsigned>(action.kind),
-                      static_cast<unsigned>(index));
-      } else {
-        if (result == orcsdr::shortwave::RecordResult::ok && had_record) {
-          if (action.kind == ActionKind::delete_log)
-            shortwave_library_state.logs.insert(index, before);
-          else
-            shortwave_library_state.logs.replace(index, before);
-        }
-        shortwave_library_state.status = orcsdr::shortwave::StorageStatus::write_failed;
-        Serial.printf("RTL_SHORTWAVE_LOG change_failed action=%u index=%u error=%s\n",
-                      static_cast<unsigned>(action.kind),
-                      static_cast<unsigned>(index), error);
-      }
-      break;
-    }
-    case ActionKind::export_log: {
-      char error[96]{};
-      if (g_sd_fs != nullptr && orcsdr::shortwave::export_logs(
-                                    *g_sd_fs, shortwave_library_state.logs,
-                                    error, sizeof(error)))
-        Serial.printf("RTL_SHORTWAVE_EXPORT ok logs=%u formats=csv,adif\n",
-                      static_cast<unsigned>(shortwave_library_state.logs.size()));
-      else
-        Serial.printf("RTL_SHORTWAVE_EXPORT failed error=%s\n", error);
-      break;
-    }
-    case ActionKind::open_settings:
-      open_global_settings(orcsdr::settings::Section::radio_defaults);
-      return;
-    case ActionKind::exit_home:
-      shortwave_hunt_requested.store(false, std::memory_order_release);
-      shortwave_hunt_cancel_requested.store(true, std::memory_order_release);
-      orcsdr::shortwave::leave();
-      show_home();
-      return;
-    case ActionKind::none: break;
-  }
-  refresh_active_screen();
+  orcsdr::shortwave_actions::handle(action, kShortwaveActionHooks);
 }
 
 orcsdr::lora::Snapshot lora_dashboard_snapshot() {
@@ -10876,208 +10618,94 @@ void start_p25_survey() {
                 static_cast<unsigned>(p25_config.control_channel_count));
 }
 
+// The P25 dashboard's actions live in p25_actions; these are the device operations they ask for.
+__attribute__((noinline)) static uint16_t p25_current_talkgroup_hook() {
+  const auto decoded = orcsdr::p25decoder::snapshot();
+  return p25_follow_state.load(std::memory_order_acquire) == P25FollowState::voice
+             ? p25_follow_grant.talkgroup : decoded.current_grant.talkgroup;
+}
+
+__attribute__((noinline)) static uint16_t p25_grant_talkgroup_to_hold_hook() {
+  const auto decoded = orcsdr::p25decoder::snapshot();
+  const auto& grant = p25_follow_state.load(std::memory_order_acquire) ==
+                              P25FollowState::voice
+                          ? p25_follow_grant
+                          : decoded.current_grant;
+  return grant.valid ? grant.talkgroup : 0;
+}
+
+static bool p25_select_profile_hook(const char* id, char* error, size_t capacity) {
+  orcsdr::p25config::Config config{};
+  if (!orcsdr::p25config::select(*g_sd_fs, id, &config, &p25_profiles, error, capacity)) return false;
+  apply_p25_config(config, "P25 system selected");
+  return true;
+}
+
+static constexpr orcsdr::p25_actions::Hooks kP25ActionHooks{
+    kActionIo,
+    &p25_survey_active,
+    &p25_survey_cancel_requested,
+    &p25_hold,
+    &p25_auto_follow,
+    &p25_encryption_skip,
+    &p25_hold_talkgroup,
+    &p25_skipped_talkgroup,
+    &p25_skip_until_ms,
+    &p25_voice_frequency_hz,
+    &p25_control_frequency_hz,
+    &p25_voice_session,
+    &p25_candidate_index,
+    &p25_config,
+    &p25_profiles,
+    p25_config_status,
+    sizeof(p25_config_status),
+    &rtl_scope_span_hz,
+    kRtlScopeSpanMinHz,
+    static_cast<int>(kRtlVolumeStep),
+    []() { cancel_p25_survey(); },
+    []() { start_p25_survey(); },
+    [](uint32_t hz) { tune_p25_control(hz); },
+    [](uint32_t hz) { request_hot_retune(hz); },
+    []() { request_p25_config_save(); },
+    []() { load_p25_config(); },
+    []() { return rtl_ui_band == RtlBand::p25; },
+    []() { return static_cast<uint32_t>(millis()); },
+    []() { return p25_follow_state.load(std::memory_order_acquire) == P25FollowState::voice; },
+    []() { p25_follow_state.store(P25FollowState::control, std::memory_order_release); },
+    []() { orcsdr::p25decoder::suspend_voice(); },
+    p25_current_talkgroup_hook,
+    p25_grant_talkgroup_to_hold_hook,
+    []() { return g_sd_fs != nullptr; },
+    []() { return ensure_tab5_sd() && g_sd_fs != nullptr; },
+    p25_select_profile_hook,
+    [](const char* id, char* error, size_t capacity) {
+      return orcsdr::p25config::import_profile(*g_sd_fs, "/orcsdr/p25-import.cfg", id,
+                                               &p25_profiles, error, capacity);
+    },
+    [](const char* id, char* error, size_t capacity) {
+      return orcsdr::p25config::export_profile(*g_sd_fs, id, "/orcsdr/exports/p25-profile.cfg",
+                                               error, capacity);
+    },
+    [](char* name, size_t capacity) { return orcsdr::p25::take_profile_name(name, capacity); },
+    [](const char* id, const char* name, char* error, size_t capacity) {
+      return orcsdr::p25config::rename_profile(*g_sd_fs, id, name, &p25_profiles, error, capacity);
+    },
+    [](const char* id, char* error, size_t capacity) {
+      return orcsdr::p25config::delete_profile(*g_sd_fs, id, &p25_profiles, error, capacity);
+    },
+    []() { return rtl_span_cap_hz(); },
+    []() { reset_spectrum_renderer(); },
+    []() { return rtl_audio_user_enabled.load(std::memory_order_acquire); },
+    [](bool enabled) { set_rtl_audio_user_enabled(enabled); },
+    [](int delta) { adjust_rtl_volume(delta); },
+    []() { open_global_settings(orcsdr::settings::Section::radio_defaults); },
+    []() { orcsdr::p25::leave(); },
+    []() { show_home(); },
+    []() { refresh_active_screen(); },
+};
+
 void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
-  using orcsdr::p25::ActionKind;
-  switch (action.kind) {
-    case ActionKind::tune_hz:
-      cancel_p25_survey();
-      tune_p25_control(action.value);
-      break;
-    case ActionKind::previous_candidate:
-      if (p25_config.control_channel_count == 0) break;
-      cancel_p25_survey();
-      p25_candidate_index = static_cast<uint8_t>(
-          (p25_candidate_index + p25_config.control_channel_count - 1) %
-          p25_config.control_channel_count);
-      tune_p25_control(p25_config.control_channels_hz[p25_candidate_index]);
-      request_p25_config_save();
-      break;
-    case ActionKind::next_candidate:
-      if (p25_config.control_channel_count == 0) break;
-      cancel_p25_survey();
-      p25_candidate_index = static_cast<uint8_t>(
-          (p25_candidate_index + 1) % p25_config.control_channel_count);
-      tune_p25_control(p25_config.control_channels_hz[p25_candidate_index]);
-      request_p25_config_save();
-      break;
-    case ActionKind::survey_toggle:
-      if (p25_survey_active.load(std::memory_order_relaxed)) {
-        p25_survey_cancel_requested.store(true, std::memory_order_release);
-      } else {
-        start_p25_survey();
-      }
-      break;
-    case ActionKind::hold_toggle:
-      if (p25_hold.load(std::memory_order_relaxed)) {
-        p25_hold.store(false, std::memory_order_relaxed);
-        p25_hold_talkgroup = 0;
-      } else {
-        const auto decoded = orcsdr::p25decoder::snapshot();
-        const auto& grant = p25_follow_state.load(std::memory_order_acquire) ==
-                                    P25FollowState::voice
-                                ? p25_follow_grant
-                                : decoded.current_grant;
-        p25_hold_talkgroup = grant.valid ? grant.talkgroup : 0;
-        p25_hold.store(true, std::memory_order_relaxed);
-      }
-      Serial.printf("RTL_P25_HOLD enabled=%d tg=%u mode=%s\n",
-                    p25_hold.load(std::memory_order_relaxed) ? 1 : 0,
-                    p25_hold_talkgroup, p25_hold_talkgroup ? "talkgroup" : "next");
-      request_p25_config_save();
-      break;
-    case ActionKind::hold_talkgroup:
-      if (p25_hold.load(std::memory_order_relaxed) && p25_hold_talkgroup == action.value) {
-        p25_hold.store(false, std::memory_order_relaxed);
-        p25_hold_talkgroup = 0;
-      } else {
-        p25_hold_talkgroup = static_cast<uint16_t>(action.value);
-        p25_hold.store(true, std::memory_order_relaxed);
-      }
-      Serial.printf("RTL_P25_HOLD enabled=%d tg=%u\n",
-                    p25_hold.load(std::memory_order_relaxed) ? 1 : 0,
-                    p25_hold_talkgroup);
-      request_p25_config_save();
-      break;
-    case ActionKind::skip_talkgroup: {
-      const auto decoded = orcsdr::p25decoder::snapshot();
-      const uint16_t talkgroup =
-          p25_follow_state.load(std::memory_order_acquire) == P25FollowState::voice
-              ? p25_follow_grant.talkgroup : decoded.current_grant.talkgroup;
-      if (talkgroup != 0) {
-        p25_skipped_talkgroup = talkgroup;
-        p25_skip_until_ms = millis() + 30000;
-        Serial.printf("RTL_P25_SKIP tg=%u duration_ms=30000\n", talkgroup);
-      }
-      if (p25_follow_state.load(std::memory_order_acquire) == P25FollowState::voice) {
-        p25_follow_state.store(P25FollowState::control, std::memory_order_release);
-        orcsdr::p25decoder::suspend_voice();
-        p25_voice_session.fetch_add(1, std::memory_order_acq_rel);
-        p25_voice_frequency_hz = 0;
-        request_hot_retune(p25_control_frequency_hz);
-      }
-      break;
-    }
-    case ActionKind::auto_follow_toggle:
-      p25_auto_follow.store(!p25_auto_follow.load(std::memory_order_relaxed),
-                            std::memory_order_relaxed);
-      if (!p25_auto_follow.load(std::memory_order_relaxed) &&
-          p25_follow_state.load(std::memory_order_acquire) == P25FollowState::voice) {
-        p25_follow_state.store(P25FollowState::control, std::memory_order_release);
-        orcsdr::p25decoder::suspend_voice();
-        p25_voice_session.fetch_add(1, std::memory_order_acq_rel);
-        p25_voice_frequency_hz = 0;
-        request_hot_retune(p25_control_frequency_hz);
-      }
-      request_p25_config_save();
-      break;
-    case ActionKind::encryption_skip_toggle:
-      p25_encryption_skip.store(!p25_encryption_skip.load(std::memory_order_relaxed),
-                                std::memory_order_relaxed);
-      request_p25_config_save();
-      break;
-    case ActionKind::reload_config:
-      cancel_p25_survey();
-      load_p25_config();
-      if (rtl_ui_band == RtlBand::p25 && p25_config.control_channel_count > 0)
-        tune_p25_control(p25_control_frequency_hz);
-      break;
-    case ActionKind::select_profile: {
-      if (g_sd_fs == nullptr || action.value >= p25_profiles.count) break;
-      orcsdr::p25config::Config config{};
-      char error[64]{};
-      if (orcsdr::p25config::select(*g_sd_fs, p25_profiles.profiles[action.value].id,
-                                    &config, &p25_profiles, error, sizeof(error))) {
-        apply_p25_config(config, "P25 system selected");
-        if (rtl_ui_band == RtlBand::p25 && p25_config.control_channel_count > 0)
-          tune_p25_control(p25_control_frequency_hz);
-      } else {
-        snprintf(p25_config_status, sizeof(p25_config_status), "Select failed: %.45s", error);
-      }
-      break;
-    }
-    case ActionKind::import_profile: {
-      if (!ensure_tab5_sd() || g_sd_fs == nullptr) break;
-      char id[32] = "imported";
-      for (unsigned suffix = 1; suffix < 100; ++suffix) {
-        bool used = false;
-        for (size_t i = 0; i < p25_profiles.count; ++i)
-          used |= strcmp(p25_profiles.profiles[i].id, id) == 0;
-        if (!used) break;
-        snprintf(id, sizeof(id), "imported-%u", suffix);
-      }
-      char error[64]{};
-      if (orcsdr::p25config::import_profile(*g_sd_fs, "/orcsdr/p25-import.cfg", id,
-                                            &p25_profiles, error, sizeof(error))) {
-        load_p25_config();
-      } else {
-        snprintf(p25_config_status, sizeof(p25_config_status), "Import failed: %.45s", error);
-      }
-      break;
-    }
-    case ActionKind::export_profile: {
-      if (g_sd_fs == nullptr || action.value >= p25_profiles.count) break;
-      char error[64]{};
-      const bool ok = orcsdr::p25config::export_profile(
-          *g_sd_fs, p25_profiles.profiles[action.value].id,
-          "/orcsdr/exports/p25-profile.cfg",
-          error, sizeof(error));
-      strlcpy(p25_config_status, ok ? "Exported /orcsdr/exports/p25-profile.cfg" : error,
-              sizeof(p25_config_status));
-      break;
-    }
-    case ActionKind::rename_profile: {
-      if (g_sd_fs == nullptr || action.value >= p25_profiles.count) break;
-      char name[48]{}, error[64]{};
-      if (orcsdr::p25::take_profile_name(name, sizeof(name)) &&
-          orcsdr::p25config::rename_profile(*g_sd_fs, p25_profiles.profiles[action.value].id,
-                                            name, &p25_profiles, error, sizeof(error)))
-        load_p25_config();
-      else if (error[0])
-        snprintf(p25_config_status, sizeof(p25_config_status), "Rename failed: %.45s", error);
-      break;
-    }
-    case ActionKind::delete_profile: {
-      if (g_sd_fs == nullptr || action.value >= p25_profiles.count) break;
-      char id[32]{}, error[64]{};
-      strlcpy(id, p25_profiles.profiles[action.value].id, sizeof(id));
-      if (orcsdr::p25config::delete_profile(*g_sd_fs, id, &p25_profiles,
-                                            error, sizeof(error)))
-        load_p25_config();
-      else
-        snprintf(p25_config_status, sizeof(p25_config_status), "Delete failed: %.45s", error);
-      break;
-    }
-    case ActionKind::span_down:
-    case ActionKind::span_up: {
-      const uint32_t current = rtl_scope_span_hz.load(std::memory_order_relaxed);
-      rtl_scope_span_hz.store(
-          action.kind == ActionKind::span_down
-              ? std::max(kRtlScopeSpanMinHz, current / 2)
-              : std::min(rtl_span_cap_hz(), current * 2),
-          std::memory_order_relaxed);
-      reset_spectrum_renderer();
-      break;
-    }
-    case ActionKind::sound_toggle:
-      set_rtl_audio_user_enabled(
-          !rtl_audio_user_enabled.load(std::memory_order_acquire));
-      break;
-    case ActionKind::volume_down:
-      adjust_rtl_volume(-static_cast<int>(kRtlVolumeStep));
-      break;
-    case ActionKind::volume_up:
-      adjust_rtl_volume(static_cast<int>(kRtlVolumeStep));
-      break;
-    case ActionKind::open_device_settings:
-      open_global_settings(orcsdr::settings::Section::radio_defaults);
-      break;
-    case ActionKind::exit_to_home:
-      orcsdr::p25::leave();
-      show_home();
-      break;
-    case ActionKind::none: break;
-  }
-  refresh_active_screen();
+  orcsdr::p25_actions::handle(action, kP25ActionHooks);
 }
 
 void service_lora_survey(uint32_t now) {
