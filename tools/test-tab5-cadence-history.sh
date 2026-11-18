@@ -41,6 +41,8 @@ run serial_ft8 tests/serial_ft8_tests.cpp "$ui/serial_ft8.cpp" "$ui/serial_ft8_i
 run shortwave_actions tests/shortwave_actions_tests.cpp "$ui/shortwave_actions.cpp" "$ui/shortwave_library_actions.cpp" "$ui/action_io.cpp" "$ui/shortwave_model.cpp" "$ui/shortwave_ssb.cpp" "$ui/shortwave_audio_dsp.cpp"
 run p25_actions tests/p25_actions_tests.cpp "$ui/p25_actions.cpp" "$ui/action_io.cpp"
 run spectrum_compute tests/spectrum_compute_tests.cpp "$ui/spectrum_compute.cpp"
+run rtl_autostart tests/rtl_autostart_tests.cpp "$ui/rtl_autostart.cpp"
+run wifi_supervisor tests/wifi_supervisor_tests.cpp "$ui/wifi_supervisor.cpp" "$ui/action_io.cpp"
 run serial_help tests/serial_help_tests.cpp "$ui/serial_help.cpp"
 run serial_memory tests/serial_memory_tests.cpp "$ui/serial_memory.cpp" "$ui/memory_ledger.cpp" "$ui/memory_reclaim.cpp"
 run serial_keyboard tests/serial_keyboard_tests.cpp "$ui/serial_keyboard.cpp"

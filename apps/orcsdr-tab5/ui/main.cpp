@@ -127,6 +127,8 @@
 #include "serial_ft8.hpp"
 #include "shortwave_actions.hpp"
 #include "spectrum_compute.hpp"
+#include "rtl_autostart.hpp"
+#include "wifi_supervisor.hpp"
 #include "p25_actions.hpp"
 #include "hex_codec.hpp"
 #include "session_identity.hpp"
@@ -8468,17 +8470,23 @@ static void rtl_driver_app_task(void *) {
     // the stream. Once per boot, and only when the saved server is usable.
     // A first attempt that fails (server off, wrong address) is retried every 30 s with the band the user last asked
     // for, so a server that comes up later is picked up without a reboot.
-    static bool remote_boot_started = false;
-    static uint32_t remote_boot_retry_ms = 0;
-    const RtlCaptureState boot_state = rtl_capture_state.load(std::memory_order_acquire);
-    const bool boot_retry = remote_boot_started && boot_state == RtlCaptureState::failed &&
-                            millis() - remote_boot_retry_ms >= 30000u;
-    if ((!remote_boot_started || boot_retry) && rtl_boot_complete.load(std::memory_order_acquire) &&
-        !radio_io_paused() && !rtl_usb_device_ready() && rtl_remote_source_ready() &&
-        boot_state != RtlCaptureState::running && boot_state != RtlCaptureState::queued &&
-        !rtl_capture_requested.load(std::memory_order_acquire)) {
-      remote_boot_started = true;
-      remote_boot_retry_ms = millis();
+    static orcsdr::rtl_autostart::State remote_boot;
+    static constexpr orcsdr::rtl_autostart::Hooks kRemoteBootHooks{
+        []() { return static_cast<uint32_t>(millis()); },
+        []() { return rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::failed; },
+        []() { return rtl_boot_complete.load(std::memory_order_acquire); },
+        []() { return radio_io_paused(); },
+        []() { return rtl_usb_device_ready(); },
+        []() { return rtl_remote_source_ready(); },
+        []() {
+          const RtlCaptureState state = rtl_capture_state.load(std::memory_order_acquire);
+          return state == RtlCaptureState::running || state == RtlCaptureState::queued;
+        },
+        []() { return rtl_capture_requested.load(std::memory_order_acquire); },
+    };
+    const auto boot_start = orcsdr::rtl_autostart::decide(remote_boot, kRemoteBootHooks);
+    if (boot_start != orcsdr::rtl_autostart::Start::none) {
+      const bool boot_retry = boot_start == orcsdr::rtl_autostart::Start::retry;
       rtl_stop_requested.store(false, std::memory_order_release);
       // A dashboard opened before the stream could start (FT8, ACARS...) recorded its band here: start that one, not
       // FM, or its decoder sits on a stream of the wrong rate.
@@ -9557,95 +9565,53 @@ void recover_wifi_link() {
   draw_wifi_state();
 }
 
-void poll_wifi() {
-  static bool link_failure_handled = false;
-  if (!settings_wifi_power_enabled) {
-    wifi_scan_requested.store(false, std::memory_order_release);
-    wifi_connect_requested.store(false, std::memory_order_release);
-    return;
-  }
-  // Detect transport failure even when no station operation is active. Handle
-  // it once before ordinary RPCs; repeated polling must not postpone recovery.
-  if (orcsdr::wifi::link_failed() && !link_failure_handled) {
-    link_failure_handled = true;
-    wifi_station_ready = false;
-    wifi_connected = false;
-    wifi_connecting = false;
-    wifi_scan_running = false;
-    wifi_reconnect_due_ms = 0;
-    Serial.println("RTL_WIFI_LINK_LOST");
-    resume_radio_after_io(wifi_connect_radio_paused);
-    if (wifi_link_recoveries < kWifiLinkRecoveryMax) {
-      strlcpy(wifi_status_message, "Wi-Fi link lost - recovering", sizeof(wifi_status_message));
-      wifi_link_recovery_due_ms = millis() + 2000;
-    } else {
-      strlcpy(wifi_status_message, "Wi-Fi link lost - restart Wi-Fi", sizeof(wifi_status_message));
-    }
-    ++wifi_scan_revision;
-    draw_wifi_state();
-  }
-  // A link that has stayed up for 5 minutes earns back its recovery budget,
-  // so long-running devices keep recovering while a flapping C6 cannot loop.
-  if (wifi_link_recoveries && wifi_connected && wifi_connected_since_ms &&
-      millis() - wifi_connected_since_ms >= 300000u) {
-    wifi_link_recoveries = 0;
-  }
-  if (wifi_link_recovery_due_ms != 0 &&
-      static_cast<int32_t>(millis() - wifi_link_recovery_due_ms) >= 0) {
-    wifi_link_recovery_due_ms = 0;
-    recover_wifi_link();
-  }
-  // Evidence for the Wi-Fi wedge: one line a minute while a remote receiver may depend on Wi-Fi, so a long soak shows what changed
-  // before Wi-Fi died (link flags, retry budgets, how long it has been down, internal DMA RAM).
-  static uint32_t down_since_ms = 0;
-  static uint32_t last_rearm_ms = 0;
-  static uint32_t last_health_ms = 0;
+static constexpr orcsdr::action_io::Io kActionIo{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+};
+
+// The Wi-Fi supervision rules live in wifi_supervisor; these are the variables and device calls they use.
+static const orcsdr::wifi_supervisor::Vars kWifiSupervisorVars{
+    &wifi_station_ready, &wifi_connected, &wifi_connecting, &wifi_scan_running, &wifi_auto_reconnect_armed,
+    &wifi_save_after_connect, &wifi_link_recoveries, &wifi_reconnect_attempts, &wifi_link_recovery_due_ms,
+    &wifi_reconnect_due_ms, &wifi_connected_since_ms, &wifi_scan_revision, kWifiLinkRecoveryMax,
+};
+
+static bool wifi_remote_may_need_wifi() {
   const auto source_mode = orcsdr::rtl_tcp_source::mode();
-  const bool remote_may_need_wifi =
-      orcsdr::rtl_tcp_source::configured() &&
-      (source_mode == orcsdr::source::Mode::remote_tcp ||
-       (source_mode == orcsdr::source::Mode::automatic && !rtl_usb_device_ready()));
-  if (wifi_connected) down_since_ms = 0;
-  else if (down_since_ms == 0) down_since_ms = millis() | 1u;
-  if (remote_may_need_wifi && millis() - last_health_ms >= 60000u) {
-    last_health_ms = millis();
-    Serial.printf("RTL_WIFI_HEALTH connected=%d ready=%d link_failed=%d reconnect_attempts=%u recoveries=%u down_s=%lu "
-                  "dma_free=%lu stream=%s\n",
-                  wifi_connected ? 1 : 0, wifi_station_ready ? 1 : 0, orcsdr::wifi::link_failed() ? 1 : 0,
-                  static_cast<unsigned>(wifi_reconnect_attempts), static_cast<unsigned>(wifi_link_recoveries),
-                  static_cast<unsigned long>(down_since_ms ? (millis() - down_since_ms) / 1000u : 0u),
-                  static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)),
-                  orcsdr::rtl_tcp::state_name(orcsdr::rtl_tcp_source::state()));
-  }
-  // Optional (Settings > RTL_TCP, off by default): reconnect and C6 link recovery are bounded, so a Wi-Fi outage longer than about
-  // four minutes (an access point restarting) left the Tab5 offline until someone reset it. With this on, a remote receiver's Wi-Fi
-  // gets a fresh budget every 5 minutes it stays down. It reuses the existing reconnect and recovery paths.
-  if (remote_may_need_wifi && orcsdr::rtl_tcp_source::wifi_keepalive() && !wifi_connected && !wifi_connecting &&
-      !wifi_scan_running && down_since_ms != 0 && millis() - down_since_ms >= 300000u &&
-      millis() - last_rearm_ms >= 300000u) {
-    last_rearm_ms = millis();
-    wifi_link_recoveries = 0;
-    wifi_reconnect_attempts = 0;
-    Serial.printf("RTL_WIFI_KEEPALIVE rearm down_s=%lu link_failed=%d\n",
-                  static_cast<unsigned long>((millis() - down_since_ms) / 1000u),
-                  orcsdr::wifi::link_failed() ? 1 : 0);
-    if (orcsdr::wifi::link_failed()) link_failure_handled = false;  // run the C6 link recovery again
-    else schedule_wifi_reconnect("keepalive");
-  }
-  resume_deferred_radio();
-  if (orcsdr::wifi::link_failed() || wifi_link_recovery_due_ms != 0) return;
-  link_failure_handled = false;
-  if (wifi_reconnect_due_ms != 0 &&
-      static_cast<int32_t>(millis() - wifi_reconnect_due_ms) >= 0 &&
-      !wifi_connecting && !wifi_connected && !wifi_scan_running) {
-    wifi_reconnect_due_ms = 0;
-    if (wifi_auto_reconnect_armed && wifi_profile_count) {
-      if (!wifi_ssid[0]) select_wifi_profile(0);
-      wifi_save_after_connect = false;
-      wifi_connect_requested.store(true, std::memory_order_release);
-      Serial.printf("RTL_WIFI_RECONNECT attempt=%u\n", static_cast<unsigned>(wifi_reconnect_attempts));
-    }
-  }
+  return orcsdr::rtl_tcp_source::configured() &&
+         (source_mode == orcsdr::source::Mode::remote_tcp ||
+          (source_mode == orcsdr::source::Mode::automatic && !rtl_usb_device_ready()));
+}
+
+static constexpr orcsdr::wifi_supervisor::Hooks kWifiSupervisorHooks{
+    kActionIo,
+    []() { return static_cast<uint32_t>(millis()); },
+    []() { return settings_wifi_power_enabled; },
+    []() {
+      wifi_scan_requested.store(false, std::memory_order_release);
+      wifi_connect_requested.store(false, std::memory_order_release);
+    },
+    []() { return orcsdr::wifi::link_failed(); },
+    []() { resume_radio_after_io(wifi_connect_radio_paused); },
+    [](const char* text) { strlcpy(wifi_status_message, text, sizeof(wifi_status_message)); },
+    []() { draw_wifi_state(); },
+    []() { recover_wifi_link(); },
+    wifi_remote_may_need_wifi,
+    []() { return static_cast<uint32_t>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)); },
+    []() { return orcsdr::rtl_tcp::state_name(orcsdr::rtl_tcp_source::state()); },
+    []() { return orcsdr::rtl_tcp_source::wifi_keepalive(); },
+    [](const char* why) { schedule_wifi_reconnect(why); },
+    []() { resume_deferred_radio(); },
+    []() { return wifi_ssid[0] == '\0'; },
+    []() { return wifi_profile_count; },
+    []() { select_wifi_profile(0); },
+    []() { wifi_connect_requested.store(true, std::memory_order_release); },
+};
+
+void poll_wifi() {
+  static orcsdr::wifi_supervisor::State wifi_supervision;
+  if (!orcsdr::wifi_supervisor::service(wifi_supervision, kWifiSupervisorVars, kWifiSupervisorHooks)) return;
   if (wifi_scan_requested.exchange(false, std::memory_order_acq_rel)) start_wifi_inventory();
   if (wifi_connect_requested.exchange(false, std::memory_order_acq_rel)) {
     // Issue #66: Hosted connect while SDR URBs are live is intermittent
@@ -10230,11 +10196,6 @@ orcsdr::shortwave::Snapshot shortwave_dashboard_snapshot() {
   }
   return snapshot;
 }
-
-static constexpr orcsdr::action_io::Io kActionIo{
-    [](const char* text) { Serial.print(text); },
-    [](const char* text) { Serial.println(text); },
-};
 
 // The Shortwave dashboard's actions live in shortwave_actions / shortwave_library_actions; these are the device
 // operations they ask for.
