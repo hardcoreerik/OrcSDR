@@ -2,12 +2,15 @@
 // the service's snapshot; nothing is synthetic.
 #include "maps_compact_dashboard.hpp"
 #include "dashboard_audio_control.hpp"
+#include "map_pipeline.hpp"
 #include "map_service.hpp"
+#include "orcmap/location_picker.hpp"
 
 #include <M5Unified.h>
 #include <esp_heap_caps.h>
 
 #include <algorithm>
+#include <cmath>
 #include <cstdio>
 #include <cstring>
 #include <new>
@@ -21,6 +24,11 @@ struct State {
   cmp::Layout layout;
   maps::MapSnapshot snap;
   size_t page = 0;
+  bool picker_mode = false, picker_ready = false;
+  orcmap::LocationPicker picker;
+  int32_t start_lat = 0, start_lon = 0;
+  uint32_t map_revision = 0xffffffffu;
+  maps::FrameInfo info;
   uint32_t shown_revision = 0xffffffffu;
   bool active = false;
 };
@@ -88,7 +96,10 @@ void draw_header(State& st) {
   if (g_header_controls) g_header_controls();
 }
 
+void draw_picker(State& st);
+
 void draw_body(State& st) {
+  if (st.picker_mode) { draw_picker(st); return; }
   const auto& l = st.layout;
   const auto& s = st.snap;
   M5.Display.fillRect(l.content.x, l.content.y, l.content.w, l.content.h, TFT_BLACK);
@@ -118,11 +129,48 @@ void draw_body(State& st) {
     clip(info, r.w - 20 - 90);
     text(info, r.x + 10, r.y + r.h * 3 / 4, p.usable ? kGreen : kAmber, 0, middle_left);
   }
-  std::snprintf(line, sizeof(line), "%u/%u", unsigned(st.page + 1), unsigned(pages));
+  std::snprintf(line, sizeof(line), "PAGE %u/%u", unsigned(st.page + 1), unsigned(pages));
+  text(line, l.summary.x + l.summary.w - 6, l.summary.y + l.summary.h / 2, kMuted, 0, middle_right);
   button(l.prev, "PREV", st.page > 0);
-  button(l.label, line, false);
+  button(l.label, "LOCATION", true);
   button(l.next, "NEXT", st.page + 1 < pages);
   button(l.rescan, "RESCAN", true);
+}
+
+void draw_picker_map(State& st) {
+  const auto& l = st.layout;
+  st.map_revision = maps::revision();
+  if (!st.picker_ready) {
+    M5.Display.fillRect(l.pick_map.x, l.pick_map.y, l.pick_map.w, l.pick_map.h, kPanel);
+    text("Map camera unavailable", l.pick_map.x + 10, l.pick_map.y + 20, kAmber, 0, middle_left);
+    return;
+  }
+  const maps::Frame state = maps::draw(st.picker.View(), M5.Display, l.pick_map.x, l.pick_map.y, &st.info, nullptr, true);
+  if (state != maps::Frame::ready) {
+    M5.Display.fillRect(l.pick_map.x, l.pick_map.y, l.pick_map.w, l.pick_map.h, kPanel);
+    text(state == maps::Frame::pending ? "Loading offline map..." : "No basemap installed. Install a map pack first.",
+         l.pick_map.x + 10, l.pick_map.y + 20, kAmber, 0, middle_left);
+  }
+  const int cx = l.pick_map.x + l.pick_map.w / 2, cy = l.pick_map.y + l.pick_map.h / 2;
+  M5.Display.drawLine(cx - 14, cy, cx + 14, cy, kCyan);
+  M5.Display.drawLine(cx, cy - 14, cx, cy + 14, kCyan);
+  M5.Display.drawRect(l.pick_map.x, l.pick_map.y, l.pick_map.w, l.pick_map.h, kGrid);
+}
+
+void draw_picker(State& st) {
+  const auto& l = st.layout;
+  M5.Display.fillRect(l.content.x, l.content.y, l.content.w, l.content.h, TFT_BLACK);
+  char line[64] = "NO POINT";
+  if (st.picker_ready) {
+    const auto p = st.picker.Selection();
+    std::snprintf(line, sizeof(line), "%.4f  %.4f   Z%u", p.lat_deg, p.lon_deg, unsigned(st.picker.Zoom()));
+  }
+  text(line, l.summary.x + 6, l.summary.y + l.summary.h / 2, kGreen, 1, middle_left);
+  draw_picker_map(st);
+  button(l.prev, "ZOOM -", st.picker_ready);
+  button(l.label, "ZOOM +", st.picker_ready);
+  button(l.next, "BACK", true);
+  button(l.rescan, "USE", st.picker_ready);
 }
 
 void refresh(State& st) {
@@ -149,6 +197,16 @@ void draw() {
   if (g_state == nullptr || !g_state->layout.valid) return;
   State& st = *g_state;
   refresh(st);
+  if (st.picker_mode) {   // the view changed size (rotation): rebuild the camera for the new map area at the chosen point
+    int32_t lat = st.start_lat, lon = st.start_lon;
+    if (st.picker_ready) {
+      const auto p = st.picker.Selection();
+      lat = static_cast<int32_t>(std::llround(p.lat_deg * 1e7));
+      lon = static_cast<int32_t>(std::llround(p.lon_deg * 1e7));
+    }
+    st.picker_ready = maps::begin_location_picker(st.picker, st.layout.pick_map.w, st.layout.pick_map.h, lat, lon);
+    st.map_revision = 0xffffffffu;
+  }
   M5.Display.fillRect(st.layout.viewport.x, st.layout.viewport.y, st.layout.viewport.w, st.layout.viewport.h, TFT_BLACK);
   draw_header(st);
   draw_body(st);
@@ -158,6 +216,7 @@ bool enter() {
   if (g_state == nullptr || !g_state->layout.valid) return false;
   g_state->active = true;
   g_state->page = 0;
+  g_state->picker_mode = false;
   draw();
   return true;
 }
@@ -167,9 +226,37 @@ void update() {
   State& st = *g_state;
   maps::MapSnapshot& s = st.snap;
   const uint32_t rev = maps::revision();
+  if (st.picker_mode) {
+    if (rev != st.map_revision) draw_picker_map(st);
+    return;
+  }
   if (rev == st.shown_revision && s.loaded) return;
   refresh(st);
   draw_body(st);
+}
+
+void set_start_location(int32_t latitude_e7, int32_t longitude_e7) {
+  if (g_state == nullptr) return;
+  g_state->start_lat = latitude_e7;
+  g_state->start_lon = longitude_e7;
+}
+
+bool open_picker() {
+  if (g_state == nullptr || !g_state->active) return false;
+  State& st = *g_state;
+  st.picker_ready = maps::begin_location_picker(st.picker, st.layout.pick_map.w, st.layout.pick_map.h, st.start_lat, st.start_lon);
+  st.picker_mode = true;
+  st.map_revision = 0xffffffffu;
+  draw_body(st);
+  return true;
+}
+
+bool selection(int32_t* latitude_e7, int32_t* longitude_e7) {
+  if (g_state == nullptr || !g_state->picker_ready) return false;
+  const auto p = g_state->picker.Selection();
+  *latitude_e7 = static_cast<int32_t>(std::llround(p.lat_deg * 1e7));
+  *longitude_e7 = static_cast<int32_t>(std::llround(p.lon_deg * 1e7));
+  return true;
 }
 
 void leave() {
@@ -180,6 +267,17 @@ Action touch(int x, int y) {
   if (g_state == nullptr || !g_state->active) return Action::none;
   State& st = *g_state;
   const auto& l = st.layout;
+  if (st.picker_mode) {
+    if (hit(x, y, l.next)) { st.picker_mode = false; draw_body(st); }
+    else if (hit(x, y, l.rescan) && st.picker_ready) return Action::use_location;
+    else if (hit(x, y, l.prev) && st.picker_ready) { if (st.picker.ZoomOut()) draw_picker(st); }
+    else if (hit(x, y, l.label) && st.picker_ready) { if (st.picker.ZoomIn()) draw_picker(st); }
+    else if (hit(x, y, l.pick_map) && st.picker_ready) {
+      if (st.picker.RecenterAtScreen(x - l.pick_map.x, y - l.pick_map.y)) draw_picker(st);
+    }
+    return Action::none;
+  }
+  if (hit(x, y, l.label)) { open_picker(); return Action::none; }
   if (hit(x, y, l.rescan)) { maps::rescan(); st.shown_revision = 0xffffffffu; return Action::rescan; }
   const size_t per = size_t(l.rows);
   const size_t pages = std::max<size_t>(1, (st.snap.count + per - 1) / per);

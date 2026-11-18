@@ -254,7 +254,7 @@ const st::State& build() {
   g_state.companion_supported = false;
   g_state.catalog_available = true;          // the signed data catalog (shared catalog_sync)
   g_state.maps_available = true;             // LOCAL MAPS opens the compact map-pack list (screen_maps.cpp)
-  g_state.location_map_available = false;    // the location map picker is not ported yet
+  g_state.location_map_available = true;     // CHOOSE ON MAP opens the MAPS screen on its LOCATION page
   g_state.setup_available = false;           // the first-run setup flow is not ported; Settings has Location and Wi-Fi pages
   g_state.wifi_antenna_selectable = false;   // the LilyGO has no external-antenna switch for the C6
   const auto web=web_server::status();
@@ -328,6 +328,7 @@ void tap(int x, int y) {
     case st::ActionKind::web_console_changed: (void)web_server::set_enabled(a.value!=0);break;
     case st::ActionKind::wifi_start_at_boot_changed: wifi_app::set_start_at_boot(a.value != 0); break;
     case st::ActionKind::scan_wifi: (void)wifi_app::request_scan(); break;
+    case st::ActionKind::open_location_picker: screens::maps_request_picker(); home_app::request_open(orcsdr::dashboards::Id::count); break;
     case st::ActionKind::open_local_maps: home_app::request_open(orcsdr::dashboards::Id::count); break;   // the MAPS screen
     case st::ActionKind::connect_wifi: {
       char ssid[33]{}, password[64]{};
@@ -390,6 +391,15 @@ void tap(int x, int y) {
 }  // namespace
 
 namespace screens {
+// The MAPS screen's USE: stores the picked point as the receiver location (NVS and the shared receiver_location), as the IP lookup does.
+void settings_set_location(int32_t lat_e7, int32_t lon_e7) {
+  if (!g_loaded) load();
+  g_state.location_configured = true;
+  g_state.latitude_e7 = lat_e7;
+  g_state.longitude_e7 = lon_e7;
+  std::snprintf(g_state.location_label, sizeof(g_state.location_label), "Map point");
+  persist_location(true, lat_e7, lon_e7, g_state.location_label);
+}
 void apply_saved_location() { load_location(); }
 const Screen& settings_screen() {
   static const Screen s{orcsdr::dashboards::Id::settings, "SETTINGS", enter, leave, tick, tap, nullptr, nullptr, nullptr, resize};

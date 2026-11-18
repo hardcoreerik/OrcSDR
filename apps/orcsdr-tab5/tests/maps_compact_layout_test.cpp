@@ -22,6 +22,8 @@ static void check(Rect v) {
     assert(inside(l.content, all[i]));
     for (int j = i + 1; j < n; ++j) assert(!overlap(all[i], all[j]));
   }
+  assert(inside(l.content, l.pick_map) && !overlap(l.pick_map, l.summary) && !overlap(l.pick_map, l.prev) && !overlap(l.pick_map, l.rescan));
+  assert(l.pick_map.w >= 300 && l.pick_map.h >= 150 && l.pick_map.w <= 1280 && l.pick_map.h <= 720);
   for (Rect b : {l.prev, l.next, l.rescan}) assert(b.w >= 44 && b.h >= 44);
   for (int i = 0; i < l.rows; ++i) assert(l.row[i].h >= 44);
 }

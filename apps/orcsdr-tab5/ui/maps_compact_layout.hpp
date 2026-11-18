@@ -11,6 +11,7 @@ constexpr int kRows = 6;
 
 struct Layout {
   Rect viewport, content, summary, row[kRows], prev, label, next, rescan;
+  Rect pick_map;   // LOCATION page: the map; its buttons reuse prev (zoom -), label (zoom +), next (back), rescan (use)
   int rows = 0;   // 6 in portrait, 3 in landscape (the rows below `rows` are empty)
   bool portrait = false, valid = false;
 };
@@ -37,11 +38,14 @@ inline Layout make_layout(Rect v) {
   l.next = {v.x + 2 * (bw + gap), btn_y, bw, btn_h};
   l.rescan = {v.x + 3 * (bw + gap), btn_y, v.w - 3 * (bw + gap), btn_h};
   const int top = l.summary.y + l.summary.h + gap;
+  // The map library's picker takes at most 1280 x 720 pixels.
+  l.pick_map = {v.x, l.summary.y + l.summary.h + gap, v.w, std::min(720, btn_y - gap - (l.summary.y + l.summary.h + gap))};
   l.rows = l.portrait ? kRows : 3;
   const int rows_h = btn_y - gap - top;
   const int rh = (rows_h - (l.rows - 1) * gap) / l.rows;
   for (int i = 0; i < l.rows; ++i) l.row[i] = {v.x, top + i * (rh + gap), v.w, rh};
-  l.valid = rh >= 44 && inside(l.content, l.summary) && inside(l.content, l.row[l.rows - 1]) && inside(l.content, l.rescan);
+  l.valid = rh >= 44 && inside(l.content, l.summary) && inside(l.content, l.row[l.rows - 1]) && inside(l.content, l.rescan) &&
+            inside(l.content, l.pick_map) && l.pick_map.w >= 300 && l.pick_map.h >= 150;
   return l;
 }
 }  // namespace orcsdr::maps_ui::compact
