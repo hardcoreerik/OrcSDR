@@ -774,12 +774,12 @@ void cmd_ui(char* args) {
     }
     const char* name = args + 5;
     static const char* const kValid[] = {"HOME", "FM", "AM", "SHORTWAVE", "P25", "ADSB", "LORA", "RF_LAB", "WIFI_ANALYSIS",
-                                         "FT8", "AIS", "SSTV", "SETTINGS", "WEATHER", "CB", "POCSAG", "AIRBAND", "ACARS", "DEAD_AIR",
+                                         "FT8", "AIS", "SSTV", "MAPS", "SETTINGS", "WEATHER", "CB", "POCSAG", "AIRBAND", "ACARS", "DEAD_AIR",
                                          "MARINE", "SATELLITE", "UTILITIES"};
     bool valid = false;
     for (const char* v : kValid) valid |= std::strcmp(v, name) == 0;
     if (!valid) {
-      std::printf("RTL_UI_OPEN_INVALID use HOME|FM|AM|SHORTWAVE|P25|ADSB|LORA|RF_LAB|WIFI_ANALYSIS|FT8|AIS|SSTV|SETTINGS|WEATHER|CB|POCSAG|AIRBAND|ACARS|DEAD_AIR|MARINE|SATELLITE|UTILITIES\n");
+      std::printf("RTL_UI_OPEN_INVALID use HOME|FM|AM|SHORTWAVE|P25|ADSB|LORA|RF_LAB|WIFI_ANALYSIS|FT8|AIS|SSTV|MAPS|SETTINGS|WEATHER|CB|POCSAG|AIRBAND|ACARS|DEAD_AIR|MARINE|SATELLITE|UTILITIES\n");
       return;
     }
     if (!home_app::open_screen(name)) {

@@ -253,7 +253,8 @@ const st::State& build() {
   g_state.sd_capacity_known=sd.free_known;
   g_state.companion_supported = false;
   g_state.catalog_available = true;          // the signed data catalog (shared catalog_sync)
-  g_state.maps_available = false;            // the map screens (local maps, location picker) are not ported yet
+  g_state.maps_available = true;             // LOCAL MAPS opens the compact map-pack list (screen_maps.cpp)
+  g_state.location_map_available = false;    // the location map picker is not ported yet
   g_state.setup_available = false;           // the first-run setup flow is not ported; Settings has Location and Wi-Fi pages
   g_state.wifi_antenna_selectable = false;   // the LilyGO has no external-antenna switch for the C6
   const auto web=web_server::status();
@@ -327,6 +328,7 @@ void tap(int x, int y) {
     case st::ActionKind::web_console_changed: (void)web_server::set_enabled(a.value!=0);break;
     case st::ActionKind::wifi_start_at_boot_changed: wifi_app::set_start_at_boot(a.value != 0); break;
     case st::ActionKind::scan_wifi: (void)wifi_app::request_scan(); break;
+    case st::ActionKind::open_local_maps: home_app::request_open(orcsdr::dashboards::Id::count); break;   // the MAPS screen
     case st::ActionKind::connect_wifi: {
       char ssid[33]{}, password[64]{};
       if (st::take_wifi_credentials(ssid, sizeof(ssid), password, sizeof(password))) (void)wifi_app::connect(ssid, password, true);

@@ -54,6 +54,7 @@ struct State {
   bool catalog_available = true;          // the signed data catalog: check for updates, install and remove packs
   bool maps_available = true;             // the map screens: local maps and the location map picker
   bool setup_available = true;            // the first-run setup flow (RUN SETUP)
+  bool location_map_available = true;     // the location map picker (separate from the local map packs list)
   bool wifi_antenna_selectable = true;    // an internal / external Wi-Fi antenna switch
   bool wifi_power_enabled = true;
   bool wifi_start_at_boot = false;

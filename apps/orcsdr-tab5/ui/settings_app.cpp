@@ -518,7 +518,7 @@ void draw_compact_location() {
     wifi_button(value,l.coordinate(false),TFT_NAVY);
     snprintf(value,sizeof(value),"LON: %.7f",g_state.longitude_e7/10000000.0);
     wifi_button(value,l.coordinate(true),TFT_NAVY);
-    if(g_state.maps_available) wifi_button("CHOOSE ON MAP",l.location_map(),TFT_DARKGREEN);
+    if(g_state.maps_available && g_state.location_map_available) wifi_button("CHOOSE ON MAP",l.location_map(),TFT_DARKGREEN);
   } else if(page_index()==1) {
     snprintf(value,sizeof(value),"MAP PACK: %s",g_state.map_pack[0]?g_state.map_pack:"NOT INSTALLED");
     const int used=wrapped_text(value,l.line(28,g_layout.content.w<800?240:112),kMuted);
@@ -2305,7 +2305,7 @@ Action handle_touch(int32_t x, int32_t y) {
     if(page_index()==0) {
       if(hit(x,y,l.coordinate(false))) {start_edit(EditField::latitude);draw_keypad();}
       else if(hit(x,y,l.coordinate(true))) {start_edit(EditField::longitude);draw_keypad();}
-      else if(g_state.maps_available && hit(x,y,l.location_map())) return {ActionKind::open_location_picker,0};
+      else if(g_state.maps_available && g_state.location_map_available && hit(x,y,l.location_map())) return {ActionKind::open_location_picker,0};
     } else if(page_index()==2) {
       if(hit(x,y,l.half(28)) && !g_state.ip_location_busy) {
         g_location_edit=true;set_wifi_editor_viewport();text_editor::begin("ZIP CODE OR ADDRESS",g_location_query,sizeof(g_location_query)-1,false,"LOOK UP");text_editor::draw();

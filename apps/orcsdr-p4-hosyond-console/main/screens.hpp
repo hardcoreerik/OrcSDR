@@ -46,6 +46,7 @@ const Screen& settings_screen();
 const Screen& pocsag_screen();
 bool pocsag_request(unsigned control,unsigned value); // queued to UI owner, rejects inactive/busy
 const Screen& wifi_screen();
+const Screen& maps_screen();
 const Screen& adsb_screen();
 const Screen& acars_screen();
 const Screen& lora_screen();
