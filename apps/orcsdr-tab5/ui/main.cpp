@@ -8519,6 +8519,42 @@ __attribute__((noinline)) static void rtl_session_reset(RtlBand band, uint32_t f
     rtl_screen_transition_requested.store(true, std::memory_order_release);
 }
 
+// Step 3b: the stop sequence of a receiver session (same statements, same order).
+__attribute__((noinline)) static void rtl_session_stop(bool remote) {
+  cancel_active_scan(false);
+  Serial.println("RTL_STOP_REQUESTED");
+  rtl_auto_fm_active.store(false, std::memory_order_release);
+  flush_audio_play_batch(true);
+  const esp_err_t stop_err =
+      remote ? (orcsdr::rtl_tcp_source::stop(), ESP_OK) : esp_rtl_sdr_stop(g_rtl, 2000);
+  g_rtl_active_source.store(static_cast<uint8_t>(orcsdr::source::Active::none),
+                            std::memory_order_release);
+  g_rtl_remote_narrow.store(false, std::memory_order_release);
+  rtl_active_sample_rate_sps.store(0, std::memory_order_release);
+  Serial.printf("RTL_STOP_RESULT %s\n", esp_rtl_sdr_err_to_name(stop_err));
+  rtl_capture_state.store(stop_err == ESP_OK ? RtlCaptureState::complete
+                                             : RtlCaptureState::failed,
+                          std::memory_order_release);
+  set_radio_session_state(stop_err == ESP_OK ? orcsdr::radio::ReceiverState::ready
+                                             : orcsdr::radio::ReceiverState::failed);
+  set_rtl_profile_status(stop_err == ESP_OK ? "stopped" : "stop failed");
+  /* Documentation capture freezes the last live frame while reception stops. */
+  if (!ui_documentation_mode)
+    rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
+  Serial.printf("RTL_STOP bytes=%llu\n",
+                static_cast<unsigned long long>(rtl_capture_bytes));
+}
+
+// Step 3b: after a stop, start again when a restart was asked for (band or rate change during the session).
+__attribute__((noinline)) static void rtl_session_restart_if_requested() {
+  const bool restart = rtl_restart_requested.exchange(false, std::memory_order_acq_rel);
+  if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::complete &&
+      restart && rtl_device_ready()) {
+    rtl_stop_requested.store(false, std::memory_order_release);
+    rtl_capture_requested.store(true, std::memory_order_release);
+  }
+}
+
 static void rtl_driver_app_task(void *) {
   while (true) {
     if (orcsdr::sd_transfer::active()) {
@@ -8985,35 +9021,9 @@ static void rtl_driver_app_task(void *) {
 
           vTaskDelay(pdMS_TO_TICKS(20));
         }
-        cancel_active_scan(false);
-        Serial.println("RTL_STOP_REQUESTED");
-        rtl_auto_fm_active.store(false, std::memory_order_release);
-        flush_audio_play_batch(true);
-        const esp_err_t stop_err =
-            remote ? (orcsdr::rtl_tcp_source::stop(), ESP_OK) : esp_rtl_sdr_stop(g_rtl, 2000);
-        g_rtl_active_source.store(static_cast<uint8_t>(orcsdr::source::Active::none),
-                                  std::memory_order_release);
-        g_rtl_remote_narrow.store(false, std::memory_order_release);
-        rtl_active_sample_rate_sps.store(0, std::memory_order_release);
-        Serial.printf("RTL_STOP_RESULT %s\n", esp_rtl_sdr_err_to_name(stop_err));
-        rtl_capture_state.store(stop_err == ESP_OK ? RtlCaptureState::complete
-                                                   : RtlCaptureState::failed,
-                                std::memory_order_release);
-        set_radio_session_state(stop_err == ESP_OK ? orcsdr::radio::ReceiverState::ready
-                                                   : orcsdr::radio::ReceiverState::failed);
-        set_rtl_profile_status(stop_err == ESP_OK ? "stopped" : "stop failed");
-        /* Documentation capture freezes the last live frame while reception stops. */
-        if (!ui_documentation_mode)
-          rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
-        Serial.printf("RTL_STOP bytes=%llu\n",
-                      static_cast<unsigned long long>(rtl_capture_bytes));
+        rtl_session_stop(remote);
       }
-      const bool restart = rtl_restart_requested.exchange(false, std::memory_order_acq_rel);
-      if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::complete &&
-          restart && rtl_device_ready()) {
-        rtl_stop_requested.store(false, std::memory_order_release);
-        rtl_capture_requested.store(true, std::memory_order_release);
-      }
+      rtl_session_restart_if_requested();
     } else if (rtl_ui_active.load(std::memory_order_acquire) &&
                rtl_capture_state.load(std::memory_order_acquire) !=
                    RtlCaptureState::running) {

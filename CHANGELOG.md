@@ -2,6 +2,14 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Receiver session stop and restart named: step 3b of the runtime split — 2026-11-17
+
+No behaviour change intended. The stop sequence of a receiver session (22 statements) is now `rtl_session_stop(remote)` and the restart check after it (6 statements) `rtl_session_restart_if_requested()`, both `noinline` in `main.cpp`, moved by script and checked token for token.
+
+- **Measured:** `main.cpp` 21,126 lines (1,024,707 bytes). `rtl_driver_app_task` frame 1,120 to 1,104 bytes; `rtl_session_stop` 64, `rtl_session_restart_if_requested` 16. Static RAM unchanged.
+- **Device (COM17, M5Stack Tab5), same recorder and baseline as 3a, taken 6 minutes after the flash:** 9 of 11 dashboards identical; SSTV has the same extra `RTL_DMA_WATCH` line as in 3a; P25 has the same sequence with fewer follow-the-call retunes (live RF). 35 of 35 refusals.
+- **Not checked:** a failed stop (`RTL_STOP_RESULT` not OK), the restart path after a band change during a running stream, and the remote (rtl_tcp) stop.
+
 ## Unreleased — Receiver session reset named: step 3a of the runtime split — 2026-11-17
 
 No behaviour change intended. The 64 statements that reset counters, per-band decoder state and UI flags at the start of every receiver session are now `rtl_session_reset(band, frequency_hz, volume)` (`noinline`, in `main.cpp`), called from `rtl_driver_app_task`. Moved by script: the new body is checked token-for-token against the old text (whitespace aside), so a slip cannot hide. Owner-approved step 3 of `refactor-workspace/ITEM5_PLAN.md`; 3b to 3e not started.
