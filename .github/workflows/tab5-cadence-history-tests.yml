@@ -81,6 +81,7 @@ on:
       - 'tests/serial_ft8_tests.cpp'
       - 'tests/shortwave_actions_tests.cpp'
       - 'tests/p25_actions_tests.cpp'
+      - 'tests/spectrum_compute_tests.cpp'
       - 'tests/data/session_identity_golden.txt'
       - 'tests/data/serial_help_golden.txt'
       - 'tests/data/serial_help_golden_orcdial.txt'

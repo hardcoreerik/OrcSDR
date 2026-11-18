@@ -126,6 +126,7 @@
 #include "serial_rds.hpp"
 #include "serial_ft8.hpp"
 #include "shortwave_actions.hpp"
+#include "spectrum_compute.hpp"
 #include "p25_actions.hpp"
 #include "hex_codec.hpp"
 #include "session_identity.hpp"
@@ -6741,6 +6742,11 @@ void draw_documentation_spectrum() {
   M5.Display.endWrite();
 }
 
+static_assert(kRtlSpectrumBins == orcsdr::spectrum_compute::kBins);
+static const orcsdr::spectrum_compute::Buffers kSpectrumBuffers{
+    rtl_spectrum_window, rtl_spectrum_real, rtl_spectrum_imaginary, rtl_spectrum_power,
+    rtl_spectrum_smooth, rtl_spectrum_peak, rtl_spectrum_levels,
+};
 void reset_spectrum_renderer() {
   rtl_spectrum_trace_valid = false;
   rtl_spectrum_last_ms = 0;
@@ -6828,11 +6834,7 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   if (!web_scope && !orcsdr::home::active() && rtl_ui_band == RtlBand::p25 &&
       !orcsdr::p25::spectrum_active()) return;
   if (!rtl_spectrum_window_ready) {
-    constexpr float kPi = 3.14159265358979323846f;
-    for (size_t index = 0; index < kRtlSpectrumBins; ++index) {
-      rtl_spectrum_window[index] =
-          0.5f - 0.5f * cosf(2.0f * kPi * index / (kRtlSpectrumBins - 1));
-    }
+    orcsdr::spectrum_compute::init_window(rtl_spectrum_window);
     rtl_spectrum_window_ready = true;
   }
   size_t local_bytes = 0;
@@ -6876,70 +6878,7 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   const size_t windows =
       welch_n < max_windows ? welch_n : (max_windows > 0 ? max_windows : 1);
 
-  for (size_t b = 0; b < kRtlSpectrumBins; ++b) rtl_spectrum_power[b] = 0.0f;
-
-  constexpr float kPi = 3.14159265358979323846f;
-  for (size_t w = 0; w < windows; ++w) {
-    const uint8_t* base = rtl_spectrum_iq_work + w * window_bytes;
-    float mean_i = 0.0f;
-    float mean_q = 0.0f;
-    for (size_t index = 0; index < kRtlSpectrumBins; ++index) {
-      mean_i += static_cast<float>(base[index * 2]);
-      mean_q += static_cast<float>(base[index * 2 + 1]);
-    }
-    mean_i /= kRtlSpectrumBins;
-    mean_q /= kRtlSpectrumBins;
-    for (size_t index = 0; index < kRtlSpectrumBins; ++index) {
-      rtl_spectrum_real[index] =
-          (static_cast<float>(base[index * 2]) - mean_i) * rtl_spectrum_window[index];
-      rtl_spectrum_imaginary[index] =
-          (static_cast<float>(base[index * 2 + 1]) - mean_q) * rtl_spectrum_window[index];
-    }
-    for (size_t index = 1, reversed = 0; index < kRtlSpectrumBins; ++index) {
-      size_t bit = kRtlSpectrumBins >> 1;
-      for (; reversed & bit; bit >>= 1) reversed ^= bit;
-      reversed ^= bit;
-      if (index < reversed) {
-        std::swap(rtl_spectrum_real[index], rtl_spectrum_real[reversed]);
-        std::swap(rtl_spectrum_imaginary[index], rtl_spectrum_imaginary[reversed]);
-      }
-    }
-    for (size_t length = 2; length <= kRtlSpectrumBins; length <<= 1) {
-      const float angle = -2.0f * kPi / length;
-      const float step_real = cosf(angle);
-      const float step_imaginary = sinf(angle);
-      for (size_t base_i = 0; base_i < kRtlSpectrumBins; base_i += length) {
-        float twiddle_real = 1;
-        float twiddle_imaginary = 0;
-        for (size_t offset = 0; offset < length / 2; ++offset) {
-          const size_t upper = base_i + offset;
-          const size_t lower = upper + length / 2;
-          const float product_real = rtl_spectrum_real[lower] * twiddle_real -
-                                     rtl_spectrum_imaginary[lower] * twiddle_imaginary;
-          const float product_imaginary =
-              rtl_spectrum_real[lower] * twiddle_imaginary +
-              rtl_spectrum_imaginary[lower] * twiddle_real;
-          rtl_spectrum_real[lower] = rtl_spectrum_real[upper] - product_real;
-          rtl_spectrum_imaginary[lower] =
-              rtl_spectrum_imaginary[upper] - product_imaginary;
-          rtl_spectrum_real[upper] += product_real;
-          rtl_spectrum_imaginary[upper] += product_imaginary;
-          const float next_real = twiddle_real * step_real -
-                                  twiddle_imaginary * step_imaginary;
-          twiddle_imaginary = twiddle_real * step_imaginary +
-                              twiddle_imaginary * step_real;
-          twiddle_real = next_real;
-        }
-      }
-    }
-    for (size_t bin = 0; bin < kRtlSpectrumBins; ++bin) {
-      const size_t shifted = (bin + kRtlSpectrumBins / 2) % kRtlSpectrumBins;
-      const float p =
-          rtl_spectrum_real[shifted] * rtl_spectrum_real[shifted] +
-          rtl_spectrum_imaginary[shifted] * rtl_spectrum_imaginary[shifted];
-      rtl_spectrum_power[bin] += p;
-    }
-  }
+  orcsdr::spectrum_compute::welch_power(rtl_spectrum_iq_work, windows, kSpectrumBuffers);
 
   size_t visible_bins = static_cast<size_t>(
       (static_cast<uint64_t>(rtl_scope_span_hz.load(std::memory_order_relaxed)) *
@@ -6949,31 +6888,12 @@ void draw_spectrum(const uint8_t* iq, size_t bytes) {
   const size_t first_bin = (kRtlSpectrumBins - visible_bins) / 2;
   const size_t last_bin = first_bin + visible_bins;
   const int draw_width = spectrum_draw_width();
-  float maximum = -120.0f;
-  float strongest = -120.0f;
-  size_t strongest_bin = kRtlSpectrumBins / 2;
-  const float inv_w = 1.0f / static_cast<float>(windows);
   const bool home_active = orcsdr::home::active();
-  for (size_t bin = 0; bin < kRtlSpectrumBins; ++bin) {
-    const float level = 10.0f * log10f(rtl_spectrum_power[bin] * inv_w + 1.0f);
-    /* EMA average (cyan) + slow peak-hold (orange) for interference spotting. */
-    rtl_spectrum_smooth[bin] = rtl_spectrum_trace_valid
-                                   ? (0.78f * rtl_spectrum_smooth[bin] + 0.22f * level)
-                                   : level;
-    if (!rtl_spectrum_trace_valid || level > rtl_spectrum_peak[bin]) {
-      rtl_spectrum_peak[bin] = level;
-    } else {
-      rtl_spectrum_peak[bin] = 0.995f * rtl_spectrum_peak[bin] + 0.005f * level;
-    }
-    rtl_spectrum_levels[bin] = home_active ? level : rtl_spectrum_smooth[bin];
-    if (bin >= first_bin && bin < last_bin) {
-      maximum = max(maximum, max(rtl_spectrum_levels[bin], rtl_spectrum_peak[bin]));
-      if (rtl_spectrum_levels[bin] > strongest) {
-        strongest = rtl_spectrum_levels[bin];
-        strongest_bin = bin;
-      }
-    }
-  }
+  const auto spectrum_levels = orcsdr::spectrum_compute::update_levels(
+      kSpectrumBuffers, windows, rtl_spectrum_trace_valid, home_active, first_bin, last_bin);
+  const float maximum = spectrum_levels.maximum;
+  const float strongest = spectrum_levels.strongest;
+  const size_t strongest_bin = spectrum_levels.strongest_bin;
   const int32_t peak_offset_hz = static_cast<int32_t>(
       (static_cast<int64_t>(strongest_bin) - static_cast<int64_t>(kRtlSpectrumBins / 2)) *
       static_cast<int64_t>(rtl_active_sample_rate_sps.load(std::memory_order_relaxed)) /

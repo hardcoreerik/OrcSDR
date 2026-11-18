@@ -109,6 +109,7 @@ idf_component_register(
         "../ui/shortwave_actions.cpp"
         "../ui/shortwave_library_actions.cpp"
         "../ui/p25_actions.cpp"
+        "../ui/spectrum_compute.cpp"
         "../ui/sd_transfer.cpp"
         "../ui/iq_transfer_engine.cpp"
         "../ui/display_bench.cpp"

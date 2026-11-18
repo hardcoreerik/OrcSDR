@@ -2,6 +2,17 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Spectrum number crunching moved out of draw_spectrum() — 2026-11-17
+
+No behaviour change intended. The RF scope's maths (Hann window, Welch-averaged FFT, dB, smoothing, peak hold, strongest bin) is now `spectrum_compute`; `draw_spectrum()` keeps the screen, the frame timing and the hand-off to each dashboard. Flashed and checked on COM17 (M5Stack Tab5 dev unit).
+
+- **`spectrum_compute.{hpp,cpp}`** (`init_window`, `welch_power`, `update_levels`): the code moved verbatim; the PSRAM arrays stay in `main.cpp` and are handed in as pointers (`kSpectrumBuffers`). The host test (`tests/spectrum_compute_tests.cpp`, in the CI script and workflow) keeps the old loop as a reference and checks window, power, smooth, peak, levels, maximum and strongest bin are **bit-identical** over three frames (first frame, steady, Home mode) for noise, a tone, one and two Welch windows, a narrow and an empty bin range.
+- **Not split:** the render half. Each dashboard already draws its own scope (`home`, `fm`, `am`, `shortwave`, `p25`, `lora`, `airband`, `cb`); what stays in `draw_spectrum()` is the generic Radio-screen scope and the routing to them, which depends on screen ownership, so it was left alone.
+- **Measured:** `main.cpp` 21,229 to 21,149 lines (1,030,328 to 1,026,709 bytes). Stack: `draw_spectrum` frame 256 to 272, plus `welch_power` 112 (deepest path 384, was 256). Static RAM unchanged.
+- **Home scope, same firmware pair, COM17, 30 s windows at TRACE verbosity (restored to NORMAL):** 30 fps both (29 in an occasional second, both). DSP load, three windows each, measured 90 s after a boot: old 70.1, 70.8, 70.3 % (range 65-72); new 69.5, 69.3, 69.7 % (66-73). `spectrum_avg_us` and `level_avg_us` in `RTL_DSP STATS` unchanged (about 100-135 and 800-950 us). 35 of 35 refusals.
+- **A trap I fell into:** measured on a unit that had been up for hours, the old firmware read 49 % average load (24-72) and the new one, just after a flash, 69 %. That was boot state (the decoders' share of the load, not the scope's), not the split: the old firmware also reads 70 % when measured the same way after a boot. Compare like with like.
+- **Not checked:** the other dashboards' scopes (FM, AM, Shortwave, P25, LoRa, Airband, CB) on the new firmware beyond the shared maths; the web console's spectrum stream; frame time of `draw_spectrum` itself (only fps and DSP-task load were measured).
+
 ## Unreleased — Shortwave and P25 touch actions moved out of main.cpp — 2026-11-17
 
 No behaviour change intended. Moves only: what a tap on the Shortwave or the P25 dashboard does to the receiver is now in its own module, reached through a hook table in `main.cpp`. Flashed and checked on COM17 (M5Stack Tab5 dev unit).
