@@ -88,7 +88,7 @@ void Renderer::header(const Snapshot& s) {
   text(255,5,s.is_demo?"DEMO":state_text(s.status),state_color(s.status),10,1);
   text(4,23,"1090 MHZ",white,8);text(75,23,"2.048M CU8",cyan,12);
   char buffer[44];
-  std::snprintf(buffer,sizeof(buffer),"A%zu U%llu C%llu",s.count,
+  std::snprintf(buffer,sizeof(buffer),s.counters.unique_capped?"A%zu U>=%llu C%llu":"A%zu U%llu C%llu",s.count,
     static_cast<unsigned long long>(s.counters.unique_seen),
     static_cast<unsigned long long>(s.counters.crc_ok));
   text(172,23,buffer,green,24);
