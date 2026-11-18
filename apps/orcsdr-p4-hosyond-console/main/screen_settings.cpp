@@ -20,7 +20,9 @@
 #include "nvs_store.hpp"
 #include "orcsdr_board_profile.h"
 #include "radio_service.hpp"
+#include "catalog_sync.hpp"
 #include "location_estimate.hpp"
+#include "orcsdr_storage.hpp"
 #include "receiver_location.hpp"
 #include "screens.hpp"
 #include "sd_card.hpp"
@@ -118,6 +120,20 @@ void save() {
   s.end();
 }
 
+// The data catalog works on the SD card: hand it the card once it is mounted, and let its worker run (it reports its own progress).
+void catalog_begin() {
+  if (orcsdr::storage::mounted()) orcsdr::catalog::begin(&orcsdr::storage::filesystem(), orcsdr::storage::free_bytes());
+}
+void catalog_service() {
+  static bool begun = false;
+  if (!begun && orcsdr::storage::mounted()) {
+    catalog_begin();
+    begun = true;
+  }
+  orcsdr::catalog::poll(wifi_app::status().connected);
+  orcsdr::catalog::reap();
+}
+
 const st::State& build() {
   const home_app::Status h = home_app::status();
   g_state.volume = h.volume;
@@ -191,6 +207,27 @@ const st::State& build() {
     g_state.longitude_e7 = loc.longitude_e7;
     std::snprintf(g_state.location_label, sizeof(g_state.location_label), "%.39s", loc.label);
   }
+  {   // Data catalog (packs, versions, progress)
+    const auto cat = orcsdr::catalog::state();
+    g_state.catalog_ready = cat.ready;
+    g_state.catalog_busy = cat.busy;
+    g_state.catalog_progress_percent = cat.progress_percent;
+    std::snprintf(g_state.catalog_message, sizeof(g_state.catalog_message), "%.79s", cat.message);
+    std::snprintf(g_state.catalog_date, sizeof(g_state.catalog_date), "%.15s", cat.catalog_date);
+    for (uint8_t i = 0; i < std::size(g_state.catalog_packs); ++i) {
+      const auto& source = cat.packs[i];
+      auto& target = g_state.catalog_packs[i];
+      std::snprintf(target.id, sizeof(target.id), "%.19s", source.id);
+      std::snprintf(target.title, sizeof(target.title), "%.27s", source.title);
+      std::snprintf(target.version, sizeof(target.version), "%.15s", source.version);
+      std::snprintf(target.source_date, sizeof(target.source_date), "%.15s", source.source_date);
+      std::snprintf(target.status, sizeof(target.status), "%.23s", source.status);
+      target.runtime_bytes = source.runtime_bytes;
+      target.archive_bytes = source.archive_bytes;
+      target.installed = source.installed;
+      target.update_available = source.update_available;
+    }
+  }
   {   // IP / ZIP / address lookup (shared location_estimate: HTTPS to ipwho.is and nominatim.openstreetmap.org, only on a request)
     const auto est = orcsdr::location_estimate::state();
     g_state.ip_location_busy = est.busy;
@@ -215,7 +252,8 @@ const st::State& build() {
   g_state.sd_free_bytes=sd.free_bytes;
   g_state.sd_capacity_known=sd.free_known;
   g_state.companion_supported = false;
-  g_state.maps_available = false;            // no map engine on the P4 console yet (MAPS is not ported)
+  g_state.catalog_available = true;          // the signed data catalog (shared catalog_sync)
+  g_state.maps_available = false;            // the map screens (local maps, location picker) are not ported yet
   g_state.setup_available = false;           // the first-run setup flow is not ported; Settings has Location and Wi-Fi pages
   g_state.wifi_antenna_selectable = false;   // the LilyGO has no external-antenna switch for the C6
   const auto web=web_server::status();
@@ -239,6 +277,7 @@ void enter() {
 void leave() { st::leave(); }
 void tick() {
   orcsdr::location_estimate::service();   // reclaims a finished lookup task
+  catalog_service();
   st::update(build());
 }
 
@@ -303,6 +342,21 @@ void tap(int x, int y) {
       wifi_app::forget();
       break;
     case st::ActionKind::location_changed: save_location(st::state()); break;
+    case st::ActionKind::catalog_check:
+      if (!orcsdr::catalog::state().busy) {
+        catalog_begin();
+        (void)orcsdr::catalog::request_check();   // needs Wi-Fi; the catalog reports why when it cannot run
+      }
+      break;
+    case st::ActionKind::catalog_install:
+      if (!orcsdr::catalog::state().busy) {
+        catalog_begin();
+        (void)orcsdr::catalog::request_install(static_cast<uint8_t>(a.value));
+      }
+      break;
+    case st::ActionKind::catalog_remove:
+      if (!orcsdr::catalog::state().busy) (void)orcsdr::catalog::request_remove(static_cast<uint8_t>(a.value));
+      break;
     case st::ActionKind::location_ip_lookup: (void)orcsdr::location_estimate::request(wifi_app::status().connected); break;
     case st::ActionKind::location_query_lookup: {
       char query[64]{};

@@ -553,13 +553,13 @@ void draw_compact_data_maps() {
   const SettingsFormLayout l{g_layout.content};const int index=compact_pack_index();
   if(index<0) {
     wrapped_text("DATA & MAPS",l.line(0),kBlue);
-    if(!g_state.maps_available) {   // no map engine on this device: say so, show no control that does nothing
+    if(!g_state.catalog_available && !g_state.maps_available) {   // neither: say so, show no control that does nothing
       wrapped_text("Map packs and map downloads are not available on this device yet.",l.catalog_status(),kMuted);
       return;
     }
-    draw_compact_catalog_status();
-    wifi_button("LOCAL MAPS",l.catalog_local(),TFT_NAVY);
-    wrapped_text("Downloads pause reception.",l.catalog_notice(),kMuted);
+    if(g_state.catalog_available) draw_compact_catalog_status();
+    if(g_state.maps_available) wifi_button("LOCAL MAPS",l.catalog_local(),TFT_NAVY);
+    if(g_state.catalog_available) wrapped_text("Downloads pause reception.",l.catalog_notice(),kMuted);
   } else {
     const auto& p=g_state.catalog_packs[index];char detail[160];
     wrapped_text(p.title[0]?p.title:p.id,l.line(0,48),kBlue);
@@ -2321,9 +2321,8 @@ Action handle_touch(int32_t x, int32_t y) {
   if(!g_layout.legacy && g_section==Section::data_maps) {
     const SettingsFormLayout l{g_layout.content};const int index=compact_pack_index();
     if(index<0) {
-      if(!g_state.maps_available) return {};
-      if(hit(x,y,l.catalog_check()) && !g_state.catalog_busy) return {ActionKind::catalog_check,0};
-      if(hit(x,y,l.catalog_local())) return {ActionKind::open_local_maps,0};
+      if(g_state.catalog_available && hit(x,y,l.catalog_check()) && !g_state.catalog_busy) return {ActionKind::catalog_check,0};
+      if(g_state.maps_available && hit(x,y,l.catalog_local())) return {ActionKind::open_local_maps,0};
     } else {
       const auto rank=page_index()-1;g_catalog_cursor.page=rank/5;
       if(hit(x,y,l.half(144))) {
