@@ -1,5 +1,25 @@
 # LilyGO T-Display-P4 parity checklist (Tab5 reference)
 
+## Current status (2026-11-18, branch `claude/p4-remove-gpl-touch`, device COM32)
+
+The table below is the initial 2026-11-06 inventory and is kept as the record of where this started; its Portrait, Landscape and Notes columns are out of date. The dated entries after the table are the evidence. This block is the summary of where things stand now.
+
+**On the P4 and verified on the device by screenshot, in portrait and landscape unless noted:** HOME, FM, AM, SHORTWAVE, AIRBAND, CB, P25, POCSAG, LORA, RF LAB (with SD records and the `RTL_LAB` serial set), 2.4 GHz WIFI, ADS-B (with the offline basemap from the map packs), SETTINGS (Data & Maps with the signed catalog check, location lookups by IP and ZIP, RUN SETUP), FT8, AIS, ACARS (VDL2), SSTV, MAPS (map-pack list, location picker, setup wizard), DEAD AIR (receiver-only).
+
+**What "verified" does and does not cover:** the screens draw correctly with real receiver data and their controls act. On-air decodes were not shown for FT8 (no signal in the lab), AIS (no vessels in range) or SSTV (only the built-in Robot36 self-test decoded). The Dead Air SD journal count was confirmed through the serial status, not by reading the file back. The USE button of the location picker, the wizard's WI-FI button and a reboot with a saved wizard record were not exercised.
+
+**Not on the P4 yet:**
+- RF VISUALIZER: blocked on a display-backend decision (the Tab5 draws into the panel's raw frame buffers; the P4 builds with `ORCSDR_NO_RAW_BUFFERS`).
+- The MAPS download page (writes pack files to the card and pauses reception: needs its own supervised test).
+- The wizard's automatic first-run takeover at boot (option (b): it changes what a new owner sees, so it waits for the owner).
+- Dead Air: the Audio, ENV and Review pages, the scrub, control-run, session-card and VEIL-26 views, the orb, and any environment sensor or microphone input.
+- WEATHER, MARINE, SATELLITE and UTILITIES are Home presets on the Tab5 as well; they behave the same here.
+
+**Stability:** the all-screens soak (18 screens, 10 rounds, full serial log, stop on any crash text) ran clean on the current image after two defects were fixed (a boot hang in a DSI panel readback, now compiled out; a heap corruption on leaving ADS-B, `iq_tap::stop()` hardened; root cause of the latter not identified). Home frame time: `draw_us` about 11,000 and `p50_ms` about 87, unchanged from the baseline. See the last entries below.
+
+**Shared code:** all changes to `apps/orcsdr-tab5/ui` keep the Tab5 behaviour (capability flags default to the Tab5's values); the Tab5 firmware last compiled at `9d3e1dff`. Files added since then (`dead_air_compact_*`, wizard code in `maps_compact_dashboard.*`) are linked only by the P4 build.
+
+
 Reference: origin/main 4362bd9b (2026-11-06)
 Target: LilyGO T-Display-P4 (COM32), 568x1232, portrait and landscape
 
