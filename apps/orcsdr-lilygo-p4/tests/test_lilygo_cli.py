@@ -1,9 +1,11 @@
 """Host-only tests: no ESP-IDF installation or serial device required."""
 import importlib.util
+import os
 import pathlib
 import subprocess
 import sys
 import tempfile
+import types
 import unittest
 from unittest import mock
 
@@ -14,6 +16,40 @@ spec.loader.exec_module(cli)
 
 
 class LilygoCliTests(unittest.TestCase):
+    def test_idf_script_comes_from_active_installation(self):
+        with tempfile.TemporaryDirectory() as temp:
+            script = pathlib.Path(temp) / "tools" / "idf.py"
+            script.parent.mkdir()
+            script.touch()
+            with mock.patch.dict(os.environ, {"IDF_PATH": temp}):
+                self.assertEqual(cli.idf_available(), str(script))
+
+    def test_multiple_ports_require_explicit_selection(self):
+        ports = [types.SimpleNamespace(device=p, vid=0x303A, pid=0x1001,
+                                       description="ESP USB") for p in ("COM17", "COM32")]
+        listing = types.SimpleNamespace(comports=lambda: ports)
+        with mock.patch.dict(sys.modules, {"serial.tools": types.SimpleNamespace(list_ports=listing)}):
+            with self.assertRaises(cli.PreflightError):
+                cli.select_port(None)
+        self.assertEqual(cli.select_port("COM32"), "COM32")
+
+    def test_backup_failure_prevents_flash(self):
+        with mock.patch.object(cli, "select_port", return_value="COM32"), \
+             mock.patch.object(cli, "probe_chip", return_value=(1, "ESP32-P4")), \
+             mock.patch.object(cli, "build"), \
+             mock.patch.object(cli, "backup", side_effect=cli.PreflightError("incomplete")), \
+             mock.patch.object(cli.subprocess, "run") as run, \
+             mock.patch.object(sys, "argv", ["lilygo.py", "flash", "--experimental"]):
+            self.assertEqual(cli.main(), 2)
+            run.assert_not_called()
+
+    def test_incomplete_backup_is_rejected(self):
+        with tempfile.TemporaryDirectory() as temp, \
+             mock.patch.object(cli, "PROJECT", pathlib.Path(temp)), \
+             mock.patch.object(cli.subprocess, "run"):
+            with self.assertRaises(cli.PreflightError):
+                cli.backup("COM32", "Detected flash size: 16MB")
+
     def test_project_paths_come_from_script_not_working_directory(self):
         self.assertEqual(cli.PROJECT, SCRIPT.parents[1])
         self.assertEqual(cli.BOARD_DEFAULTS, cli.PROJECT / "sdkconfig.defaults")
@@ -77,6 +113,7 @@ class LilygoCliTests(unittest.TestCase):
                  mock.patch.object(cli.subprocess, "run", side_effect=fake_run):
                 self.assertEqual(cli.build(3).name, "build-lilygo-rev3")
             self.assertEqual(len(seen), 1)
+            self.assertEqual(seen[0][:2], [sys.executable, "idf.py"])
             defaults = next(x for x in seen[0] if x.startswith("SDKCONFIG_DEFAULTS="))
             self.assertTrue(defaults.endswith(str(app / "sdkconfig.silicon-v3")))
             self.assertIn(str(app / "sdkconfig.defaults"), defaults)

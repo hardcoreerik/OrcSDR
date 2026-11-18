@@ -12,7 +12,6 @@ from datetime import datetime
 import os
 from pathlib import Path
 import re
-import shutil
 import subprocess
 import sys
 
@@ -30,12 +29,12 @@ class PreflightError(RuntimeError):
 
 
 def idf_available() -> str:
-    command = shutil.which("idf.py")
-    if not command or not os.environ.get("IDF_PATH"):
+    command = Path(os.environ.get("IDF_PATH", "")) / "tools" / "idf.py"
+    if not os.environ.get("IDF_PATH") or not command.is_file():
         raise PreflightError(
             "Activate the ESP-IDF 5.5.4 environment first (idf.py and IDF_PATH required)."
         )
-    return command
+    return str(command)
 
 
 def select_port(requested: str | None) -> str:
@@ -97,7 +96,7 @@ def build(revision: int) -> Path:
             raise PreflightError(f"Required build configuration is missing: {path}")
     directory = build_dir(revision)
     args = [
-        idf, "-B", str(directory), "-D", "IDF_TARGET=esp32p4",
+        sys.executable, idf, "-B", str(directory), "-D", "IDF_TARGET=esp32p4",
         "-D", "SDKCONFIG=" + str(directory / "sdkconfig"),
         "-D", "SDKCONFIG_DEFAULTS=" + ";".join(str(p) for p in overlays),
         "build"
@@ -194,10 +193,10 @@ def main() -> int:
         idf = idf_available()
         if args.command == "flash":
             print("EXPERIMENTAL FLASH: LilyGO AMOLED/SX1262 ONLY; not a finished port.")
-            subprocess.run([idf, "-B", str(directory), "-p", port, "flash"],
+            subprocess.run([sys.executable, idf, "-B", str(directory), "-p", port, "flash"],
                            cwd=PROJECT, check=True)
         if args.command == "monitor" or (args.command == "flash" and args.monitor):
-            subprocess.run([idf, "-B", str(directory), "-p", port, "monitor"],
+            subprocess.run([sys.executable, idf, "-B", str(directory), "-p", port, "monitor"],
                            cwd=PROJECT, check=True)
         return 0
     except (PreflightError, subprocess.CalledProcessError) as exc:
