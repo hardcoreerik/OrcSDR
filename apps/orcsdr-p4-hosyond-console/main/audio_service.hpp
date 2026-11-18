@@ -24,6 +24,11 @@ bool play_tone(uint32_t frequency_hz, uint32_t duration_ms);
 void set_gate(bool open);
 // false stops demodulating (digital dashboards that have no audio); IQ is discarded and the speaker stays silent.
 void set_active(bool active);
+// Optional consumer of the demodulated audio: mono int16 at exactly 48 kHz, in short batches, called on the receiver task (it must
+// take microseconds and never block). It sees the audio whether or not the speaker is on (volume, mute and the gate do not affect it),
+// while the demodulator is active (set_active(true)). Null removes it.
+using PcmTap = void (*)(const int16_t* pcm, size_t count);
+void set_pcm_tap(PcmTap tap);
 // Channel power after the demodulator's channel filter, dBFS.
 float channel_dbfs();
 

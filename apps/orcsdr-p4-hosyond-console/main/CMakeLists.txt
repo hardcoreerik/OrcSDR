@@ -6,7 +6,7 @@ include("${TAB5_UI}/ft8_runtime_sources.cmake")
 # Optional ESP-Hosted 3.0.6 image for the kit's ESP32-C6, offered by Settings > Connectivity as an on-device
 # update. Pass -DC6_FIRMWARE_BIN=<path to esp_hosted_tab5_c6.bin> (the file name is fixed: it sets the embedded
 # symbol names). Without it the update entry is simply not offered.
-set(ORCSDR_EMBED_FILES "${TAB5_UI}/../main/orc_badge_104.rgb565")
+set(ORCSDR_EMBED_FILES "${TAB5_UI}/../main/orc_badge_104.rgb565" "${TAB5_UI}/../main/sstv_testpattern_320x240.rgb")
 set(ORCSDR_C6_EMBEDDED 0)
 if(C6_FIRMWARE_BIN AND EXISTS "${C6_FIRMWARE_BIN}")
     get_filename_component(C6_FIRMWARE_NAME "${C6_FIRMWARE_BIN}" NAME)
@@ -18,9 +18,9 @@ if(C6_FIRMWARE_BIN AND EXISTS "${C6_FIRMWARE_BIN}")
 endif()
 idf_component_register(
     # Existing authenticated web modules; browser bundle is packaged separately.
-    SRCS "main.cpp" "present.cpp" "screen_snap.cpp" "serial_cli.cpp" "home_app.cpp" "radio_service.cpp" "audio_service.cpp" "screens.cpp" "screen_fm.cpp" "screen_am.cpp" "screen_cb.cpp" "screen_airband.cpp" "screen_shortwave.cpp" "screen_rflab.cpp" "screen_settings.cpp" "screen_pocsag.cpp" "screen_wifi.cpp" "screen_adsb.cpp" "screen_acars.cpp" "screen_lora.cpp" "screen_p25.cpp" "screen_ft8.cpp" "screen_ais.cpp" "ui_support.cpp" "iq_tap.cpp" "wifi_app.cpp" "sd_card.cpp"
+    SRCS "main.cpp" "present.cpp" "screen_snap.cpp" "serial_cli.cpp" "home_app.cpp" "radio_service.cpp" "audio_service.cpp" "screens.cpp" "screen_fm.cpp" "screen_am.cpp" "screen_cb.cpp" "screen_airband.cpp" "screen_shortwave.cpp" "screen_rflab.cpp" "screen_settings.cpp" "screen_pocsag.cpp" "screen_wifi.cpp" "screen_adsb.cpp" "screen_acars.cpp" "screen_lora.cpp" "screen_p25.cpp" "screen_ft8.cpp" "screen_ais.cpp" "screen_sstv.cpp" "ui_support.cpp" "iq_tap.cpp" "wifi_app.cpp" "sd_card.cpp"
          ${ORCSDR_FT8_RUNTIME_SOURCES}
-         "${TAB5_UI}/home_dashboard.cpp" "${TAB5_UI}/dashboard_audio_control.cpp" "${TAB5_UI}/rtl_tcp_header_tag.cpp" "${TAB5_UI}/location_estimate.cpp" "${TAB5_UI}/ft8_compact_dashboard.cpp" "${TAB5_UI}/ais_compact_dashboard.cpp" "${TAB5_UI}/ais_app.cpp" "${TAB5_UI}/ais_radio.cpp" "${TAB5_UI}/ais_receiver.cpp" "${TAB5_UI}/ais_receive_pipeline.cpp" "${TAB5_UI}/ais_protocol.cpp" "${TAB5_UI}/ais_binary_app.cpp" "${TAB5_UI}/ais_station_store.cpp" "${TAB5_UI}/ais_snapshot_adapter.cpp" "${TAB5_UI}/rtl_tcp_protocol.cpp"
+         "${TAB5_UI}/home_dashboard.cpp" "${TAB5_UI}/dashboard_audio_control.cpp" "${TAB5_UI}/rtl_tcp_header_tag.cpp" "${TAB5_UI}/location_estimate.cpp" "${TAB5_UI}/ft8_compact_dashboard.cpp" "${TAB5_UI}/ais_compact_dashboard.cpp" "${TAB5_UI}/sstv_compact_dashboard.cpp" "${TAB5_UI}/sstv_app.cpp" "${TAB5_UI}/sstv_receiver.cpp" "${TAB5_UI}/sstv_modes.cpp" "${TAB5_UI}/sstv_capture.cpp" "${TAB5_UI}/sstv_archive.cpp" "${TAB5_UI}/sstv_auto_detect.cpp" "${TAB5_UI}/sstv_settings.cpp" "${TAB5_UI}/sstv_status.cpp" "${TAB5_UI}/sstv_tune.cpp" "${TAB5_UI}/sstv_export.cpp" "${TAB5_UI}/sstv_audio_scope.cpp" "${TAB5_UI}/sstv_diag.cpp" "${TAB5_UI}/memory_reclaim.cpp" "${TAB5_UI}/ais_app.cpp" "${TAB5_UI}/ais_radio.cpp" "${TAB5_UI}/ais_receiver.cpp" "${TAB5_UI}/ais_receive_pipeline.cpp" "${TAB5_UI}/ais_protocol.cpp" "${TAB5_UI}/ais_binary_app.cpp" "${TAB5_UI}/ais_station_store.cpp" "${TAB5_UI}/ais_snapshot_adapter.cpp" "${TAB5_UI}/rtl_tcp_protocol.cpp"
          "${TAB5_UI}/freq_keypad.cpp" "${TAB5_UI}/focus_nav.cpp" "${TAB5_UI}/waterfall_style.cpp"
          "${TAB5_UI}/band_profile.cpp" "${TAB5_UI}/home_vfo.cpp" "${TAB5_UI}/filter_standards.cpp"
          "${TAB5_UI}/dashboard_registry.cpp"

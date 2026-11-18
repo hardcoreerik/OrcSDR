@@ -44,6 +44,7 @@ std::atomic<uint32_t> g_tone_hz{0}, g_tone_frames{0};
 std::atomic<float> g_fill{0.0f}, g_ppm{0.0f};
 std::atomic<uint32_t> g_demod_us{0}, g_write_us{0}, g_resample_us{0};  // smoothed times
 bool g_running = false;
+std::atomic<void (*)(const int16_t*, size_t)> g_pcm_tap{nullptr};
 
 // Runs on the receiver task for every block of IQ.
 void iq_sink(const uint8_t* iq, size_t bytes) {
@@ -64,6 +65,14 @@ void iq_sink(const uint8_t* iq, size_t bytes) {
     const size_t part = std::min<size_t>(bytes - offset, 8192);  // keeps the output within g_tmp
     const size_t n = g_demod->process(iq + offset, part & ~static_cast<size_t>(1), g_tmp, 2048);
     offset += part;
+    if (auto tap = g_pcm_tap.load(std::memory_order_acquire)) {   // demodulated 48 kHz audio for a decoder (SSTV)
+      int16_t pcm[256];
+      for (size_t i = 0; i < n; i += 256) {
+        const size_t m = std::min<size_t>(256, n - i);
+        for (size_t k = 0; k < m; ++k) pcm[k] = static_cast<int16_t>(std::clamp(g_tmp[i + k], -1.0f, 1.0f) * 32767.0f);
+        tap(pcm, m);
+      }
+    }
     uint32_t head = g_head.load(std::memory_order_relaxed);
     const uint32_t tail = g_tail.load(std::memory_order_acquire);
     if (kRingSize - (head - tail) < n) {
@@ -200,6 +209,8 @@ bool start() {
   ESP_LOGI(TAG, "receiver audio %s (48 kHz mono, demodulated in the receiver task, adaptive resampler)", g_running ? "running" : "FAILED");
   return g_running;
 }
+
+void set_pcm_tap(PcmTap tap) { g_pcm_tap.store(tap, std::memory_order_release); }
 
 void set_mode(orcsdr::dsp::Mode mode, bool supported) {
   g_mode.store(static_cast<int>(mode));

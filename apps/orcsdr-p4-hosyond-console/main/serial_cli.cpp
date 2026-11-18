@@ -33,6 +33,9 @@
 #include "radio_service.hpp"
 #include "orcsdr_restart.hpp"
 #include "ais_app.hpp"
+#include "sstv_app.hpp"
+#include "sstv_diag.hpp"
+#include "sstv_receiver.hpp"
 #include "rf_lab.hpp"
 #include "ais_radio.hpp"
 #include "pocsag_dashboard.hpp"
@@ -421,6 +424,43 @@ void cmd_lab(const char* line) {
   heap_caps_free(response);
 }
 
+// RTL_SSTV STATUS | RTL_SSTV TUNE <args>: the receiver counters (is demodulated audio arriving?) and the shared TUNE-tab settings.
+void cmd_sstv(const char* args) {
+  if (std::strcmp(args, "STATUS") == 0) {
+    const auto m = orcsdr::sstv::metrics();
+    char tune[200] = {};
+    if (orcsdr::sstv_app::active()) orcsdr::sstv_app::tune_summary(tune, sizeof(tune));
+    std::printf("RTL_SSTV_STATUS open=%d state=%s audio_offered=%u samples=%u overruns=%u gaps=%u tone_hz=%.0f peak=%.2f vis_good=%u vis_bad=%u frames=%u partial=%u gallery=%u service_cpu_pct=%u storage=%d %s\n",
+                orcsdr::sstv_app::active() ? 1 : 0, orcsdr::sstv::state_name(m.state), unsigned(m.audio_offered), unsigned(m.samples), unsigned(m.audio_overruns),
+                unsigned(m.audio_gaps), double(m.tone_hz), double(m.audio_peak), unsigned(m.good_vis), unsigned(m.bad_vis), unsigned(m.frames),
+                unsigned(m.partial_frames), unsigned(orcsdr::sstv::archive_count()), unsigned(m.service_cpu_pct), m.storage_ok ? 1 : 0, tune);
+    return;
+  }
+  if (std::strncmp(args, "TUNE ", 5) == 0) {
+    if (!authed()) {
+      std::printf("RTL_SSTV_ERROR auth_required\n");
+      return;
+    }
+    char reply[160] = {};
+    const bool ok = orcsdr::sstv_app::tune_command(args + 5, reply, sizeof(reply));
+    std::printf("RTL_SSTV_%s %s\n", ok ? "OK" : "ERROR", reply);
+    return;
+  }
+  std::printf("RTL_SSTV_INVALID use STATUS | TUNE <MODE AUTO|NFM|USB|LSB | STEP <hz> | DETECT AUTO|VIS>\n");
+}
+
+// The Tab5's whole "SSTV ..." serial family (OPEN, STATUS, SELFTEST, SAVE, TUNE ...) from the shared sstv_diag.
+const orcsdr::sstv_diag::Hooks& sstv_diag_hooks() {
+  static const orcsdr::sstv_diag::Hooks hooks = {
+      [](const char* text) { std::fputs(text, stdout); },
+      [] { (void)home_app::open_screen("SSTV"); },
+      [](int32_t which) { return orcsdr::sstv_app::save_image(which); },
+      [](uint32_t hz) { return orcsdr::sstv_app::tune_to(hz); },
+      [](const char* args, char* reply, size_t size) { return orcsdr::sstv_app::tune_command(args, reply, size); },
+      [](char* out, size_t size) { orcsdr::sstv_app::tune_summary(out, size); }};
+  return hooks;
+}
+
 void cmd_cpu() {
   static TaskStatus_t before[48], after[48];
   uint32_t t1 = 0, t2 = 0;
@@ -734,12 +774,12 @@ void cmd_ui(char* args) {
     }
     const char* name = args + 5;
     static const char* const kValid[] = {"HOME", "FM", "AM", "SHORTWAVE", "P25", "ADSB", "LORA", "RF_LAB", "WIFI_ANALYSIS",
-                                         "FT8", "AIS", "SETTINGS", "WEATHER", "CB", "POCSAG", "AIRBAND", "ACARS", "DEAD_AIR",
+                                         "FT8", "AIS", "SSTV", "SETTINGS", "WEATHER", "CB", "POCSAG", "AIRBAND", "ACARS", "DEAD_AIR",
                                          "MARINE", "SATELLITE", "UTILITIES"};
     bool valid = false;
     for (const char* v : kValid) valid |= std::strcmp(v, name) == 0;
     if (!valid) {
-      std::printf("RTL_UI_OPEN_INVALID use HOME|FM|AM|SHORTWAVE|P25|ADSB|LORA|RF_LAB|WIFI_ANALYSIS|FT8|AIS|SETTINGS|WEATHER|CB|POCSAG|AIRBAND|ACARS|DEAD_AIR|MARINE|SATELLITE|UTILITIES\n");
+      std::printf("RTL_UI_OPEN_INVALID use HOME|FM|AM|SHORTWAVE|P25|ADSB|LORA|RF_LAB|WIFI_ANALYSIS|FT8|AIS|SSTV|SETTINGS|WEATHER|CB|POCSAG|AIRBAND|ACARS|DEAD_AIR|MARINE|SATELLITE|UTILITIES\n");
       return;
     }
     if (!home_app::open_screen(name)) {
@@ -1033,6 +1073,8 @@ void handle_line(char* line) {
   if (std::strncmp(line, "RTL_UI ", 7) == 0) return cmd_ui(line + 7);
   if (std::strncmp(line,"RTL_POCSAG ",11)==0) return cmd_pocsag(line+11);
   if (std::strcmp(line,"RTL_AIS STATUS")==0) return cmd_ais();
+  if (std::strncmp(line,"RTL_SSTV ",9)==0) return cmd_sstv(line+9);
+  if (orcsdr::sstv_diag::handle_command(line, authed(), sstv_diag_hooks())) return;
   if (std::strncmp(line,"RTL_LAB",7)==0) return cmd_lab(line);
   if(std::strncmp(line,"RTL_LORA CONTROL ",17)==0){
     if(!authed()){std::printf("RTL_LORA_CONTROL_ERROR auth_required\n");return;}
