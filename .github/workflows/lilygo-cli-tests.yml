@@ -1,0 +1,26 @@
+name: LilyGO P4 CLI host tests
+
+on:
+  push:
+    branches:
+      - feature/lilygo-dedicated-app-20261117
+    paths:
+      - 'apps/orcsdr-lilygo-p4/**'
+      - '.github/workflows/lilygo-cli-tests.yml'
+  pull_request:
+    paths:
+      - 'apps/orcsdr-lilygo-p4/**'
+      - '.github/workflows/lilygo-cli-tests.yml'
+
+jobs:
+  cli:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Python syntax
+        run: python -m compileall -q apps/orcsdr-lilygo-p4/tools apps/orcsdr-lilygo-p4/tests
+      - name: Host-only safety and config tests
+        run: python -m unittest discover -s apps/orcsdr-lilygo-p4/tests -v

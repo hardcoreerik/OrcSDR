@@ -31,8 +31,10 @@ static constexpr int kHeadlessWidth = 800, kHeadlessHeight = 480;
 
 extern "C" void app_main(void) {
   ESP_LOGI(TAG, "OrcSDR on %s", orcsdr_board_profile()->name);
-  hosyond_display_t panel;
-  const esp_err_t board_err = hosyond_board_start(&panel);
+  const bool lilygo_safe = std::strcmp(orcsdr_board_profile()->name, "lilygo-t-display-p4-amoled") == 0;
+  hosyond_display_t panel{};
+  // The documentary LilyGO profile must never enter the Hosyond hardware probe/init path.
+  const esp_err_t board_err = lilygo_safe ? ESP_ERR_NOT_SUPPORTED : hosyond_board_start(&panel);
   // No recognised panel (or a failed bring-up) is not fatal: the receiver, audio, Wi-Fi and serial interface
   // run with the UI rendering off-screen. The I2C bus stays open, so the audio codec still works.
   const bool headless = board_err != ESP_OK;
@@ -47,6 +49,19 @@ extern "C" void app_main(void) {
     return;
   }
   if (!serial_cli_start(&M5.Display)) ESP_LOGE(TAG, "serial command interface failed");
+
+  // The LilyGO profile is documentation-only. Its XL9535-driven USB PHY,
+  // C6 enable, SD power, codec amplifier and native AMOLED reset lines have
+  // NOT been brought up. Keep this target in a non-radiating, no-peripheral
+  // serial/headless mode rather than starting board-specific hardware with
+  // the Waveshare defaults. This is intentionally NOT a working SDR port.
+  if (lilygo_safe) {
+    ESP_LOGW(TAG, "LilyGO safe bring-up only: USB, Wi-Fi, SD, audio, LoRa and display disabled");
+    ESP_LOGW(TAG, "Verify the actual board/revision; AMOLED and XL9535 backends remain unfinished");
+    ESP_LOGI(TAG, "boot complete (LilyGO safe headless mode)");
+    return;
+  }
+
   if (!headless && hosyond_board_touch_start() != ESP_OK) ESP_LOGE(TAG, "touch start failed");
 
   // The receiver task still takes the 4B-era command queue; tuning now goes through radio::tune().
