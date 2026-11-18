@@ -33,6 +33,7 @@
 #include "radio_service.hpp"
 #include "orcsdr_restart.hpp"
 #include "ais_app.hpp"
+#include "rf_lab.hpp"
 #include "ais_radio.hpp"
 #include "pocsag_dashboard.hpp"
 #include "screens.hpp"
@@ -393,6 +394,31 @@ void cmd_ais() {
   orcsdr::ais_radio::format_status(line, kLine);
   std::printf("%s\n", line);
   heap_caps_free(line);
+}
+
+// RTL_LAB ...: the shared RF Lab command set (STATUS, GET, SET, ACTION, PAGE, REFERENCE, SNAPSHOT, RUN, RECIPE, RECORDS, SELF_CHECK).
+// Read-only queries are open; everything else needs the paired session, as on the Tab5.
+void cmd_lab(const char* line) {
+  const bool read_only = std::strcmp(line, "RTL_LAB STATUS") == 0 || std::strcmp(line, "RTL_LAB SELF_CHECK") == 0 ||
+                         std::strncmp(line, "RTL_LAB GET ", 12) == 0 || std::strcmp(line, "RTL_LAB RECIPE LIST") == 0 ||
+                         std::strcmp(line, "RTL_LAB RECORDS LIST") == 0;
+  if (!read_only && !authed()) {
+    std::printf("RTL_LAB_ERROR auth_required\n");
+    return;
+  }
+  char* response = static_cast<char*>(heap_caps_calloc(1, 512, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));   // PSRAM, not the console task's stack
+  if (!response) {
+    std::printf("RTL_LAB_ERROR no_memory\n");
+    return;
+  }
+  if (!orcsdr::rf_lab::process_command(line, response, 512)) {
+    std::printf("RTL_LAB_ERROR unknown_command\n");
+  } else if (std::strcmp(response, "RTL_LAB_OPEN_REQUEST") == 0) {
+    std::printf(home_app::open_screen("RF_LAB") ? "RTL_LAB_OK\n" : "RTL_LAB_ERROR init_failed\n");
+  } else {
+    std::printf("%s\n", response);
+  }
+  heap_caps_free(response);
 }
 
 void cmd_cpu() {
@@ -1007,6 +1033,7 @@ void handle_line(char* line) {
   if (std::strncmp(line, "RTL_UI ", 7) == 0) return cmd_ui(line + 7);
   if (std::strncmp(line,"RTL_POCSAG ",11)==0) return cmd_pocsag(line+11);
   if (std::strcmp(line,"RTL_AIS STATUS")==0) return cmd_ais();
+  if (std::strncmp(line,"RTL_LAB",7)==0) return cmd_lab(line);
   if(std::strncmp(line,"RTL_LORA CONTROL ",17)==0){
     if(!authed()){std::printf("RTL_LORA_CONTROL_ERROR auth_required\n");return;}
     const char* action=line+17;unsigned control=0,value=0;
