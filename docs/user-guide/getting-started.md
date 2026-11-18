@@ -2,9 +2,9 @@
 
 ## Hardware
 
-1. Seat the Tab5 securely and connect an accepted receiver. RTL-SDR Blog V4 is
-   the tested baseline; see [feature status](feature-status.md) for experimental
-   receiver boundaries.
+1. Seat the Tab5 securely and connect a supported receiver: RTL-SDR Blog V4,
+   V3c, V4 Lite (V4L), or Nooelec NESDR SMArt V5. See the
+   [feature availability guide](feature-status.md) for dashboard-specific limits.
 2. Attach an antenna appropriate for the band you intend to receive.
 3. Insert the prepared microSD card if you need databases, maps, captures, or screenshots.
 4. Use stable power. After installation, disconnect the PC USB Serial/JTAG
@@ -12,21 +12,26 @@
 
 ## Install in your browser
 
-1. Open the [OrcSDR M5Burner web flasher](https://burner.m5stack.com/share/firmware/JXFU4H)
-   in **Chrome or Edge** on your computer. The page uses WebSerial.
+1. Open the [OrcSDR web flasher](https://theorc.dev/sdr/flash/)
+   in **Chrome or Edge** on your computer. It uses Web Serial and preserves
+   saved settings by leaving NVS unerased **unless you select Erase device**.
+   Leave that checkbox unticked to keep your settings.
 2. Connect the **M5Stack Tab5** by USB. Close any serial monitor using its port.
-3. Check the version shown on the page, click **Burn to device**, and select the
-   Tab5 serial port when the browser asks for access.
-4. Follow the flasher instructions and keep the USB cable connected until flashing
-   completes. Restart the Tab5 afterward.
-
-**An M5Burner install resets saved settings** (Wi-Fi profiles, location, screen
-rotation), so write them down first and expect to re-enter them.
+3. Compare the version shown with [GitHub Releases](https://github.com/hardcoreerik/OrcSDR/releases/latest);
+   the browser installer can lag a new release. Follow its installation instructions.
+   Select the Tab5 serial port when the browser asks for access.
+4. Keep the USB cable connected until flashing completes. Restart the Tab5 afterward.
 
 ## Other installation methods
 
-You can also use the **M5Burner desktop application**: search for OrcSDR, select
-the Tab5 package, and burn it. The same settings-reset notice applies.
+The [M5Burner web flasher](https://burner.m5stack.com/share/firmware/JXFU4H)
+is a separate installation option. In Chrome or Edge, check the version shown,
+click **Burn to device**, and select the Tab5 port. You can also use the
+**M5Burner desktop application**: search for OrcSDR, select the Tab5 package,
+and burn it.
+
+**An M5Burner install resets saved settings** (Wi-Fi profiles, location, screen
+rotation), so write them down first and expect to re-enter them.
 
 To keep your settings, use the Windows settings-preserving installer zip from
 [the latest release page](https://github.com/hardcoreerik/OrcSDR/releases/latest):

@@ -210,7 +210,8 @@ tune, change volume, or return passwords or coordinates.
 | `RTL_STATUS` | no | `RTL_SDR_STATUS connected=... vid=... pid=... speed=... serial="..."` — is the RTL-SDR dongle itself present/enumerated. |
 | `RTL_SIGNAL` | no | `RTL_SIGNAL_STATUS band=... frequency_hz=... signal_dbfs=... stereo_locked=0\|1 left_dbfs=... right_dbfs=... rds_carrier=0\|1 rds_signal=...` — one-shot snapshot of everything the dashboard's meters show. |
 | `RTL_ACARS STATUS` | no | `RTL_ACARS_UI open=... view=... demo=... receiver=... tune=... held=... total=...` then `RTL_ACARS_STATUS running=... channel_hz=... blocks=... gaps=... level=... crc_ok=...` � ACARS dashboard state, receiver counters and paint timings. Read-only. |
-| `RTL_UI STATUS` | no | `RTL_UI_STATUS ... home_font=0\|1 graphics=0\|1` — active dashboard ownership plus the current display font and live spectrum/waterfall state. |
+| `RTL_UI STATUS` | no | `RTL_UI_STATUS ... home_font=0\|1 graphics=0\|1` — active dashboard ownership plus the current display font and live spectrum/waterfall state. It also reports `volume=` (0-255), `audio_enabled=0\|1` and `tray=0\|1` (the volume tray is open). |
+| `RTL_AIS STATUS` | no | `RTL_AIS_UI ...` (dashboard state, `test=0\|1`) then `RTL_AIS_STATUS ...` (receiver link, IQ blocks, per-channel CRC-valid counts, parser-rejected frames, drops). |
 
 `signal_dbfs` is the RF-level meter (matches the SIG bar). `left_dbfs`/
 `right_dbfs` are FM stereo decoder outputs — meaningful only when
@@ -462,8 +463,11 @@ The LoRa Traffic toolbar equivalents are `RTL_UI ACTION LORA DETAILS`,
 `RTL_SIGNAL` reports a smoothed relative dBFS value from the same IQ stream;
 LoRa Overview uses the unsmoothed value for faster visual response.
 
-`RTL_UI OPEN` accepts `HOME`, `FM`, `AIRBAND`, `P25`, `ADSB`, `LORA`, `RF_LAB`,
-`WIFI_ANALYSIS`, `SETTINGS`, or `ACARS` (the full list is printed by `RTL_UI_OPEN_INVALID`).
+`RTL_UI OPEN` accepts `HOME`, `FM`, `AM`, `SHORTWAVE`, `P25`, `ADSB`, `LORA`, `RF_LAB`,
+`WIFI_ANALYSIS`, `FT8`, `SETTINGS`, `WEATHER`, `CB`, `POCSAG`, `AIRBAND`, `ACARS`, `DEAD_AIR`, `AIS`, `VISUALIZER`, `MARINE`,
+`SATELLITE` or `UTILITIES` (the authoritative list is printed by `RTL_UI_OPEN_INVALID`).
+`RTL_AIS TEST ON|OFF` (authenticated) labels the AIS screens "TEST REPLAY DATA - NOT LIVE RF" for replayed synthetic data; it must be on
+before the replay source is selected. `RTL_AIS BENCH` (authenticated) times the receiver stages on the device and prints `RTL_AIS_BENCH ...`.
 `RTL_UI TAP <x> <y>` (authenticated) injects a touch at full-screen coordinates 0-1279 / 0-719
 through the same routing as a finger, header included; it replies `RTL_UI_TAP_OK`.
 `RTL_ACARS ARCHIVETEST` (authenticated) writes 12 records to a scratch folder on the SD card, reads them back through the

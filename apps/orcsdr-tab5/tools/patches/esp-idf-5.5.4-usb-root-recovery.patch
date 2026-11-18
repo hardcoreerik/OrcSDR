@@ -1,0 +1,192 @@
+--- a/hub.c
++++ b/hub.c
+@@ -14,6 +14,8 @@
+ #include "esp_bit_defs.h"
+ #include "esp_private/critical_section.h"
+ #include "esp_log.h"
++#include "freertos/FreeRTOS.h"
++#include "freertos/semphr.h"
+ #include "usb_private.h"
+ #include "hcd.h"
+ #include "hub.h"
+@@ -93,6 +95,7 @@
+     } single_thread;                                /**< Single thread members don't require a critical section so long as they are never accessed from multiple threads */
+
+     struct {
++        SemaphoreHandle_t root_port_lock;          /**< Serializes root commands with event processing */
+         hcd_port_handle_t root_port_hdl;            /**< Root port HCD handle */
+         usb_proc_req_cb_t proc_req_cb;              /**< Process request callback */
+         void *proc_req_cb_arg;                      /**< Process request callback argument */
+@@ -432,7 +435,21 @@
+         HUB_DRIVER_EXIT_CRITICAL();
+
+         if (port_has_device) {
++#if ORCSDR_USB_NODE_FIX
++            // Espressif esp-usb PR #485: the recycle path may remove this node first.
++            const esp_err_t ret = dev_tree_node_dev_gone(NULL, 0);
++            if (ret == ESP_ERR_NOT_FOUND) {
++                // IDF 5.5's single-root HCD still needs recovery after power-off.
++                HUB_DRIVER_ENTER_CRITICAL();
++                p_hub_driver_obj->dynamic.port_reqs |= PORT_REQ_RECOVER;
++                p_hub_driver_obj->dynamic.flags.actions |= HUB_DRIVER_ACTION_ROOT_REQ;
++                HUB_DRIVER_EXIT_CRITICAL();
++            } else if (ret != ESP_OK) {
++                ESP_ERROR_CHECK(ret);
++            }
++#else
+             ESP_ERROR_CHECK(dev_tree_node_dev_gone(NULL, 0));
++#endif
+         }
+
+         break;
+@@ -527,6 +544,11 @@
+     // Allocate Hub driver object
+     hub_driver_t *hub_driver_obj = heap_caps_calloc(1, sizeof(hub_driver_t), MALLOC_CAP_DEFAULT);
+     if (hub_driver_obj == NULL) {
++        return ESP_ERR_NO_MEM;
++    }
++    hub_driver_obj->constant.root_port_lock = xSemaphoreCreateMutex();
++    if (hub_driver_obj->constant.root_port_lock == NULL) {
++        heap_caps_free(hub_driver_obj);
+         return ESP_ERR_NO_MEM;
+     }
+
+@@ -607,6 +629,7 @@
+     ext_port_uninstall();
+ err_ext_port:
+ #endif // ENABLE_USB_HUBS
++    vSemaphoreDelete(hub_driver_obj->constant.root_port_lock);
+     heap_caps_free(hub_driver_obj);
+     return ret;
+ }
+@@ -627,6 +650,7 @@
+
+     ESP_ERROR_CHECK(hcd_port_deinit(hub_driver_obj->constant.root_port_hdl));
+     // Free Hub driver resources
++    vSemaphoreDelete(hub_driver_obj->constant.root_port_lock);
+     heap_caps_free(hub_driver_obj);
+     return ESP_OK;
+ }
+@@ -635,16 +659,24 @@
+ {
+     HUB_DRIVER_ENTER_CRITICAL();
+     HUB_DRIVER_CHECK_FROM_CRIT(p_hub_driver_obj != NULL, ESP_ERR_INVALID_STATE);
+-    HUB_DRIVER_CHECK_FROM_CRIT(p_hub_driver_obj->dynamic.root_port_state == ROOT_PORT_STATE_NOT_POWERED, ESP_ERR_INVALID_STATE);
+-    HUB_DRIVER_EXIT_CRITICAL();
+-    // Power ON the root port
+-    esp_err_t ret;
+-    ret = hcd_port_command(p_hub_driver_obj->constant.root_port_hdl, HCD_PORT_CMD_POWER_ON);
+-    if (ret == ESP_OK) {
+-        HUB_DRIVER_ENTER_CRITICAL();
+-        p_hub_driver_obj->dynamic.root_port_state = ROOT_PORT_STATE_POWERED;
+-        HUB_DRIVER_EXIT_CRITICAL();
+-    }
++    hub_driver_t *hub = p_hub_driver_obj;
++    HUB_DRIVER_EXIT_CRITICAL();
++
++    xSemaphoreTake(hub->constant.root_port_lock, portMAX_DELAY);
++    HUB_DRIVER_ENTER_CRITICAL();
++    const bool stopped = hub->dynamic.root_port_state == ROOT_PORT_STATE_NOT_POWERED;
++    HUB_DRIVER_EXIT_CRITICAL();
++
++    esp_err_t ret = ESP_ERR_INVALID_STATE;
++    if (stopped) {
++        ret = hcd_port_command(hub->constant.root_port_hdl, HCD_PORT_CMD_POWER_ON);
++        if (ret == ESP_OK) {
++            HUB_DRIVER_ENTER_CRITICAL();
++            hub->dynamic.root_port_state = ROOT_PORT_STATE_POWERED;
++            HUB_DRIVER_EXIT_CRITICAL();
++        }
++    }
++    xSemaphoreGive(hub->constant.root_port_lock);
+     return ret;
+ }
+
+@@ -652,18 +684,31 @@
+ {
+     HUB_DRIVER_ENTER_CRITICAL();
+     HUB_DRIVER_CHECK_FROM_CRIT(p_hub_driver_obj != NULL, ESP_ERR_INVALID_STATE);
+-    if (p_hub_driver_obj->dynamic.root_port_state == ROOT_PORT_STATE_NOT_POWERED) {
+-        // The HUB was already stopped by usb_host_lib_set_root_port_power(false)
+-        HUB_DRIVER_EXIT_CRITICAL();
+-        return ESP_OK;
+-    }
+-    p_hub_driver_obj->dynamic.root_port_state = ROOT_PORT_STATE_NOT_POWERED;
+-    HUB_DRIVER_EXIT_CRITICAL();
+-
+-    // HCD_PORT_CMD_POWER_OFF will only fail if the port is already powered_off
+-    // This should never happen, so we assert ret == ESP_OK
+-    const esp_err_t ret = hcd_port_command(p_hub_driver_obj->constant.root_port_hdl, HCD_PORT_CMD_POWER_OFF);
+-    assert(ret == ESP_OK);
++    hub_driver_t *hub = p_hub_driver_obj;
++    HUB_DRIVER_EXIT_CRITICAL();
++
++    xSemaphoreTake(hub->constant.root_port_lock, portMAX_DELAY);
++    HUB_DRIVER_ENTER_CRITICAL();
++    const bool stopped = hub->dynamic.root_port_state == ROOT_PORT_STATE_NOT_POWERED;
++    HUB_DRIVER_EXIT_CRITICAL();
++
++    esp_err_t ret = ESP_OK;
++    if (!stopped) {
++        const hcd_port_state_t state = hcd_port_get_state(hub->constant.root_port_hdl);
++        if (state == HCD_PORT_STATE_RECOVERY) {
++            // Leave pending controller recovery to the host event task.
++            ret = ESP_ERR_INVALID_STATE;
++        } else if (state != HCD_PORT_STATE_NOT_POWERED) {
++            ret = hcd_port_command(hub->constant.root_port_hdl, HCD_PORT_CMD_POWER_OFF);
++        }
++        if (ret == ESP_OK) {
++            // Publish the new state before the event task can process the disconnect.
++            HUB_DRIVER_ENTER_CRITICAL();
++            hub->dynamic.root_port_state = ROOT_PORT_STATE_NOT_POWERED;
++            HUB_DRIVER_EXIT_CRITICAL();
++        }
++    }
++    xSemaphoreGive(hub->constant.root_port_lock);
+     return ret;
+ }
+
+@@ -847,11 +892,15 @@
+             ESP_ERROR_CHECK(ext_hub_process());
+         }
+ #endif // ENABLE_USB_HUBS
+-        if (action_flags & HUB_DRIVER_ACTION_ROOT_EVENT) {
+-            root_port_handle_events(p_hub_driver_obj->constant.root_port_hdl);
+-        }
+-        if (action_flags & HUB_DRIVER_ACTION_ROOT_REQ) {
+-            root_port_req(p_hub_driver_obj->constant.root_port_hdl);
++        if (action_flags & (HUB_DRIVER_ACTION_ROOT_EVENT | HUB_DRIVER_ACTION_ROOT_REQ)) {
++            xSemaphoreTake(p_hub_driver_obj->constant.root_port_lock, portMAX_DELAY);
++            if (action_flags & HUB_DRIVER_ACTION_ROOT_EVENT) {
++                root_port_handle_events(p_hub_driver_obj->constant.root_port_hdl);
++            }
++            if (action_flags & HUB_DRIVER_ACTION_ROOT_REQ) {
++                root_port_req(p_hub_driver_obj->constant.root_port_hdl);
++            }
++            xSemaphoreGive(p_hub_driver_obj->constant.root_port_lock);
+         }
+
+         HUB_DRIVER_ENTER_CRITICAL();
+--- a/usb_host.c
++++ b/usb_host.c
+@@ -626,7 +626,10 @@
+     HOST_EXIT_CRITICAL();
+
+     // Stop the root hub
+-    ESP_ERROR_CHECK(hub_root_stop());
++    const esp_err_t stop_ret = hub_root_stop();
++    if (stop_ret != ESP_OK) {
++        return stop_ret;
++    }
+
+     // Unassign the host library object
+     HOST_ENTER_CRITICAL();
+--- a/CMakeLists.txt
++++ b/CMakeLists.txt
+@@ -45,3 +45,6 @@
+ if(CONFIG_COMPILER_STATIC_ANALYZER AND CMAKE_C_COMPILER_ID STREQUAL "GNU") # TODO GCC-366 (segfault)
+     set_property(SOURCE usb_host.c PROPERTY COMPILE_FLAGS -fno-analyzer)
+ endif()
++
++option(ORCSDR_USB_NODE_FIX "Tolerate an already-removed root device node" ON)
++target_compile_definitions(${COMPONENT_LIB} PRIVATE ORCSDR_USB_NODE_FIX=$<BOOL:${ORCSDR_USB_NODE_FIX}>)

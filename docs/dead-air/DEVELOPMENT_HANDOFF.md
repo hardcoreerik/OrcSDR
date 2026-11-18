@@ -1,5 +1,8 @@
 # Dead Air — native Tab5 development handoff
 
+
+> **Historical design/integration handoff, not current support status.** Its milestone-one "not hardware tested" statement and "ENV III not present" tasks describe the original development period. The current mainline dashboard is implemented; the maintainer confirms working ENV III temperature/humidity/pressure readings on Tab5 (2026-11-04). See [current field acceptance](../MAINTAINER_FIELD_ACCEPTANCE_2026-11-04.md) and [current project status](../../PROJECT_STATUS.md). Historical steps below are retained for engineering provenance.
+
 Status: implementation milestone 1; **not** a hardware-tested release.
 Work branch: chatgpt/dead-air-native-ui-20261018.
 Target hardware: M5Stack Tab5 (ESP32-P4, 1280 x 720, 5-inch touchscreen).

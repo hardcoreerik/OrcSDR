@@ -39,6 +39,8 @@ struct State {
 // never USB/IQ/audio callbacks.
 void begin(orcsdr::storage::FileSystem* filesystem, uint64_t free_bytes = 0);
 void poll(bool wifi_connected);
+// Deletes the catalog worker once it has finished. Call from normal application code; cheap when idle.
+void reap();
 bool request_check();
 bool request_install(uint8_t pack_index);
 bool request_remove(uint8_t pack_index);

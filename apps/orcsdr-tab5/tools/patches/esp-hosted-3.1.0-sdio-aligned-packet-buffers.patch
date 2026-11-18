@@ -1,0 +1,12 @@
+--- a/managed_components/espressif__esp_hosted/host/mcu/eh_host_mcu_transport/src/eh_host_bus_sdio.c
++++ b/managed_components/espressif__esp_hosted/host/mcu/eh_host_mcu_transport/src/eh_host_bus_sdio.c
+@@ -348,7 +348,8 @@
+ #if EH_HOST_PORT_SDIO_USE_MEMPOOL
+ 	return hosted_mempool_alloc(buf_mp_g, MAX_SDIO_BUFFER_SIZE, need_memset);
+ #else
+-	void *p = eh_host_port_dma_alloc(MAX_SDIO_BUFFER_SIZE);
++	/* ORCSDR-TAB5: P4 DMA buffers must be cache-line aligned. */
++	void *p = eh_host_port_dma_alloc_aligned(MAX_SDIO_BUFFER_SIZE, HOSTED_MEM_ALIGNMENT);
+ 	if (p && need_memset) memset(p, 0, MAX_SDIO_BUFFER_SIZE);
+ 	return p;
+ #endif

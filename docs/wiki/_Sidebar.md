@@ -16,6 +16,7 @@
 - [[Weather and Other Bands]]
 - [[P25 Radio]]
 - [[ADS-B Aircraft]]
+- [[AIS Marine Vessels]]
 - [[LoRa Monitor]]
 - [[POCSAG Pager Monitor]]
 - [[Wi-Fi Survey]]

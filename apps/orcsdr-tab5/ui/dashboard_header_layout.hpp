@@ -19,9 +19,10 @@ inline bool header_overlap(HeaderRect a,HeaderRect b) {
 inline HeaderLayout make_header_layout(HeaderRect v) {
   HeaderLayout l{};l.viewport=v;
   if (v.x==0 && v.y==0 && v.w==1280 && v.h==720) {
-    l.brand={20,12,350,92};l.badge={24,14,88,88};l.battery={1158,12,54,54};
-    l.status={420,12,446,54};l.home={1040,8,58,58};l.mute={1099,12,54,54};
-    l.visualizer={};l.settings={1217,12,51,54};l.tray={900,72,280,68};
+    l.brand={20,12,350,92};l.badge={24,14,88,88};l.battery={866,12,174,54};
+    l.status={420,12,446,54};l.home={1058,8,58,58};l.mute={1138,12,54,54};
+    l.visualizer={};l.settings={1212,12,54,54};l.tray={223,72,840,280};
+    l.slider_x=l.tray.x+176;l.slider_y=l.tray.y+150;l.slider_w=496;
     l.valid=true;return l;
   }
   l.legacy=false;

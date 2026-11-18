@@ -1,5 +1,7 @@
 # Dead Air Changelog
 
+> **Current maintainer confirmation, 2026-11-04:** Dead Air is running with real RF measurements and the Unit ENV III temperature, humidity and pressure sensor working on Tab5. VEIL-26 is an implemented, deterministic, opt-in analysis of measured radio values, not a detector of the paranormal. Some older entries below say hardware was not yet available or the feature had not been flashed; those were true **at the time of the original milestone** and should not be mistaken for current status. This note is a maintainer report, not a new instrumented/dated acceptance log. See [field acceptance](../MAINTAINER_FIELD_ACCEPTANCE_2026-11-04.md).
+
 Changes to the Dead Air dashboard. Newest first. The design contract and the development handoff are in `DEVELOPMENT_HANDOFF.md`.
 
 ## Unreleased - Overview RF strip, tappable Events, scrub, control run, band map, orb, session card

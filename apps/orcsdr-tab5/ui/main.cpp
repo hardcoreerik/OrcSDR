@@ -69,6 +69,8 @@
 #include "acars_archive_sd.hpp"
 #include "acars_receiver.hpp"
 #include "acars_selftest.hpp"
+#include "ais_app.hpp"
+#include "ais_radio.hpp"
 #include "ft8_tuning.hpp"
 #include "ft8_heard_db.hpp"
 #include "ft8_adif.hpp"
@@ -129,6 +131,7 @@
 #include "map_service.hpp"
 #include "map_screen.hpp"
 #include "map_download_notice.hpp"
+#include "rtl_tcp_header_tag.hpp"
 #include "map_serial.hpp"
 #include "location_store.hpp"
 #include "nvs_store.hpp"
@@ -140,6 +143,12 @@
 #include "pocsag_decoder_core.hpp"
 #include "pocsag_store.hpp"
 #include "radio_session.hpp"
+#include "receiver_source_policy.hpp"
+#include "rtl_source_routing.hpp"
+#include "settings_remote_source.hpp"
+#include "rtl_tcp_server.hpp"
+#include "rtl_tcp_source.hpp"
+#include "source_capabilities.hpp"
 #include "radio_ui_service.hpp"
 #include "receiver_band_plan.hpp"
 #include "rf_lab.hpp"
@@ -164,6 +173,16 @@
 #if ESP_RTL_SDR_VERSION_NUMBER < 800
 #error "OrcSDR requires esp_rtl_sdr v0.8.0-rc2 or newer"
 #endif
+
+// Gain changes follow the active receiver (remote rtl_tcp or USB); see rtl_source_routing.hpp.
+#define esp_rtl_sdr_set_tuner_gain_mode orcsdr::routing::set_tuner_gain_mode
+#define esp_rtl_sdr_set_tuner_gain orcsdr::routing::set_tuner_gain
+#define esp_rtl_sdr_set_rtl_agc orcsdr::routing::set_rtl_agc
+// The readbacks follow the same rule: while a remote stream runs the UI must read what was asked of the server, not the local dongle's shadow.
+#define esp_rtl_sdr_get_tuner_gain_mode orcsdr::routing::get_tuner_gain_mode
+#define esp_rtl_sdr_get_tuner_gain orcsdr::routing::get_tuner_gain
+#define esp_rtl_sdr_get_tuner_gains orcsdr::routing::get_tuner_gains
+#define esp_rtl_sdr_get_rtl_agc orcsdr::routing::get_rtl_agc
 
 enum class SerialVerbosity : uint8_t { quiet = 0, normal = 1, debug = 2, trace = 3 };
 
@@ -1057,6 +1076,17 @@ static std::atomic<uint32_t> rtl_iq_pipeline_drops{0};
 static std::atomic<uint64_t> rtl_iq_received_samples{0};
 static std::atomic<uint64_t> rtl_iq_processed_samples{0};
 static std::atomic<uint64_t> rtl_iq_pipeline_drop_samples{0};
+// Timestamps (ms since boot) of the first IQ blocks dropped because no ring slot was free, with the number of filled slots
+// at that moment. Kept in PSRAM; printed by RTL_DROPLOG so an IQ loss can be lined up against what the UI was doing.
+constexpr uint32_t kDropLogEntries = 32;
+EXT_RAM_BSS_ATTR static uint32_t g_drop_log_ms[kDropLogEntries];
+EXT_RAM_BSS_ATTR static uint8_t g_drop_log_filled[kDropLogEntries];
+static std::atomic<uint32_t> g_drop_log_count{0};
+static std::atomic<uint32_t> g_stream_started_ms{0};
+static void note_iq_drop(uint8_t filled) {
+  const uint32_t i = g_drop_log_count.fetch_add(1, std::memory_order_relaxed);
+  if (i < kDropLogEntries) { g_drop_log_ms[i] = static_cast<uint32_t>(esp_timer_get_time() / 1000); g_drop_log_filled[i] = filled; }
+}
 static std::atomic<uint32_t> rtl_iq_sequence{0};
 /* Scratch IQ buffer for demod/spectrum (size >= max bulk transfer). */
 static uint8_t rtl_iq_processing[32768 + 512];
@@ -1519,10 +1549,17 @@ static bool rtl_session_continuous = true;
 static uint32_t rtl_session_started_ms = 0;
 static std::atomic<uint32_t> rtl_session_frequency_hz{kRtlFmDefaultHz};
 static std::atomic<uint32_t> rtl_rate_override_sps{0};
+// Hardware correction is selected by driver capability. The delivered IQ
+// already has its requested center; no additional software mixer is added.
+static std::atomic<bool> rtl_offset_tuning_enabled{true};
 // The FT8 decoder set rtl_rate_override_sps (240 kS/s) and must clear it; the DSP task then treats the non-default rate as its own.
 static std::atomic<bool> g_ft8_rate_owned{false};
 static std::atomic<bool> g_ft8_rate_restart_pending{false};   // the stream is still at the FT8 rate after the decoder let go
 static std::atomic<uint32_t> rtl_active_sample_rate_sps{kRtlSampleRateSps};
+// The band's default rate as decided when the running stream started. IQ blocks are classified against this, not against
+// rtl_default_sample_rate() called live: on a remote stream that reads the rate cap and the link adapter, which can change
+// before the stream restarts, and every block would then look like a custom rate and miss its decoders.
+static std::atomic<uint32_t> rtl_stream_default_rate_sps{kRtlSampleRateSps};
 // M5GFX framebuffer writes are single-task only.  The RTL worker requests a
 // repaint; loop() owns the actual draw.
 static std::atomic<bool> rtl_stream_ui_refresh_pending{false};
@@ -1867,12 +1904,19 @@ static inline bool rtl_device_ready() { return rtl_sdr_device != nullptr; }
 esp_rtl_sdr_handle_t g_rtl = nullptr;
 std::atomic<bool> g_rtl_device_ready{false};
 std::atomic<esp_rtl_sdr_profile_t> g_rtl_profile{ESP_RTL_SDR_PROFILE_UNKNOWN};
+std::atomic<bool> g_rtl_is_nooelec_xtr{false};
 std::atomic<uint32_t> g_rtl_device_capabilities{0};
 static float g_stream_audio_scale = 5500.0f;
 static RtlBand g_stream_band = RtlBand::fm;
-static inline bool rtl_device_ready() {
+static inline bool rtl_usb_device_ready() {
   return g_rtl_device_ready.load(std::memory_order_acquire) && g_rtl != nullptr;
 }
+static bool rtl_remote_source_ready();  // rtl_tcp client selected and usable (defined with the IQ sink)
+static bool rtl_remote_active();        // the running stream comes from an rtl_tcp server, not the USB dongle
+static orcsdr::source::Active rtl_choose_source();  // the receiver source policy (defined with the IQ sink)
+// "The selected receiver source can start": decided by the source policy, so a source set to remote does not start the
+// USB dongle when the network is down (the policy then chooses none), and USB mode never waits on a server.
+static inline bool rtl_device_ready() { return rtl_choose_source() != orcsdr::source::Active::none; }
 #endif
 std::atomic<RtlCaptureState> rtl_capture_state{RtlCaptureState::disconnected};
 std::atomic<bool> rtl_capture_requested{false};
@@ -1919,8 +1963,21 @@ std::atomic<uint32_t> rtl_audio_settings_persist_due_ms{0};
 /** When false: no scope/waterfall updates (audio + SIG meter still run). A/B for chop diagnosis. */
 std::atomic<bool> rtl_graphics_enabled{true};
 orcsdr::audio_header::Control rtl_header_audio_control{};
+// Touch gate for the volume tray. While the tray is open, and until the finger that opened, adjusted or dismissed it has been
+// up for kTrayTouchSettleMs, ui_touch_detail() reports "no touch" to every dashboard, so a tap on the tray can never also be a
+// tune, scope drag, list tap or button press underneath it (Home's touch-to-tune included).
+struct TrayTouchGate { bool swallow = false; uint32_t last_touch_ms = 0; };
+static TrayTouchGate g_tray_gate;
+constexpr uint32_t kTrayTouchSettleMs = 250;
 enum class SdrPinchMode : uint8_t { Span, Filter };
 std::atomic<uint32_t> rtl_scope_span_hz{kRtlScopeSpanMaxHz};
+// Widest span the live stream can honestly show: a span never claims more bandwidth than the
+// stream carries (a remote 1.44 MS/s stream cannot show 2.4 MHz). Idle (rate 0) keeps the fixed
+// maximum. The stream start also snaps an over-wide span down, so a rate step stays consistent.
+inline uint32_t rtl_span_cap_hz() {
+  const uint32_t live = rtl_active_sample_rate_sps.load(std::memory_order_relaxed);
+  return (live != 0 && live < kRtlScopeSpanMaxHz) ? live : kRtlScopeSpanMaxHz;
+}
 std::atomic<uint32_t> rtl_filter_bandwidth_hz{kRtlFmFilterDefaultHz};
 SdrPinchMode rtl_pinch_mode = SdrPinchMode::Span;
 uint32_t rtl_fm_step_hz = kRtlFmStepHz;
@@ -2438,6 +2495,19 @@ void adsb_decoder_task(void*) {
 }
 
 void print_adsb_status() {
+  if (orcsdr::rtl_tcp_source::running()) {
+    // A remote stream has no local driver metrics: report the rtl_tcp stream's own counters and the decoder's.
+    const auto remote = orcsdr::rtl_tcp_source::status();
+    const auto& remote_decode = adsb_decoder.stats();
+    Serial.printf("RTL_ADSB_STATUS available=1 source=remote active=%d state=%s rate_sps=%u link=%u bytes=%llu dropped=%llu "
+                  "preambles=%u frames=%u df17=%u crc_ok=%u aircraft=%u messages=%u\n",
+                  g_stream_band == RtlBand::adsb ? 1 : 0, orcsdr::rtl_tcp::state_name(remote.state),
+                  static_cast<unsigned>(remote.sample_rate_sps), static_cast<unsigned>(remote.link_ratio_pct),
+                  static_cast<unsigned long long>(remote.bytes_received), static_cast<unsigned long long>(remote.bytes_dropped),
+                  remote_decode.preambles, remote_decode.frames, remote_decode.df17, remote_decode.crc_ok,
+                  adsb_aircraft_count.load(std::memory_order_relaxed), adsb_total_messages.load(std::memory_order_relaxed));
+    return;
+  }
   esp_rtl_sdr_metrics_t metrics{};
   if (g_rtl == nullptr || esp_rtl_sdr_get_metrics(g_rtl, &metrics) != ESP_OK) {
     Serial.println("RTL_ADSB_STATUS available=0");
@@ -2498,14 +2568,15 @@ void redraw_spectrum_panel();
 void draw_sdr_controls(RtlBand band, bool running);
 void handle_sdr_touch(int32_t x, int32_t y);
 void poll_sdr_touch(bool from_stream);
-bool request_hot_retune(uint32_t frequency_hz);
-bool request_hot_retune_for(orcsdr::radio::Token token, uint32_t frequency_hz);
+bool request_hot_retune(uint32_t frequency_hz, bool user_request = true);
+bool request_hot_retune_for(orcsdr::radio::Token token, uint32_t frequency_hz,
+                            bool user_request = false);
 void set_radio_session_state(orcsdr::radio::ReceiverState state);
 void ft8_native_release_rate();
 uint32_t rtl_fm_command_lo_hz(uint32_t display_hz);
 uint32_t rtl_fm_sanitize_display_hz(uint32_t frequency_hz);
 bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
-                            bool persist_navigation = true);
+                            bool persist_navigation = true, bool user_request = true);
 void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume);
 void refresh_active_screen();
 orcsdr::shortwave::Snapshot shortwave_dashboard_snapshot();
@@ -2604,6 +2675,7 @@ void handle_p25_dashboard_action(const orcsdr::p25::Action& action);
 void service_keyboard();
 using UiTouchDetail = m5::Touch_Class::touch_detail_t;
 UiTouchDetail ui_touch_detail(int index);
+UiTouchDetail ui_touch_detail_raw(int index);
 uint8_t ui_touch_count();
 orcsdr::lora::Snapshot lora_dashboard_snapshot();
 void handle_lora_dashboard_action(const orcsdr::lora::Action& action);
@@ -2736,7 +2808,16 @@ static_assert(!rtl_tuner_gain_available_for_caps(
 static_assert(rtl_tuner_gain_available_for_caps(
     kRtlNoHfMinHz, ESP_RTL_SDR_CAP_GAIN | ESP_RTL_SDR_CAP_DIRECT_SAMPLING));
 
+// The active source describes itself: the USB dongle through the driver's bits, a remote rtl_tcp server through its greeting
+// (source_capabilities.cpp). With a remote stream running the local driver's bits, if any, belong to a dongle nobody is using.
 uint32_t rtl_device_capabilities() {
+  if (rtl_remote_active()) {
+    const auto status = orcsdr::rtl_tcp_source::status();
+    const auto caps = orcsdr::source_caps::remote(status.tuner_type_raw, status.gain_count);
+    return (caps.stream ? ESP_RTL_SDR_CAP_STREAM : 0u) | (caps.retune ? ESP_RTL_SDR_CAP_RETUNE : 0u) |
+           (caps.gain ? ESP_RTL_SDR_CAP_GAIN : 0u) | (caps.gain_auto ? ESP_RTL_SDR_CAP_GAIN_AUTO : 0u) |
+           (caps.rtl_agc ? ESP_RTL_SDR_CAP_RTL_AGC : 0u);
+  }
   return g_rtl_device_capabilities.load(std::memory_order_acquire);
 }
 
@@ -2748,13 +2829,41 @@ bool rtl_tuner_gain_available(uint32_t frequency_hz) {
   return rtl_tuner_gain_available_for_caps(frequency_hz, rtl_device_capabilities());
 }
 
+static bool rtl_remote_tuning_selected();   // defined with the remote source, below
+
+// Match the tuning limits of the pinned esp-rtl-sdr E4000 implementation.
+constexpr bool rtl_e4000_frequency_supported(uint32_t hz) {
+  return hz >= 64000000u && hz <= 1700000000u;
+}
+static_assert(!rtl_e4000_frequency_supported(63999999u));
+static_assert(rtl_e4000_frequency_supported(64000000u));
+static_assert(rtl_e4000_frequency_supported(1700000000u));
+static_assert(!rtl_e4000_frequency_supported(1700000001u));
+
+// The receiver in use is a local E4000. The profile describes the dongle on the Tab5's own USB port, so with a
+// remote rtl_tcp source selected it says nothing about the server's tuner: no E4000 limits or warnings then.
+bool rtl_is_e4000() {
+  return !rtl_remote_tuning_selected() &&
+         g_rtl_profile.load(std::memory_order_acquire) == ESP_RTL_SDR_PROFILE_E4000;
+}
+
 bool rtl_frequency_supported(uint32_t frequency_hz) {
+  // The capability bits describe a dongle on the Tab5's own USB port. With a remote rtl_tcp source there
+  // may be none, and the server's dongle sets the range: do not refuse here (the server's tuner decides).
+  if (rtl_remote_tuning_selected()) return true;
+  if (rtl_is_e4000()) return rtl_e4000_frequency_supported(frequency_hz);
   return rtl_frequency_supported_for_caps(frequency_hz, rtl_device_capabilities());
 }
 
 bool rtl_profile_is_provisional(esp_rtl_sdr_profile_t profile) {
-  // Blog V3/V3c streaming is soak-verified in the pinned driver.
-  return profile == ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5;
+  // Current supported profiles retain their independent RF acceptance limits.
+  (void)profile;
+  return false;
+}
+
+bool rtl_identity_is_nooelec_xtr(const esp_rtl_sdr_device_info_t* info) {
+  return info && strcmp(info->manufacturer, "Nooelec") == 0 &&
+         strstr(info->product, "XTR") != nullptr;
 }
 
 const char* rtl_receiver_label(esp_rtl_sdr_profile_t profile) {
@@ -2763,7 +2872,9 @@ const char* rtl_receiver_label(esp_rtl_sdr_profile_t profile) {
     case ESP_RTL_SDR_PROFILE_BLOG_V4L: return "RTL V4L";
     // The driver's single Blog V3 profile covers the V3 and V3c (R820T2).
     case ESP_RTL_SDR_PROFILE_BLOG_V3: return "RTL V3c";
-    case ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5: return "NOO V5 EXP";
+    case ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5: return "Nooelec V5";
+    case ESP_RTL_SDR_PROFILE_E4000:
+      return g_rtl_is_nooelec_xtr.load(std::memory_order_acquire) ? "Nooelec XTR" : "E4000";
     default: return "RTL-SDR";
   }
 }
@@ -2776,18 +2887,51 @@ void set_rtl_profile_status(const char* state) {
 }
 
 void report_unsupported_frequency(uint32_t frequency_hz) {
+  const bool e4000 = rtl_is_e4000();
   if (rtl_capture_state.load(std::memory_order_acquire) != RtlCaptureState::running) {
-    set_rtl_profile_status("below 24 MHz unavailable");
+    set_rtl_profile_status(e4000 ? "outside 64-1700 MHz" : "below 24 MHz unavailable");
   }
-  Serial.printf("RTL_TUNE_UNAVAILABLE profile=%u frequency_hz=%u reason=no_hf_upconverter\n",
+  Serial.printf("RTL_TUNE_UNAVAILABLE profile=%u frequency_hz=%u reason=%s\n",
                 static_cast<unsigned>(g_rtl_profile.load(std::memory_order_acquire)),
-                static_cast<unsigned>(frequency_hz));
+                static_cast<unsigned>(frequency_hz),
+                e4000 ? "receiver_range" : "no_hf_upconverter");
 }
 
-bool validate_rtl_tune_frequency(uint32_t frequency_hz) {
-  if (rtl_frequency_supported(frequency_hz)) return true;
+// Explicit rejected retunes keep the last valid stream. Keep their warning
+// local to the screen that made the request.
+uint32_t rtl_rejected_e4000_hz = 0;
+uint32_t rtl_rejected_screen_transition = 0;
+
+bool validate_rtl_tune_frequency(uint32_t frequency_hz, bool user_request = true) {
+  const bool supported = rtl_frequency_supported(frequency_hz);
+  if (user_request) {
+    rtl_rejected_e4000_hz = !supported && rtl_is_e4000() ? frequency_hz : 0;
+    rtl_rejected_screen_transition = orcsdr::screens::status().transitions;
+  }
+  if (supported) return true;
   report_unsupported_frequency(frequency_hz);
   return false;
+}
+
+orcsdr::map_download_notice::TuneWarning rtl_dashboard_tune_warning() {
+  using Id = orcsdr::screens::Id;
+  if (!rtl_device_ready() || !rtl_is_e4000()) {
+    rtl_rejected_e4000_hz = 0;
+    return {};
+  }
+  const auto& screen = orcsdr::screens::status();
+  switch (screen.active) {
+    case Id::home: case Id::fm: case Id::am: case Id::shortwave:
+    case Id::airband: case Id::cb: case Id::p25: case Id::adsb:
+    case Id::pocsag: case Id::lora: case Id::radio: case Id::ft8:
+    case Id::sstv: case Id::acars: case Id::dead_air: case Id::ais: break;
+    default: return {};
+  }
+  const uint32_t hz = rtl_rejected_e4000_hz &&
+                      rtl_rejected_screen_transition == screen.transitions
+      ? rtl_rejected_e4000_hz : rtl_ui_frequency_hz;
+  if (rtl_e4000_frequency_supported(hz)) return {};
+  return {hz, g_rtl_is_nooelec_xtr.load(std::memory_order_acquire)};
 }
 #endif
 
@@ -3637,10 +3781,32 @@ bool rtl_wide_dashboard_band(RtlBand band) {
          band == RtlBand::airband;
 }
 
+// Set while a remote rtl_tcp stream runs. The Tab5 reaches the network through its
+// Wi-Fi coprocessor (measured about 2 MB/s), which cannot carry the 4.8 MB/s of a
+// 2.4 MS/s dashboard band, so remote wide bands use the 960 kS/s default instead.
+// Decoders see it as the default rate, so none of them switch off.
+std::atomic<bool> g_rtl_remote_narrow{false};
+
+// Rate a remote stream asks for before the link adapter steps it down. Wide dashboard bands
+// ask for 1.44 MS/s (decimation 6, about 23 Mbit/s of the roughly 32 Mbit/s the link carries);
+// the rest stay at 960 kS/s. Both are rungs of the RateAdapter ladder.
+uint32_t rtl_remote_wanted_rate(RtlBand band) {
+  return rtl_wide_dashboard_band(band) ? 1440000u : ESP_RTL_SDR_RATE_960K;
+}
+
+// Bands whose decoders only work at the band's default rate (the DSP feeds them only non-custom blocks): the remote
+// link adapter and the RTL_TCP rate cap must not move them, or a 240 kS/s stream would reach a 960 kS/s decoder.
+bool rtl_band_needs_fixed_rate(RtlBand band) {
+  return band == RtlBand::lora || band == RtlBand::pocsag || band == RtlBand::p25;
+}
+
 uint32_t rtl_default_sample_rate(RtlBand band) {
   if (band == RtlBand::adsb) return ESP_RTL_SDR_RATE_2048K;
-  return rtl_wide_dashboard_band(band) ? ESP_RTL_SDR_RATE_2400K
-                                       : ESP_RTL_SDR_RATE_960K;
+  const bool remote_narrow = g_rtl_remote_narrow.load(std::memory_order_acquire);
+  if (remote_narrow && rtl_band_needs_fixed_rate(band)) return ESP_RTL_SDR_RATE_960K;
+  if (remote_narrow)
+    return orcsdr::rtl_tcp_source::adapted_rate(rtl_remote_wanted_rate(band));
+  return rtl_wide_dashboard_band(band) ? ESP_RTL_SDR_RATE_2400K : ESP_RTL_SDR_RATE_960K;
 }
 
 constexpr uint8_t rtl_rf_decimation(uint32_t sample_rate_sps) {
@@ -6696,7 +6862,10 @@ bool handle_global_header_audio_touch(int32_t x, int32_t y) {
       rtl_header_audio_control, x, y, millis(),
       rtl_live_volume.load(std::memory_order_acquire));
   if (action == orcsdr::audio_header::Action::none) return false;
+  if (action == orcsdr::audio_header::Action::consumed) return true;    // belongs to the tray, changes nothing
   if (action == orcsdr::audio_header::Action::opened) {
+    g_tray_gate.swallow = true;                                          // the rest of this touch is the tray's
+    g_tray_gate.last_touch_ms = millis();
     orcsdr::audio_header::capture_volume_background();
   } else if (action == orcsdr::audio_header::Action::volume_set) {
     const int current = rtl_live_volume.load(std::memory_order_acquire);
@@ -6711,6 +6880,42 @@ bool handle_global_header_audio_touch(int32_t x, int32_t y) {
   }
   draw_global_header_controls();
   return true;
+}
+
+// While the tray is open it owns the touch screen: this reads the raw finger and feeds it to the tray (press, then drag along the
+// slider), while ui_touch_detail() keeps every dashboard blind. The Home, visualizer and Settings buttons stay live: a tap on one
+// closes the tray and goes through to the dashboard.
+void service_volume_tray_touch() {
+  orcsdr::screens::set_draw_hold(rtl_header_audio_control.expanded);   // dashboards hold still under the open tray
+  // Keep the tray the top drawn item: re-composite it over anything painted there since the last loop.
+  orcsdr::audio_header::refresh_tray_overlay(rtl_header_audio_control, rtl_live_volume.load(std::memory_order_acquire),
+                                             rtl_audio_user_enabled.load(std::memory_order_acquire), millis());
+  if (!rtl_header_audio_control.expanded) return;
+  const UiTouchDetail raw = ui_touch_detail_raw(0);
+  if (raw.state == m5::touch_state_t::none || raw.state == m5::touch_state_t::touch_end) return;
+  if (raw.wasPressed() && orcsdr::audio_header::header_button_hit(raw.x, raw.y) &&
+      !orcsdr::audio_header::mute_hit(raw.x, raw.y)) {
+    rtl_header_audio_control.expanded = false;
+    rtl_header_audio_control.hide_at_ms = 0;
+    orcsdr::audio_header::restore_volume_background();
+    g_tray_gate.swallow = false;
+    draw_global_header_controls();
+    return;
+  }
+  // A held finger only drags the slider; everything else (mute, header buttons, blank tray, outside) acts once, on the press.
+  if (!raw.wasPressed() && !orcsdr::audio_header::slider_hit(raw.x, raw.y)) return;
+  (void)handle_global_header_audio_touch(raw.x, raw.y);
+}
+
+// Closes the volume tray without letting the tap through: used before a full-screen mode (visualizer, RF Lab) takes the display,
+// whose loop never reaches the tray's own timeout or touch service.
+void dismiss_volume_tray() {
+  if (!rtl_header_audio_control.expanded) return;
+  rtl_header_audio_control.expanded = false;
+  rtl_header_audio_control.hide_at_ms = 0;
+  orcsdr::audio_header::restore_volume_background();
+  g_tray_gate.swallow = false;
+  orcsdr::screens::set_draw_hold(false);
 }
 
 bool diagnostic_iq_rec_start(const char* transition) {
@@ -6826,7 +7031,7 @@ void airband_scope_span_set_hook(uint32_t hz) {
     return;
   }
   if (saved_hz == 0) saved_hz = rtl_scope_span_hz.load(std::memory_order_relaxed);
-  rtl_scope_span_hz.store(std::min(hz, kRtlScopeSpanMaxHz), std::memory_order_relaxed);
+  rtl_scope_span_hz.store(std::min(hz, rtl_span_cap_hz()), std::memory_order_relaxed);
   reset_spectrum_renderer();
 }
 
@@ -6838,7 +7043,7 @@ void airband_scope_span_hook(int direction) {
   while (index + 1 < std::size(kSteps) && kSteps[index] < current) ++index;
   if (direction > 0 && index + 1 < std::size(kSteps) && kSteps[index] <= current) ++index;
   else if (direction < 0 && index > 0) --index;
-  rtl_scope_span_hz.store(std::min(kSteps[index], kRtlScopeSpanMaxHz), std::memory_order_relaxed);
+  rtl_scope_span_hz.store(std::min(kSteps[index], rtl_span_cap_hz()), std::memory_order_relaxed);
   reset_spectrum_renderer();
 }
 
@@ -7040,6 +7245,7 @@ orcsdr::screens::Id screen_for_band(RtlBand band) {
 
 void refresh_active_screen() {
   using Id = orcsdr::screens::Id;
+  if (rtl_header_audio_control.expanded) return;   // the open volume tray stays the top drawn item
   switch (orcsdr::screens::status().active) {
     case Id::home: draw_home_dashboard(); break;
     case Id::fm: draw_fm_dashboard(false); break;
@@ -7056,6 +7262,7 @@ void refresh_active_screen() {
     case Id::sstv: draw_sstv_dashboard(false); break;
     case Id::acars: orcsdr::acars_app::draw(false); break;
     case Id::dead_air: orcsdr::dead_air_app::draw(false); break;
+    case Id::ais: orcsdr::ais_app::draw(false); break;
     default: break;  // Settings, documentation, and no screen own their draws.
   }
 }
@@ -7097,6 +7304,7 @@ void acquire_radio_owner(orcsdr::radio::Owner owner) {
 }
 
 void open_visualizer() {
+  dismiss_volume_tray();
   if (rtl_capture_state.load(std::memory_order_acquire) != RtlCaptureState::running) {
     show_visualizer_unavailable();
     return;
@@ -7128,6 +7336,7 @@ void close_visualizer() {
     case orcsdr::screens::Id::sstv: draw_sstv_dashboard(true); break;
     case orcsdr::screens::Id::acars: orcsdr::acars_app::draw(true); break;
     case orcsdr::screens::Id::dead_air: orcsdr::dead_air_app::draw(true); break;
+    case orcsdr::screens::Id::ais: orcsdr::ais_app::draw(true); break;
     case orcsdr::screens::Id::airband: orcsdr::airband::redraw(); break;
     case orcsdr::screens::Id::cb: orcsdr::cb::draw(); break;
     case orcsdr::screens::Id::p25: orcsdr::p25::draw(); break;
@@ -7181,7 +7390,7 @@ void service_visualizer() {
     else if (action.kind == orcsdr::visualizer::ActionKind::tune_hz)
       request_hot_retune(action.value);
     else if (action.kind == orcsdr::visualizer::ActionKind::span_hz)
-      rtl_scope_span_hz.store(action.value, std::memory_order_relaxed);
+      rtl_scope_span_hz.store(std::min(action.value, rtl_span_cap_hz()), std::memory_order_relaxed);
   }
 }
 
@@ -7267,6 +7476,7 @@ void stop_p25_automation() {
 }
 
 void open_rf_lab() {
+  dismiss_volume_tray();
   stop_p25_automation();
   const auto origin = orcsdr::screens::status().active;
   orcsdr::rf_lab::set_runtime(rf_lab_runtime());
@@ -7296,6 +7506,9 @@ void close_rf_lab() {
     case orcsdr::screens::Id::p25: orcsdr::p25::draw(); break;
     case orcsdr::screens::Id::adsb: orcsdr::adsb::draw(); break;
     case orcsdr::screens::Id::lora: orcsdr::lora::draw(); break;
+    case orcsdr::screens::Id::ais:   // RF Lab opened from AIS: return to AIS if it is still open, else Home
+      if (orcsdr::ais_app::active()) orcsdr::ais_app::draw(true); else show_home();
+      break;
     case orcsdr::screens::Id::radio:
       draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz,
                       rtl_live_volume.load(std::memory_order_acquire));
@@ -7449,6 +7662,7 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   orcsdr::ft8::leave();
   orcsdr::sstv_app::close();
   orcsdr::acars_app::close();
+  orcsdr::ais_app::close();
   orcsdr::dead_air_app::close();
   orcsdr::settings::leave();
   if (band != RtlBand::fm) orcsdr::fm::leave();
@@ -7637,6 +7851,8 @@ void draw_band_edges() {
  * Two-window Welch averaging keeps the single render core responsive.
  */
 void draw_spectrum(const uint8_t* iq, size_t bytes) {
+  // The open volume tray owns the pixels it covers: the live scope and waterfall hold still instead of painting over it.
+  if (rtl_header_audio_control.expanded) return;
   const bool web_scope = orcsdr::web_console::spectrum_demanded() || sstv_tune_spectrum_wanted() ||
                          orcsdr::dead_air_app::wants_spectrum();
   if (!web_scope && !orcsdr::home::active() && rtl_ui_band == RtlBand::lora &&
@@ -8828,12 +9044,22 @@ __attribute__((noinline)) void demodulate_shortwave_ssb(RtlBand band, const uint
   const uint32_t tuned_hz = rtl_requested_frequency_hz.load(std::memory_order_relaxed);
   // The sideband in force: Home's pick while Home is on screen, else the Shortwave dashboard's.
   const Mode wanted = effective_demod(band) == HomeDemod::lsb ? Mode::lsb : Mode::usb;
-  const bool direct_sampling = g_rtl_profile.load(std::memory_order_acquire) == ESP_RTL_SDR_PROFILE_BLOG_V3;
+  // Folding follows the receiver in use: a local Blog V3 samples HF directly; a remote server does so only when the
+  // RTL_TCP page asked it to (I or Q branch). The local profile says nothing about the server's dongle.
+  bool direct_sampling = g_rtl_profile.load(std::memory_order_acquire) == ESP_RTL_SDR_PROFILE_BLOG_V3;
+  if (rtl_remote_active()) {
+    const auto remote_tuning = orcsdr::rtl_tcp_source::tuning();
+    direct_sampling = remote_tuning.direct_set && remote_tuning.direct_mode != 0;
+  }
   const Mode sideband = demod_sideband(wanted, tuned_hz, direct_sampling);
   // Hot retunes quantize the LO to 5 kHz while the dial moves in 100 Hz steps: pass the dial's offset from the IQ centre.
   uint32_t centre_hz = 0;
   int32_t carrier_offset = 0;
-  if (g_rtl != nullptr && esp_rtl_sdr_get_center_freq(g_rtl, &centre_hz) == ESP_OK && centre_hz != 0)
+  // A remote stream has no readback: the local driver (idle, often at its last FM tune) must not be asked for the centre.
+  // The centre is the last LO sent to the server (a hot retune quantizes it to 5 kHz, so it is not the dial).
+  if (rtl_remote_active()) centre_hz = orcsdr::rtl_tcp_source::status().frequency_hz;
+  else if (g_rtl == nullptr || esp_rtl_sdr_get_center_freq(g_rtl, &centre_hz) != ESP_OK) centre_hz = 0;
+  if (centre_hz != 0)
     carrier_offset = std::clamp<int32_t>(static_cast<int32_t>(tuned_hz) - static_cast<int32_t>(centre_hz), -6000, 6000);
   if (sideband != wanted) carrier_offset = -carrier_offset;  // a folded spectrum is mirrored about the centre
   audio_scale *= 3.0f;  // SSB has no carrier: the same station is about 10 dB below its AM level
@@ -9364,11 +9590,126 @@ void set_radio_session_state(orcsdr::radio::ReceiverState state) {
 void cache_rtl_device_info(const void* payload) {
   const auto* info = static_cast<const esp_rtl_sdr_device_info_t*>(payload);
   if (info == nullptr) return;
+  g_rtl_is_nooelec_xtr.store(rtl_identity_is_nooelec_xtr(info), std::memory_order_release);
   rtl_sdr_vid = info->vid;
   rtl_sdr_pid = info->pid;
   strlcpy(rtl_sdr_serial, info->serial, sizeof(rtl_sdr_serial));
   strlcpy(rtl_sdr_speed, info->high_speed ? "high" : "full", sizeof(rtl_sdr_speed));
 }
+
+// ---- Optional remote rtl_tcp source ---------------------------------------
+// The network client fills the same IQ ring the USB callback fills, so every
+// demodulator and decoder downstream is shared. It receives straight into a ring
+// slot (one copy fewer than the USB path, which copies out of the driver buffer).
+// Nothing in the USB path depends on this block.
+static std::atomic<uint8_t> g_rtl_active_source{static_cast<uint8_t>(orcsdr::source::Active::none)};
+
+static orcsdr::source::Active rtl_choose_source() {
+  orcsdr::source::Inputs in;
+  in.mode = orcsdr::rtl_tcp_source::mode();
+  in.active = static_cast<orcsdr::source::Active>(g_rtl_active_source.load(std::memory_order_acquire));
+  in.usb_ready = rtl_usb_device_ready();
+  in.remote_configured = orcsdr::rtl_tcp_source::configured();
+  // A remote stream that is still reconnecting keeps its source through a Wi-Fi blip.
+  in.network_up = orcsdr::wifi::connected() ||
+                  (in.active == orcsdr::source::Active::remote_tcp &&
+                   orcsdr::rtl_tcp_source::running());
+  in.ms_since_boot = millis();
+  return orcsdr::source::choose(in);
+}
+
+static bool rtl_remote_source_ready() {
+  return rtl_choose_source() == orcsdr::source::Active::remote_tcp;
+}
+
+static bool rtl_remote_active() {
+  return g_rtl_active_source.load(std::memory_order_acquire) ==
+         static_cast<uint8_t>(orcsdr::source::Active::remote_tcp);
+}
+
+static std::atomic<bool> g_tag_in_documentation{false};   // RTL_TAG_DOC: show the RTL-TCP tag on documentation screens
+
+static bool rtl_remote_tuning_selected() {
+  return rtl_remote_active() || rtl_remote_source_ready();
+}
+
+static int rtl_ring_slot_index(const uint8_t *slot) {
+  for (uint8_t i = 0; i < kRtlRingDepth; ++i)
+    if (rtl_ring_slots[i] == slot) return i;
+  return -1;
+}
+
+static bool rtl_tcp_sink_acquire(uint8_t **slot, size_t *capacity) {
+  uint8_t index = 0;
+  if (!rtl_free_q || !rtl_filled_q || xQueueReceive(rtl_free_q, &index, 0) != pdTRUE) return false;
+  *slot = rtl_ring_slots[index];
+  // The demodulators write one audio sample per kFmAudioDecim x rf_decimation IQ pairs into a
+  // kRtlAudioBufferSamples buffer. A full 32 KiB read at 240 kS/s (decimation 1) makes 3277
+  // samples and overran that buffer (crash 2026-11-06). Cap the read so it always fits.
+  const size_t audio_safe_bytes = 2u * (kRtlAudioBufferSamples - 16) * kFmAudioDecim *
+                                  std::max<size_t>(1, rtl_active_sample_rate_sps.load(std::memory_order_relaxed) / kRtlDemodRateSps);
+  *capacity = std::min(sizeof(rtl_iq_processing), audio_safe_bytes);
+  return true;
+}
+
+static void rtl_tcp_sink_release(uint8_t *slot) {
+  const int index = rtl_ring_slot_index(slot);
+  if (index < 0) return;
+  const uint8_t slot_index = static_cast<uint8_t>(index);
+  (void)xQueueSend(rtl_free_q, &slot_index, 0);
+}
+
+static void rtl_tcp_sink_submit(uint8_t *slot, size_t bytes) {
+  const int index = rtl_ring_slot_index(slot);
+  if (index < 0) return;
+  const uint8_t slot_index = static_cast<uint8_t>(index);
+  const size_t n = bytes <= sizeof(rtl_iq_processing) ? bytes : sizeof(rtl_iq_processing);
+  rtl_capture_bytes += n;
+  rtl_iq_received_samples.fetch_add(n / 2, std::memory_order_relaxed);
+  const uint32_t active_rate = rtl_active_sample_rate_sps.load(std::memory_order_relaxed);
+  const uint32_t decoder_rate = rtl_stream_default_rate_sps.load(std::memory_order_relaxed);
+  const RtlIqBlock block{
+      rtl_ring_slots[slot_index], n,
+      rtl_iq_sequence.fetch_add(1, std::memory_order_relaxed), slot_index, g_stream_band,
+      g_stream_audio_scale, active_rate, active_rate != decoder_rate};
+  if (xQueueSend(rtl_filled_q, &block, 0) != pdTRUE) {
+    rtl_iq_pipeline_drops.fetch_add(1, std::memory_order_relaxed);
+    rtl_iq_pipeline_drop_samples.fetch_add(n / 2, std::memory_order_relaxed);
+    (void)xQueueSend(rtl_free_q, &slot_index, 0);
+  }
+}
+
+// A reconnect breaks the sample sequence; demodulator state must not carry over.
+static void rtl_tcp_sink_discontinuity() {
+  rtl_dsp_request_reset(kRtlResetFull);
+  orcsdr::ft8_runtime::note_discontinuity();   // FT8 times its slots by sample count: a gap must restart that count
+  orcsdr::ais_radio::note_discontinuity();     // AIS must not join HDLC frames across the gap (sets a flag only)
+}
+
+// rtl_tcp server (rtl_tcp_server.cpp): primitives only; the ownership policy is in the module.
+static std::atomic<bool> g_rtl_server_owner{false};  // gates local stream starts
+static const orcsdr::rtl_tcp_server::Hooks kRtlTcpServerHooks{
+    [] { return g_rtl; },
+    [] { return rtl_usb_device_ready(); },
+    [] {
+      const RtlCaptureState s = rtl_capture_state.load(std::memory_order_acquire);
+      return s == RtlCaptureState::running || s == RtlCaptureState::queued;
+    },
+    [] {
+      rtl_hotplug_resume_pending.store(false, std::memory_order_release);
+      rtl_restart_requested.store(false, std::memory_order_release);
+      rtl_stop_requested.store(true, std::memory_order_release);
+    },
+    [](bool allow) {
+      if (allow) rtl_stop_requested.store(false, std::memory_order_release);
+      g_rtl_server_owner.store(!allow, std::memory_order_release);
+    },
+    [] {
+      (void)queue_local_rtl_listen(rtl_requested_band.load(std::memory_order_acquire),
+                                   rtl_requested_frequency_hz.load(std::memory_order_acquire), false);
+    },
+    [] { return orcsdr::wifi::connected(); },
+    [] { return orcsdr::wifi::ip(); }};
 
 static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, void *ctx) {
   (void)ctx;
@@ -9384,10 +9725,13 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
       g_rtl_profile.store(profile, std::memory_order_release);
       g_rtl_device_capabilities.store(caps, std::memory_order_release);
       g_rtl_device_ready.store(ready, std::memory_order_release);
-      rtl_capture_state.store(ready ? RtlCaptureState::ready : RtlCaptureState::failed,
-                              std::memory_order_release);
-      set_radio_session_state(ready ? orcsdr::radio::ReceiverState::ready
-                                    : orcsdr::radio::ReceiverState::failed);
+      // A dongle appearing during a remote stream never takes it over.
+      if (!rtl_remote_active()) {
+        rtl_capture_state.store(ready ? RtlCaptureState::ready : RtlCaptureState::failed,
+                                std::memory_order_release);
+        set_radio_session_state(ready ? orcsdr::radio::ReceiverState::ready
+                                      : orcsdr::radio::ReceiverState::failed);
+      }
       set_rtl_profile_status(ready ? "ready" : "stream unavailable");
       // Plugging a receiver in (first time, replug or swap) starts it on the
       // current band and frequency, whatever screen is showing.
@@ -9402,9 +9746,13 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
       break;
     }
     case ESP_RTL_SDR_EVT_DISCONNECTED: {
-      const auto previous = rtl_capture_state.exchange(RtlCaptureState::disconnected,
-                                                       std::memory_order_acq_rel);
-      const bool resume = rtl_should_resume_after_disconnect(previous);
+      // Unplugging a dongle must not stop or relabel a running remote stream.
+      const bool remote_running = rtl_remote_active();
+      const auto previous = remote_running
+                                ? rtl_capture_state.load(std::memory_order_acquire)
+                                : rtl_capture_state.exchange(RtlCaptureState::disconnected,
+                                                             std::memory_order_acq_rel);
+      const bool resume = !remote_running && rtl_should_resume_after_disconnect(previous);
       if (resume) {
         rtl_hotplug_resume_pending.store(true, std::memory_order_release);
         rtl_restart_requested.store(false, std::memory_order_release);
@@ -9412,13 +9760,14 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
       }
       g_rtl_device_ready.store(false, std::memory_order_release);
       g_rtl_profile.store(ESP_RTL_SDR_PROFILE_UNKNOWN, std::memory_order_release);
+      g_rtl_is_nooelec_xtr.store(false, std::memory_order_release);
       g_rtl_device_capabilities.store(0, std::memory_order_release);
       if (orcsdr::am_finder::active()) orcsdr::am_finder::cancel();
       rtl_am_scan_requested.store(false, std::memory_order_release);
       rtl_am_scan_cancel.store(false, std::memory_order_release);
       rtl_am_scan_active.store(false, std::memory_order_release);
       rtl_rate_override_sps.store(0, std::memory_order_release);
-      set_radio_session_state(orcsdr::radio::ReceiverState::disconnected);
+      if (!remote_running) set_radio_session_state(orcsdr::radio::ReceiverState::disconnected);
       set_rtl_sdr_status("RTL-SDR: disconnected");
       // The bias-tee is powered by the dongle, so removal cuts it; the driver
       // also starts every new attachment with bias OFF, and OrcSDR never
@@ -9434,6 +9783,8 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
     case ESP_RTL_SDR_EVT_IQ_BLOCK: {
       const auto *iq = static_cast<const esp_rtl_sdr_iq_block_t *>(payload);
       if (iq == nullptr || iq->data == nullptr || iq->bytes == 0) break;
+      // A connected rtl_tcp client owns the dongle: its IQ goes to the network, not the DSP.
+      if (orcsdr::rtl_tcp_server::offer_iq(iq->data, iq->bytes)) break;
       const size_t n =
           iq->bytes <= sizeof(rtl_iq_processing) ? iq->bytes : sizeof(rtl_iq_processing);
       rtl_capture_bytes += n;
@@ -9447,13 +9798,14 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
                       rtl_filled_q ? static_cast<unsigned>(uxQueueMessagesWaiting(rtl_filled_q)) : 0);
       uint8_t slot = 0;
       if (!rtl_free_q || !rtl_filled_q || xQueueReceive(rtl_free_q, &slot, 0) != pdTRUE) {
+        note_iq_drop(rtl_filled_q ? static_cast<uint8_t>(uxQueueMessagesWaiting(rtl_filled_q)) : 255);
         rtl_iq_pipeline_drops.fetch_add(1, std::memory_order_relaxed);
         rtl_iq_pipeline_drop_samples.fetch_add(n / 2, std::memory_order_relaxed);
         break;
       }
       std::memcpy(rtl_ring_slots[slot], iq->data, n);
       const uint32_t active_rate = rtl_active_sample_rate_sps.load(std::memory_order_relaxed);
-      const uint32_t decoder_rate = rtl_default_sample_rate(g_stream_band);
+      const uint32_t decoder_rate = rtl_stream_default_rate_sps.load(std::memory_order_relaxed);
       const RtlIqBlock block{
           rtl_ring_slots[slot], n,
           rtl_iq_sequence.fetch_add(1, std::memory_order_relaxed), slot, g_stream_band,
@@ -9579,8 +9931,9 @@ static void rtl_dsp_task(void *) {
     if (!block.custom_rate && block.band == RtlBand::p25 &&
         g_iq_rec_kind.load(std::memory_order_relaxed) == IqCaptureKind::p25)
       iq_rec_append(block.data, block.bytes);
-    if (!block.custom_rate &&
-        g_iq_rec_kind.load(std::memory_order_relaxed) == IqCaptureKind::diagnostic)
+    // Raw diagnostic IQ is independent of rate-specific decoder support.
+    if (g_iq_rec_kind.load(std::memory_order_relaxed) == IqCaptureKind::diagnostic &&
+        block.sample_rate_sps == g_iq_rec_sample_rate_sps)
       iq_rec_append(block.data, block.bytes);
     mark(dsp_stats::Stage::record);
     if (block.band != RtlBand::adsb || orcsdr::home::active() ||
@@ -9595,6 +9948,9 @@ static void rtl_dsp_task(void *) {
     // ACARS receiver: decodes only the 240 kS/s stream it asked for on the general VHF band (it rejects any other rate).
     if (block.band == RtlBand::browse && orcsdr::acars_receiver::running())
       orcsdr::acars_receiver::offer_iq(block.data, block.bytes, block.sample_rate_sps);
+    // AIS receiver: both channels from the one 162.000 MHz / 240 kS/s stream it asked for (any other rate or centre is refused).
+    if (block.band == RtlBand::browse && orcsdr::ais_radio::running())
+      orcsdr::ais_radio::offer_iq(block.data, block.bytes, block.sample_rate_sps);
     if (!block.custom_rate && block.band == RtlBand::lora)
       lora_iq_offer(block.data, block.bytes);
     mark(dsp_stats::Stage::decoders);
@@ -9687,13 +10043,40 @@ static void rtl_driver_app_task(void *) {
       const RtlBand band = rtl_requested_band.load(std::memory_order_acquire);
       const uint32_t frequency_hz = rtl_requested_frequency_hz.load(std::memory_order_acquire);
       rtl_stop_requested.store(false, std::memory_order_release);
-      const bool queued = queue_local_rtl_listen(band, frequency_hz, false);
+      const bool queued = queue_local_rtl_listen(band, frequency_hz, false, false);
       Serial.printf("RTL_HOTPLUG_RESUME band=%s frequency_hz=%u queued=%d\n",
                     rtl_band_name(band), static_cast<unsigned>(frequency_hz), queued ? 1 : 0);
     }
-    if (g_rtl != nullptr && g_rtl_device_ready.load(std::memory_order_acquire) &&
-        !radio_io_paused() &&
+    // Remote-only boot: no dongle is plugged in, so nothing else would ever start
+    // the stream. Once per boot, and only when the saved server is usable.
+    // A first attempt that fails (server off, wrong address) is retried every 30 s with the band the user last asked
+    // for, so a server that comes up later is picked up without a reboot.
+    static bool remote_boot_started = false;
+    static uint32_t remote_boot_retry_ms = 0;
+    const RtlCaptureState boot_state = rtl_capture_state.load(std::memory_order_acquire);
+    const bool boot_retry = remote_boot_started && boot_state == RtlCaptureState::failed &&
+                            millis() - remote_boot_retry_ms >= 30000u;
+    if ((!remote_boot_started || boot_retry) && rtl_boot_complete.load(std::memory_order_acquire) &&
+        !radio_io_paused() && !rtl_usb_device_ready() && rtl_remote_source_ready() &&
+        boot_state != RtlCaptureState::running && boot_state != RtlCaptureState::queued &&
+        !rtl_capture_requested.load(std::memory_order_acquire)) {
+      remote_boot_started = true;
+      remote_boot_retry_ms = millis();
+      rtl_stop_requested.store(false, std::memory_order_release);
+      // A dashboard opened before the stream could start (FT8, ACARS...) recorded its band here: start that one, not
+      // FM, or its decoder sits on a stream of the wrong rate.
+      const bool queued = (boot_retry || rtl_ui_active.load(std::memory_order_acquire))
+          ? queue_local_rtl_listen(rtl_requested_band.load(std::memory_order_acquire),
+                                   rtl_requested_frequency_hz.load(std::memory_order_acquire), false)
+          : queue_local_rtl_listen(RtlBand::fm, rtl_saved_fm_hz);
+      Serial.printf("RTL_TCP_BOOT_START server=%s:%u queued=%d\n", orcsdr::rtl_tcp_source::host(),
+                    static_cast<unsigned>(orcsdr::rtl_tcp_source::port()), queued ? 1 : 0);
+    }
+    if (rtl_device_ready() && !radio_io_paused() &&
+        !g_rtl_server_owner.load(std::memory_order_acquire) &&
         rtl_capture_requested.exchange(false, std::memory_order_acq_rel)) {
+      const bool remote = rtl_choose_source() == orcsdr::source::Active::remote_tcp;
+      g_rtl_remote_narrow.store(remote, std::memory_order_release);  // before any rate is chosen
       rtl_capture_state.store(RtlCaptureState::queued, std::memory_order_release);
       const RtlBand band = rtl_requested_band.load(std::memory_order_acquire);
       const uint32_t frequency_hz = rtl_clamp_frequency(
@@ -9722,6 +10105,7 @@ static void rtl_driver_app_task(void *) {
       rtl_dsp_window_blocks.store(0, std::memory_order_relaxed);
       rtl_dsp_block_us_max.store(0, std::memory_order_relaxed);
       rtl_iq_pipeline_drops.store(0, std::memory_order_relaxed);
+      g_stream_started_ms.store(static_cast<uint32_t>(esp_timer_get_time() / 1000), std::memory_order_relaxed);
       rtl_audio_play_count = 0;
       rtl_audio_play_block_index = 0;
       memset(rtl_audio_play_block_ready_ms, 0, sizeof(rtl_audio_play_block_ready_ms));
@@ -9774,13 +10158,18 @@ static void rtl_driver_app_task(void *) {
       st.frequency_hz =
           band == RtlBand::fm ? rtl_fm_command_lo_hz(frequency_hz) : frequency_hz;
       const uint32_t lab_rate = rtl_rate_override_sps.load(std::memory_order_acquire);
-      st.sample_rate_sps = lab_rate ? lab_rate : rtl_default_sample_rate(band);
+      const uint32_t band_default_rate = rtl_default_sample_rate(band);
+      st.sample_rate_sps = lab_rate ? lab_rate : band_default_rate;
+      rtl_stream_default_rate_sps.store(band_default_rate, std::memory_order_release);
       rtl_active_sample_rate_sps.store(st.sample_rate_sps, std::memory_order_release);
+      // The scope span must never claim more bandwidth than the stream carries.
+      if (rtl_scope_span_hz.load(std::memory_order_relaxed) > st.sample_rate_sps)
+        rtl_scope_span_hz.store(st.sample_rate_sps, std::memory_order_relaxed);
       // V4L/V4: CB uses the tuner's direct input like the V3c. Through the
       // 28.8 MHz upconverter, strong AM stations fold onto 28.8 MHz - f
       // (1600 kHz lands on channel 20). Other bands keep the upconverter.
       if (const auto profile = g_rtl_profile.load(std::memory_order_acquire);
-          profile == ESP_RTL_SDR_PROFILE_BLOG_V4L || profile == ESP_RTL_SDR_PROFILE_BLOG_V4) {
+          !remote && (profile == ESP_RTL_SDR_PROFILE_BLOG_V4L || profile == ESP_RTL_SDR_PROFILE_BLOG_V4)) {
         const uint32_t direct_min_hz =
             rtl_hf_direct_override_hz != UINT32_MAX ? rtl_hf_direct_override_hz
             : band == RtlBand::cb                       ? kRtlHfDirectMinHz
@@ -9792,10 +10181,46 @@ static void rtl_driver_app_task(void *) {
                           esp_rtl_sdr_set_hf_direct_min_hz(g_rtl, direct_min_hz)));
       }
       log_dram_budget("rtl_before_start");
-      esp_err_t err = esp_rtl_sdr_start(g_rtl, &st);
+      esp_err_t offset_err = ESP_OK;
+      if (!remote && rtl_has_device_capability(ESP_RTL_SDR_CAP_OFFSET_TUNING)) {
+        offset_err = esp_rtl_sdr_set_offset_tuning(
+            g_rtl, rtl_offset_tuning_enabled.load(std::memory_order_acquire));
+        Serial.printf("RTL_OFFSET_CONFIG requested=%d result=%s correction=hardware\n",
+                      rtl_offset_tuning_enabled.load(std::memory_order_relaxed) ? 1 : 0,
+                      esp_rtl_sdr_err_to_name(offset_err));
+      }
+      g_rtl_active_source.store(static_cast<uint8_t>(remote ? orcsdr::source::Active::remote_tcp
+                                                            : orcsdr::source::Active::local_usb),
+                                std::memory_order_release);
+      if (remote) {
+        // rtl_tcp keeps its tuner state between clients: a stream for another band must start from a known gain, not from
+        // the last band's (a same-band restart, such as a rate step, keeps the user's gain).
+        static int last_remote_band = -1;
+        if (last_remote_band != static_cast<int>(band)) {
+          orcsdr::rtl_tcp_source::reset_gain_to_auto();
+          last_remote_band = static_cast<int>(band);
+        }
+      }
+      esp_err_t err = remote ? (orcsdr::rtl_tcp_source::start_and_wait(
+                                    st.sample_rate_sps, st.frequency_hz, 12000,
+                                    [] { return rtl_stop_requested.load(std::memory_order_acquire); })
+                                    ? ESP_OK : ESP_ERR_TIMEOUT)
+                             : (offset_err == ESP_OK ? esp_rtl_sdr_start(g_rtl, &st) : offset_err);
       Serial.printf("RTL_START %s rate=%u display_hz=%u lo_hz=%u\n",
                     esp_rtl_sdr_err_to_name(err), st.sample_rate_sps, frequency_hz,
                     st.frequency_hz);
+      if (remote && err == ESP_OK && frequency_hz < kRtlNoHfMinHz) {
+        // HF over rtl_tcp: only a server whose dongle handles HF itself (an RTL-SDR Blog V4 reports tuner 6)
+        // or that was told to use direct sampling will deliver anything below 24 MHz. The greeting does not
+        // say which, so say what we can see and let the user judge. Nothing is sent to change the server.
+        const auto remote_status = orcsdr::rtl_tcp_source::status();
+        const bool likely_hf = remote_status.tuner_type_raw == 6;
+        Serial.printf("RTL_REMOTE_HF frequency_hz=%u tuner=%u hf_capable=%s\n",
+                      static_cast<unsigned>(frequency_hz),
+                      static_cast<unsigned>(remote_status.tuner_type_raw),
+                      likely_hf ? "likely" : "unknown");
+        if (!likely_hf) set_rtl_sdr_status("remote HF needs a Blog V4 or direct sampling");
+      }
       log_dram_budget("rtl_after_start");
       begin_power_monitor("rtl_start");
       if (err == ESP_ERR_NO_MEM) {
@@ -9818,7 +10243,25 @@ static void rtl_driver_app_task(void *) {
       if (err != ESP_OK) {
         rtl_active_sample_rate_sps.store(0, std::memory_order_release);
         rtl_capture_state.store(RtlCaptureState::failed, std::memory_order_release);
-        set_rtl_profile_status("start failed");
+        // A band change made while this stream was still connecting cancelled the wait (restart + stop were set by
+        // queue_local_rtl_listen). Nothing else consumes the restart in this state, so start the new band here.
+        if (rtl_restart_requested.exchange(false, std::memory_order_acq_rel)) {
+          rtl_stop_requested.store(false, std::memory_order_release);
+          rtl_capture_requested.store(true, std::memory_order_release);
+          Serial.println("RTL_START cancelled by a newer request; restarting");
+        }
+        g_rtl_active_source.store(static_cast<uint8_t>(orcsdr::source::Active::none),
+                                  std::memory_order_release);
+        g_rtl_remote_narrow.store(false, std::memory_order_release);
+        if (remote) {
+          // Say why (connect failed, not an rtl_tcp server, server busy or silent...) instead of one fixed sentence.
+          char why[48];
+          snprintf(why, sizeof(why), "remote: %s",
+                   orcsdr::rtl_tcp::end_reason_name(orcsdr::rtl_tcp_source::status().last_reason));
+          set_rtl_profile_status(why);
+        } else {
+          set_rtl_profile_status("start failed");
+        }
         rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
         if (rtl_am_scan_active.load(std::memory_order_acquire)) {
           if (orcsdr::am_finder::active()) orcsdr::am_finder::cancel();
@@ -9865,8 +10308,11 @@ static void rtl_driver_app_task(void *) {
         uint32_t auto_fm_sample_at_ms = 0;
         uint32_t auto_fm_best_hz = frequency_hz;
         float auto_fm_best_level = -120.0f;
+        orcsdr::rtl_tcp::State last_remote_state = orcsdr::rtl_tcp::State::streaming;
+        bool last_remote_behind = false;
         while (!rtl_stop_requested.load(std::memory_order_acquire) &&
-               g_rtl_device_ready.load(std::memory_order_acquire)) {
+               (remote ? orcsdr::rtl_tcp_source::alive()
+                       : g_rtl_device_ready.load(std::memory_order_acquire))) {
           /* Touch + hot retune on this task (not in IQ callback): responsive STOP/FREQ. */
           if (orcsdr::settings::active()) {
             vTaskDelay(pdMS_TO_TICKS(20));
@@ -9886,11 +10332,11 @@ static void rtl_driver_app_task(void *) {
             auto_fm_frequency_hz = kRtlFmMinHz + kRtlFmAutoStepHz / 2;
             auto_fm_best_hz = frequency_hz;
             auto_fm_best_level = -120.0f;
-            rtl_scope_span_hz.store(kRtlScopeSpanMaxHz, std::memory_order_relaxed);
+            rtl_scope_span_hz.store(rtl_span_cap_hz(), std::memory_order_relaxed);   // widest the live stream covers (a remote stream is narrower than 2.4 MHz)
             // FM owns its Settings/Spectrum surfaces.  Reset the shared
             // renderer for the scan, but never repaint legacy Browse chrome.
             reset_spectrum_renderer();
-            request_hot_retune(auto_fm_frequency_hz);
+            request_hot_retune(auto_fm_frequency_hz, false);
             auto_fm_sample_at_ms = now_retune + kRtlFmAutoSettleMs;
             rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
             Serial.println("RTL_AUTO_FM start");
@@ -9910,7 +10356,7 @@ static void rtl_driver_app_task(void *) {
             if (auto_fm_frequency_hz + kRtlFmAutoStepHz / 2 >= kRtlFmMaxHz) {
               auto_fm_scanning = false;
               rtl_auto_fm_active.store(false, std::memory_order_release);
-              request_hot_retune(auto_fm_best_hz);
+              request_hot_retune(auto_fm_best_hz, false);
               persist_fm_frequency(auto_fm_best_hz);
               rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
               Serial.printf("RTL_AUTO_FM done frequency_hz=%u level=%.1f\n",
@@ -9918,7 +10364,7 @@ static void rtl_driver_app_task(void *) {
             } else {
               auto_fm_frequency_hz += kRtlFmAutoStepHz;
               reset_spectrum_renderer();
-              request_hot_retune(auto_fm_frequency_hz);
+              request_hot_retune(auto_fm_frequency_hz, false);
               auto_fm_sample_at_ms = now_retune + kRtlFmAutoSettleMs;
             }
           }
@@ -9928,7 +10374,7 @@ static void rtl_driver_app_task(void *) {
           uint32_t desired_lo = rtl_hot_retune_hz.load(std::memory_order_acquire);
           const bool force_lo =
               rtl_fm_force_lo_apply.load(std::memory_order_acquire);
-          if (desired_lo != 0 && g_rtl != nullptr &&
+          if (desired_lo != 0 && (remote || g_rtl != nullptr) &&
               (force_lo || desired_lo != last_lo_applied_hz) &&
               (now_retune - last_lo_apply_ms) >= kRtlHotRetuneMinIntervalMs) {
             const uint32_t next =
@@ -9938,7 +10384,9 @@ static void rtl_driver_app_task(void *) {
             (void)rtl_hot_retune_hz.compare_exchange_strong(
                 desired_lo, 0, std::memory_order_acq_rel);
             rtl_fm_force_lo_apply.store(false, std::memory_order_release);
-            esp_err_t te = esp_rtl_sdr_retune_hz(g_rtl, next);
+            // rtl_tcp has no acknowledgement: OK here means the command was queued.
+            esp_err_t te = remote ? (orcsdr::rtl_tcp_source::retune(next) ? ESP_OK : ESP_ERR_NO_MEM)
+                                  : esp_rtl_sdr_retune_hz(g_rtl, next);
             last_lo_apply_ms = now_retune;
             if (te == ESP_OK) {
               last_lo_applied_hz = next;
@@ -9973,7 +10421,51 @@ static void rtl_driver_app_task(void *) {
           if (now - stream_progress_last_ms >= 2000) {
             stream_progress_last_ms = now;
             esp_rtl_sdr_metrics_t progress{};
-            if (esp_rtl_sdr_get_metrics(g_rtl, &progress) == ESP_OK) {
+            if (remote) {
+              // The rtl_tcp session owns stall detection and bounded reconnect; the
+              // USB stall restart below does not apply to a network stream.
+              const auto remote_state = orcsdr::rtl_tcp_source::state();
+              // Under ~85% of the needed byte rate the server is queueing and what is
+              // heard or shown lags real time; say so instead of calling it live.
+              const uint32_t link_pct = orcsdr::rtl_tcp_source::link_ratio_pct();
+              const bool behind = remote_state == orcsdr::rtl_tcp::State::streaming &&
+                                  link_pct > 0 && link_pct < 85;
+              // A link that stays behind gets a lower rate (1.44 -> 0.96 -> 0.24 MS/s): slower
+              // spectrum span, but live audio instead of stutter.
+              // After a healthy minute it probes one rung back up, and backs off if that fails.
+              const auto rate_change =
+                  (remote_state == orcsdr::rtl_tcp::State::streaming &&
+                   g_stream_band != RtlBand::adsb &&  // ADS-B keeps its own rate
+                   rtl_rate_override_sps.load(std::memory_order_acquire) == 0 &&  // a pinned rate (FT8's 240 kS/s) is not the adapter's to move
+                   !rtl_band_needs_fixed_rate(g_stream_band))  // so do LoRa, POCSAG and P25 (their decoders need 960 kS/s)
+                      ? orcsdr::rtl_tcp_source::note_link_and_adapt(
+                            link_pct, rtl_remote_wanted_rate(g_stream_band), kRtlDemodRateSps)  // 240 kS/s needs the capped read size in rtl_tcp_sink_acquire
+                      : orcsdr::rtl_tcp::RateAdapter::Change::none;
+              if (rate_change != orcsdr::rtl_tcp::RateAdapter::Change::none) {
+                Serial.printf("RTL_TCP_RATE_%s link=%u%% new_rate=%u\n",
+                              rate_change == orcsdr::rtl_tcp::RateAdapter::Change::down ? "DOWN" : "UP", link_pct,
+                              orcsdr::rtl_tcp_source::adapted_rate(rtl_remote_wanted_rate(g_stream_band)));
+                rtl_restart_requested.store(true, std::memory_order_release);
+                rtl_stop_requested.store(true, std::memory_order_release);
+                break;
+              }
+              if (remote_state != last_remote_state || behind != last_remote_behind) {
+                last_remote_state = remote_state;
+                last_remote_behind = behind;
+                const bool live = remote_state == orcsdr::rtl_tcp::State::streaming;
+                set_radio_session_state(live ? orcsdr::radio::ReceiverState::running
+                                             : orcsdr::radio::ReceiverState::starting);
+                // ADS-B is fixed at 2.048 MS/s (about 4.1 MB/s): name that limit, so a slow link is not mistaken for a bad server.
+                set_rtl_profile_status(behind ? (g_stream_band == RtlBand::adsb
+                                                     ? "remote link too slow for ADS-B (needs ~4.1 MB/s)"
+                                                     : "remote link too slow: behind real time")
+                                       : live ? (g_stream_band == RtlBand::adsb
+                                                     ? "listening (remote; ADS-B needs ~4.1 MB/s)"
+                                                     : "continuous listening (remote)")
+                                              : "remote reconnecting");
+                rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
+              }
+            } else if (esp_rtl_sdr_get_metrics(g_rtl, &progress) == ESP_OK) {
               if (progress.bytes_total > stream_progress_bytes) {
                 stream_progress_bytes = progress.bytes_total;
                 stream_stall_checks = 0;
@@ -10074,7 +10566,11 @@ static void rtl_driver_app_task(void *) {
         Serial.println("RTL_STOP_REQUESTED");
         rtl_auto_fm_active.store(false, std::memory_order_release);
         flush_audio_play_batch(true);
-        const esp_err_t stop_err = esp_rtl_sdr_stop(g_rtl, 2000);
+        const esp_err_t stop_err =
+            remote ? (orcsdr::rtl_tcp_source::stop(), ESP_OK) : esp_rtl_sdr_stop(g_rtl, 2000);
+        g_rtl_active_source.store(static_cast<uint8_t>(orcsdr::source::Active::none),
+                                  std::memory_order_release);
+        g_rtl_remote_narrow.store(false, std::memory_order_release);
         rtl_active_sample_rate_sps.store(0, std::memory_order_release);
         Serial.printf("RTL_STOP_RESULT %s\n", esp_rtl_sdr_err_to_name(stop_err));
         rtl_capture_state.store(stop_err == ESP_OK ? RtlCaptureState::complete
@@ -10091,8 +10587,7 @@ static void rtl_driver_app_task(void *) {
       }
       const bool restart = rtl_restart_requested.exchange(false, std::memory_order_acq_rel);
       if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::complete &&
-          restart &&
-          g_rtl_device_ready.load(std::memory_order_acquire)) {
+          restart && rtl_device_ready()) {
         rtl_stop_requested.store(false, std::memory_order_release);
         rtl_capture_requested.store(true, std::memory_order_release);
       }
@@ -10133,6 +10628,11 @@ void initialize_rtl_sdr_host() {
                 static_cast<unsigned>(kRtlRingDepth),
                 static_cast<unsigned>(sizeof(rtl_iq_processing)),
                 static_cast<unsigned>(kRtlDspTaskPrio));
+
+  // Optional remote rtl_tcp client. Loads its saved mode and server; opens no socket.
+  orcsdr::rtl_tcp_source::begin({rtl_tcp_sink_acquire, rtl_tcp_sink_submit, rtl_tcp_sink_release,
+                                 rtl_tcp_sink_discontinuity});
+  orcsdr::rtl_tcp_server::begin(kRtlTcpServerHooks);  // off unless the owner enabled it
 
   adsb_iq_free = xQueueCreate(kAdsbIqBlockCount, sizeof(uint8_t));
   adsb_iq_ready = xQueueCreate(kAdsbIqBlockCount, sizeof(uint8_t));
@@ -10523,11 +11023,24 @@ bool pause_radio_for_io(bool& paused) {
     rtl_restart_requested.store(false, std::memory_order_release);
     rtl_stop_requested.store(true, std::memory_order_release);
     const uint32_t deadline = millis() + 5000;
-    while ((rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::queued ||
-            rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running) &&
-           static_cast<int32_t>(deadline - millis()) > 0) delay(10);
+    // A stream marked `queued` that no receiver can start (a remote source with Wi-Fi down, no dongle) is not running anything:
+    // only the driver task clears `queued`, and it starts nothing without a usable source. Waiting on it made every Wi-Fi scan or
+    // connect fail with "radio pause failed" until a reset, which is how Wi-Fi could not be brought back with a remote source selected.
+    auto blocking = [] {
+      const auto st = rtl_capture_state.load(std::memory_order_acquire);
+      return st == RtlCaptureState::running || (st == RtlCaptureState::queued && rtl_device_ready());
+    };
+    while (blocking() && static_cast<int32_t>(deadline - millis()) > 0) delay(10);
+    if (!blocking() && rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::queued)
+      rtl_capture_state.store(RtlCaptureState::ready, std::memory_order_release);
     const auto state = rtl_capture_state.load(std::memory_order_acquire);
-    if (state == RtlCaptureState::queued || state == RtlCaptureState::running) {
+    if (blocking()) {
+      // Evidence for "Wi-Fi cannot be changed while a remote stream is stuck": what the receiver was doing after 5 s of waiting.
+      Serial.printf("RTL_RADIO_PAUSE_FAILED capture_state=%d was=%d remote=%s remote_running=%d source=%d\n",
+                    static_cast<int>(state), static_cast<int>(original_state),
+                    orcsdr::rtl_tcp::state_name(orcsdr::rtl_tcp_source::state()),
+                    orcsdr::rtl_tcp_source::running() ? 1 : 0,
+                    static_cast<int>(g_rtl_active_source.load(std::memory_order_acquire)));
       rtl_stop_requested.store(false, std::memory_order_release);
       rtl_restart_requested.store(restart_was_requested, std::memory_order_release);
       rtl_capture_requested.store(capture_was_requested, std::memory_order_release);
@@ -10547,9 +11060,12 @@ void resume_radio_after_io(bool& paused) {
   paused = false;
   if (catalog_radio_paused || wifi_connect_radio_paused || wifi_poweroff_radio_paused ||
       wifi_c6_probe_radio_paused || setup_radio_paused) return;
-  const bool resume_radio = radio_io_resume_pending;
+  // With no usable source (a remote receiver while Wi-Fi is down) nothing would ever clear `queued`, so the resume is not started
+  // now; it stays pending and resume_deferred_radio() starts it once Wi-Fi is back. Dropping it left the stream idle after an outage.
+  const bool ready = rtl_device_ready();
+  const bool resume_radio = radio_io_resume_pending && ready;
   const bool resume_speaker = radio_io_speaker_resume_pending;
-  radio_io_resume_pending = false;
+  radio_io_resume_pending = radio_io_resume_pending && !ready;
   radio_io_speaker_resume_pending = false;
   if (resume_radio) {
     rtl_capture_state.store(RtlCaptureState::queued, std::memory_order_release);
@@ -10558,6 +11074,19 @@ void resume_radio_after_io(bool& paused) {
     rtl_capture_requested.store(true, std::memory_order_release);
   }
   if (resume_speaker) resume_rtl_speaker();
+}
+
+// Called every Wi-Fi poll: a stream that was paused for Wi-Fi work while no source was usable restarts when one is.
+void resume_deferred_radio() {
+  if (!radio_io_resume_pending || radio_io_paused() || !rtl_device_ready()) return;
+  radio_io_resume_pending = false;
+  const auto state = rtl_capture_state.load(std::memory_order_acquire);
+  if (state == RtlCaptureState::running || state == RtlCaptureState::queued) return;   // something already started it
+  Serial.println("RTL_RADIO_RESUME deferred stream restarted (source usable again)");
+  rtl_capture_state.store(RtlCaptureState::queued, std::memory_order_release);
+  rtl_stop_requested.store(false, std::memory_order_release);
+  rtl_restart_requested.store(true, std::memory_order_release);
+  rtl_capture_requested.store(true, std::memory_order_release);
 }
 
 bool pause_radio_for_catalog() { return pause_radio_for_io(catalog_radio_paused); }
@@ -10658,6 +11187,44 @@ void poll_wifi() {
     wifi_link_recovery_due_ms = 0;
     recover_wifi_link();
   }
+  // Evidence for the Wi-Fi wedge: one line a minute while a remote receiver may depend on Wi-Fi, so a long soak shows what changed
+  // before Wi-Fi died (link flags, retry budgets, how long it has been down, internal DMA RAM).
+  static uint32_t down_since_ms = 0;
+  static uint32_t last_rearm_ms = 0;
+  static uint32_t last_health_ms = 0;
+  const auto source_mode = orcsdr::rtl_tcp_source::mode();
+  const bool remote_may_need_wifi =
+      orcsdr::rtl_tcp_source::configured() &&
+      (source_mode == orcsdr::source::Mode::remote_tcp ||
+       (source_mode == orcsdr::source::Mode::automatic && !rtl_usb_device_ready()));
+  if (wifi_connected) down_since_ms = 0;
+  else if (down_since_ms == 0) down_since_ms = millis() | 1u;
+  if (remote_may_need_wifi && millis() - last_health_ms >= 60000u) {
+    last_health_ms = millis();
+    Serial.printf("RTL_WIFI_HEALTH connected=%d ready=%d link_failed=%d reconnect_attempts=%u recoveries=%u down_s=%lu "
+                  "dma_free=%lu stream=%s\n",
+                  wifi_connected ? 1 : 0, wifi_station_ready ? 1 : 0, orcsdr::wifi::link_failed() ? 1 : 0,
+                  static_cast<unsigned>(wifi_reconnect_attempts), static_cast<unsigned>(wifi_link_recoveries),
+                  static_cast<unsigned long>(down_since_ms ? (millis() - down_since_ms) / 1000u : 0u),
+                  static_cast<unsigned long>(heap_caps_get_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)),
+                  orcsdr::rtl_tcp::state_name(orcsdr::rtl_tcp_source::state()));
+  }
+  // Optional (Settings > RTL_TCP, off by default): reconnect and C6 link recovery are bounded, so a Wi-Fi outage longer than about
+  // four minutes (an access point restarting) left the Tab5 offline until someone reset it. With this on, a remote receiver's Wi-Fi
+  // gets a fresh budget every 5 minutes it stays down. It reuses the existing reconnect and recovery paths.
+  if (remote_may_need_wifi && orcsdr::rtl_tcp_source::wifi_keepalive() && !wifi_connected && !wifi_connecting &&
+      !wifi_scan_running && down_since_ms != 0 && millis() - down_since_ms >= 300000u &&
+      millis() - last_rearm_ms >= 300000u) {
+    last_rearm_ms = millis();
+    wifi_link_recoveries = 0;
+    wifi_reconnect_attempts = 0;
+    Serial.printf("RTL_WIFI_KEEPALIVE rearm down_s=%lu link_failed=%d\n",
+                  static_cast<unsigned long>((millis() - down_since_ms) / 1000u),
+                  orcsdr::wifi::link_failed() ? 1 : 0);
+    if (orcsdr::wifi::link_failed()) link_failure_handled = false;  // run the C6 link recovery again
+    else schedule_wifi_reconnect("keepalive");
+  }
+  resume_deferred_radio();
   if (orcsdr::wifi::link_failed() || wifi_link_recovery_due_ms != 0) return;
   link_failure_handled = false;
   if (wifi_reconnect_due_ms != 0 &&
@@ -10943,7 +11510,7 @@ void handle_fm_dashboard_action(const orcsdr::fm::Action& action) {
       const uint32_t current = rtl_scope_span_hz.load(std::memory_order_relaxed);
       const uint32_t next = action.kind == ActionKind::span_down
                                 ? std::max(kRtlScopeSpanMinHz, current / 2)
-                                : std::min(kRtlScopeSpanMaxHz, current * 2);
+                                : std::min(rtl_span_cap_hz(), current * 2);
       rtl_scope_span_hz.store(next, std::memory_order_relaxed);
       reset_spectrum_renderer();
       break;
@@ -11086,7 +11653,7 @@ void handle_am_dashboard_action(const orcsdr::am::Action& action) {
       const uint32_t current = rtl_scope_span_hz.load(std::memory_order_relaxed);
       rtl_scope_span_hz.store(action.kind == ActionKind::span_down
                                   ? std::max(kRtlScopeSpanMinHz, current / 2)
-                                  : std::min(kRtlScopeSpanMaxHz, current * 2),
+                                  : std::min(rtl_span_cap_hz(), current * 2),
                               std::memory_order_relaxed);
       reset_spectrum_renderer();
       break;
@@ -11329,7 +11896,7 @@ void handle_shortwave_dashboard_action(const orcsdr::shortwave::Action& action) 
       const uint32_t current = rtl_scope_span_hz.load(std::memory_order_relaxed);
       rtl_scope_span_hz.store(action.kind == ActionKind::span_down
                                   ? std::max(kRtlScopeSpanMinHz, current / 2)
-                                  : std::min(kRtlScopeSpanMaxHz, current * 2),
+                                  : std::min(rtl_span_cap_hz(), current * 2),
                               std::memory_order_relaxed);
       reset_spectrum_renderer();
       break;
@@ -11337,7 +11904,7 @@ void handle_shortwave_dashboard_action(const orcsdr::shortwave::Action& action) 
     case ActionKind::span_hz:
       rtl_scope_span_hz.store(
           std::clamp(static_cast<uint32_t>(action.value), kRtlScopeSpanMinHz,
-                     kRtlScopeSpanMaxHz),
+                     rtl_span_cap_hz()),
           std::memory_order_relaxed);
       reset_spectrum_renderer();
       break;
@@ -12037,7 +12604,7 @@ void handle_p25_dashboard_action(const orcsdr::p25::Action& action) {
       rtl_scope_span_hz.store(
           action.kind == ActionKind::span_down
               ? std::max(kRtlScopeSpanMinHz, current / 2)
-              : std::min(kRtlScopeSpanMaxHz, current * 2),
+              : std::min(rtl_span_cap_hz(), current * 2),
           std::memory_order_relaxed);
       reset_spectrum_renderer();
       break;
@@ -12537,7 +13104,7 @@ void service_shared_scan(uint32_t now) {
       rtl_fm_preset_scan_total_steps.store(static_cast<int>(count), std::memory_order_relaxed);
       rtl_fm_preset_scan_step.store(0, std::memory_order_relaxed);
       rtl_fm_preset_scan_found.store(0, std::memory_order_relaxed);
-      rtl_scope_span_hz.store(kRtlScopeSpanMaxHz, std::memory_order_relaxed);
+      rtl_scope_span_hz.store(rtl_span_cap_hz(), std::memory_order_relaxed);   // see the auto-scan above
       rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
       Serial.println("RTL_PRESET_SCAN start");
     }
@@ -12944,6 +13511,7 @@ const orcsdr::settings::State& global_settings_state() {
   state.rtl_usb_safe_mode = esp_rtl_sdr_usb_safe_mode_active();
   strlcpy(state.default_band, rtl_band_name(rtl_ui_band), sizeof(state.default_band));
   state.fm_frequency_hz = rtl_saved_fm_hz;
+  orcsdr::settings_remote::fill(state);
   state.sd_ready = g_sd_ready;
   state.sd_total_bytes = sd_total_bytes();
   state.sd_free_bytes = g_sd_ready && g_sd_fs ? orcsdr::storage::free_bytes() : 0;
@@ -13024,6 +13592,8 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
   const auto device = orcsdr::device_status::collect(
       wifi_connected, wifi_ssid, rtl_device_ready(), rtl_sdr_status);
   snapshot.frequency_hz = demo ? 145700000 : rtl_ui_frequency_hz;
+  snapshot.tuner_out_of_range = !demo && rtl_device_ready() && rtl_is_e4000() &&
+                                !rtl_e4000_frequency_supported(snapshot.frequency_hz);
   // The keypad accepts whatever the attached dongle can tune: HF too when it has direct sampling or an upconverter.
   snapshot.tune_min_hz = demo || !rtl_frequency_supported(kRtlBrowseMinHz) ? kRtlNoHfMinHz : kRtlBrowseMinHz;
   snapshot.requested_frequency_hz = demo
@@ -13114,11 +13684,27 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
   if (!demo && g_rtl != nullptr && esp_rtl_sdr_get_metrics(g_rtl, &metrics) == ESP_OK)
     snapshot.effective_sps = metrics.effective_sps;
 #endif
+  if (!demo && g_rtl_remote_narrow.load(std::memory_order_acquire)) {
+    // A network receiver: say so, show the rate the stream really runs at (it steps with the link), and
+    // turn the header state into the link's health. "Ready" now means the stream is flowing, not USB.
+    const bool live = orcsdr::rtl_tcp_source::state() == orcsdr::rtl_tcp::State::streaming;
+    const uint32_t link = orcsdr::rtl_tcp_source::link_ratio_pct();
+    strlcpy(snapshot.receiver, "RTL-TCP", sizeof(snapshot.receiver));
+    snapshot.effective_sps = live ? rtl_active_sample_rate_sps.load(std::memory_order_relaxed) : 0;
+    snapshot.driver_ready = live;
+    if (!live) strlcpy(snapshot.link_state, "CONNECTING", sizeof(snapshot.link_state));
+    else if (link > 0 && link < orcsdr::rtl_tcp::RateAdapter::kBehindPct)
+      snprintf(snapshot.link_state, sizeof(snapshot.link_state), "BEHIND %u%%", static_cast<unsigned>(link));
+    else strlcpy(snapshot.link_state, "LIVE", sizeof(snapshot.link_state));
+  }
   if (demo) snapshot.effective_sps = 959800;
   // FM and AM use OrcSDR SMART gain as their automatic mode; every other band
   // uses the tuner's hardware AGC.
   snapshot.gain_smart = rtl_ui_band == RtlBand::fm || rtl_ui_band == RtlBand::am;
   snapshot.gain_available = !demo && rtl_tuner_gain_available(rtl_ui_frequency_hz);
+  snapshot.gain_direct_sampling = !demo &&
+      rtl_has_device_capability(ESP_RTL_SDR_CAP_DIRECT_SAMPLING) &&
+      rtl_ui_frequency_hz < kRtlNoHfMinHz;
   snapshot.gain_auto_available =
       snapshot.gain_available &&
       rtl_has_device_capability(snapshot.gain_smart ? ESP_RTL_SDR_CAP_GAIN
@@ -13153,6 +13739,7 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
 
   const bool tuner_changed = previous.revision == 0 ||
       snapshot.frequency_hz != previous.frequency_hz ||
+      snapshot.tuner_out_of_range != previous.tuner_out_of_range ||
       snapshot.requested_frequency_hz != previous.requested_frequency_hz ||
       snapshot.span_hz != previous.span_hz || snapshot.step_hz != previous.step_hz ||
       snapshot.filter_bandwidth_hz != previous.filter_bandwidth_hz ||
@@ -13168,6 +13755,7 @@ orcsdr::home::Snapshot home_dashboard_snapshot(bool demo) {
       snapshot.wifi_connected != previous.wifi_connected ||
       strcmp(snapshot.wifi_ip, previous.wifi_ip) != 0 ||
       strcmp(snapshot.receiver, previous.receiver) != 0 ||
+      strcmp(snapshot.link_state, previous.link_state) != 0 ||
       snapshot.driver_ready != previous.driver_ready ||
       snapshot.receiving != previous.receiving ||
       snapshot.effective_sps != previous.effective_sps ||
@@ -13254,6 +13842,8 @@ void navigation_restore_screen(orcsdr::screens::Id restore) {
     orcsdr::acars_app::draw(true);
   } else if (restore == orcsdr::screens::Id::dead_air) {
     orcsdr::dead_air_app::draw(true);
+  } else if (restore == orcsdr::screens::Id::ais) {
+    orcsdr::ais_app::draw(true);
   } else {
     draw_sdr_screen(rtl_ui_band, rtl_ui_frequency_hz,
                     rtl_live_volume.load(std::memory_order_acquire));
@@ -13366,6 +13956,7 @@ void show_home(bool demo) {
   }
   orcsdr::sstv_app::close();
   orcsdr::acars_app::close();
+  orcsdr::ais_app::close();
   const uint32_t dead_air_return_hz = orcsdr::dead_air_app::active() ? g_dead_air_return_hz : 0u;
   const RtlBand dead_air_return_band = g_dead_air_return_band;
   const uint8_t dead_air_return_demod = g_dead_air_return_demod;
@@ -13484,7 +14075,12 @@ uint32_t ft8_dial_hz(size_t band_index, orcsdr::ft8::DigitalMode mode) {
 float ft8_native_dial_offset_hz() {
   const uint32_t dial = orcsdr::ft8_runtime::requested_dial_hz();
   uint32_t centre = 0;
-  if (dial == 0 || g_rtl == nullptr || esp_rtl_sdr_get_center_freq(g_rtl, &centre) != ESP_OK || centre == 0) return 0.0f;
+  // A remote rtl_tcp server tunes to exactly what it is told and offers no readback: the centre is the last LO we sent it
+  // (a hot retune quantizes that to 5 kHz). The idle local driver's centre is not the stream's.
+  if (dial == 0) return 0.0f;
+  if (rtl_remote_active()) centre = orcsdr::rtl_tcp_source::status().frequency_hz;
+  else if (g_rtl == nullptr || esp_rtl_sdr_get_center_freq(g_rtl, &centre) != ESP_OK) centre = 0;
+  if (centre == 0) return 0.0f;
   return static_cast<float>(static_cast<int32_t>(dial) - static_cast<int32_t>(centre));
 }
 
@@ -13925,7 +14521,7 @@ void ft8_native_service() {
     return;
   }
   ft8_native_drain_pending();
-  if (orcsdr::screens::owns(orcsdr::screens::Id::ft8) && orcsdr::ft8::active())
+  if (orcsdr::screens::owns(orcsdr::screens::Id::ft8) && orcsdr::ft8::active() && !rtl_header_audio_control.expanded)
     orcsdr::ft8::pump_waterfall(orcsdr::ft8_runtime::waterfall().sequence);
   ft8_hunt_service(orcsdr::ft8_runtime::status());
 }
@@ -14536,6 +15132,7 @@ orcsdr::acars_receiver::Hooks acars_receiver_hooks() {
                            rtl_ui_band == RtlBand::browse && rtl_active_sample_rate_sps.load(std::memory_order_acquire) == rate;
     const bool accepted = streaming ? request_hot_retune(center_hz) : queue_local_rtl_listen(RtlBand::browse, center_hz, false);
     if (!accepted) rtl_rate_override_sps.store(previous_override, std::memory_order_release);   // a refused request must not strand the rate
+    if (accepted) g_ft8_rate_owned = false;   // this receiver now holds the rate; a later FT8 release must not clear it
     return accepted;
   };
   hooks.release = [] {
@@ -14559,9 +15156,47 @@ void open_acars_dashboard() {
   orcsdr::home::leave();
   orcsdr::ft8::leave();
   orcsdr::sstv_app::close();
+  orcsdr::ais_app::close();
   orcsdr::acars_receiver::install(acars_receiver_hooks());
   orcsdr::acars_app::install(acars_app_hooks());
   orcsdr::acars_app::open();
+}
+// AIS logic lives in ais_app / ais_radio; these adapters hand them what only this file can reach. The receiver asks for the
+// same 240 kS/s general-VHF stream as ACARS, centred on 162.000 MHz, on whichever source is selected (USB or rtl_tcp).
+void open_ais_dashboard() {
+  persist_dashboard_open(orcsdr::dashboards::Id::ais);
+  orcsdr::home::leave();
+  orcsdr::ft8::leave();
+  orcsdr::sstv_app::close();
+  orcsdr::acars_app::close();
+  orcsdr::ais_radio::Hooks radio = {};
+  const orcsdr::acars_receiver::Hooks shared = acars_receiver_hooks();   // same tune / release rules as ACARS
+  radio.device_ready = shared.device_ready;
+  radio.tune = shared.tune;
+  radio.release = shared.release;
+  radio.tuned_center = shared.tuned_center;
+  radio.now_ms = [] { return static_cast<uint64_t>(esp_timer_get_time() / 1000); };
+  radio.micros = [] { return static_cast<uint32_t>(esp_timer_get_time()); };
+  radio.lost_samples = [] { return rtl_iq_pipeline_drop_samples.load(std::memory_order_relaxed); };
+  radio.remote_source = [] { return rtl_remote_source_ready(); };
+  orcsdr::ais_radio::install(radio);
+  orcsdr::ais_app::Hooks app = {};
+  app.header_controls = draw_global_header_controls;
+  app.battery_percent = [] { return static_cast<int>(M5.Power.getBatteryLevel()); };
+  app.receiver_location = [](int32_t* lat_e7, int32_t* lon_e7) {
+    const auto place = orcsdr::receiver_location::snapshot();
+    if (!place.configured) return false;
+    *lat_e7 = place.latitude_e7;
+    *lon_e7 = place.longitude_e7;
+    return true;
+  };
+  app.remote_source = radio.remote_source;
+  app.now_ms = [] { return static_cast<uint32_t>(millis()); };
+  app.go_home = [] { show_home(); };
+  app.overlay_open = [] { return rtl_header_audio_control.expanded; };
+  app.sd_available = [] { return orcsdr::storage::mounted(); };
+  orcsdr::ais_app::install(app);
+  orcsdr::ais_app::open();
 }
 // Dead Air logic lives in dead_air_app; these adapters hand it what only this file can reach. It rides the
 // general (BROWSE, NFM) receive path and never owns the radio, so every reading below is the live receiver's.
@@ -14693,7 +15328,24 @@ const orcsdr::sstv_diag::Hooks kSstvDiagHooks = {
 void open_dashboard(orcsdr::dashboards::Id id) {
   using Id = orcsdr::dashboards::Id;
   if (id != Id::settings && orcsdr::settings::active()) close_global_settings();
+  // Settings opened from AIS keeps AIS (and its receiver) alive, as the header Settings button does, so closing
+  // Settings can return to it. Everything else below closes AIS.
+  if (id == Id::visualizer) {          // the last All Dashboards entry (the header VIS button is gone)
+    open_visualizer();
+    return;
+  }
+  if (id == Id::settings && orcsdr::ais_app::active()) {
+    open_global_settings(orcsdr::settings::Section::system);
+    return;
+  }
+  if (id == Id::rf_lab && orcsdr::ais_app::active()) {   // RF Lab returns to AIS (close_rf_lab), so AIS must stay open
+    persist_dashboard_open(id);
+    orcsdr::rf24::leave();
+    open_rf_lab();
+    return;
+  }
   if (id != Id::dead_air) orcsdr::dead_air_app::close();
+  if (id != Id::ais) orcsdr::ais_app::close();
   if (id == Id::dead_air) { open_dead_air_dashboard(); return; }
   if (id == Id::rf_lab) {
     persist_dashboard_open(id);
@@ -14711,6 +15363,11 @@ void open_dashboard(orcsdr::dashboards::Id id) {
   }
   if (id == Id::sstv) { open_sstv_dashboard(); return; }
   if (id == Id::acars) { open_acars_dashboard(); return; }
+  if (id == Id::ais) {
+    orcsdr::rf24::leave();            // RF24 would otherwise intercept AIS taps
+    open_ais_dashboard();
+    return;
+  }
   orcsdr::sstv_app::close();
   orcsdr::acars_app::close();
   rtl_rate_override_sps.store(0, std::memory_order_release);
@@ -14790,7 +15447,7 @@ esp_err_t rtl_gain_set_auto(const char* source) {
   esp_err_t result = ESP_RTL_SDR_ERR_UNSUPPORTED;
   const bool smart = rtl_gain_band_uses_smart();
 #if !RTL_USE_LEGACY_USB
-  if (g_rtl == nullptr) {
+  if (g_rtl == nullptr && !rtl_remote_active()) {
     result = ESP_ERR_INVALID_STATE;
   } else if (rtl_tuner_gain_available(rtl_ui_frequency_hz) &&
              rtl_has_device_capability(smart ? ESP_RTL_SDR_CAP_GAIN
@@ -14817,7 +15474,7 @@ esp_err_t rtl_gain_set_manual(const char* source, int gain_tenth_db) {
   esp_err_t result = ESP_RTL_SDR_ERR_UNSUPPORTED;
   rtl_gain_stop_smart();
 #if !RTL_USE_LEGACY_USB
-  if (g_rtl == nullptr) result = ESP_ERR_INVALID_STATE;
+  if (g_rtl == nullptr && !rtl_remote_active()) result = ESP_ERR_INVALID_STATE;
   else if (rtl_tuner_gain_available(rtl_ui_frequency_hz) &&
            rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN))
     result = esp_rtl_sdr_set_tuner_gain(g_rtl, gain_tenth_db);  // forces MANUAL
@@ -14831,7 +15488,7 @@ esp_err_t rtl_gain_set_manual(const char* source, int gain_tenth_db) {
 esp_err_t rtl_gain_set_rtl_agc(const char* source, bool enabled) {
   esp_err_t result = ESP_RTL_SDR_ERR_UNSUPPORTED;
 #if !RTL_USE_LEGACY_USB
-  if (g_rtl == nullptr) result = ESP_ERR_INVALID_STATE;
+  if (g_rtl == nullptr && !rtl_remote_active()) result = ESP_ERR_INVALID_STATE;
   else if (rtl_has_device_capability(ESP_RTL_SDR_CAP_RTL_AGC))
     result = esp_rtl_sdr_set_rtl_agc(g_rtl, enabled);
 #endif
@@ -14902,8 +15559,9 @@ void handle_home_action(const orcsdr::home::Action& action) {
     case ActionKind::span_up: {
       const uint32_t current_span = rtl_scope_span_hz.load(std::memory_order_relaxed);
       rtl_scope_span_hz.store(
-          orcsdr::home::step_span(current_span,
-                                  action.kind == ActionKind::span_down ? -1 : 1),
+          std::min(orcsdr::home::step_span(current_span,
+                                           action.kind == ActionKind::span_down ? -1 : 1),
+                   rtl_span_cap_hz()),
           std::memory_order_relaxed);
       reset_spectrum_renderer();
       break;
@@ -15195,6 +15853,15 @@ void handle_global_settings_action(const orcsdr::settings::Action& action) {
       break;
     case orcsdr::settings::ActionKind::rtl_usb_safe_mode_reset:
       reset_rtl_usb_safe_mode_and_restart();
+      break;
+    case orcsdr::settings::ActionKind::receiver_source_changed:
+    case orcsdr::settings::ActionKind::remote_server_changed:
+    case orcsdr::settings::ActionKind::rtl_rate_cap_changed:
+    case orcsdr::settings::ActionKind::rtl_ppm_changed:
+    case orcsdr::settings::ActionKind::rtl_direct_changed:
+    case orcsdr::settings::ActionKind::rtl_offset_changed:
+    case orcsdr::settings::ActionKind::rtl_wifi_keepalive_changed:
+      orcsdr::settings_remote::handle(action);
       break;
     case orcsdr::settings::ActionKind::clock_offset_changed:
       if (!orcsdr::time_service::store_utc_offset_minutes(preferences, action.value))
@@ -15921,7 +16588,7 @@ bool point_in_button(int32_t x, int32_t y) {
 }
 
 bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
-                            bool persist_navigation) {
+                            bool persist_navigation, bool user_request) {
   if (band == RtlBand::adsb) frequency_hz = kAdsbDefaultHz;
   if (band == RtlBand::lora) {
     load_lora_config();
@@ -15932,8 +16599,7 @@ bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
 #if RTL_USE_LEGACY_USB
   const bool receiver_ready = rtl_sdr_device != nullptr;
 #else
-  const bool receiver_ready =
-      g_rtl_device_ready.load(std::memory_order_acquire) && g_rtl != nullptr;
+  const bool receiver_ready = rtl_device_ready();
 #endif
   if (!receiver_ready) {
     // No receiver attached, but the caller still shows this band's screen.
@@ -15952,7 +16618,7 @@ bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
     return false;
   }
 #if !RTL_USE_LEGACY_USB
-  if (!validate_rtl_tune_frequency(frequency_hz)) {
+  if (!validate_rtl_tune_frequency(frequency_hz, user_request)) {
     // This receiver cannot tune here (e.g. a Blog V4L below 24 MHz), but the
     // caller still shows this band's dashboard. Show its own frequency rather
     // than the previous band's, and stop the previous band's stream instead of
@@ -16453,14 +17119,15 @@ uint32_t rtl_fm_command_lo_hz(uint32_t display_hz) {
   return rtl_clamp_frequency(RtlBand::fm, display_hz);
 }
 
-bool request_hot_retune_for(orcsdr::radio::Token token, uint32_t frequency_hz) {
+bool request_hot_retune_for(orcsdr::radio::Token token, uint32_t frequency_hz,
+                            bool user_request) {
   if (!radio_session.owns(token) || rtl_ui_band == RtlBand::wx ||
       rtl_ui_band == RtlBand::adsb)
     return false;
   frequency_hz = rtl_clamp_frequency(rtl_ui_band, frequency_hz);
   if (frequency_hz == 0) return false;
 #if !RTL_USE_LEGACY_USB
-  if (!validate_rtl_tune_frequency(frequency_hz)) return false;
+  if (!validate_rtl_tune_frequency(frequency_hz, user_request)) return false;
 #endif
   const uint32_t ui_quant_hz =
       rtl_ui_band == RtlBand::airband
@@ -16502,9 +17169,9 @@ bool request_hot_retune_for(orcsdr::radio::Token token, uint32_t frequency_hz) {
   return true;
 }
 
-bool request_hot_retune(uint32_t frequency_hz) {
+bool request_hot_retune(uint32_t frequency_hz, bool user_request) {
   const auto session = radio_session.snapshot();
-  return request_hot_retune_for({session.owner, session.generation}, frequency_hz);
+  return request_hot_retune_for({session.owner, session.generation}, frequency_hz, user_request);
 }
 
 // The C6 only relays bytes. Pairing, packet validation, and dashboard authority
@@ -16991,6 +17658,21 @@ bool virtual_tap_live() {
 }
 
 UiTouchDetail ui_touch_detail(int index) {
+  const UiTouchDetail raw = ui_touch_detail_raw(index);
+  if (!rtl_header_audio_control.expanded && !g_tray_gate.swallow) return raw;
+  const uint32_t now = millis();
+  g_tray_gate.swallow = true;
+  const UiTouchDetail first = index == 0 ? raw : ui_touch_detail_raw(0);
+  if (first.state != m5::touch_state_t::none || raw.state != m5::touch_state_t::none) {
+    g_tray_gate.last_touch_ms = now;
+  } else if (!rtl_header_audio_control.expanded && now - g_tray_gate.last_touch_ms >= kTrayTouchSettleMs) {
+    g_tray_gate.swallow = false;     // the finger has been up long enough: dashboards get touches again
+    return raw;
+  }
+  return UiTouchDetail{};             // state none: not pressed, no press or release edge
+}
+
+UiTouchDetail ui_touch_detail_raw(int index) {
   if (g_tap.active) {
     const uint32_t elapsed = millis() - g_tap.start_ms;
     if (elapsed >= kTapPressMs + kTapReleaseMs) {
@@ -17422,6 +18104,7 @@ void poll_sdr_touch(bool from_stream) {
 
   if ((orcsdr::sstv::ui_active() && orcsdr::screens::owns(orcsdr::screens::Id::sstv)) ||
       (orcsdr::acars_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::acars)) ||
+      (orcsdr::ais_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::ais)) ||
       (orcsdr::dead_air_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::dead_air))) {
     if (pressed && !was_pressed) handle_sdr_touch(touch.x, touch.y);
     was_pressed = pressed;
@@ -17531,7 +18214,7 @@ void poll_sdr_touch(bool from_stream) {
               static_cast<uint64_t>(pinch_anchor_value) * pinch_anchor_distance /
               distance);
           next = std::clamp((next / 5000u) * 5000u, kRtlScopeSpanMinHz,
-                            kRtlScopeSpanMaxHz);
+                            rtl_span_cap_hz());
           if (next != rtl_scope_span_hz.load(std::memory_order_relaxed))
             handle_shortwave_dashboard_action(
                 {orcsdr::shortwave::ActionKind::span_hz,
@@ -17623,7 +18306,7 @@ void poll_sdr_touch(bool from_stream) {
         if (rtl_pinch_mode == SdrPinchMode::Span) {
           next = static_cast<uint32_t>(pinch_anchor_value * pinch_anchor_distance / distance);
           next = constrain((next / 5000u) * 5000u, kRtlScopeSpanMinHz,
-                           kRtlScopeSpanMaxHz);
+                           rtl_span_cap_hz());
           if (next != rtl_scope_span_hz.exchange(next, std::memory_order_relaxed)) {
             redraw_spectrum_panel();
             draw_spectrum_axis();
@@ -17775,7 +18458,7 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     return;
   }
   if (orcsdr::audio_header::settings_hit(x, y)) {
-    open_global_settings(orcsdr::ft8::active() || orcsdr::acars_app::active() || orcsdr::dead_air_app::active()
+    open_global_settings(orcsdr::ft8::active() || orcsdr::acars_app::active() || orcsdr::ais_app::active() || orcsdr::dead_air_app::active()
                              ? orcsdr::settings::Section::system :
                          rtl_ui_band == RtlBand::adsb
                              ? orcsdr::settings::Section::location_adsb
@@ -17790,6 +18473,10 @@ void handle_sdr_touch(int32_t x, int32_t y) {
   }
   if (orcsdr::acars_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::acars)) {
     orcsdr::acars_app::touch(x, y);
+    return;
+  }
+  if (orcsdr::ais_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::ais)) {
+    orcsdr::ais_app::touch(x, y);
     return;
   }
   if (orcsdr::dead_air_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::dead_air)) {
@@ -18106,6 +18793,7 @@ constexpr UiDocScreen kUiDocScreens[] = {
     {"settings.data-maps", "demo"},
     {"settings.display-audio", "demo"},
     {"settings.radio-defaults", "demo"},
+    {"settings.rtl-tcp", "demo"},
     {"settings.storage", "demo"},
     {"settings.companion", "demo"},
     {"settings.system", "demo"},
@@ -18196,7 +18884,7 @@ size_t ui_doc_prefix_count(const char* prefix) {
 bool ui_doc_self_check() {
   if (static_cast<uint8_t>(orcsdr::fm::View::count) != 5 ||
       static_cast<uint8_t>(orcsdr::p25::View::count) != 5 ||
-      static_cast<uint8_t>(orcsdr::settings::Section::count) != 9 ||
+      static_cast<uint8_t>(orcsdr::settings::Section::count) != 10 ||
       ui_doc_prefix_count("fm.") != static_cast<uint8_t>(orcsdr::fm::View::count) ||
       ui_doc_prefix_count("p25.") != static_cast<uint8_t>(orcsdr::p25::View::count) ||
       ui_doc_prefix_count("settings.") !=
@@ -18385,7 +19073,7 @@ bool ui_doc_view_for_suffix(const char* suffix, orcsdr::p25::View* view) {
   ui_doc_leave_surfaces();
     // Same order as orcsdr::settings::Section.
     static constexpr const char* names[] = {"connectivity", "firmware-updates",
-        "location-adsb", "data-maps", "display-audio", "radio-defaults", "storage",
+        "location-adsb", "data-maps", "display-audio", "radio-defaults", "rtl-tcp", "storage",
         "companion", "system"};
     static_assert(std::size(names) ==
                   static_cast<size_t>(orcsdr::settings::Section::count));
@@ -18642,6 +19330,15 @@ bool ui_doc_pause_reception() {
       } else {
         orcsdr::dead_air_app::open();
       }
+    } else if (ui_doc.screen == orcsdr::screens::Id::ais) {
+      // AIS rides the browse band too: the fallback below would close it and show Home. Reopen it if documentation closed it.
+      if (orcsdr::ais_app::active()) {
+        orcsdr::screens::begin_transition(orcsdr::screens::Id::ais, millis());
+        orcsdr::ais_app::draw(true);
+        orcsdr::screens::finish_transition();
+      } else {
+        open_ais_dashboard();
+      }
     } else if (ui_doc.screen == orcsdr::screens::Id::acars) {
       // ACARS rides the browse band, so the band-based fallback below would close it and show Home. The documentation
       // screen may have closed the app, so reopen it when it is no longer active; otherwise just redraw it as it was.
@@ -18860,6 +19557,16 @@ void print_rtl_driver_status() {
       frequency_err == ESP_OK && metrics_err == ESP_OK && metrics.frequency_hz == frequency_hz,
       route, static_cast<unsigned>(bandwidth_requested_hz),
       static_cast<unsigned>(bandwidth_applied_hz));
+  esp_rtl_sdr_offset_tuning_state_t offset{};
+  const esp_err_t offset_err = esp_rtl_sdr_get_offset_tuning_state(g_rtl, &offset);
+  Serial.printf("RTL_OFFSET_STATUS cap=%d requested=%d applied_offset_hz=%u "
+                "tuner_lo_hz=%u iq_center_hz=%u correction=%s "
+                "additional_offset_mixer=0 result=%s\n",
+                (caps & ESP_RTL_SDR_CAP_OFFSET_TUNING) ? 1 : 0,
+                offset.requested ? 1 : 0, offset.applied_offset_hz,
+                offset.tuner_lo_hz, offset.iq_center_hz,
+                (caps & ESP_RTL_SDR_CAP_OFFSET_TUNING) ? "hardware" : "none",
+                esp_rtl_sdr_err_to_name(offset_err));
 }
 
 void print_cb_status() {
@@ -18976,6 +19683,7 @@ const char* ui_touch_route() {
   const bool pocsag_ui = rtl_ui_band == RtlBand::pocsag && orcsdr::pocsag::active();
   if (orcsdr::sstv::ui_active() && orcsdr::screens::owns(orcsdr::screens::Id::sstv)) return "sstv";
   if (orcsdr::acars_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::acars)) return "acars";
+  if (orcsdr::ais_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::ais)) return "ais";
   if (orcsdr::dead_air_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::dead_air)) return "dead_air";
   const bool radio_ui = rtl_ui_active.load(std::memory_order_acquire);
   const bool fm_ui = rtl_ui_band == RtlBand::fm && orcsdr::fm::active();
@@ -20131,7 +20839,7 @@ void process_command(char* command) {
   }
   if (strcmp(command, "RTL_UI STATUS") == 0) {
     Serial.printf("RTL_UI_STATUS screen=%s band=%s frequency_hz=%u settings=%d fm=%d am=%d p25=%d "
-                  "adsb=%d lora=%d rf24=%d home_font=%d graphics=%d radio_ui=%d route=%s\n",
+                  "adsb=%d lora=%d rf24=%d home_font=%d graphics=%d radio_ui=%d route=%s volume=%u audio_enabled=%d tray=%d\n",
                   orcsdr::screens::name(orcsdr::screens::status().active),
                   rtl_band_name(rtl_ui_band), rtl_ui_frequency_hz,
                   orcsdr::settings::active() ? 1 : 0, orcsdr::fm::active() ? 1 : 0,
@@ -20141,7 +20849,10 @@ void process_command(char* command) {
                   orcsdr::rf24::active() ? 1 : 0,
                   M5.Display.getFont() == &fonts::Font0 ? 1 : 0,
                   rtl_graphics_enabled.load(std::memory_order_acquire) ? 1 : 0,
-                  rtl_ui_active.load(std::memory_order_acquire) ? 1 : 0, ui_touch_route());
+                  rtl_ui_active.load(std::memory_order_acquire) ? 1 : 0, ui_touch_route(),
+                  static_cast<unsigned>(rtl_live_volume.load(std::memory_order_acquire)),
+                  rtl_audio_user_enabled.load(std::memory_order_acquire) ? 1 : 0,
+                  rtl_header_audio_control.expanded ? 1 : 0);
     return;
   }
   if (strcmp(command, "RTL_SERIAL VERBOSITY") == 0) {
@@ -20164,6 +20875,32 @@ void process_command(char* command) {
     apply_serial_verbosity(level);
     Serial.printf("RTL_SERIAL_VERBOSITY_OK mode=%s\n", serial_verbosity_name(level));
     return;
+  }
+  if (strncmp(command, "RTL_TCP", 7) == 0 && (command[7] == '\0' || command[7] == ' ' || command[7] == '\t')) {
+    char reply[320];
+    // Allow-list: only STATUS is open; every other verb changes a setting or starts network activity.
+    const bool changes = !orcsdr::rtl_tcp::serial_command_is_read_only(command, "RTL_TCP");
+    if (changes && !authenticated) {
+      Serial.println("RTL_TCP_ERROR auth_required");
+      return;
+    }
+    if (orcsdr::rtl_tcp_source::handle_command(command, reply, sizeof(reply))) {
+      Serial.println(reply);
+      return;
+    }
+  }
+  if (strncmp(command, "RTL_TCPD", 8) == 0) {
+    char reply[400];
+    // Allow-list, as for RTL_TCP: extra spaces before ENABLE must not skip the check.
+    const bool changes = !orcsdr::rtl_tcp::serial_command_is_read_only(command, "RTL_TCPD");
+    if (changes && !authenticated) {
+      Serial.println("RTL_TCPD_ERROR auth_required");
+      return;
+    }
+    if (orcsdr::rtl_tcp_server::handle_command(command, reply, sizeof(reply))) {
+      Serial.println(reply);
+      return;
+    }
   }
   if (strcmp(command, "RTL_MAP_STATUS") == 0) {
     orcsdr::maps::report([](const char* line) { Serial.print(line); }); return;
@@ -20214,6 +20951,47 @@ void process_command(char* command) {
     Serial.println(line);
     orcsdr::acars_receiver::format_status(line, sizeof(line));
     Serial.println(line);
+    return;
+  }
+  if (strcmp(command, "RTL_AIS STATUS") == 0) {
+    constexpr size_t kLine = 1400;   // PSRAM, not the UI task's stack
+    char* line = static_cast<char*>(heap_caps_malloc(kLine, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (!line) { Serial.println("RTL_AIS_STATUS error=no_memory"); return; }
+    orcsdr::ais_app::describe(line, kLine);
+    Serial.println(line);
+    orcsdr::ais_radio::format_status(line, kLine);
+    Serial.println(line);
+    heap_caps_free(line);
+    Serial.printf("RTL_AIS_TASK dsp_stack_hwm=%u\n",
+                  rtl_dsp_task_handle ? static_cast<unsigned>(uxTaskGetStackHighWaterMark(rtl_dsp_task_handle)) : 0u);
+    return;
+  }
+  if (strcmp(command, "RTL_DROPLOG") == 0) {
+    const uint32_t count = g_drop_log_count.load(std::memory_order_relaxed);
+    Serial.printf("RTL_DROPLOG now_ms=%u stream_started_ms=%u total_drops=%u first_%u:",
+                  static_cast<unsigned>(esp_timer_get_time() / 1000), static_cast<unsigned>(g_stream_started_ms.load()),
+                  static_cast<unsigned>(count), static_cast<unsigned>(count < kDropLogEntries ? count : kDropLogEntries));
+    for (uint32_t i = 0; i < count && i < kDropLogEntries; ++i)
+      Serial.printf(" %u(f%u)", static_cast<unsigned>(g_drop_log_ms[i]), static_cast<unsigned>(g_drop_log_filled[i]));
+    Serial.println();
+    if (strcmp(command, "RTL_DROPLOG") == 0 && count) {}   // read only; RTL_DROPLOG CLEAR resets it
+    return;
+  }
+  if (strcmp(command, "RTL_DROPLOG CLEAR") == 0) { g_drop_log_count.store(0); Serial.println("RTL_DROPLOG cleared"); return; }
+  if (strcmp(command, "RTL_AIS BENCH") == 0) {
+    if (!authenticated) { Serial.println("RTL_AIS_BENCH error=auth_required"); return; }
+    char line[400];
+    orcsdr::ais_radio::bench(line, sizeof(line));
+    Serial.println(line);
+    return;
+  }
+  // Bench replay marker: every AIS page then says the data is replayed, not live RF. Arm it BEFORE opening AIS and
+  // pointing the receiver at the replay source; it is cleared when the screen is left and by TEST OFF.
+  if (strcmp(command, "RTL_AIS TEST ON") == 0 || strcmp(command, "RTL_AIS TEST OFF") == 0) {
+    if (!authenticated) { Serial.println("RTL_AIS_TEST_ERR auth_required"); return; }
+    const bool on = command[14] == 'N';   // may be sent before AIS opens: the label is armed and applies from the first block
+    orcsdr::ais_radio::set_test_replay(on);
+    Serial.printf("RTL_AIS_TEST_OK test=%d\n", on ? 1 : 0);
     return;
   }
   // Known-signal check of this build's ACARS decoder, on a private decoder instance (live reception is not touched).
@@ -20282,10 +21060,12 @@ void process_command(char* command) {
     else if (strcmp(name, "POCSAG") == 0) open_dashboard(Id::pocsag);
     else if (strcmp(name, "ACARS") == 0) open_dashboard(Id::acars);
     else if (strcmp(name, "DEAD_AIR") == 0) open_dashboard(Id::dead_air);
+    else if (strcmp(name, "AIS") == 0) open_dashboard(Id::ais);
+    else if (strcmp(name, "VISUALIZER") == 0) open_dashboard(Id::visualizer);
     else if (strcmp(name, "MARINE") == 0) open_dashboard(Id::marine);
     else if (strcmp(name, "SATELLITE") == 0) open_dashboard(Id::satellite);
     else if (strcmp(name, "UTILITIES") == 0) open_dashboard(Id::utilities);
-    else { Serial.println("RTL_UI_OPEN_INVALID use HOME|FM|AM|SHORTWAVE|P25|ADSB|LORA|RF_LAB|WIFI_ANALYSIS|FT8|SETTINGS|WEATHER|CB|POCSAG|AIRBAND|ACARS|DEAD_AIR|MARINE|SATELLITE|UTILITIES"); return; }
+    else { Serial.println("RTL_UI_OPEN_INVALID use HOME|FM|AM|SHORTWAVE|P25|ADSB|LORA|RF_LAB|WIFI_ANALYSIS|FT8|SETTINGS|WEATHER|CB|POCSAG|AIRBAND|ACARS|DEAD_AIR|AIS|VISUALIZER|MARINE|SATELLITE|UTILITIES"); return; }
     Serial.printf("RTL_UI_OPEN_OK target=%s\n", name);
     return;
   }
@@ -20597,6 +21377,21 @@ void process_command(char* command) {
     Serial.println("RTL_WIFI_PROFILES_END");
     return;
   }
+  if (strncmp(command, "RTL_WIFI_OUTAGE", 15) == 0 && (command[15] == '\0' || command[15] == ' ')) {
+    // Test fault injection: the access point 'vanishes' for N seconds (see wifi_service.hpp). Needs an authenticated session.
+    if (!authenticated) {
+      Serial.println("RTL_WIFI_OUTAGE_ERROR auth_required");
+      return;
+    }
+    const unsigned long seconds = strtoul(command + 15, nullptr, 10);
+    if (seconds > 1800) {
+      Serial.println("RTL_WIFI_OUTAGE_ERROR use 0 (cancel) to 1800 seconds");
+      return;
+    }
+    if (command[15] != '\0') orcsdr::wifi::simulate_outage(static_cast<uint32_t>(seconds));
+    Serial.printf("RTL_WIFI_OUTAGE seconds_left=%lu\n", static_cast<unsigned long>(orcsdr::wifi::outage_remaining_s()));
+    return;
+  }
   if (strcmp(command, "RTL_WIFI_DISCONNECT") == 0) {
     if (!authenticated) {
       Serial.println("RTL_WIFI_DISCONNECT_ERROR auth_required");
@@ -20636,14 +21431,21 @@ void process_command(char* command) {
   if (strcmp(command, "RTL_WIFI_STATUS") == 0) {
     Serial.printf("RTL_WIFI_STATUS station=%d hosted_match=%d scanning=%d connecting=%d "
                   "connected=%d saved_profiles=%u power=%d auto_connect=%d antenna=%s "
-                  "ap_count=%u\n",
+                  "ap_count=%u rssi=%d outage_s=%lu\n",
                   wifi_station_ready ? 1 : 0, wifi_hosted_versions_match ? 1 : 0,
                   wifi_scan_running ? 1 : 0, wifi_connecting ? 1 : 0,
                   wifi_connected ? 1 : 0, wifi_profile_count,
                   settings_wifi_power_enabled ? 1 : 0,
                   settings_wifi_start_at_boot ? 1 : 0,
                   settings_wifi_external_antenna ? "external" : "internal",
-                  static_cast<unsigned>(wifi_scan_result_count));
+                  static_cast<unsigned>(wifi_scan_result_count),
+                  static_cast<int>(orcsdr::wifi::rssi()),
+                  static_cast<unsigned long>(orcsdr::wifi::outage_remaining_s()));
+    orcsdr::wifi::LinkDetails link{};
+    if (orcsdr::wifi::link_details(&link))
+      Serial.printf("RTL_WIFI_LINK rssi=%d channel=%u second=%u b=%d g=%d n=%d ax=%d ps=%d bandwidth=%d\n",
+                    link.rssi, link.channel, link.second_channel, link.b, link.g, link.n, link.ax,
+                    link.ps_mode, link.bandwidth);
     return;
   }
   if (strcmp(command, "RTL_WIFI_CHANNEL") == 0) {
@@ -20680,6 +21482,37 @@ void process_command(char* command) {
   }
   if (strcmp(command, "RTL_WIFI_COEX_STATUS") == 0) {
     print_wifi_coexistence_status();
+    return;
+  }
+  // UI_TAP x y: one finger press at panel coordinates, through the same path as a real touch (the virtual tap the keyboard's
+  // Enter key uses), so every screen's own touch handling runs unchanged. For hands-off test automation over USB serial:
+  // authenticated, one tap at a time (a new tap while one is still playing is refused), panel is 1280 x 720.
+  if (strncmp(command, "UI_TAP ", 7) == 0) {
+    if (!authenticated) {
+      Serial.println("UI_TAP_ERROR auth_required");
+      return;
+    }
+    int x = -1, y = -1;
+    char trailing = 0;
+    if (sscanf(command + 7, "%d %d %c", &x, &y, &trailing) != 2 || x < 0 || x >= 1280 || y < 0 || y >= 720) {
+      Serial.println("UI_TAP_ERROR usage: UI_TAP <x 0-1279> <y 0-719>");
+      return;
+    }
+    if (virtual_tap_live()) {
+      Serial.println("UI_TAP_ERROR busy");
+      return;
+    }
+    g_tap.x = x;
+    g_tap.y = y;
+    g_tap.start_ms = millis();
+    g_tap.active = true;
+    Serial.printf("UI_TAP_DONE x=%d y=%d\n", x, y);
+    return;
+  }
+  if (strcmp(command, "RTL_TAG_DOC ON") == 0 || strcmp(command, "RTL_TAG_DOC OFF") == 0) {
+    g_tag_in_documentation.store(strcmp(command, "RTL_TAG_DOC ON") == 0, std::memory_order_relaxed);
+    Serial.printf("RTL_TAG_DOC %s (not saved; a reset turns it off)\n",
+                  g_tag_in_documentation.load(std::memory_order_relaxed) ? "ON" : "OFF");
     return;
   }
   if (strcmp(command, "RTL_SCREEN_STATUS") == 0) {
@@ -21532,12 +22365,16 @@ void process_command(char* command) {
     else if (profile == ESP_RTL_SDR_PROFILE_BLOG_V4L)
       required |= ESP_RTL_SDR_CAP_HF_UPCONVERTER | ESP_RTL_SDR_CAP_GAIN |
                   ESP_RTL_SDR_CAP_GAIN_AUTO | ESP_RTL_SDR_CAP_RTL_AGC;
+    else if (profile == ESP_RTL_SDR_PROFILE_E4000)
+      required |= ESP_RTL_SDR_CAP_GAIN | ESP_RTL_SDR_CAP_GAIN_AUTO |
+                  ESP_RTL_SDR_CAP_OFFSET_TUNING;
     const uint32_t caps = rtl_device_capabilities();
     const bool pass = g_rtl != nullptr &&
                       (profile == ESP_RTL_SDR_PROFILE_BLOG_V4 ||
                        profile == ESP_RTL_SDR_PROFILE_BLOG_V4L ||
                        profile == ESP_RTL_SDR_PROFILE_BLOG_V3 ||
-                       profile == ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5) &&
+                       profile == ESP_RTL_SDR_PROFILE_NOOELEC_SMART_V5 ||
+                       profile == ESP_RTL_SDR_PROFILE_E4000) &&
                       (caps & required) == required;
     Serial.printf("RTL_DRIVER_SELF_CHECK pass=%d version=%s profile=%u "
                   "device_caps=0x%08x required=0x%08x\n",
@@ -21557,7 +22394,11 @@ void process_command(char* command) {
     }
     esp_err_t err = ESP_ERR_INVALID_ARG;
     const char* action = command + 11;
-    if (strcmp(action, "GAINMODE AUTO") == 0)
+    if (strcmp(action, "OFFSET ON") == 0 || strcmp(action, "OFFSET OFF") == 0) {
+      const bool enabled = strcmp(action, "OFFSET ON") == 0;
+      err = esp_rtl_sdr_set_offset_tuning(g_rtl, enabled);
+      if (err == ESP_OK) rtl_offset_tuning_enabled.store(enabled, std::memory_order_release);
+    } else if (strcmp(action, "GAINMODE AUTO") == 0)
       err = (rtl_gain_stop_smart(), rtl_has_device_capability(ESP_RTL_SDR_CAP_GAIN_AUTO))
                 ? esp_rtl_sdr_set_tuner_gain_mode(g_rtl, ESP_RTL_SDR_GAIN_MODE_AUTO)
                 : ESP_RTL_SDR_ERR_UNSUPPORTED;
@@ -21568,8 +22409,8 @@ void process_command(char* command) {
     else if (strncmp(action, "GAIN ", 5) == 0) {
       char* end = nullptr;
       const long gain = strtol(action + 5, &end, 10);
-      if (end == action + 5 || *end != '\0' || gain < 0 || gain > 496) {
-        Serial.println("RTL_DRIVER_INVALID use GAIN <0..496>");
+      if (end == action + 5 || *end != '\0' || gain < -10 || gain > 496) {
+        Serial.println("RTL_DRIVER_INVALID use GAIN <-10..496>; driver selects nearest supported step");
         return;
       }
       rtl_gain_stop_smart();  // SMART would otherwise step over the raw gain
@@ -21627,7 +22468,7 @@ void process_command(char* command) {
       err = esp_rtl_sdr_retune_hz(g_rtl, static_cast<uint32_t>(frequency_hz));
     }
     else {
-      Serial.println("RTL_DRIVER_INVALID use STATUS|SELF_CHECK|TUNE <HZ>|GAINMODE AUTO|MANUAL|GAIN <0..496>|RTLAGC ON|OFF|BIAS ON|OFF|BW <hz|0>");
+      Serial.println("RTL_DRIVER_INVALID use STATUS|SELF_CHECK|TUNE <HZ>|OFFSET ON|OFF|HFDIRECT AUTO|OFF|<24000000..28799999>|GAINMODE AUTO|MANUAL|GAIN <-10..496>|RTLAGC ON|OFF|BIAS ON|OFF|BW <hz|0>");
       return;
     }
     Serial.printf("RTL_DRIVER_RESULT action=\"%s\" accepted=%d result=%s\n", action,
@@ -21693,7 +22534,8 @@ void process_command(char* command) {
     Serial.println("RTL_HOTPLUG_STATUS            - receiver replacement and resume state");
     Serial.println("RTL_ADSB STATUS               - ADS-B stream, queue and decoder counters");
     Serial.println("RTL_DRIVER STATUS|SELF_CHECK  - driver capabilities, shadows and stream metrics");
-    Serial.println("RTL_DRIVER GAINMODE AUTO|MANUAL | GAIN <0..496> | RTLAGC ON|OFF | BIAS ON|OFF (auth)");
+    Serial.println("RTL_DRIVER OFFSET ON|OFF     - hardware center correction, radio stopped; default ON when supported");
+    Serial.println("RTL_DRIVER GAINMODE AUTO|MANUAL | GAIN <-10..496> | RTLAGC ON|OFF | BIAS ON|OFF (auth)");
     Serial.println("RTL_HEALTH [STATUS|BUILD|HEAP_CHECK] - development diagnostics");
     Serial.println("RTL_SD_SELF_CHECK             - authenticated file semantics check");
     Serial.println("RTL_SD_BENCH [4..64]          - authenticated temporary-file SD write benchmark");
@@ -23306,6 +24148,41 @@ void setup() {
   rtl_boot_complete.store(true, std::memory_order_release);
 }
 
+// Every RTL-fed dashboard says when its receiver is an rtl_tcp server (Home draws its own).
+static void service_rtl_tcp_header_tag(uint32_t now) {
+  orcsdr::rtl_tcp_header_tag::State tag{};
+  // Shown whenever the source is remote, not only while streaming, so a stopped or failed stream is
+  // still labelled instead of the tag vanishing.
+  tag.remote = g_rtl_remote_narrow.load(std::memory_order_acquire) ||
+               orcsdr::rtl_tcp_source::mode() == orcsdr::source::Mode::remote_tcp;
+  if (tag.remote) {
+    tag.state = orcsdr::rtl_tcp_source::state();
+    tag.link_pct = orcsdr::rtl_tcp_source::link_ratio_pct();
+    tag.sps = tag.state == orcsdr::rtl_tcp::State::streaming
+                  ? rtl_active_sample_rate_sps.load(std::memory_order_relaxed) : 0;
+    snprintf(tag.host, sizeof(tag.host), "%s:%u", orcsdr::rtl_tcp_source::host(),
+             static_cast<unsigned>(orcsdr::rtl_tcp_source::port()));
+  }
+  // Documentation screens (UI_DOC_SHOW) draw the real dashboards under the "documentation" screen id and
+  // the main loop returns early for them. Normally the tag stays off them so help captures are clean;
+  // RTL_TAG_DOC ON lets it through so each dashboard header can be checked from the serial port.
+  auto tag_screen = orcsdr::screens::status().active;
+  bool tag_blocked = map_download_notice_blocked();
+  if (g_tag_in_documentation.load(std::memory_order_relaxed) && ui_doc.active) {
+    const char* doc = ui_doc.current_screen;
+    using I = orcsdr::screens::Id;
+    // Some documentation screens run under their own screen id, others under "documentation".
+    if (tag_screen == I::documentation || tag_screen == I::none)
+      tag_screen = strncmp(doc, "fm.", 3) == 0 ? I::fm : strncmp(doc, "p25.", 4) == 0 ? I::p25
+                 : strncmp(doc, "adsb.", 5) == 0 ? I::adsb : strncmp(doc, "lora.", 5) == 0 ? I::lora
+                 : strncmp(doc, "am.", 3) == 0 ? I::am : strncmp(doc, "cb.", 3) == 0 ? I::cb
+                 : strncmp(doc, "pocsag.", 7) == 0 ? I::pocsag : I::documentation;
+    tag_blocked = g_suppress_home_paint || orcsdr::text_editor::active() ||
+                  rtl_header_audio_control.expanded || shared_keypad_open() || orcsdr::home::popup_open();
+  }
+  orcsdr::rtl_tcp_header_tag::update(tag, tag_screen, now, tag_blocked);
+}
+
 void loop() {
   static uint32_t previous_loop_ms = 0;
   const uint32_t loop_started_ms = millis();
@@ -23329,6 +24206,10 @@ void loop() {
   orcdial_poll();
 #endif
   ft8_native_service();
+  // Finished WithCaps workers park themselves; delete them here, from another task (a self-delete can abort on low internal RAM).
+  orcsdr::ft8_runtime::reap();
+  orcsdr::catalog::reap();
+  orcsdr::rtl_tcp_source::reap();
   // Issue #66: mirror Settings connect_saved — queue only; poll_wifi() calls
   // start_wifi_connection() then initialize_wifi() on the normal loop path.
   if (wifi_boot_bringup_pending &&
@@ -23375,6 +24256,20 @@ void loop() {
   const bool rf_lab_ui = orcsdr::rf_lab::active();
   orcsdr::sstv_app::tick();
   orcsdr::acars_app::tick();
+  orcsdr::ais_app::tick();
+  if (g_rtl != nullptr && orcsdr::ais_radio::running()) {   // a USB overrun removed IQ before the callback: AIS must not join frames across it
+    static uint32_t s_ais_last_overruns = 0;
+    static uint32_t s_ais_last_check_ms = 0;
+    const uint32_t check_now = millis();
+    if (check_now - s_ais_last_check_ms >= 250) {
+      s_ais_last_check_ms = check_now;
+      esp_rtl_sdr_metrics_t m = {};
+      if (esp_rtl_sdr_get_metrics(g_rtl, &m) == ESP_OK) {
+        if (m.overruns != s_ais_last_overruns) orcsdr::ais_radio::note_discontinuity();
+        s_ais_last_overruns = m.overruns;
+      }
+    }
+  }
   orcsdr::dead_air_app::tick();
   if (rtl_stream_ui_refresh_pending.exchange(false, std::memory_order_acq_rel) &&
       !settings_ui && !home_ui && !visualizer_ui && !rf_lab_ui) {
@@ -23455,6 +24350,7 @@ void loop() {
     return;
   }
   if (ui_documentation_mode) {
+    if (g_tag_in_documentation.load(std::memory_order_relaxed)) service_rtl_tcp_header_tag(millis());
     delay(10);
     return;
   }
@@ -23678,6 +24574,7 @@ void loop() {
       orcsdr::screens::status().active != orcsdr::screens::Id::ft8 &&
        orcsdr::screens::status().active != orcsdr::screens::Id::sstv &&
       orcsdr::screens::status().active != orcsdr::screens::Id::acars &&
+      orcsdr::screens::status().active != orcsdr::screens::Id::ais &&
       orcsdr::screens::status().active != orcsdr::screens::Id::maps &&
       orcsdr::screens::status().active != orcsdr::screens::Id::dead_air &&
       !orcsdr::screens::owns(screen_for_band(rtl_ui_band)) &&
@@ -23698,6 +24595,7 @@ void loop() {
   }
 
   if (radio_ui) service_rtl_speaker_watchdog();
+  service_volume_tray_touch();
   if (orcsdr::audio_header::service_timeout(rtl_header_audio_control, millis())) {
     orcsdr::audio_header::restore_volume_background();
   }
@@ -23732,7 +24630,7 @@ void loop() {
     static uint32_t home_last_update_ms = 0;
     if (millis() - home_last_update_ms >= 500) {
       home_last_update_ms = millis();
-      draw_home_dashboard();
+      if (!rtl_header_audio_control.expanded) draw_home_dashboard();
     }
     // Home owns its display; render the frozen spectrum here rather than from
     // the RTL worker so M5GFX has one framebuffer writer.
@@ -23757,6 +24655,8 @@ void loop() {
     poll_sdr_touch(false);
     draw_sstv_dashboard(false);
   } else if (orcsdr::acars_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::acars)) {
+    poll_sdr_touch(false);
+  } else if (orcsdr::ais_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::ais)) {
     poll_sdr_touch(false);
   } else if (orcsdr::dead_air_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::dead_air)) {
     poll_sdr_touch(false);
@@ -23801,8 +24701,10 @@ void loop() {
     EXT_RAM_BSS_ATTR static orcsdr::maps::downloads::Snapshot notice;
     if(orcsdr::maps::downloads::snapshot(&notice)) {
       const bool blocked=map_download_notice_blocked();
-      orcsdr::map_download_notice::update(notice,orcsdr::screens::status().active,blocked);
+      orcsdr::map_download_notice::update(
+          notice, orcsdr::screens::status().active, blocked, rtl_dashboard_tune_warning());
     }
+    service_rtl_tcp_header_tag(now);
   }
   if (!rtl_ui_active.load(std::memory_order_acquire) &&
       now - last_power_draw_ms >= 10000) {

@@ -1,6 +1,8 @@
-# ACARS dashboard (UI foundation)
+# ACARS / VDL2 dashboard — implemented receiver and interpreted aircraft data
 
-Status: **Host-tested; running on a spare Tab5 with a live receiver adapter; two real off-air ACARS blocks decoded (2026-10-15, see LOCAL_BUILD_2026-10-13.md).**
+**Current status (maintainer reconciliation, 2026-11-04):** ACARS VHF **and native VDL Mode 2** decode real over-the-air traffic on Tab5. The early two-block 2026-10-15 test remains valid historical evidence but is not the current ceiling. [October 29 live logs](CHANGELOG.md) record VDL2 CRC-valid AVLC/ACARS, aircraft position/climb information and a session with **213 verified frames / 135 ACARS messages**. Airline-specific message formats are only partially interpreted; unknown layouts remain available as raw payloads, not fabricated data. This page retains earlier UI-specific design/history notes below; for actual current reception use the [field acceptance record](../MAINTAINER_FIELD_ACCEPTANCE_2026-11-04.md).
+
+**Historical initial validation (2026-10-15):** Host-tested, running on a spare Tab5 with live receiver adapter; two off-air ACARS blocks decoded (see LOCAL_BUILD_2026-10-13.md).
 The dashboard itself is presentation only. Live data comes from `acars_receiver.*` (see "Live reception" below), which feeds the
 native decoder (`acars_core.*`) from the RTL-SDR and posts into the model. When no receiver is attached (host tests, or a build
 without the hooks) LIVE truthfully reads `RECEIVER FEED NOT CONNECTED`. DEMO mode data is synthetic and labelled as such.
@@ -217,10 +219,9 @@ Checks: `acars_archive_tests` (format round trip, hostile bytes, truncated lines
 load) on the host, and `RTL_ACARS ARCHIVETEST` on the device (writes and reads back 12 records in a scratch folder on the real card,
 then deletes them; it passed on a Tab5 with an SD card). The real log gets its first real entries when an aircraft is decoded.
 
-## Known limitations
+## Known limitations (current qualifications and historical UI constraints)
 
-- The live path exists (`acars_receiver.*`) and has decoded only two real blocks so far; otherwise the decoder has only seen a synthetic AM/MSK
-  fixture. No sensitivity, false-block rate or gain behaviour is measured.
+- The early PoA/AM-MSK receiver test decoded two real blocks, but later on-device VHF ACARS and VDL2 runs decoded far more. VDL2 is a distinct PHY receive path; see [live evidence](CHANGELOG.md). Full sensitivity, false-frame and gain behavior are not characterized across all RF conditions.
 - One channel at a time; the selected channel is the only one decoded.
 - UTC time is shown only if a producer supplies it; otherwise `+m:ss` since boot, labelled as such.
 - History is RAM-only (48 messages) and lost at power-off.

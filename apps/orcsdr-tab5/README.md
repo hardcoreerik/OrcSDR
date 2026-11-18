@@ -1,9 +1,9 @@
 # OrcSDR Tab5 app (portable RF shell + radio)
 
-M5Stack **Tab5** (ESP32-P4) native ESP-IDF application. RTL-SDR Blog V4 is the
-tested baseline; V3/V3C profiles have narrower experimental evidence
-boundaries, and the Nooelec NESDR SMArt V5 is RF-Verified at 24 MHz and above
-(documented below).
+M5Stack **Tab5** (ESP32-P4) native ESP-IDF application. Fully supported
+receiver models are RTL-SDR Blog V4, V3c, V4 Lite (V4L), and Nooelec NESDR
+SMArt V5. Nooelec XTR/E4000 is implemented in the separate driver, while
+OrcSDR frequency-range and dashboard integration are still in progress.
 
 Direction: not only an FM radio — a **portable RF tool shell** where listen,
 scope, and capture are first tabs, and later tools (band scan, IQ dump, gain
@@ -52,13 +52,15 @@ substitute a local component path or a moving branch.
 Hard rules: clean-room `esp-rtl-sdr` integration; no librtlsdr; do not claim
 calibrated OTA RF or general receiver compatibility from UI/detection alone.
 
-| Receiver | Current evidence |
+| Receiver | OrcSDR status |
 |---|---|
-| Blog V4 | RF-Verified tested baseline. |
-| Blog V3C | RF-Verified/Experimental on one RC4 unit; gain/sensitivity provisional. |
-| Earlier Blog V3 | Implemented/Experimental; broad compatibility Not Verified. |
-| Nooelec NESDR SMArt V5 | RF-Verified/tested at 24 MHz and above (v0.3.0-beta.2); no HF below 24 MHz. |
-| Blog V4L and other receivers | Not Verified/Unsupported unless explicitly profiled and accepted. |
+| Blog V4 | **Fully supported**; RF-verified receiver baseline with integrated HF upconverter. |
+| Blog V3c | **Fully supported**; RF-verified on hardware, with direct-sampling HF behavior. |
+| Blog V4 Lite (V4L) | **Fully supported**; hardware-tested streaming, retunes, HF path and [40 m FT8](../../docs/user-guide/dashboards/ft8.md). |
+| Nooelec NESDR SMArt V5 | **Fully supported**; hardware-tested, including [40 m FT8](../../docs/user-guide/dashboards/ft8.md). |
+| Earlier Blog V3 revisions | Experimental until individually accepted; V3c tests do not qualify all older variants. |
+| Nooelec SMArTee XTR / E4000 | **Driver implemented / OrcSDR integration in progress**; model-specific tuning range and dashboard eligibility need completion and acceptance. |
+| Other receivers | Not verified; no blanket RTL2832 compatibility claim. |
 
 ## Build (native ESP-IDF)
 

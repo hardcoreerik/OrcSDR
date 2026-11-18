@@ -23,6 +23,8 @@ LoRa deliberately has no audio controls or alert tones.
 
 ## Current receive boundary
 
+**Confirmed live reception (maintainer, 2026-11-04):** OrcSDR's native receive path has actually decoded unencrypted Meshtastic messages, telemetry, node-info and GPS/location packets from real traffic. Encrypted frames are detected and shown as **ENCRYPTED FRAME**, never described as plaintext or secretly decrypted. This is not merely a simulated-packet or serial-injection demonstration. The following notes describe the pipeline and limits, not a claim that the feature is awaiting first reception.
+
 The Tab5 captures CU8 IQ at 960 kS/s, displays the RF view, and maintains a
 bounded local event/log path. Existing `LORA_PACKET` serial input remains a
 regression bridge for known, externally verified Meshtastic decode records.
@@ -80,11 +82,12 @@ the RTL-SDR cannot tune 2.4 GHz and the native decoder currently accepts only
 
 ## Validation
 
-Before live claims, test recorded sync, CRC pass/fail, public LongFast,
-authorized-key decode, encrypted-without-key, malformed frames, queue
-saturation, profile change, and scan restoration. Hardware acceptance compares
-metadata with the authorized Heltec V4 network and verifies no USB drops,
-watchdogs, flicker, or sustained heap/task growth.
+For continuing regression, test recorded sync, CRC pass/fail, public LongFast,
+authorized-key decode where a key is actually configured, encrypted-without-key,
+malformed frames, queue saturation, profile change and scan restoration. Physical
+acceptance compares source metadata with an authorized Meshtastic network and
+checks USB drops, watchdogs, flicker and sustained heap/task growth. The live
+packet decode is maintainer-confirmed; these additional gates quantify reliability.
 
 The automatic capture retains 250 ms before the energy trigger and four seconds
 total at 960 kS/s. This covers a maximum-size LongFast packet whose airtime can

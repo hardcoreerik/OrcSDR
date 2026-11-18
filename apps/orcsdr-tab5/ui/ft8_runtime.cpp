@@ -330,17 +330,33 @@ void decode_slot(uint64_t slot_start_ms, uint32_t slot_ms, uint64_t now_ms, uint
   const uint64_t cont_ms = g.cont_ms.load(std::memory_order_acquire);
   const uint64_t cont_total = g.cont_total.load(std::memory_order_acquire);
   bool incomplete = (continuity & 1u) != 0 || g.continuity_sequence.load(std::memory_order_acquire) != continuity;
+  const char* why = incomplete ? "continuity" : "";
+  double rate_seen = 0.0;
   if (start_total < static_cast<int64_t>(lead_samples) || slot_start_ms < cont_ms + 100u + lead_ms ||
       total_now - static_cast<uint64_t>(start_total) + lead_samples > kRingSamples - 12000u) {
     incomplete = true;
+    why = start_total < static_cast<int64_t>(lead_samples) ? "ring_start"
+          : (slot_start_ms < cont_ms + 100u + lead_ms ? "before_discontinuity" : "ring_span");
   } else if (now_ms - cont_ms > 5000u) {
     // The tap must have delivered samples at the real 12 kS/s since the last discontinuity, or a block was lost.
-    const double rate = static_cast<double>(total_now - cont_total) / static_cast<double>(now_ms - cont_ms);
-    if (rate < 11.82 || rate > 12.18) incomplete = true;
+    rate_seen = static_cast<double>(total_now - cont_total) / static_cast<double>(now_ms - cont_ms);
+    if (rate_seen < 11.82 || rate_seen > 12.18) {
+      incomplete = true;
+      why = "rate";
+      // The rate is averaged since the last discontinuity, so one lost second would keep failing every later slot for as long as the
+      // receiver had been running (seen: 51 minutes of history, 121 of 201 slots skipped on a healthy stream). Samples were lost
+      // somewhere in that span, so start a fresh span: the tap resets on the next block and this costs the next slot, not the session.
+      // Only for a span over a minute: a short one is still noisy (network delivery is bursty) and simply gets longer by itself.
+      if (now_ms - cont_ms > 60000u) g.reset_pending.store(true, std::memory_order_release);
+    }
   }
   if (incomplete) {
     ++s.slots_skipped_incomplete;
-    std::printf("ORC_FT8_RT slot_skipped_incomplete start_ms=%llu\n", static_cast<unsigned long long>(slot_start_ms));
+    // The reason and the figures behind it: a skipped slot is otherwise indistinguishable from a quiet band.
+    std::printf("ORC_FT8_RT slot_skipped_incomplete start_ms=%llu why=%s since_cont_ms=%lld rate=%.3f samples_since_cont=%llu\n",
+                static_cast<unsigned long long>(slot_start_ms), why,
+                static_cast<long long>(static_cast<int64_t>(now_ms) - static_cast<int64_t>(cont_ms)), rate_seen,
+                static_cast<unsigned long long>(total_now - cont_total));
     return;
   }
 
@@ -661,7 +677,10 @@ void decoder_task(void*) {
   }
   if (g.wwv_phase.load(std::memory_order_acquire) == 1) wwv_finish(1);   // stop() ended the loop mid-measurement: report it so the band is restored and the next start is accepted
   g.task_alive.store(false, std::memory_order_release);
-  vTaskDelete(nullptr);
+  // Do not delete ourselves: on ESP-IDF 5.5.4 a self-deleting WithCaps task needs a temporary cleanup task from internal RAM and
+  // abort()s when that allocation fails. Park instead; reap() deletes this task by handle from another task, which frees the PSRAM
+  // stack and control block without the temporary task.
+  vTaskSuspend(nullptr);
 }
 
 
@@ -716,7 +735,7 @@ void waterfall_task(void*) {
   if (power) psram_free(power);
   if (sorted) psram_free(sorted);
   g.wf_alive.store(false, std::memory_order_release);
-  vTaskDelete(nullptr);
+  vTaskSuspend(nullptr);   // parked for reap(), as the decoder task above
 }
 
 }  // namespace
@@ -738,8 +757,22 @@ static void mem_mark(const char* stage) {   // internal DMA-capable heap at each
 
 StartReport last_start_report() { return g_start_report; }
 
+void reap() {
+  // A finished task clears its flag and suspends itself; deleting it from here (another task) frees its WithCaps memory without
+  // the temporary cleanup task a self-delete needs. vTaskDeleteWithCaps suspends it again and waits until it is not running.
+  if (g.task != nullptr && !g.task_alive.load(std::memory_order_acquire)) {
+    vTaskDeleteWithCaps(g.task);
+    g.task = nullptr;
+  }
+  if (g.wf_task != nullptr && !g.wf_alive.load(std::memory_order_acquire)) {
+    vTaskDeleteWithCaps(g.wf_task);
+    g.wf_task = nullptr;
+  }
+}
+
 bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* context, ClockValidFn clock_valid, DialOffsetFn dial_offset) {
   if (g.active.load(std::memory_order_acquire)) return true;
+  reap();   // tasks from the previous session must be gone before new ones take the handles
   mem_mark("entry");
   g_alloc_fail_bytes.store(0, std::memory_order_relaxed);
   if (g.task_alive.load(std::memory_order_acquire) || g.wf_alive.load(std::memory_order_acquire))
@@ -812,8 +845,13 @@ bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* contex
   g.last_touch_us.store(esp_timer_get_time(), std::memory_order_release);
   set_state(State::waiting_signal);
   g.active.store(true, std::memory_order_release);
+  // Mark the task alive BEFORE creating it: a new task may not have run yet when the main loop next calls reap(), and a
+  // false flag with a non-null handle would make reap() delete it before it starts.
+  g.task_alive.store(true, std::memory_order_release);
   if (xTaskCreatePinnedToCoreWithCaps(decoder_task, "ft8_native", 20480, nullptr, 1, &g.task, 0,
                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
+    g.task_alive.store(false, std::memory_order_release);
+    g.task = nullptr;
     g.active.store(false, std::memory_order_release);
     set_state(State::error);
     // The stack comes from PSRAM but the task control block from internal RAM, so a failure is only a PSRAM shortage when PSRAM really
@@ -836,7 +874,11 @@ bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* contex
     g_start_report.failures = failures;
   }
   mem_mark("backend");
-  (void)xTaskCreatePinnedToCoreWithCaps(waterfall_task, "ft8_wf", 8192, nullptr, 1, &g.wf_task, 0, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  g.wf_alive.store(true, std::memory_order_release);   // before creation, as for the decoder task above
+  if (xTaskCreatePinnedToCoreWithCaps(waterfall_task, "ft8_wf", 8192, nullptr, 1, &g.wf_task, 0, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
+    g.wf_alive.store(false, std::memory_order_release);
+    g.wf_task = nullptr;
+  }
   mem_mark("tasks");
   std::printf("ORC_FT8_RT started mode=%d\n", static_cast<int>(mode));
   return true;
@@ -935,11 +977,14 @@ void offer_iq(const uint8_t* iq, size_t bytes, uint32_t sample_rate_hz) {
       esp_timer_get_time() - g.last_touch_us.load(std::memory_order_acquire) > 6000000)
     return;   // screen is gone
   if (sample_rate_hz != g.input_rate) {
+    std::printf("ORC_FT8_RT tap_discontinuity cause=rate_change from=%lu to=%lu\n", static_cast<unsigned long>(g.input_rate),
+                static_cast<unsigned long>(sample_rate_hz));
     g.tap_ready = tap_ns::begin(&g.tap, sample_rate_hz);
     g.input_rate = sample_rate_hz;
     g.reset_pending.store(false, std::memory_order_release);
     mark_discontinuity();
   } else if (g.reset_pending.exchange(false, std::memory_order_acq_rel)) {
+    std::printf("ORC_FT8_RT tap_discontinuity cause=reset_pending\n");
     tap_ns::reset(&g.tap);
     mark_discontinuity();
   }
@@ -951,6 +996,7 @@ void offer_iq(const uint8_t* iq, size_t bytes, uint32_t sample_rate_hz) {
     if (wanted != have) {
       tap_ns::set_dial_offset(&g.tap, wanted);
       if (std::fabs(wanted - have) > 200.0f) {
+        std::printf("ORC_FT8_RT tap_discontinuity cause=dial_offset wanted=%.0f have=%.0f\n", static_cast<double>(wanted), static_cast<double>(have));
         tap_ns::reset(&g.tap);
         mark_discontinuity();
       }
