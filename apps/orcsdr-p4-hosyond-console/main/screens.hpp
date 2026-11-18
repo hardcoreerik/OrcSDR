@@ -48,6 +48,7 @@ bool pocsag_request(unsigned control,unsigned value); // queued to UI owner, rej
 const Screen& wifi_screen();
 const Screen& maps_screen();
 const Screen& dead_air_screen();
+void maps_request_wizard();   // the next MAPS entry opens the setup wizard
 void maps_request_picker();   // the next MAPS entry opens on the LOCATION page
 void settings_set_location(int32_t lat_e7, int32_t lon_e7);
 const Screen& adsb_screen();

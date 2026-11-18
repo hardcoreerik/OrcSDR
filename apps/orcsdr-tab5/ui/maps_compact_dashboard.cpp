@@ -5,6 +5,7 @@
 #include "map_pipeline.hpp"
 #include "map_service.hpp"
 #include "orcmap/location_picker.hpp"
+#include "setup_flow.hpp"
 
 #include <M5Unified.h>
 #include <esp_heap_caps.h>
@@ -24,7 +25,8 @@ struct State {
   cmp::Layout layout;
   maps::MapSnapshot snap;
   size_t page = 0;
-  bool picker_mode = false, picker_ready = false;
+  bool picker_mode = false, picker_ready = false, wizard_mode = false, picker_from_wizard = false;
+  setup::Flow flow;
   orcmap::LocationPicker picker;
   int32_t start_lat = 0, start_lon = 0;
   uint32_t map_revision = 0xffffffffu;
@@ -34,6 +36,7 @@ struct State {
 };
 State* g_state = nullptr;   // PSRAM
 void (*g_header_controls)() = nullptr;
+WizardHooks g_wizard;
 
 bool hit(int x, int y, cmp::Rect r) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
 
@@ -97,9 +100,11 @@ void draw_header(State& st) {
 }
 
 void draw_picker(State& st);
+void draw_wizard(State& st);
 
 void draw_body(State& st) {
   if (st.picker_mode) { draw_picker(st); return; }
+  if (st.wizard_mode) { draw_wizard(st); return; }
   const auto& l = st.layout;
   const auto& s = st.snap;
   M5.Display.fillRect(l.content.x, l.content.y, l.content.w, l.content.h, TFT_BLACK);
@@ -135,6 +140,80 @@ void draw_body(State& st) {
   button(l.label, "LOCATION", true);
   button(l.next, "NEXT", st.page + 1 < pages);
   button(l.rescan, "RESCAN", true);
+}
+
+void draw_wizard(State& st) {
+  const auto& l = st.layout;
+  M5.Display.fillRect(l.content.x, l.content.y, l.content.w, l.content.h, TFT_BLACK);
+  static const char* const kTitles[] = {"1 / 5  WELCOME", "2 / 5  WI-FI", "3 / 5  LOCATION", "4 / 5  MAPS", "5 / 5  READY"};
+  const int step = static_cast<int>(st.flow.step);
+  text(kTitles[step], l.summary.x + 6, l.summary.y + l.summary.h / 2, kGreen, 1, middle_left);
+  cmp::Rect body = l.pick_map;
+  body.h = std::min(body.h, 300);
+  frame(body);
+  char a[128] = "", b[128] = "";
+  int y = body.y + 22;
+  const auto line = [&](const char* s, uint16_t color, int size = 0) {
+    char tmp[160];
+    std::snprintf(tmp, sizeof(tmp), "%s", s);
+    clip(tmp, body.w - 24);
+    text(tmp, body.x + 12, y, color, size, middle_left);
+    y += size == 1 ? 34 : 28;
+  };
+  const char* action = nullptr;
+  bool action_enabled = true;
+  switch (st.flow.step) {
+    case setup::Step::welcome:
+      line("Welcome to OrcSDR.", TFT_WHITE, 1);
+      line("This setup helps you:", kMuted);
+      line("- connect Wi-Fi", kMuted);
+      line("- set the receiver location", kMuted);
+      line("- check the map packs", kMuted);
+      line("SKIP ALL jumps to the end.", kMuted);
+      action = "SKIP ALL";
+      break;
+    case setup::Step::network: {
+      const bool ok = g_wizard.wifi_line && g_wizard.wifi_line(a, sizeof(a));
+      line(ok ? "Wi-Fi is connected." : "Wi-Fi is not connected.", ok ? kGreen : kAmber, 1);
+      if (a[0]) line(a, kMuted);
+      line("Wi-Fi sets the clock, downloads", kMuted);
+      line("maps and looks up your location.", kMuted);
+      line("It is optional.", kMuted);
+      action = "WI-FI";
+      action_enabled = g_wizard.open_wifi != nullptr;
+      break;
+    }
+    case setup::Step::location: {
+      const bool ok = g_wizard.location_line && g_wizard.location_line(a, sizeof(a));
+      line(ok ? "Receiver location is set." : "Receiver location is not set.", ok ? kGreen : kAmber, 1);
+      if (a[0]) line(a, kMuted);
+      line("Used for ADS-B range, the map", kMuted);
+      line("and the FT8 grid. PICK MAP lets", kMuted);
+      line("you choose it on a map.", kMuted);
+      action = "PICK MAP";
+      break;
+    }
+    case setup::Step::maps: {
+      unsigned usable = 0;
+      for (unsigned i = 0; i < st.snap.count; ++i) usable += st.snap.packs[i].usable ? 1u : 0u;
+      std::snprintf(b, sizeof(b), "%u map pack%s, %u usable", unsigned(st.snap.count), st.snap.count == 1 ? "" : "s", usable);
+      line(b, usable ? kGreen : kAmber, 1);
+      line(st.snap.sd ? "Found on the SD card." : "No SD card: maps need one.", kMuted);
+      line("Packs are added in Settings >", kMuted);
+      line("Data & Maps.", kMuted);
+      action = nullptr;
+      break;
+    }
+    default:
+      line("Setup is complete.", kGreen, 1);
+      line("Everything can be changed later", kMuted);
+      line("in Settings. FINISH saves it.", kMuted);
+      break;
+  }
+  button(l.prev, "BACK", st.flow.step != setup::Step::welcome);
+  button(l.label, action ? action : "", action != nullptr && action_enabled);
+  button(l.next, st.flow.step == setup::Step::complete ? "FINISH" : "NEXT", true);
+  button(l.rescan, "CANCEL", true);
 }
 
 void draw_picker_map(State& st) {
@@ -217,6 +296,8 @@ bool enter() {
   g_state->active = true;
   g_state->page = 0;
   g_state->picker_mode = false;
+  g_state->wizard_mode = false;
+  g_state->picker_from_wizard = false;
   draw();
   return true;
 }
@@ -251,6 +332,29 @@ bool open_picker() {
   return true;
 }
 
+void set_wizard_hooks(const WizardHooks& hooks) { g_wizard = hooks; }
+
+bool open_wizard() {
+  if (g_state == nullptr || !g_state->active) return false;
+  State& st = *g_state;
+  st.flow = setup::Flow{};
+  st.picker_mode = false;
+  st.picker_from_wizard = false;
+  st.wizard_mode = true;
+  draw();
+  return true;
+}
+
+bool finish_picker() {
+  if (g_state == nullptr || !g_state->picker_from_wizard) return false;
+  State& st = *g_state;
+  st.picker_from_wizard = false;
+  st.picker_mode = false;
+  st.wizard_mode = true;
+  draw_body(st);
+  return true;
+}
+
 bool selection(int32_t* latitude_e7, int32_t* longitude_e7) {
   if (g_state == nullptr || !g_state->picker_ready) return false;
   const auto p = g_state->picker.Selection();
@@ -267,8 +371,31 @@ Action touch(int x, int y) {
   if (g_state == nullptr || !g_state->active) return Action::none;
   State& st = *g_state;
   const auto& l = st.layout;
+  if (st.wizard_mode && !st.picker_mode) {
+    const bool cancel = hit(x, y, l.rescan);
+    if (cancel) { st.wizard_mode = false; if (g_wizard.finished) g_wizard.finished(); return Action::none; }
+    if (hit(x, y, l.next)) {
+      if (st.flow.step == setup::Step::complete) {
+        st.flow.done = true;
+        if (g_wizard.save_record) (void)g_wizard.save_record(st.flow.record());
+        st.wizard_mode = false;
+        if (g_wizard.finished) g_wizard.finished();
+        return Action::none;
+      }
+      st.flow.next();
+      draw_body(st);
+    } else if (hit(x, y, l.prev) && st.flow.step != setup::Step::welcome) {
+      st.flow.back();
+      draw_body(st);
+    } else if (hit(x, y, l.label)) {
+      if (st.flow.step == setup::Step::welcome) { st.flow.quick_start(); draw_body(st); }
+      else if (st.flow.step == setup::Step::network && g_wizard.open_wifi) { st.wizard_mode = false; g_wizard.open_wifi(); }
+      else if (st.flow.step == setup::Step::location) { st.picker_from_wizard = true; st.wizard_mode = false; open_picker(); }
+    }
+    return Action::none;
+  }
   if (st.picker_mode) {
-    if (hit(x, y, l.next)) { st.picker_mode = false; draw_body(st); }
+    if (hit(x, y, l.next)) { st.picker_mode = false; st.wizard_mode = st.picker_from_wizard; st.picker_from_wizard = false; draw_body(st); }
     else if (hit(x, y, l.rescan) && st.picker_ready) return Action::use_location;
     else if (hit(x, y, l.prev) && st.picker_ready) { if (st.picker.ZoomOut()) draw_picker(st); }
     else if (hit(x, y, l.label) && st.picker_ready) { if (st.picker.ZoomIn()) draw_picker(st); }
