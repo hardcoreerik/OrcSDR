@@ -193,9 +193,13 @@ static bool on_refresh_done(esp_lcd_panel_handle_t panel, esp_lcd_dpi_panel_even
     return false;
 }
 
-/* DCS reads: what the panel says about itself (power mode 0x0A, MADCTL 0x0B, pixel format 0x0C, image mode
+/* Bring-up diagnostic only, compiled out by default. The DCS read polls the DSI host's read FIFO with no timeout inside
+ * ESP-IDF's HAL, so a panel that does not answer hangs the calling task forever (seen on the LilyGO: the boot stuck here with
+ * the task watchdog firing, 2026-11-18, panel_io_dbi_rx_param). Never enable it in a shipped build.
+ * DCS reads: what the panel says about itself (power mode 0x0A, MADCTL 0x0B, pixel format 0x0C, image mode
  * 0x0D, signal mode 0x0E, self-diagnostic 0x0F, ID 0x04). A panel that hears us returns plausible values; one
  * that does not returns zeros or an error. */
+#ifdef ORCSDR_LILYGO_PANEL_READBACK
 static void log_panel_state(const char *when)
 {
     static const uint8_t regs[] = {0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F};
@@ -213,6 +217,7 @@ static void log_panel_state(const char *when)
     ESP_LOGI(TAG, "panel %s: %s| RDDID %s%02X %02X %02X, 0xDA=%02X", when, line, e == ESP_OK ? "" : "ERR:", id[0],
              id[1], id[2], da);
 }
+#endif  /* ORCSDR_LILYGO_PANEL_READBACK */
 
 esp_err_t lilygo_amoled_start(i2c_master_bus_handle_t bus, hosyond_display_t *out)
 {
@@ -270,7 +275,9 @@ esp_err_t lilygo_amoled_start(i2c_master_bus_handle_t bus, hosyond_display_t *ou
         }
     }
 
+#ifdef ORCSDR_LILYGO_PANEL_READBACK
     log_panel_state("after init");
+#endif
 
     esp_lcd_dpi_panel_config_t dpi = {
         .virtual_channel = 0,

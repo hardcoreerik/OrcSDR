@@ -21,11 +21,15 @@ std::atomic<bool> g_run{false};
 std::atomic<bool> g_exited{true};
 bool g_psram_stack = false;
 std::atomic<uint32_t> g_dropped{0}, g_blocks{0};
+std::atomic<int> g_in_sink{0};   // the radio task is inside sink(): the stream buffer must not be freed under it
 
 void sink(const uint8_t* iq, size_t bytes) {
+  g_in_sink.fetch_add(1);
   StreamBufferHandle_t s = g_stream;
-  if (!s) return;
-  if (xStreamBufferSpacesAvailable(s) < bytes || xStreamBufferSend(s, iq, bytes, 0) != bytes) g_dropped.fetch_add(1);
+  if (s && g_run.load()) {
+    if (xStreamBufferSpacesAvailable(s) < bytes || xStreamBufferSend(s, iq, bytes, 0) != bytes) g_dropped.fetch_add(1);
+  }
+  g_in_sink.fetch_sub(1);
 }
 
 void task(void*) {
@@ -76,7 +80,13 @@ void stop() {
   if (!g_run.load() && g_exited.load()) return;
   orcsdr::radio::set_aux_iq_sink(nullptr);
   g_run = false;
-  for (int i = 0; i < 100 && !g_exited.load(); ++i) vTaskDelay(pdMS_TO_TICKS(10));
+  // The consumer may be inside a long block; wait for it (and for the radio task to leave sink()) before the buffer is freed.
+  // If it does not stop, leak the buffer rather than free memory a task is still using.
+  for (int i = 0; i < 500 && (!g_exited.load() || g_in_sink.load() != 0); ++i) vTaskDelay(pdMS_TO_TICKS(10));
+  if (!g_exited.load() || g_in_sink.load() != 0) {
+    ESP_LOGE(TAG, "consumer did not stop in 5 s (exited=%d in_sink=%d): the stream buffer is kept", int(g_exited.load()), g_in_sink.load());
+    return;
+  }
   if (g_psram_stack && g_exited.load() && g_task != nullptr) {
     vTaskDeleteWithCaps(g_task);
     g_task = nullptr;
