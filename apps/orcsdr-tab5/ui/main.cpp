@@ -8450,6 +8450,75 @@ static void rtl_dsp_task(void *) {
   }
 }
 
+// Step 3a of the receiver-runtime split: the per-session reset that used to sit inline in rtl_driver_app_task()
+// (counters, per-band decoder state, UI flags). Same statements in the same order.
+__attribute__((noinline)) static void rtl_session_reset(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
+  g_stream_band = band;
+  g_stream_audio_scale = (band == RtlBand::wx || band == RtlBand::browse)
+                             ? 12000.0f
+                             : (band == RtlBand::am || band == RtlBand::shortwave ||
+                                band == RtlBand::airband || band == RtlBand::cb)
+                                   ? 9000.0f : 5500.0f;
+  rtl_live_volume.store(volume, std::memory_order_release);
+  rtl_ui_band = band;
+  rtl_ui_frequency_hz = frequency_hz;
+  rtl_ui_volume = volume;
+  rtl_session_started_ms = millis();
+  rtl_capture_bytes = 0;
+  rtl_dsp_request_reset(kRtlResetFull);
+  rtl_dsp_window_us.store(0, std::memory_order_relaxed);
+  rtl_dsp_window_blocks.store(0, std::memory_order_relaxed);
+  rtl_dsp_block_us_max.store(0, std::memory_order_relaxed);
+  rtl_iq_pipeline_drops.store(0, std::memory_order_relaxed);
+  g_stream_started_ms.store(static_cast<uint32_t>(esp_timer_get_time() / 1000), std::memory_order_relaxed);
+  rtl_audio_play_count = 0;
+  rtl_audio_play_block_index = 0;
+  memset(rtl_audio_play_block_ready_ms, 0, sizeof(rtl_audio_play_block_ready_ms));
+  rtl_audio_ring_overruns.store(0, std::memory_order_relaxed);
+  rtl_audio_submit_failures.store(0, std::memory_order_relaxed);
+  rtl_signal_dbfs.store(-90.0f, std::memory_order_relaxed);
+  rtl_iq_clipping_percent.store(0.0f, std::memory_order_relaxed);
+  if (band == RtlBand::p25) {
+    orcsdr::p25decoder::suspend_voice();
+    p25_voice_session.fetch_add(1, std::memory_order_acq_rel);
+    orcsdr::p25decoder::reset();
+    p25_imbe_frames.store(0, std::memory_order_relaxed);
+    p25_imbe_errors.store(0, std::memory_order_relaxed);
+    p25_pcm_frames.store(0, std::memory_order_relaxed);
+    p25_grant_events.store(0, std::memory_order_relaxed);
+    p25_encrypted_voice_pending.store(false, std::memory_order_relaxed);
+    p25_encrypted_voice_seen.store(false, std::memory_order_relaxed);
+    p25_encrypted_voice_muted_frames.store(0, std::memory_order_relaxed);
+    p25_encrypted_voice_returns.store(0, std::memory_order_relaxed);
+    p25_last_encryption.store(0, std::memory_order_relaxed);
+    p25_audio_last_ms.store(0, std::memory_order_relaxed);
+    p25_voice_stack_hwm.store(0, std::memory_order_relaxed);
+    p25_imbe_max_us.store(0, std::memory_order_relaxed);
+    p25_imbe_synth_max_us.store(0, std::memory_order_relaxed);
+    p25_audio_queue_max_us.store(0, std::memory_order_relaxed);
+  }
+  rtl_signal_dbfs_smooth = -80.0f;
+  rtl_signal_meter_last_ms = 0;
+  rtl_audio_left_dbfs.store(-90.0f, std::memory_order_relaxed);
+  rtl_audio_right_dbfs.store(-90.0f, std::memory_order_relaxed);
+  rtl_stereo_locked.store(false, std::memory_order_relaxed);
+  rtl_rds_signal_dbfs.store(-90.0f, std::memory_order_relaxed);
+  rtl_rds_carrier_present.store(false, std::memory_order_relaxed);
+  rtl_rds_block_locked.store(false, std::memory_order_relaxed);
+  rtl_rds_good_blocks.store(0, std::memory_order_relaxed);
+  rtl_rds_total_blocks.store(0, std::memory_order_relaxed);
+  rds_clear_text();
+  if (band == RtlBand::lora) lora_iq_reset_detector();
+  if (band == RtlBand::adsb) {
+    adsb_decoder.reset();
+    adsb_iq_drops.store(0, std::memory_order_relaxed);
+    reset_adsb_tracks();
+  }
+  rtl_ui_active.store(true, std::memory_order_release);
+  if (!orcsdr::home::active() && band != RtlBand::adsb)
+    rtl_screen_transition_requested.store(true, std::memory_order_release);
+}
+
 static void rtl_driver_app_task(void *) {
   while (true) {
     if (orcsdr::sd_transfer::active()) {
@@ -8513,70 +8582,7 @@ static void rtl_driver_app_task(void *) {
         continue;
       }
       const uint8_t volume = rtl_requested_volume.load(std::memory_order_acquire);
-      g_stream_band = band;
-      g_stream_audio_scale = (band == RtlBand::wx || band == RtlBand::browse)
-                                 ? 12000.0f
-                                 : (band == RtlBand::am || band == RtlBand::shortwave ||
-                                    band == RtlBand::airband || band == RtlBand::cb)
-                                       ? 9000.0f : 5500.0f;
-      rtl_live_volume.store(volume, std::memory_order_release);
-      rtl_ui_band = band;
-      rtl_ui_frequency_hz = frequency_hz;
-      rtl_ui_volume = volume;
-      rtl_session_started_ms = millis();
-      rtl_capture_bytes = 0;
-      rtl_dsp_request_reset(kRtlResetFull);
-      rtl_dsp_window_us.store(0, std::memory_order_relaxed);
-      rtl_dsp_window_blocks.store(0, std::memory_order_relaxed);
-      rtl_dsp_block_us_max.store(0, std::memory_order_relaxed);
-      rtl_iq_pipeline_drops.store(0, std::memory_order_relaxed);
-      g_stream_started_ms.store(static_cast<uint32_t>(esp_timer_get_time() / 1000), std::memory_order_relaxed);
-      rtl_audio_play_count = 0;
-      rtl_audio_play_block_index = 0;
-      memset(rtl_audio_play_block_ready_ms, 0, sizeof(rtl_audio_play_block_ready_ms));
-      rtl_audio_ring_overruns.store(0, std::memory_order_relaxed);
-      rtl_audio_submit_failures.store(0, std::memory_order_relaxed);
-      rtl_signal_dbfs.store(-90.0f, std::memory_order_relaxed);
-      rtl_iq_clipping_percent.store(0.0f, std::memory_order_relaxed);
-      if (band == RtlBand::p25) {
-        orcsdr::p25decoder::suspend_voice();
-        p25_voice_session.fetch_add(1, std::memory_order_acq_rel);
-        orcsdr::p25decoder::reset();
-        p25_imbe_frames.store(0, std::memory_order_relaxed);
-        p25_imbe_errors.store(0, std::memory_order_relaxed);
-        p25_pcm_frames.store(0, std::memory_order_relaxed);
-        p25_grant_events.store(0, std::memory_order_relaxed);
-        p25_encrypted_voice_pending.store(false, std::memory_order_relaxed);
-        p25_encrypted_voice_seen.store(false, std::memory_order_relaxed);
-        p25_encrypted_voice_muted_frames.store(0, std::memory_order_relaxed);
-        p25_encrypted_voice_returns.store(0, std::memory_order_relaxed);
-        p25_last_encryption.store(0, std::memory_order_relaxed);
-        p25_audio_last_ms.store(0, std::memory_order_relaxed);
-        p25_voice_stack_hwm.store(0, std::memory_order_relaxed);
-        p25_imbe_max_us.store(0, std::memory_order_relaxed);
-        p25_imbe_synth_max_us.store(0, std::memory_order_relaxed);
-        p25_audio_queue_max_us.store(0, std::memory_order_relaxed);
-      }
-      rtl_signal_dbfs_smooth = -80.0f;
-      rtl_signal_meter_last_ms = 0;
-      rtl_audio_left_dbfs.store(-90.0f, std::memory_order_relaxed);
-      rtl_audio_right_dbfs.store(-90.0f, std::memory_order_relaxed);
-      rtl_stereo_locked.store(false, std::memory_order_relaxed);
-      rtl_rds_signal_dbfs.store(-90.0f, std::memory_order_relaxed);
-      rtl_rds_carrier_present.store(false, std::memory_order_relaxed);
-      rtl_rds_block_locked.store(false, std::memory_order_relaxed);
-      rtl_rds_good_blocks.store(0, std::memory_order_relaxed);
-      rtl_rds_total_blocks.store(0, std::memory_order_relaxed);
-      rds_clear_text();
-      if (band == RtlBand::lora) lora_iq_reset_detector();
-      if (band == RtlBand::adsb) {
-        adsb_decoder.reset();
-        adsb_iq_drops.store(0, std::memory_order_relaxed);
-        reset_adsb_tracks();
-      }
-      rtl_ui_active.store(true, std::memory_order_release);
-      if (!orcsdr::home::active() && band != RtlBand::adsb)
-        rtl_screen_transition_requested.store(true, std::memory_order_release);
+      rtl_session_reset(band, frequency_hz, volume);
       esp_rtl_sdr_stream_config_t st;
       esp_rtl_sdr_stream_config_default(&st);
       st.preset = ESP_RTL_SDR_PRESET_CUSTOM_HZ;
