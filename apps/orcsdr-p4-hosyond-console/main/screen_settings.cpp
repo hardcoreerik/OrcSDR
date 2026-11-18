@@ -20,6 +20,7 @@
 #include "nvs_store.hpp"
 #include "orcsdr_board_profile.h"
 #include "radio_service.hpp"
+#include "location_estimate.hpp"
 #include "receiver_location.hpp"
 #include "screens.hpp"
 #include "sd_card.hpp"
@@ -72,16 +73,18 @@ void load_location() {
   orcsdr::receiver_location::set(set, lat, lon, label, "");
 }
 
-void save_location(const st::State& v) {
+void persist_location(bool configured, int32_t lat_e7, int32_t lon_e7, const char* label) {
   orcsdr::NvsStore s;
   if (!s.begin("orcsdr_set", false)) return;
   s.put_bool("loc_set", true);
-  s.put_i32("loc_lat", v.latitude_e7);
-  s.put_i32("loc_lon", v.longitude_e7);
-  s.put_string("loc_label", v.location_label);
+  s.put_i32("loc_lat", lat_e7);
+  s.put_i32("loc_lon", lon_e7);
+  s.put_string("loc_label", label);
   s.end();
-  orcsdr::receiver_location::set(v.location_configured, v.latitude_e7, v.longitude_e7, v.location_label, "");
+  orcsdr::receiver_location::set(configured, lat_e7, lon_e7, label, "");
 }
+
+void save_location(const st::State& v) { persist_location(v.location_configured, v.latitude_e7, v.longitude_e7, v.location_label); }
 
 void load() {
   g_state.brightness = 255;
@@ -188,6 +191,15 @@ const st::State& build() {
     g_state.longitude_e7 = loc.longitude_e7;
     std::snprintf(g_state.location_label, sizeof(g_state.location_label), "%.39s", loc.label);
   }
+  {   // IP / ZIP / address lookup (shared location_estimate: HTTPS to ipwho.is and nominatim.openstreetmap.org, only on a request)
+    const auto est = orcsdr::location_estimate::state();
+    g_state.ip_location_busy = est.busy;
+    g_state.ip_location_ready = est.ready;
+    g_state.ip_latitude_e7 = est.latitude_e7;
+    g_state.ip_longitude_e7 = est.longitude_e7;
+    std::snprintf(g_state.ip_location_label, sizeof(g_state.ip_location_label), "%.39s", est.label);
+    std::snprintf(g_state.ip_location_message, sizeof(g_state.ip_location_message), "%.47s", est.message);
+  }
   g_state.wifi_c6_rom_recovery=orcsdr_board_profile()->c6_rom_sdio_recovery;
   if(g_state.wifi_c6_rom_recovery) {
     const auto up=c6_recovery_app::status();
@@ -222,7 +234,10 @@ void enter() {
   st::enter(build(), st::Section::display_audio);
 }
 void leave() { st::leave(); }
-void tick() { st::update(build()); }
+void tick() {
+  orcsdr::location_estimate::service();   // reclaims a finished lookup task
+  st::update(build());
+}
 
 void tap(int x, int y) {
   const st::Action a = st::handle_touch(x, y);
@@ -285,6 +300,17 @@ void tap(int x, int y) {
       wifi_app::forget();
       break;
     case st::ActionKind::location_changed: save_location(st::state()); break;
+    case st::ActionKind::location_ip_lookup: (void)orcsdr::location_estimate::request(wifi_app::status().connected); break;
+    case st::ActionKind::location_query_lookup: {
+      char query[64]{};
+      if (st::take_location_query(query, sizeof(query))) (void)orcsdr::location_estimate::request(query, wifi_app::status().connected);
+      break;
+    }
+    case st::ActionKind::location_ip_confirm: {
+      const auto est = orcsdr::location_estimate::state();
+      if (est.ready) persist_location(true, est.latitude_e7, est.longitude_e7, est.label);
+      break;
+    }
     case st::ActionKind::clock_ntp_sync: (void)network_clock::request_sync(); break;
     case st::ActionKind::gps_time_changed:
       // Adopt the saved value: if saving failed the setting did not change and the button shows that on its next draw.

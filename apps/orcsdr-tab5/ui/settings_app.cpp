@@ -2594,6 +2594,9 @@ bool geometry_locked() {
   return g_active && (g_state.wifi_c6_rom_busy || g_edit!=EditField::none || g_wifi_edit!=WifiEdit::none || g_location_edit || g_clock_edit);
 }
 bool supports_section(Section value) {
+  // The RTL TCP page (remote receiver source and server) is drawn at fixed 1280 x 720 positions and the responsive ports have no remote
+  // receiver yet, so the responsive layouts skip it: drawing it left its title and buttons behind on every other page.
+  if (value==Section::rtl_tcp && !g_layout.legacy) return false;
   return value<Section::count;
 }
 bool set_viewport(Rect viewport) {
