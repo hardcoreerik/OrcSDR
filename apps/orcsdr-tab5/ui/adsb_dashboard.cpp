@@ -950,11 +950,13 @@ void draw_radar_responsive() {
   text(g_live?"RECEIVING":"WAITING",s.x+10,s.y+46,g_live?kGreen:TFT_ORANGE,2,middle_left);
   card(st.x,st.y,st.w,st.h);text("LIVE METRICS",st.x+10,st.y+18,kBlue,1,middle_left);
   char value[32];snprintf(value,sizeof(value),"%u aircraft",displayed_aircraft_count());
-  text(value,st.x+12,st.y+48,TFT_WHITE,2,middle_left);
+  // A short card (landscape) puts the three figures in a row; a tall one (portrait) stacks them.
+  const bool row_layout=st.h<110;
+  text(value,st.x+12,st.y+(row_layout?58:48),TFT_WHITE,2,middle_left);
   snprintf(value,sizeof(value),"%lu messages",static_cast<unsigned long>(displayed_total_messages()));
-  text(value,st.x+12,st.y+78,kBlue,1,middle_left);
+  text(value,row_layout?st.x+st.w*38/100:st.x+12,st.y+(row_layout?58:78),kBlue,1,middle_left);
   snprintf(value,sizeof(value),"%.1f msg/sec",displayed_message_rate());
-  text(value,st.x+12,st.y+104,kBlue,1,middle_left);
+  text(value,row_layout?st.x+st.w*70/100:st.x+12,st.y+(row_layout?58:104),kBlue,1,middle_left);
   card(l.x,l.y,l.w,l.h);text("NEAREST RECEIVED",l.x+8,l.y+14,kBlue,1,middle_left);
   const int row_h=std::max(24,(l.h-30)/6);
   for(size_t i=0;i<std::min<size_t>(g_aircraft_count,6);++i) {
