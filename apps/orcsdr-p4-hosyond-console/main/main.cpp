@@ -53,7 +53,7 @@ extern "C" void app_main(void) {
   // NOT been brought up. Keep this target in a non-radiating, no-peripheral
   // serial/headless mode rather than starting board-specific hardware with
   // the Waveshare defaults. This is intentionally NOT a working SDR port.
-  if (strcmp(orcsdr_board_profile()->name, "lilygo-t-display-p4-amoled") == 0) {
+  if (std::strcmp(orcsdr_board_profile()->name, "lilygo-t-display-p4-amoled") == 0) {
     ESP_LOGW(TAG, "LilyGO safe bring-up only: USB, Wi-Fi, SD, audio, LoRa and display disabled");
     ESP_LOGW(TAG, "Verify the actual board/revision; AMOLED and XL9535 backends remain unfinished");
     ESP_LOGI(TAG, "boot complete (LilyGO safe headless mode)");
