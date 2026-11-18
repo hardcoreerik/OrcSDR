@@ -124,6 +124,7 @@
 #include "serial_signal.hpp"
 #include "serial_preset.hpp"
 #include "serial_rds.hpp"
+#include "serial_ft8.hpp"
 #include "hex_codec.hpp"
 #include "session_identity.hpp"
 #include "session_journal.hpp"
@@ -18092,587 +18093,334 @@ void ft8_write_wav(File& file, const int16_t* samples, size_t count) {
   file.write(reinterpret_cast<const uint8_t*>(samples), count * 2u);
 }
 
-void process_ft8_command(const char* args) {
-  using orcsdr::ft8::DigitalMode;
-  while (*args == ' ') ++args;
-  char verb[16]{};
-  size_t v = 0;
-  while (args[v] != '\0' && args[v] != ' ' && v + 1 < sizeof(verb)) {
-    verb[v] = static_cast<char>(toupper(static_cast<unsigned char>(args[v])));
-    ++v;
-  }
-  const char* rest = args + v;
-  while (*rest == ' ') ++rest;
+// FT8 serial commands: parsing and reply text are in serial_ft8*.cpp; the decoder, the tuner, the SD card, the screen and
+// the settings stay here and come in through these hook tables. The five families and their routes:
+//   serial_ft8_query (STATUS TIME BANDS DECODES HUNTSTATUS CLOCK), serial_ft8_data (DUMP ADIF SAVE SHOT SNAP INJECT),
+//   serial_ft8_wwv (WWV), serial_ft8_control (OPEN BAND MODE CLEAR RUN TAB HUNT DIAL CLOCKTEST NTP SNR MEM LOG CONFIG).
+static_assert(static_cast<unsigned>(WwvAction::none) == static_cast<unsigned>(orcsdr::serial_ft8_wwv::Action::none) &&
+              static_cast<unsigned>(WwvAction::report) == static_cast<unsigned>(orcsdr::serial_ft8_wwv::Action::report) &&
+              static_cast<unsigned>(WwvAction::calibrate) == static_cast<unsigned>(orcsdr::serial_ft8_wwv::Action::calibrate) &&
+              static_cast<unsigned>(WwvAction::sync) == static_cast<unsigned>(orcsdr::serial_ft8_wwv::Action::sync));
+static_assert(orcsdr::serial_ft8_control::kTabCount == static_cast<size_t>(orcsdr::ft8::Tab::count));
 
-  const auto need_auth = [&]() {
-    if (authenticated) return false;
-    Serial.printf("ORC_FT8_ERROR %s auth_required\n", verb);
-    return true;
-  };
+static constexpr orcsdr::serial_ft8::Io kFt8Io{
+    [](const char* text) { Serial.print(text); },
+    [](const char* text) { Serial.println(text); },
+};
 
-  if (verb[0] == '\0' || strcmp(verb, "HELP") == 0) {
-    Serial.println("ORC_FT8_HELP queries: STATUS | DECODES [n] | BANDS | DUMP | TIME | CLOCK | HUNTSTATUS | HELP");
-    Serial.println("ORC_FT8_HELP control (authenticated): OPEN | BAND <index|label|dial_hz> | MODE <FT8|FT4> | CLEAR | RUN <0|1> | "
-                   "CONFIG <k> <gate> <fine_rows 4|8> <deadline_ms> | INJECT BEGIN|RUN|<offset> <b64> | LOG [ON|OFF|FLUSH] | SNR [OFFSET <dB>|RESET] | NTP | HUNT <FAST|DECODE|STOP> | TAB <name> | SHOT <name> | SNAP | SAVE <name> | ADIF <name> | DIAL <hz> | CLOCKTEST <ms>");
-    return;
-  }
+static void ft8_hook_status(orcsdr::serial_ft8_query::Status* s) {
+  ft8_native_drain_pending();
+  const auto rt = orcsdr::ft8_runtime::status();
+  const auto* preset = orcsdr::ft8::band(ft8_selected_band());
+  s->screen = orcsdr::ft8::active();
+  s->runtime = ft8_runtime_state_name(rt.state);
+  s->headless = rt.headless;
+  s->mode = orcsdr::ft8::mode_name(g_ft8_mode);
+  s->band = preset != nullptr ? preset->label : "-";
+  s->dial_hz = static_cast<unsigned long>(orcsdr::ft8::mode_dial_hz(ft8_selected_band(), g_ft8_mode));
+  s->clock = ft8_native_clock_valid();
+  s->rx_running = rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
+  s->tap = rt.tap_running;
+  s->rate_hz = static_cast<unsigned long>(rt.input_rate_hz);
+  s->blocks = static_cast<unsigned long long>(rt.tap_blocks);
+  s->ring = static_cast<unsigned long long>(rt.ring_samples);
+  s->avg_us = static_cast<unsigned long>(rt.avg_block_us);
+  s->max_us = static_cast<unsigned long>(rt.max_block_us);
+  s->slots = static_cast<unsigned long>(rt.slots_decoded);
+  s->skipped = static_cast<unsigned long>(rt.slots_skipped_incomplete);
+  s->last_decodes = static_cast<unsigned long>(rt.last_slot_decodes);
+  s->last_ms = static_cast<unsigned long>(rt.last_decode_ms);
+  s->spectral_ms = static_cast<unsigned long>(rt.last_spectral_ms);
+  s->refine_ms = static_cast<unsigned long>(rt.last_refine_ms);
+  s->gate_ms = static_cast<unsigned long>(rt.last_gate_ms);
+  s->coarse = static_cast<unsigned>(rt.last_coarse);
+  s->deadline_hit = rt.last_deadline_hit;
+  s->slot_rms = static_cast<unsigned long>(rt.slot_rms);
+  s->slot_peak = static_cast<unsigned long>(rt.slot_peak);
+  s->slot_clipped = static_cast<unsigned long>(rt.slot_clipped);
+  s->dial_offset_hz = static_cast<int>(rt.dial_offset_hz);
+  s->iq_dbfs = static_cast<double>(rtl_signal_dbfs_smooth);
+  s->iq_clip_pct = static_cast<double>(rtl_iq_clipping_percent.load(std::memory_order_relaxed));
+  s->gain_tenth_db = ft8_native_current_gain_tenth_db();
+  s->store = static_cast<unsigned>(g_ft8_store.size());
+  s->k = static_cast<unsigned>(rt.cfg_k);
+  s->gate = static_cast<unsigned>(rt.cfg_gate);
+  s->fine_rows = static_cast<unsigned>(rt.cfg_fine_rows);
+  s->deadline_ms = static_cast<unsigned long>(rt.cfg_deadline_ms);
+}
 
-  if (strcmp(verb, "STATUS") == 0) {
-    ft8_native_drain_pending();
-    const auto rt = orcsdr::ft8_runtime::status();
-    const auto* preset = orcsdr::ft8::band(ft8_selected_band());
-    Serial.printf(
-        "ORC_FT8_STATUS screen=%d runtime=%s headless=%d mode=%s band=%s dial_hz=%lu clock=%d rx_running=%d tap=%d rate_hz=%lu "
-        "blocks=%llu ring=%llu avg_us=%lu max_us=%lu slots=%lu skipped=%lu last_decodes=%lu last_ms=%lu spectral_ms=%lu "
-        "refine_ms=%lu gate_ms=%lu coarse=%u deadline_hit=%d slot_rms=%lu slot_peak=%lu slot_clipped=%lu dial_offset_hz=%d iq_dbfs=%.1f iq_clip_pct=%.3f gain_tenth_db=%d store=%u k=%u gate=%u fine_rows=%u deadline_ms=%lu\n",
-        orcsdr::ft8::active() ? 1 : 0, ft8_runtime_state_name(rt.state), rt.headless ? 1 : 0, orcsdr::ft8::mode_name(g_ft8_mode),
-        preset != nullptr ? preset->label : "-", static_cast<unsigned long>(orcsdr::ft8::mode_dial_hz(ft8_selected_band(), g_ft8_mode)),
-        ft8_native_clock_valid() ? 1 : 0,
-        rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running ? 1 : 0, rt.tap_running ? 1 : 0,
-        static_cast<unsigned long>(rt.input_rate_hz), static_cast<unsigned long long>(rt.tap_blocks),
-        static_cast<unsigned long long>(rt.ring_samples), static_cast<unsigned long>(rt.avg_block_us),
-        static_cast<unsigned long>(rt.max_block_us), static_cast<unsigned long>(rt.slots_decoded),
-        static_cast<unsigned long>(rt.slots_skipped_incomplete), static_cast<unsigned long>(rt.last_slot_decodes),
-        static_cast<unsigned long>(rt.last_decode_ms), static_cast<unsigned long>(rt.last_spectral_ms),
-        static_cast<unsigned long>(rt.last_refine_ms), static_cast<unsigned long>(rt.last_gate_ms),
-        static_cast<unsigned>(rt.last_coarse), rt.last_deadline_hit ? 1 : 0, static_cast<unsigned long>(rt.slot_rms),
-        static_cast<unsigned long>(rt.slot_peak), static_cast<unsigned long>(rt.slot_clipped), static_cast<int>(rt.dial_offset_hz),
-        static_cast<double>(rtl_signal_dbfs_smooth), static_cast<double>(rtl_iq_clipping_percent.load(std::memory_order_relaxed)),
-        ft8_native_current_gain_tenth_db(), static_cast<unsigned>(g_ft8_store.size()),
-        static_cast<unsigned>(rt.cfg_k), static_cast<unsigned>(rt.cfg_gate), static_cast<unsigned>(rt.cfg_fine_rows),
-        static_cast<unsigned long>(rt.cfg_deadline_ms));
-    return;
-  }
+static void ft8_hook_hunt_summary(orcsdr::serial_ft8_query::HuntSummary* out) {
+  const auto& snap = g_ft8_hunter.snapshot();
+  out->mode = orcsdr::ft8::hunter_mode_name(snap.mode);
+  out->phase = orcsdr::ft8::hunter_phase_name(snap.phase);
+  out->current = snap.current_band == SIZE_MAX ? -1 : static_cast<int>(snap.current_band);
+  out->best = snap.best_band == SIZE_MAX ? -1 : static_cast<int>(snap.best_band);
+  out->slots_per_band = static_cast<unsigned>(snap.slots_per_band);
+}
 
-  if (strcmp(verb, "TIME") == 0) {
-    // The wall clock the slot scheduler uses, to the millisecond, so a host can measure its error against a trusted clock.
-    timeval tv{};
-    gettimeofday(&tv, nullptr);
-    Serial.printf("ORC_FT8_TIME utc_ms=%llu valid=%d\n", static_cast<unsigned long long>(tv.tv_sec) * 1000ull + static_cast<unsigned long long>(tv.tv_usec / 1000),
-                  ft8_native_clock_valid() ? 1 : 0);
-    return;
-  }
+static bool ft8_hook_hunt_band(size_t index, orcsdr::serial_ft8_query::HuntBand* out) {
+  const auto& r = g_ft8_hunter.snapshot().results[index];
+  if (!r.enabled) return false;
+  out->label = orcsdr::ft8::band(index)->label;
+  out->visited = r.visited;
+  out->evidence = orcsdr::ft8::hunter_evidence_name(r.evidence);
+  out->slots = static_cast<unsigned>(r.slots_observed);
+  out->decodes = static_cast<unsigned>(r.valid_decodes);
+  out->strong = static_cast<unsigned>(r.sync_candidates);
+  out->peak_dbfs = static_cast<double>(r.peak_dbfs);
+  return true;
+}
 
-  if (strcmp(verb, "BANDS") == 0) {
-    for (size_t i = 0; i < orcsdr::ft8::band_count(); ++i) {
-      const auto* preset = orcsdr::ft8::band(i);
-      if (preset != nullptr)
-        Serial.printf("ORC_FT8_BAND index=%u label=%s dial_hz=%lu\n", static_cast<unsigned>(i), preset->label,
-                      static_cast<unsigned long>(preset->dial_hz));
-    }
-    Serial.println("ORC_FT8_BANDS_END");
-    return;
-  }
+static void ft8_hook_clock(orcsdr::serial_ft8_query::Clock* out) {
+  const auto status = ft8_clock_sync_input();
+  const auto level = orcsdr::clock_sync::evaluate(status);
+  const auto dt = orcsdr::ft8_runtime::dt_report();
+  out->level = static_cast<unsigned>(level);
+  out->age_s = static_cast<unsigned long>(orcsdr::clock_sync::age_seconds(status));
+  out->ntp_utc = static_cast<unsigned long>(status.last_sync_utc);
+  out->signal_utc = static_cast<unsigned long>(status.last_signal_sync_utc);
+  out->wide = orcsdr::clock_sync::wants_wide_search(level);
+  out->last_slot_wide = dt.wide;
+  out->dt_valid = dt.valid;
+  out->dt_err_ms = static_cast<int>(dt.error_ms);
+  out->dt_stations = static_cast<unsigned>(dt.stations);
+  out->hold = g_ft8_clock_test_hold;
+}
 
-  if (strcmp(verb, "DECODES") == 0) {
-    ft8_native_drain_pending();
-    unsigned long limit = *rest != '\0' ? strtoul(rest, nullptr, 10) : 20ul;
-    if (limit == 0) limit = 20;
-    size_t printed = 0;
-    for (size_t i = 0; i < g_ft8_store.size() && printed < limit; ++i) {
-      const auto* d = g_ft8_store.newest(i);
-      if (d == nullptr) break;
+static constexpr orcsdr::serial_ft8_query::Hooks kSerialFt8QueryHooks{
+    kFt8Io,
+    ft8_hook_status,
+    [](unsigned long long* utc_ms, bool* valid) {
+      timeval tv{};
+      gettimeofday(&tv, nullptr);
+      *utc_ms = static_cast<unsigned long long>(tv.tv_sec) * 1000ull + static_cast<unsigned long long>(tv.tv_usec / 1000);
+      *valid = ft8_native_clock_valid();
+    },
+    []() -> size_t { return orcsdr::ft8::band_count(); },
+    [](size_t index, const char** label, unsigned long* dial_hz) -> bool {
+      const auto* preset = orcsdr::ft8::band(index);
+      if (preset == nullptr) return false;
+      *label = preset->label;
+      *dial_hz = static_cast<unsigned long>(preset->dial_hz);
+      return true;
+    },
+    [] { ft8_native_drain_pending(); },
+    []() -> size_t { return g_ft8_store.size(); },
+    [](size_t newest_index) -> bool {
+      const auto* d = g_ft8_store.newest(newest_index);
+      if (d == nullptr) return false;
       ft8_print_decode(*d);
-      ++printed;
-    }
-    Serial.printf("ORC_FT8_DECODES_END shown=%u total=%u\n", static_cast<unsigned>(printed), static_cast<unsigned>(g_ft8_store.size()));
-    return;
-  }
+      return true;
+    },
+    ft8_hook_hunt_summary,
+    ft8_hook_hunt_band,
+    ft8_hook_clock,
+};
 
-  if (strcmp(verb, "DUMP") == 0) {
-    // The last decoded slot as base64 PCM16 over serial (about 480 KB), for offline analysis; tools/tab5_ft8.py dump writes a WAV.
-    const int16_t* samples = nullptr;
-    size_t count = 0;
-    uint64_t slot_ms = 0;
-    if (!orcsdr::ft8_runtime::last_slot_audio(&samples, &count, &slot_ms)) {
-      Serial.println("ORC_FT8_ERROR DUMP no_slot_yet");
-      return;
-    }
-    static const char kB64[] = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-    Serial.printf("ORC_FT8_DUMP_BEGIN samples=%u rate=12000 slot_utc=%llu\n", static_cast<unsigned>(count),
-                  static_cast<unsigned long long>(slot_ms / 1000u));
-    const uint8_t* bytes = reinterpret_cast<const uint8_t*>(samples);
-    const size_t total = count * 2u;
-    static char line[120];
-    size_t pos = 0;
-    unsigned index = 0;
-    while (pos < total) {
-      const size_t chunk = (total - pos) > 72u ? 72u : (total - pos);
-      int n = snprintf(line, sizeof(line), "ORC_FT8_DUMP_DATA %u ", index++);
-      for (size_t i = 0; i < chunk; i += 3) {
-        const uint32_t b0 = bytes[pos + i];
-        const uint32_t b1 = (i + 1 < chunk) ? bytes[pos + i + 1] : 0u;
-        const uint32_t b2 = (i + 2 < chunk) ? bytes[pos + i + 2] : 0u;
-        const uint32_t v = (b0 << 16) | (b1 << 8) | b2;
-        line[n++] = kB64[(v >> 18) & 63u];
-        line[n++] = kB64[(v >> 12) & 63u];
-        line[n++] = (i + 1 < chunk) ? kB64[(v >> 6) & 63u] : '=';
-        line[n++] = (i + 2 < chunk) ? kB64[v & 63u] : '=';
-      }
-      line[n++] = '\n';
-      line[n] = '\0';
-      Serial.print(line);   // one write per line: other tasks cannot split it
-      pos += chunk;
-      if ((index % 32u) == 0) vTaskDelay(1);
-    }
-    orcsdr::ft8_runtime::release_slot_audio();
-    Serial.println("ORC_FT8_DUMP_END");
-    return;
-  }
-
-  if (strcmp(verb, "HUNTSTATUS") == 0) {
-    const auto& snap = g_ft8_hunter.snapshot();
-    Serial.printf("ORC_FT8_HUNTSTATUS mode=%s phase=%s current=%d best=%d slots_per_band=%u\n", orcsdr::ft8::hunter_mode_name(snap.mode),
-                  orcsdr::ft8::hunter_phase_name(snap.phase), snap.current_band == SIZE_MAX ? -1 : static_cast<int>(snap.current_band),
-                  snap.best_band == SIZE_MAX ? -1 : static_cast<int>(snap.best_band), static_cast<unsigned>(snap.slots_per_band));
-    for (size_t i = 0; i < orcsdr::ft8::band_count(); ++i) {
-      const auto& r = snap.results[i];
-      if (!r.enabled) continue;
-      Serial.printf("ORC_FT8_HUNTBAND index=%u label=%s visited=%d evidence=%s slots=%u decodes=%u strong=%u peak_dbfs=%.1f\n", static_cast<unsigned>(i),
-                    orcsdr::ft8::band(i)->label, r.visited ? 1 : 0, orcsdr::ft8::hunter_evidence_name(r.evidence),
-                    static_cast<unsigned>(r.slots_observed), static_cast<unsigned>(r.valid_decodes), static_cast<unsigned>(r.sync_candidates),
-                    static_cast<double>(r.peak_dbfs));
-    }
-    Serial.println("ORC_FT8_HUNTSTATUS_END");
-    return;
-  }
-
-  if (strcmp(verb, "CLOCK") == 0) {
-    // A query (no authentication): the clock's trust state and the decoded stations' view of it (median DT): positive dt_err_ms = our clock is fast.
-    const auto status = ft8_clock_sync_input();
-    const auto level = orcsdr::clock_sync::evaluate(status);
-    const auto dt = orcsdr::ft8_runtime::dt_report();
-    Serial.printf("ORC_FT8_CLOCK level=%u age_s=%lu ntp_utc=%lu signal_utc=%lu wide=%d last_slot_wide=%d dt_valid=%d dt_err_ms=%d dt_stations=%u hold=%d\n",
-                  static_cast<unsigned>(level), static_cast<unsigned long>(orcsdr::clock_sync::age_seconds(status)),
-                  static_cast<unsigned long>(status.last_sync_utc), static_cast<unsigned long>(status.last_signal_sync_utc),
-                  orcsdr::clock_sync::wants_wide_search(level) ? 1 : 0, dt.wide ? 1 : 0, dt.valid ? 1 : 0, static_cast<int>(dt.error_ms),
-                  static_cast<unsigned>(dt.stations), g_ft8_clock_test_hold ? 1 : 0);
-    return;
-  }
-
-  if (strcmp(verb, "WWV") == 0) {
-    // FT8 WWV                                            status (no authentication)
-    // FT8 WWV <2.5|5|10|15|20> [seconds 20-240] [CAL|SYNC]  tune 1 kHz below the WWV carrier and fold the tick for `seconds` (default 90)
-    // FT8 WWV STOP                                       end a measurement early
-    // CAL stores the fixed delay against a fresh NTP sync; SYNC corrects the clock from the tick (needs that calibration). The decoder must
-    // be running (FT8 RUN 1) and the band is put back afterwards. Needs authentication to start.
-    const auto status = orcsdr::ft8_runtime::wwv_report();
-    if (*rest == '\0') {
-      Serial.printf("ORC_FT8_WWV_STATUS phase=%u seconds=%u action=%u mhz=%.1f\n", static_cast<unsigned>(status.phase), static_cast<unsigned>(status.seconds),
-                    static_cast<unsigned>(g_wwv_action), static_cast<double>(g_wwv_mhz));
-      return;
-    }
-    if (need_auth()) return;
-    if (strcasecmp(rest, "STOP") == 0) {
-      orcsdr::ft8_runtime::wwv_stop();
-      Serial.println("ORC_FT8_WWV_STOP requested");
-      return;
-    }
-    char* end = nullptr;
-    const float mhz = strtof(rest, &end);
-    unsigned long seconds = 90;
-    WwvAction action = WwvAction::report;
-    const char* p = end;
-    while (*p == ' ') ++p;
-    if (*p >= '0' && *p <= '9') {
-      seconds = strtoul(p, &end, 10);
-      p = end;
-      while (*p == ' ') ++p;
-    }
-    if (strcasecmp(p, "CAL") == 0) action = WwvAction::calibrate;
-    else if (strcasecmp(p, "SYNC") == 0) action = WwvAction::sync;
-    char key[16];
-    // The key rounds to the nearest supported frequency, so require the typed value to be that frequency (10.04 must not tune 40 kHz off).
-    if (end == rest || !ft8_wwv_key(mhz, key, sizeof(key)) || std::fabs(mhz * 10.0f - std::round(mhz * 10.0f)) > 0.01f || seconds < 20 || seconds > 240 ||
-        (*p != '\0' && action == WwvAction::report)) {
-      Serial.println("ORC_FT8_ERROR WWV invalid use WWV <2.5|5|10|15|20> [20-240 seconds] [CAL|SYNC] | WWV STOP | WWV");
-      return;
-    }
-    if (!orcsdr::ft8_runtime::active()) {
-      Serial.println("ORC_FT8_ERROR WWV the decoder is not running (FT8 RUN 1 or open the FT8 screen)");
-      return;
-    }
-    if (status.phase == 1 || g_wwv_action != WwvAction::none) {
-      Serial.println("ORC_FT8_ERROR WWV a measurement is already running (FT8 WWV STOP)");
-      return;
-    }
-    g_wwv_previous_band = ft8_selected_band();
-    g_wwv_previous_dial_override = g_ft8_dial_override_hz;
-    const uint32_t dial = static_cast<uint32_t>(mhz * 1000000.0f + 0.5f) - 1000u;   // 1 kHz below the carrier: the carrier is then a line at 1000 Hz
-    if (!ft8_tune_dial(dial) || !orcsdr::ft8_runtime::wwv_start(static_cast<uint32_t>(seconds))) {
-      if (g_wwv_previous_dial_override != 0) (void)ft8_tune_dial(g_wwv_previous_dial_override);
-      else (void)ft8_select_band_table(g_wwv_previous_band);
-      g_wwv_previous_band = SIZE_MAX;
-      Serial.println("ORC_FT8_ERROR WWV could not start (tuning refused or no memory)");
-      return;
-    }
-    g_wwv_tune_generation = g_ft8_tune_generation;   // after the measurement's own tune
-    g_wwv_clock_changed = false;
-    g_wwv_action = action;
-    g_wwv_mhz = mhz;
-    Serial.printf("ORC_FT8_WWV_START mhz=%.1f dial_hz=%lu seconds=%lu action=%u (about %lu s with the retune; the band comes back by itself)\n", static_cast<double>(mhz),
-                  static_cast<unsigned long>(dial), seconds, static_cast<unsigned>(action), seconds + 12);
-    return;
-  }
-
-  // ---- everything below changes state
-  if (need_auth()) return;
-
-  if (strcmp(verb, "OPEN") == 0) {
-    open_dashboard(orcsdr::dashboards::Id::ft8);
-    Serial.println("ORC_FT8_OPEN_OK");
-    return;
-  }
-
-  if (strcmp(verb, "BAND") == 0) {
-    size_t index = 0;
-    if (!ft8_parse_band_argument(rest, &index)) {
-      Serial.println("ORC_FT8_ERROR BAND invalid use BAND <index|label|dial_hz> (see FT8 BANDS)");
-      return;
-    }
-    const bool ok = ft8_select_band_table(index);
-    const auto* preset = orcsdr::ft8::band(index);
-    Serial.printf("ORC_FT8_BAND_%s index=%u label=%s dial_hz=%lu\n", ok ? "OK" : "FAILED", static_cast<unsigned>(index),
-                  preset != nullptr ? preset->label : "-", static_cast<unsigned long>(orcsdr::ft8::mode_dial_hz(index, g_ft8_mode)));
-    return;
-  }
-
-  if (strcmp(verb, "MODE") == 0) {
-    DigitalMode mode = DigitalMode::ft8;
-    if (strcasecmp(rest, "FT8") == 0) mode = DigitalMode::ft8;
-    else if (strcasecmp(rest, "FT4") == 0) mode = DigitalMode::ft4;
-    else {
-      Serial.println("ORC_FT8_ERROR MODE invalid use MODE <FT8|FT4> (JS8 is disabled)");
-      return;
-    }
-    g_ft8_mode = mode;
-    g_ft8_dial_override_hz = 0;
-    (void)orcsdr::ft8_runtime::set_mode(mode);
-    (void)ft8_select_band(ft8_selected_band());   // the new mode has its own dial frequency
-    Serial.printf("ORC_FT8_MODE_OK mode=%s dial_hz=%lu\n", orcsdr::ft8::mode_name(mode),
-                  static_cast<unsigned long>(orcsdr::ft8::mode_dial_hz(ft8_selected_band(), mode)));
-    return;
-  }
-
-  if (strcmp(verb, "CLEAR") == 0) {
-    ft8_native_drain_pending();
-    g_ft8_store.clear();
-    g_ft8_item = 0;
-    Serial.println("ORC_FT8_CLEAR_OK");
-    return;
-  }
-
-  if (strcmp(verb, "RUN") == 0) {
-    const bool on = *rest == '1';
-    if (!on && *rest != '0') {
-      Serial.println("ORC_FT8_ERROR RUN invalid use RUN <0|1>");
-      return;
-    }
-    if (on) {
-      if (!ft8_native_ensure_started()) {
-        Serial.println("ORC_FT8_ERROR RUN start_failed");
-        return;
-      }
-      orcsdr::ft8_runtime::set_headless(true);
-    } else {
-      orcsdr::ft8_runtime::set_headless(false);
-    }
-    Serial.printf("ORC_FT8_RUN_OK headless=%d\n", on ? 1 : 0);
-    return;
-  }
-
-  if (strcmp(verb, "ADIF") == 0) {
-    // Writes the decode list as an ADIF heard-stations log (receive only: stations heard, not contacts) to /sd/ft8/<name>.adi.
-    ft8_native_drain_pending();
-    if (!ensure_tab5_sd() || g_sd_fs == nullptr) {
-      Serial.println("ORC_FT8_ERROR ADIF no_sd_card");
-      return;
-    }
-    char name[40]{};
-    size_t n = 0;
-    for (const char* p = rest; *p != '\0' && n + 1 < sizeof(name); ++p)
-      if (isalnum(static_cast<unsigned char>(*p)) || *p == '_' || *p == '-') name[n++] = *p;
-    if (n == 0) snprintf(name, sizeof(name), "heard");
-    char path[96];
-    (void)g_sd_fs->mkdir("/orcsdr");
+static bool ft8_hook_adif_write(const char* path, unsigned* records) {
+  (void)g_sd_fs->mkdir("/orcsdr");
   (void)g_sd_fs->mkdir("/orcsdr/ft8");
-    snprintf(path, sizeof(path), "/orcsdr/ft8/%s.adi", name);
-    File file = g_sd_fs->open(path, FILE_WRITE, true);
-    if (!file) {
-      Serial.printf("ORC_FT8_ERROR ADIF open_failed path=%s\n", path);
-      return;
+  File file = g_sd_fs->open(path, FILE_WRITE, true);
+  if (!file) return false;
+  static char buffer[400];
+  size_t len = orcsdr::ft8::adif_header(buffer, sizeof(buffer));
+  if (len > 0) file.write(reinterpret_cast<const uint8_t*>(buffer), len);
+  unsigned written = 0;
+  for (size_t i = g_ft8_store.size(); i > 0; --i) {   // oldest first
+    const auto* d = g_ft8_store.newest(i - 1);
+    if (d == nullptr) continue;
+    len = orcsdr::ft8::adif_heard_record(*d, orcsdr::ft8::mode_dial_hz(ft8_selected_band(), d->mode), buffer, sizeof(buffer));
+    if (len > 0) {
+      file.write(reinterpret_cast<const uint8_t*>(buffer), len);
+      ++written;
     }
-    static char buffer[400];
-    size_t len = orcsdr::ft8::adif_header(buffer, sizeof(buffer));
-    if (len > 0) file.write(reinterpret_cast<const uint8_t*>(buffer), len);
-    unsigned written = 0;
-    for (size_t i = g_ft8_store.size(); i > 0; --i) {   // oldest first
-      const auto* d = g_ft8_store.newest(i - 1);
-      if (d == nullptr) continue;
-      len = orcsdr::ft8::adif_heard_record(*d, orcsdr::ft8::mode_dial_hz(ft8_selected_band(), d->mode), buffer, sizeof(buffer));
-      if (len > 0) {
-        file.write(reinterpret_cast<const uint8_t*>(buffer), len);
-        ++written;
-      }
-    }
-    file.close();
-    Serial.printf("ORC_FT8_ADIF_OK path=/sd%s records=%u\n", path, written);
-    return;
   }
+  file.close();
+  *records = written;
+  return true;
+}
 
-  if (strcmp(verb, "TAB") == 0) {
-    using orcsdr::ft8::Tab;
-    static const char* const names[] = {"LIVE", "DECODES", "MAP", "HUNTER", "HEARD", "SETUP"};
-    for (size_t i = 0; i < sizeof(names) / sizeof(names[0]); ++i) {
-      if (strcasecmp(rest, names[i]) == 0) {
-        orcsdr::ft8::select_tab(static_cast<Tab>(i));
-        Serial.printf("ORC_FT8_TAB_OK tab=%s\n", names[i]);
-        return;
-      }
-    }
-    Serial.println("ORC_FT8_ERROR TAB invalid use TAB <LIVE|DECODES|MAP|HUNTER|HEARD|SETUP>");
-    return;
+static bool ft8_hook_wav_write(const char* path, const int16_t* samples, size_t count) {
+  (void)g_sd_fs->mkdir("/orcsdr");
+  (void)g_sd_fs->mkdir("/orcsdr/ft8");
+  File file = g_sd_fs->open(path, FILE_WRITE, true);
+  if (!file) return false;
+  ft8_write_wav(file, samples, count);
+  file.close();
+  return true;
+}
+
+static bool ft8_hook_save_screen(const char* slug, const char** error, unsigned* bytes) {
+  const auto result = orcsdr::ui_capture::save_bmp(M5.Display, *g_sd_fs, slug);
+  if (!result.ok) {
+    *error = result.error;
+    return false;
   }
+  *bytes = static_cast<unsigned>(result.bytes);
+  return true;
+}
 
-  if (strcmp(verb, "SNAP") == 0) {
-    // The screen as a PNG over serial: no SD card, no RTL_STOP, no retune (tools/tab5_ft8_shot.py uses this).
-    if (need_auth()) return;
-    (void)orcsdr::ui_capture::stream_png(M5.Display, [](const char* data, size_t size, void*) {
-      // Blocking (never drops while the host reads); a short write means the host stopped reading, so the capture aborts.
-      return Serial.writeBytes(reinterpret_cast<const uint8_t*>(data), size) == size;
-    }, nullptr);
-    return;
+static constexpr orcsdr::serial_ft8_data::Hooks kSerialFt8DataHooks{
+    kFt8Io,
+    [](const int16_t** samples, size_t* count, uint64_t* slot_ms) -> bool {
+      return orcsdr::ft8_runtime::last_slot_audio(samples, count, slot_ms);
+    },
+    [] { orcsdr::ft8_runtime::release_slot_audio(); },
+    [] { vTaskDelay(1); },
+    [] { ft8_native_drain_pending(); },
+    []() -> bool { return ensure_tab5_sd() && g_sd_fs != nullptr; },
+    ft8_hook_adif_write,
+    ft8_hook_wav_write,
+    ft8_hook_save_screen,
+    [] {
+      // The screen as a PNG over serial: no SD card, no RTL_STOP, no retune (tools/tab5_ft8_shot.py uses this).
+      (void)orcsdr::ui_capture::stream_png(M5.Display, [](const char* data, size_t size, void*) {
+        // Blocking (never drops while the host reads); a short write means the host stopped reading, so the capture aborts.
+        return Serial.writeBytes(reinterpret_cast<const uint8_t*>(data), size) == size;
+      }, nullptr);
+    },
+    [](size_t samples) -> bool { return orcsdr::ft8_runtime::inject_begin(samples); },
+    []() -> size_t { return orcsdr::ft8_runtime::inject_written(); },
+    []() -> unsigned long { return static_cast<unsigned long>(orcsdr::ft8_runtime::inject_crc32()); },
+    [](orcsdr::serial_ft8_data::InjectMode mode) -> bool {
+      using orcsdr::serial_ft8_data::InjectMode;
+      return orcsdr::ft8_runtime::inject_run(mode == InjectMode::ft4   ? orcsdr::ft8::DigitalMode::ft4
+                                             : mode == InjectMode::js8 ? orcsdr::ft8::DigitalMode::js8_normal
+                                                                       : orcsdr::ft8::DigitalMode::ft8);
+    },
+    [](unsigned long offset, const int16_t* samples, size_t count) -> bool {
+      return orcsdr::ft8_runtime::inject_write(offset, samples, count);
+    },
+};
+
+static bool ft8_hook_wwv_start(float mhz, uint32_t dial, uint32_t seconds, orcsdr::serial_ft8_wwv::Action action) {
+  g_wwv_previous_band = ft8_selected_band();
+  g_wwv_previous_dial_override = g_ft8_dial_override_hz;
+  if (!ft8_tune_dial(dial) || !orcsdr::ft8_runtime::wwv_start(seconds)) {
+    if (g_wwv_previous_dial_override != 0) (void)ft8_tune_dial(g_wwv_previous_dial_override);
+    else (void)ft8_select_band_table(g_wwv_previous_band);
+    g_wwv_previous_band = SIZE_MAX;
+    return false;
   }
+  g_wwv_tune_generation = g_ft8_tune_generation;   // after the measurement's own tune
+  g_wwv_clock_changed = false;
+  g_wwv_action = static_cast<WwvAction>(action);
+  g_wwv_mhz = mhz;
+  return true;
+}
 
-  if (strcmp(verb, "SHOT") == 0) {
-    // Saves the screen as a BMP on the SD card without pausing reception (UI_CAPTURE needs documentation mode); fetch it with
-    // SD_GET_BEGIN / tools/tab5_ft8.py shot.
-    char slug[40]{};
-    size_t n = 0;
-    for (const char* p = rest; *p != '\0' && n + 1 < sizeof(slug); ++p)
-      if (isalnum(static_cast<unsigned char>(*p)) || *p == '_' || *p == '-') slug[n++] = *p;
-    if (n == 0) snprintf(slug, sizeof(slug), "ft8_screen");
-    if (!ensure_tab5_sd() || g_sd_fs == nullptr) {
-      Serial.println("ORC_FT8_ERROR SHOT no_sd_card");
-      return;
-    }
-    const auto result = orcsdr::ui_capture::save_bmp(M5.Display, *g_sd_fs, slug);
-    if (!result.ok) {
-      Serial.printf("ORC_FT8_ERROR SHOT %s\n", result.error ? result.error : "capture_failed");
-      return;
-    }
-    Serial.printf("ORC_FT8_SHOT_OK path=/orcsdr/screenshots/%s.bmp bytes=%u\n", slug, static_cast<unsigned>(result.bytes));
-    return;
-  }
+static constexpr orcsdr::serial_ft8_wwv::Hooks kSerialFt8WwvHooks{
+    kFt8Io,
+    [](orcsdr::serial_ft8_wwv::State* out) {
+      const auto status = orcsdr::ft8_runtime::wwv_report();
+      out->phase = static_cast<unsigned>(status.phase);
+      out->seconds = static_cast<unsigned>(status.seconds);
+      out->action = static_cast<orcsdr::serial_ft8_wwv::Action>(g_wwv_action);
+      out->mhz = static_cast<double>(g_wwv_mhz);
+    },
+    [] { orcsdr::ft8_runtime::wwv_stop(); },
+    [](float mhz) -> bool {
+      char key[16];
+      return ft8_wwv_key(mhz, key, sizeof(key));
+    },
+    []() -> bool { return orcsdr::ft8_runtime::active(); },
+    ft8_hook_wwv_start,
+};
 
-  if (strcmp(verb, "HUNT") == 0) {
-    if (strcasecmp(rest, "FAST") == 0 || strcasecmp(rest, "DECODE") == 0) {
-      const bool ok = ft8_hunt_start(strcasecmp(rest, "FAST") == 0 ? orcsdr::ft8::HunterMode::fast : orcsdr::ft8::HunterMode::decode);
-      Serial.printf("ORC_FT8_HUNT_%s\n", ok ? "OK" : "FAILED");
-      return;
-    }
-    if (strcasecmp(rest, "STOP") == 0) {
-      g_ft8_hunter.stop();
-      Serial.println("ORC_FT8_HUNT_OK stopped");
-      return;
-    }
-    Serial.println("ORC_FT8_ERROR HUNT invalid use HUNT <FAST|DECODE|STOP>");
-    return;
-  }
+static void ft8_hook_set_mode(orcsdr::serial_ft8_control::Mode mode, const char** name, unsigned long* dial_hz) {
+  const auto digital = mode == orcsdr::serial_ft8_control::Mode::ft4 ? orcsdr::ft8::DigitalMode::ft4 : orcsdr::ft8::DigitalMode::ft8;
+  g_ft8_mode = digital;
+  g_ft8_dial_override_hz = 0;
+  (void)orcsdr::ft8_runtime::set_mode(digital);
+  (void)ft8_select_band(ft8_selected_band());   // the new mode has its own dial frequency
+  *name = orcsdr::ft8::mode_name(digital);
+  *dial_hz = static_cast<unsigned long>(orcsdr::ft8::mode_dial_hz(ft8_selected_band(), digital));
+}
 
-  if (strcmp(verb, "DIAL") == 0) {
-    // Bench: tune an exact dial frequency in Hz (what the Live DIAL chip does with expert tuning), e.g. a time-signal station.
-    // FT8 BAND <label> returns to the band table.
-    if (need_auth()) return;
-    char* dial_end = nullptr;
-    const unsigned long hz = strtoul(rest, &dial_end, 10);
-    while (dial_end != nullptr && *dial_end == ' ') ++dial_end;
-    // The whole argument must be the number ("14074000oops" is rejected, not tuned as 14074000).
-    if (hz == 0 || dial_end == rest || *dial_end != '\0' || !ft8_tune_dial(static_cast<uint32_t>(hz)))
-      Serial.println("ORC_FT8_ERROR DIAL invalid use DIAL <hz> (0.5 MHz to the tuner limit)");
-    return;
-  }
+static bool ft8_hook_clock_test_step(long delta) {
+  g_ft8_clock_test_hold = true;
+  ft8_clock_trust_forget();   // the clock is about to be wrong on purpose: a restart must not call it synced
+  int32_t applied_ms = 0;
+  const bool ok = orcsdr::time_service::step_ms(static_cast<int32_t>(delta), &applied_ms);
+  if (applied_ms > 50 || applied_ms < -50) orcsdr::ft8_runtime::clock_stepped(applied_ms);
+  return ok;
+}
 
-  if (strcmp(verb, "CLOCKTEST") == 0) {
-    // Bench only: FT8 CLOCKTEST <ms> steps the clock by ms (positive = later), forgets the last sync and holds the automatic network sync
-    // off, so the DT-based correction can be exercised. FT8 CLOCKTEST 0 releases the hold (then FT8 NTP, or the automatic sync, restores the clock).
-    if (need_auth()) return;
-    const long delta = strtol(rest, nullptr, 10);
-    if (delta < -5000 || delta > 5000) {
-      Serial.println("ORC_FT8_ERROR CLOCKTEST invalid use CLOCKTEST <-5000..5000 ms>");
-      return;
-    }
-    if (delta == 0) {
-      g_ft8_clock_test_hold = false;
-      Serial.println("ORC_FT8_CLOCKTEST released");
-      return;
-    }
-    g_ft8_clock_test_hold = true;
-    ft8_clock_trust_forget();   // the clock is about to be wrong on purpose: a restart must not call it synced
-    int32_t applied_ms = 0;
-    const bool ok = orcsdr::time_service::step_ms(static_cast<int32_t>(delta), &applied_ms);
-    if (applied_ms > 50 || applied_ms < -50) orcsdr::ft8_runtime::clock_stepped(applied_ms);
-    Serial.printf("ORC_FT8_CLOCKTEST %s step_ms=%ld\n", ok ? "OK" : "FAILED", delta);
-    return;
-  }
+static void ft8_hook_log_status(orcsdr::serial_ft8_control::LogStatus* out) {
+  out->enabled = g_ft8_log_enabled;
+  out->written = static_cast<unsigned>(g_ft8_log_rows);
+  out->staged = static_cast<unsigned>(g_ft8_log_stage_rows);
+  out->dropped = static_cast<unsigned>(g_ft8_log_dropped);
+  out->errors = static_cast<unsigned>(g_ft8_log_errors);
+  out->dma_largest = static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA));
+  out->need = static_cast<unsigned>(kFt8LogMinDmaBlock);
+}
 
-  if (strcmp(verb, "NTP") == 0) {
-    const bool started = orcsdr::ntp_sync::start(wifi_connected);
-    Serial.printf("ORC_FT8_NTP_%s\n", started ? "OK started (see ORC_NTP_OK; then FT8 TIME)" : "FAILED (no Wi-Fi or already running)");
-    return;
-  }
-
-  if (strcmp(verb, "INJECT") == 0) {
-    // FT8 INJECT BEGIN <samples> | FT8 INJECT <offset> <base64 PCM16 little-endian> | FT8 INJECT RUN <FT8|FT4>
-    char sub[16]{};
-    unsigned long number = 0;
-    int consumed = 0;
-    if (sscanf(rest, "%15s %lu%n", sub, &number, &consumed) >= 1 && strcasecmp(sub, "BEGIN") == 0) {
-      const bool ok = orcsdr::ft8_runtime::inject_begin(static_cast<size_t>(number));
-      Serial.printf("ORC_FT8_INJECT_%s\n", ok ? "BEGIN_OK" : "ERROR begin (start the decoder with RUN 1 first; at most 16 s)");
-      return;
-    }
-    if (strncasecmp(rest, "PING", 4) == 0) {
-      Serial.printf("ORC_FT8_INJECT_ACK written=%u crc=%08lx\n", static_cast<unsigned>(orcsdr::ft8_runtime::inject_written()),
-                    static_cast<unsigned long>(orcsdr::ft8_runtime::inject_crc32()));
-      return;
-    }
-    if (strncasecmp(rest, "RUN", 3) == 0) {
-      const char* m = rest + 3;
-      while (*m == ' ') ++m;
-      const bool ok = orcsdr::ft8_runtime::inject_run(strcasecmp(m, "FT4") == 0 ? orcsdr::ft8::DigitalMode::ft4 : strcasecmp(m, "JS8") == 0 ? orcsdr::ft8::DigitalMode::js8_normal : orcsdr::ft8::DigitalMode::ft8);
-      Serial.printf("ORC_FT8_INJECT_%s\n", ok ? "RUN_OK" : "ERROR run");
-      return;
-    }
-    // data line: "<offset> <base64>"
-    char* end = nullptr;
-    const unsigned long offset = strtoul(rest, &end, 10);
-    if (end == rest || *end != ' ') {
-      Serial.println("ORC_FT8_INJECT_ERROR usage");
-      return;
-    }
-    const char* b64 = end + 1;
-    static int16_t chunk[256];
-    uint8_t* bytes = reinterpret_cast<uint8_t*>(chunk);
-    size_t out = 0;
-    uint32_t acc = 0;
-    int bits = 0;
-    for (const char* p = b64; *p != '\0' && *p != '='; ++p) {
-      int v;
-      const char c = *p;
-      if (c >= 'A' && c <= 'Z') v = c - 'A';
-      else if (c >= 'a' && c <= 'z') v = c - 'a' + 26;
-      else if (c >= '0' && c <= '9') v = c - '0' + 52;
-      else if (c == '+') v = 62;
-      else if (c == '/') v = 63;
-      else continue;
-      acc = (acc << 6) | static_cast<uint32_t>(v);
-      bits += 6;
-      if (bits >= 8) {
-        bits -= 8;
-        if (out < sizeof(chunk)) bytes[out++] = static_cast<uint8_t>((acc >> bits) & 0xffu);
-      }
-    }
-    if (!orcsdr::ft8_runtime::inject_write(offset, chunk, out / 2)) Serial.println("ORC_FT8_INJECT_ERROR write");
-    return;
-  }
-
-  if (strcmp(verb, "SNR") == 0) {
-    // FT8 SNR [OFFSET <dB> | RESET]: the advanced trim added to the fitted SNR calibration (stored in NVS). Default 0.
-    if (strncasecmp(rest, "OFFSET", 6) == 0) {
-      if (need_auth()) return;
-      const char* number = rest + 6;
-      char* end = nullptr;
-      const float value = strtof(number, &end);
-      if (end == number) {
-        Serial.println("ORC_FT8_ERROR SNR usage: SNR OFFSET <dB>");
-        return;
-      }
-      orcsdr::ftx::snr::set_user_offset_db(value);
+static constexpr orcsdr::serial_ft8_control::Hooks kSerialFt8ControlHooks{
+    kFt8Io,
+    [] { open_dashboard(orcsdr::dashboards::Id::ft8); },
+    [](const char* text, size_t* index) -> bool { return ft8_parse_band_argument(text, index); },
+    [](size_t index) -> bool { return ft8_select_band_table(index); },
+    [](size_t index, const char** label, unsigned long* dial_hz) {
+      const auto* preset = orcsdr::ft8::band(index);
+      *label = preset != nullptr ? preset->label : "-";
+      *dial_hz = static_cast<unsigned long>(orcsdr::ft8::mode_dial_hz(index, g_ft8_mode));
+    },
+    ft8_hook_set_mode,
+    [] {
+      ft8_native_drain_pending();
+      g_ft8_store.clear();
+      g_ft8_item = 0;
+    },
+    []() -> bool {
+      if (!ft8_native_ensure_started()) return false;
+      orcsdr::ft8_runtime::set_headless(true);
+      return true;
+    },
+    [] { orcsdr::ft8_runtime::set_headless(false); },
+    [](size_t index) { orcsdr::ft8::select_tab(static_cast<orcsdr::ft8::Tab>(index)); },
+    [](bool fast) -> bool { return ft8_hunt_start(fast ? orcsdr::ft8::HunterMode::fast : orcsdr::ft8::HunterMode::decode); },
+    [] { g_ft8_hunter.stop(); },
+    [](uint32_t hz) -> bool { return ft8_tune_dial(hz); },
+    [] { g_ft8_clock_test_hold = false; },
+    ft8_hook_clock_test_step,
+    []() -> bool { return orcsdr::ntp_sync::start(wifi_connected); },
+    [](float db) {
+      orcsdr::ftx::snr::set_user_offset_db(db);
       preferences.putInt("ft8_snr_off10", static_cast<int32_t>(std::lround(orcsdr::ftx::snr::user_offset_db() * 10.0f)));
-    } else if (strncasecmp(rest, "RESET", 5) == 0) {
-      if (need_auth()) return;
+    },
+    [] {
       orcsdr::ftx::snr::set_user_offset_db(0.0f);
       preferences.putInt("ft8_snr_off10", 0);
-    }
-    Serial.printf("ORC_FT8_SNR user_offset_db=%.1f\n", static_cast<double>(orcsdr::ftx::snr::user_offset_db()));
-    return;
-  }
-
-  if (strcmp(verb, "MEM") == 0) {
-    // FT8 MEM [FULL]: internal/DMA/PSRAM heap budget (the SD card and Wi-Fi need internal DMA blocks); FULL adds the heap block map.
-    log_dram_budget("ft8_mem");
-    if (strncasecmp(rest, "FULL", 4) == 0) heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
-    return;
-  }
-
-  if (strcmp(verb, "LOG") == 0) {
-    // FT8 LOG [ON|OFF]: the rolling decode log on the SD card (stations heard, one CSV per UTC day under /ft8/).
-    ft8_log_load_setting();
-    if (strncasecmp(rest, "ON", 2) == 0 || strncasecmp(rest, "OFF", 3) == 0) {
-      if (need_auth()) return;
-      g_ft8_log_enabled = strncasecmp(rest, "ON", 2) == 0;
+    },
+    []() -> double { return static_cast<double>(orcsdr::ftx::snr::user_offset_db()); },
+    [](bool full) {
+      log_dram_budget("ft8_mem");
+      if (full) heap_caps_print_heap_info(MALLOC_CAP_INTERNAL);
+    },
+    [] { ft8_log_load_setting(); },
+    [](bool on) {
+      g_ft8_log_enabled = on;
       preferences.putBool("ft8_log", g_ft8_log_enabled);
-    } else if (strncasecmp(rest, "FLUSH", 5) == 0) {
-      if (need_auth()) return;
-      const bool done = ft8_log_flush(true);
-      Serial.printf("ORC_FT8_LOG_FLUSH %s\n", done ? "ok" : "pending (check SD errors and DMA memory)");
-    }
-    Serial.printf("ORC_FT8_LOG enabled=%d written=%u staged=%u dropped=%u errors=%u dir=/orcsdr/ft8 dma_largest=%u need=%u\n", g_ft8_log_enabled ? 1 : 0,
-                  static_cast<unsigned>(g_ft8_log_rows), static_cast<unsigned>(g_ft8_log_stage_rows), static_cast<unsigned>(g_ft8_log_dropped),
-                  static_cast<unsigned>(g_ft8_log_errors),
-                  static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA)),
-                  static_cast<unsigned>(kFt8LogMinDmaBlock));
-    return;
-  }
+    },
+    []() -> bool { return ft8_log_flush(true); },
+    ft8_hook_log_status,
+    [](unsigned k, unsigned gate, unsigned fine, unsigned long deadline) -> bool {
+      return orcsdr::ft8_runtime::set_config(static_cast<uint16_t>(k), static_cast<uint16_t>(gate), static_cast<uint8_t>(fine),
+                                             static_cast<uint32_t>(deadline));
+    },
+};
 
-  if (strcmp(verb, "CONFIG") == 0) {
-    unsigned k = 0, gate = 0, fine = 0;
-    unsigned long deadline = 0;
-    if (sscanf(rest, "%u %u %u %lu", &k, &gate, &fine, &deadline) != 4 ||
-        !orcsdr::ft8_runtime::set_config(static_cast<uint16_t>(k), static_cast<uint16_t>(gate), static_cast<uint8_t>(fine), static_cast<uint32_t>(deadline))) {
-      Serial.println("ORC_FT8_ERROR CONFIG invalid use CONFIG <k 1-64> <gate 1-64> <fine_rows 4|8> <deadline_ms>");
-      return;
-    }
-    Serial.printf("ORC_FT8_CONFIG_OK k=%u gate=%u fine_rows=%u deadline_ms=%lu\n", k, gate, fine, deadline);
-    return;
-  }
+static constexpr orcsdr::serial_ft8::Hooks kSerialFt8Hooks{
+    kFt8Io,
+    &kSerialFt8QueryHooks,
+    &kSerialFt8DataHooks,
+    &kSerialFt8WwvHooks,
+    &kSerialFt8ControlHooks,
+};
 
-  if (strcmp(verb, "SAVE") == 0) {
-    const int16_t* samples = nullptr;
-    size_t count = 0;
-    uint64_t slot_ms = 0;
-    if (!orcsdr::ft8_runtime::last_slot_audio(&samples, &count, &slot_ms)) {
-      Serial.println("ORC_FT8_ERROR SAVE no_slot_yet");
-      return;
-    }
-    if (!ensure_tab5_sd() || g_sd_fs == nullptr) {
-      Serial.println("ORC_FT8_ERROR SAVE no_sd_card");
-      return;
-    }
-    char name[40]{};
-    size_t n = 0;
-    for (const char* p = rest; *p != '\0' && n + 1 < sizeof(name); ++p)
-      if (isalnum(static_cast<unsigned char>(*p)) || *p == '_' || *p == '-') name[n++] = *p;
-    if (n == 0) snprintf(name, sizeof(name), "slot_%llu", static_cast<unsigned long long>(slot_ms / 1000u));
-    char path[96];
-    (void)g_sd_fs->mkdir("/orcsdr");
-  (void)g_sd_fs->mkdir("/orcsdr/ft8");
-    snprintf(path, sizeof(path), "/orcsdr/ft8/%s.wav", name);
-    File file = g_sd_fs->open(path, FILE_WRITE, true);
-    if (!file) {
-      Serial.printf("ORC_FT8_ERROR SAVE open_failed path=%s\n", path);
-      return;
-    }
-    ft8_write_wav(file, samples, count);
-    file.close();
-    orcsdr::ft8_runtime::release_slot_audio();
-    Serial.printf("ORC_FT8_SAVE_OK path=/sd%s samples=%u slot_utc=%llu\n", path, static_cast<unsigned>(count),
-                  static_cast<unsigned long long>(slot_ms / 1000u));
-    return;
-  }
-
-  Serial.printf("ORC_FT8_ERROR unknown_command %s (FT8 HELP)\n", verb);
+void process_ft8_command(const char* args) {
+  orcsdr::serial_ft8::handle(args, authenticated, kSerialFt8Hooks);
 }
 
 // JS8 receive diagnostics (receive only). JS8 produces raw sync/tone evidence only: no text is ever printed here until FEC, CRC and a

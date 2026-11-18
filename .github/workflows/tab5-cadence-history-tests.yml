@@ -78,6 +78,7 @@ on:
       - 'tests/hex_codec_tests.cpp'
       - 'tests/session_journal_tests.cpp'
       - 'tests/session_identity_tests.cpp'
+      - 'tests/serial_ft8_tests.cpp'
       - 'tests/data/session_identity_golden.txt'
       - 'tests/data/serial_help_golden.txt'
       - 'tests/data/serial_help_golden_orcdial.txt'

@@ -2,6 +2,22 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — FT8 serial command parser moved out of main.cpp — 2026-11-17
+
+No behaviour change intended. Parsing only; the decoder, tuner, SD card, screen capture and settings are untouched. Flashed and checked on COM17 (M5Stack Tab5 dev unit).
+
+- **`process_ft8_command()` (582 lines) is now six small modules**, each with a hook table in `main.cpp` and covered by one host test (`tests/serial_ft8_tests.cpp`, in the CI script and workflow): `serial_ft8` (reads the verb, prints HELP, owns the sign-in refusal for unknown verbs), `serial_ft8_query` (STATUS, TIME, BANDS, DECODES, HUNTSTATUS, CLOCK), `serial_ft8_data` (DUMP, ADIF, SAVE, SHOT, SNAP, INJECT, with the base64 coding), `serial_ft8_wwv` (WWV), `serial_ft8_control` (OPEN, BAND, MODE, CLEAR, RUN, TAB, HUNT, DIAL, CLOCKTEST, NTP, SNR, MEM, LOG, CONFIG) and `serial_ft8_io` (the shared `say()` helper and file-name rule). `process_ft8_command()` stays in `main.cpp` as a three-line call because the JS8 parser forwards `INJECT` to it. `process_js8_command()` is unchanged.
+- **Measured:** `main.cpp` 21,853 to 21,601 lines. Image 4,524,928 to 4,527,776 bytes. Static internal RAM (`.dram1.bss`) 149,940 to 149,308 (632 bytes less: the DUMP line buffer and the INJECT chunk are on the stack now). `process_command()` frame 448 bytes, unchanged. The old `process_ft8_command` frame was 560 bytes plus the console's 2,112-byte `printf`; now the deepest path (STATUS) is `serial_ft8_query::print_status` 320 plus `say_wide` 960 under a 48 + 112 byte dispatch. INJECT data lines use 224 + 560 bytes (was 560). Longest STATUS line 643 bytes, in a 896-byte buffer.
+- **Device check (COM17), the same 99 commands before (`39055f2c`) and after:** 85 replies byte-identical, 10 identical once digits are masked, 4 differ only in lines that arrive on their own clock (the `ORC_NTP_OK` that follows `FT8 NTP`'s automatic sync, the per-slot `ORC_FT8_RT` line, and `runtime=ready` against `runtime=decoding` in STATUS, which depends on where in the 15 s slot the command lands). All the signed-out and signed-in refusals, usage lines and bad-argument forms match. An injected 15 s test slot (six synthetic stations, `refactor-workspace/logs/device/ft8_slot_fixture.wav`) decodes the same six messages both times (frequencies, DT and text identical). The decoder's own `gates=` count read 159 once before and 164, 171 and 173 on three runs after, so it varies from run to run; `total_ms` 3,342 before, 3,351 to 3,389 after. 35 of 35 refusals; main-task free stack 6,336 bytes after the FT8 run (the usual figure after commands). The unit is back on Home, shortwave 7.1 MHz, decoder stopped.
+- **Seen while moving, not changed:**
+  - `FT8 SAVE` leaves the slot audio held (never calls `release_slot_audio()`) when the SD card is missing or the file will not open, so the next slot copy is not refreshed until a later save succeeds.
+  - `FT8 SNR`, `MEM` and `LOG` ask for a sign-in even when they only report; the HELP text lists them under control.
+  - `FT8 WWV` with no argument and `FT8 CLOCK` print state without a sign-in; `FT8 DUMP` streams the whole last slot (about 480 KB) without one.
+  - A verb longer than 15 characters is cut, and the rest of the word is then read as its argument.
+  - `FT8 RUN 1x` counts as `RUN 1`; `FT8 INJECT BEGIN` with no number starts a 0-sample injection.
+  - `FT8 CONFIG 0 0 0 0` is refused by the decoder with the usage text, but only after it was asked.
+- **Not checked:** the signed-in paths that write the SD card (`ADIF`, `SAVE`, `SHOT`: their replies are host-tested only) and `SNAP` (PNG stream); the state changes of `FT8 BAND`, `MODE`, `DIAL`, `HUNT`, `CLOCKTEST`, `SNR OFFSET` and `LOG ON/OFF` (only their refusals and bad-argument replies were recorded, so the unit's settings were not touched); a started `FT8 WWV` measurement; receiving real FT8 on air.
+
 ## Unreleased — Session journal, identity lines and hex helpers moved out of main.cpp — 2026-11-16
 
 No behaviour change intended. Flashed and checked on COM17 (M5Stack Tab5 dev unit).
