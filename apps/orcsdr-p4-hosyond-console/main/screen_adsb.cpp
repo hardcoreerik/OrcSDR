@@ -13,6 +13,8 @@
 #include "freertos/portmacro.h"
 #include "home_app.hpp"
 #include "iq_tap.hpp"
+#include "map_service.hpp"
+#include "orcsdr_storage.hpp"
 #include "radio_service.hpp"
 #include "receiver_location.hpp"
 #include "screens.hpp"
@@ -190,6 +192,8 @@ void enter() {
   } else {
     (void)ad::set_viewport({0,0,1280,720});
   }
+  // The basemap comes from the map packs on the card; the service scans the card and serves tiles to the radar.
+  if (orcsdr::storage::mounted()) (void)orcsdr::maps::begin(&orcsdr::storage::filesystem());
   if (!g_started) {
     g_decoder = static_cast<rx::Decoder*>(heap_caps_malloc(sizeof(rx::Decoder), MALLOC_CAP_SPIRAM));
     g_tracks = static_cast<Track*>(heap_caps_calloc(kTracks, sizeof(Track), MALLOC_CAP_SPIRAM));
