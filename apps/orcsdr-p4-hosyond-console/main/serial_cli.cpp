@@ -33,6 +33,7 @@
 #include "radio_service.hpp"
 #include "orcsdr_restart.hpp"
 #include "ais_app.hpp"
+#include "dead_air_app.hpp"
 #include "sstv_app.hpp"
 #include "sstv_diag.hpp"
 #include "sstv_receiver.hpp"
@@ -395,6 +396,33 @@ void cmd_ais() {
   orcsdr::ais_app::describe(line, kLine);
   std::printf("%s\n", line);
   orcsdr::ais_radio::format_status(line, kLine);
+  std::printf("%s\n", line);
+  heap_caps_free(line);
+}
+
+// RTL_DEAD_AIR STATUS | ENV | FLOOD <n>: the Dead Air diagnostics of the Tab5 (FLOOD needs the paired session).
+void cmd_dead_air(const char* args) {
+  if (std::strncmp(args, "FLOOD ", 6) == 0) {
+    if (!authed()) {
+      std::printf("RTL_DEAD_AIR_FLOOD_ERROR auth_required\n");
+      return;
+    }
+    std::printf("RTL_DEAD_AIR_FLOOD logged=%lu\n", static_cast<unsigned long>(orcsdr::dead_air_app::flood_manual_marks(static_cast<uint32_t>(std::atoi(args + 6)))));
+    return;
+  }
+  const bool env = std::strcmp(args, "ENV") == 0;
+  if (!env && std::strcmp(args, "STATUS") != 0) {
+    std::printf("RTL_DEAD_AIR_ERROR use STATUS|ENV|FLOOD <n>\n");
+    return;
+  }
+  constexpr size_t kLine = 1200;   // PSRAM, not the console task's stack
+  char* line = static_cast<char*>(heap_caps_malloc(kLine, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!line) {
+    std::printf("RTL_DEAD_AIR error=no_memory\n");
+    return;
+  }
+  if (env) orcsdr::dead_air_app::describe_env(line, kLine);
+  else orcsdr::dead_air_app::describe(line, kLine);
   std::printf("%s\n", line);
   heap_caps_free(line);
 }
@@ -1073,6 +1101,7 @@ void handle_line(char* line) {
   if (std::strncmp(line, "RTL_UI ", 7) == 0) return cmd_ui(line + 7);
   if (std::strncmp(line,"RTL_POCSAG ",11)==0) return cmd_pocsag(line+11);
   if (std::strcmp(line,"RTL_AIS STATUS")==0) return cmd_ais();
+  if (std::strncmp(line,"RTL_DEAD_AIR ",13)==0) return cmd_dead_air(line+13);
   if (std::strncmp(line,"RTL_SSTV ",9)==0) return cmd_sstv(line+9);
   if (orcsdr::sstv_diag::handle_command(line, authed(), sstv_diag_hooks())) return;
   if (std::strncmp(line,"RTL_LAB",7)==0) return cmd_lab(line);
