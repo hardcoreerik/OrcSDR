@@ -1,0 +1,4 @@
+build-lilygo-*/
+__pycache__/
+*.pyc
+backups/
