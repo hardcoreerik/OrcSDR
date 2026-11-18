@@ -76,6 +76,7 @@ size_t max_output_samples(const Tap& tap, size_t bytes);
 // `capacity`: samples that would not fit are dropped and counted by the caller through the return value being smaller than
 // max_output_samples().
 size_t process_cu8(Tap* tap, const uint8_t* iq, size_t bytes, int16_t* out, size_t capacity);
+size_t process_cu8_ref(Tap* tap, const uint8_t* iq, size_t bytes, int16_t* out, size_t capacity);   // reference for the host test
 
 bool self_check();
 

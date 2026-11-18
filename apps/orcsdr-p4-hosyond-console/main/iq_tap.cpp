@@ -5,6 +5,7 @@
 #include "freertos/FreeRTOS.h"
 #include "freertos/stream_buffer.h"
 #include "freertos/task.h"
+#include "freertos/idf_additions.h"
 #include "radio_service.hpp"
 
 namespace iq_tap {
@@ -18,6 +19,7 @@ Consumer g_consumer = nullptr;
 void* g_context = nullptr;
 std::atomic<bool> g_run{false};
 std::atomic<bool> g_exited{true};
+bool g_psram_stack = false;
 std::atomic<uint32_t> g_dropped{0}, g_blocks{0};
 
 void sink(const uint8_t* iq, size_t bytes) {
@@ -36,11 +38,13 @@ void task(void*) {
   }
   heap_caps_free(buf);
   g_exited = true;
+  // A task with a PSRAM stack must not delete itself on this IDF (it would need a temporary task from internal RAM): it parks and stop() deletes it.
+  if (g_psram_stack) vTaskSuspend(nullptr);
   vTaskDelete(nullptr);
 }
 }  // namespace
 
-bool start(const char* name, Consumer consumer, void* context, size_t buffer_bytes, int core, int priority, size_t stack_bytes) {
+bool start(const char* name, Consumer consumer, void* context, size_t buffer_bytes, int core, int priority, size_t stack_bytes, bool stack_in_psram) {
   if (g_run.load() || !g_exited.load() || !consumer) return false;
   g_stream = xStreamBufferCreateWithCaps(buffer_bytes, 1, MALLOC_CAP_SPIRAM);
   if (!g_stream) {
@@ -53,7 +57,11 @@ bool start(const char* name, Consumer consumer, void* context, size_t buffer_byt
   g_blocks = 0;
   g_run = true;
   g_exited = false;
-  if (xTaskCreatePinnedToCore(task, name, stack_bytes, nullptr, priority, &g_task, core) != pdPASS) {
+  g_psram_stack = stack_in_psram;
+  const BaseType_t created = stack_in_psram
+      ? xTaskCreatePinnedToCoreWithCaps(task, name, stack_bytes, nullptr, priority, &g_task, core, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT)
+      : xTaskCreatePinnedToCore(task, name, stack_bytes, nullptr, priority, &g_task, core);
+  if (created != pdPASS) {
     g_run = false;
     g_exited = true;
     vStreamBufferDeleteWithCaps(g_stream);
@@ -69,6 +77,11 @@ void stop() {
   orcsdr::radio::set_aux_iq_sink(nullptr);
   g_run = false;
   for (int i = 0; i < 100 && !g_exited.load(); ++i) vTaskDelay(pdMS_TO_TICKS(10));
+  if (g_psram_stack && g_exited.load() && g_task != nullptr) {
+    vTaskDeleteWithCaps(g_task);
+    g_task = nullptr;
+    g_psram_stack = false;
+  }
   if (g_stream) {
     StreamBufferHandle_t s = g_stream;
     g_stream = nullptr;

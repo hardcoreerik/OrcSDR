@@ -1,8 +1,3 @@
-// NOT REGISTERED in screens.cpp (so RTL_UI OPEN FT8 still reports not_available): the audio tap costs about 1770 CPU cycles per
-// input sample on the P4 (bench, 240 kS/s, interrupts blocked, 16384-byte block), about four times what real time allows, so with
-// this screen open the tap never yields, the task watchdog fires and the UI becomes unresponsive. The tap must be made much cheaper
-// (exploit the FIR symmetry, check the float path) before this is switched on. Layout, dashboard and adapter are otherwise complete.
-//
 // FT8 / FT4 receive on the P4 console: the native decoder (ft8_runtime, shared with the Tab5) fed from the receiver's
 // IQ, shown on the compact FT8 dashboard (ft8_compact_dashboard.cpp), which fits the small views. Receive only.
 // Not on this target yet: the legacy dashboard's MAP, HUNTER and HEARD tabs, expert tuning, the decode log on the SD card,
@@ -65,7 +60,11 @@ float dial_offset_hz() {
   const uint32_t dial = ft8_runtime::requested_dial_hz();
   const uint32_t centre = home_app::status().applied_hz;
   if (dial == 0 || centre == 0) return 0.0f;
-  return static_cast<float>(static_cast<int32_t>(dial) - static_cast<int32_t>(centre));
+  // The driver reports the tuner's frequency, which is not the RF centre under the HF up-converter (14.074 MHz shows as 42.874 MHz):
+  // only a small difference is a real tuning step, anything else means the reading is not the RF centre.
+  const int32_t delta = static_cast<int32_t>(dial) - static_cast<int32_t>(centre);
+  if (delta > 100000 || delta < -100000) return 0.0f;
+  return static_cast<float>(delta);
 }
 
 void on_decode(const ft8::Decode& decode, void*) {
@@ -156,6 +155,7 @@ void fill(ft8::Snapshot& s) {
 
 
 
+
 void enter() {
   if (g_store == nullptr) {
     void* store = heap_caps_calloc(1, sizeof(ft8::DecodeStore), MALLOC_CAP_SPIRAM);
@@ -177,8 +177,9 @@ void enter() {
   audio_service::set_active(false);
   orcsdr::radio::set_sample_rate_override(kTapRate);
   g_runtime_started = false;
+  ft8_runtime::set_worker_core(1);   // the UI task keeps core 0 nearly full; core 1 is mostly idle
   (void)start_runtime();
-  iq_tap::start("ft8", consume, nullptr);
+  iq_tap::start("ft8", consume, nullptr, 256 * 1024, 1, 3, 16384, true);   // PSRAM stack: measured several times faster than an internal one here
   tune_band(g_band);
   *g_snapshot = ft8::Snapshot();
   fill(*g_snapshot);

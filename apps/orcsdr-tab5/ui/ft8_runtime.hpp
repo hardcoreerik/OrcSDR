@@ -95,6 +95,8 @@ using ClockValidFn = bool (*)();
 // Where the dial frequency sits in the baseband, in Hz (dial minus the tuner's actual centre; positive = above it). The tuner
 // steps coarsely, so this is rarely zero; the tap shifts its USB passband by it. Polled by the decoder task.
 using DialOffsetFn = float (*)();
+// Core (0 or 1) for the decoder and waterfall tasks, applied at the next start(). Default 0.
+void set_worker_core(int core);
 bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* context, ClockValidFn clock_valid, DialOffsetFn dial_offset);
 void stop();
 // Deletes the decoder and waterfall tasks once they have finished. Call from normal application code (never from those tasks);

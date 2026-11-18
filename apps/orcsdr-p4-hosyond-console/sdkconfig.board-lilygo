@@ -11,3 +11,6 @@ CONFIG_ESP_HOSTED_HOST_RESET_GPIO=-1
 # created. Same values as the Tab5 build.
 CONFIG_FATFS_LFN_HEAP=y
 CONFIG_FATFS_MAX_LFN=255
+# Shared dashboards mark their large buffers EXT_RAM_BSS_ATTR (the Tab5 enables this too). Without it they all count against internal RAM, which
+# has almost no slack at boot: registering the FT8 screen alone cost about 24 KB and Home's raster buffer fell back to PSRAM (16x slower).
+CONFIG_SPIRAM_ALLOW_BSS_SEG_EXTERNAL_MEMORY=y

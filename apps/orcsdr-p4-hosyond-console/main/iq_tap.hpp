@@ -11,7 +11,7 @@ using Consumer = void (*)(const uint8_t* iq, size_t bytes, void* context);
 
 // Starts the decoder task. Returns false if one is already running or memory is short.
 bool start(const char* name, Consumer consumer, void* context, size_t buffer_bytes = 256 * 1024,
-           int core = 1, int priority = 3, size_t stack_bytes = 8192);
+           int core = 1, int priority = 3, size_t stack_bytes = 8192, bool stack_in_psram = false);
 void stop();          // detaches from the radio and ends the task (waits for it)
 bool running();
 uint32_t dropped();   // blocks dropped because the consumer was behind

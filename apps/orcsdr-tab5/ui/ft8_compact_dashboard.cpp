@@ -5,6 +5,7 @@
 #include "ft8_decoder_backend.hpp"
 
 #include <M5Unified.h>
+#include <esp_attr.h>
 #include <esp_heap_caps.h>
 
 #include <algorithm>
@@ -20,7 +21,9 @@ namespace {
 constexpr uint16_t kPanel = 0x0841, kGrid = 0x2945, kCyan = 0x2e7f, kGreen = 0x6fe8, kYellow = 0xff24, kAmber = 0xfd20,
                    kMuted = 0x8c71, kSelected = 0x1264, kPlotBg = 0x0021;
 
-Layout g_layout{};
+// All of this dashboard's static state lives in PSRAM (zero-initialised): internal RAM has almost no slack at boot, and a screen that is
+// linked in costs its statics even when it is never opened. Spending about 2 KB of it here made Home's raster buffer fall back to PSRAM.
+EXT_RAM_BSS_ATTR Layout g_layout;
 Snapshot* g_snapshot = nullptr;       // PSRAM: it holds the decode list
 uint16_t* g_line = nullptr;           // one waterfall row (two pixels high), PSRAM
 bool g_active = false;
@@ -31,15 +34,16 @@ void (*g_header_hook)() = nullptr;
 // What each region last drew, so an update repaints only what changed.
 struct Drawn {
   char chip[6][80]{};                 // dial, clock title, clock value, gain, status, band
-  uint32_t wf_sequence = UINT32_MAX;
-  uint32_t tenth = UINT32_MAX;
-  uint64_t second = UINT64_MAX;
-  size_t decode_count = SIZE_MAX;
+  uint32_t wf_sequence = 0;           // set to UINT32_MAX by enter() and the waterfall panel: "nothing painted yet"
+  uint32_t tenth = 0;
+  uint64_t second = 0;
+  size_t decode_count = 0;
   uint32_t last_decode_stamp = 0;
   int16_t battery = -2;
-  uint32_t header_key = UINT32_MAX;
+  uint32_t header_key = 0;
   char setup_key[160]{};
-} g_drawn;
+};
+EXT_RAM_BSS_ATTR Drawn g_drawn;
 
 bool hit(int32_t x, int32_t y, Rect r) { return x >= r.x && x < r.x + r.w && y >= r.y && y < r.y + r.h; }
 
@@ -149,8 +153,8 @@ size_t cq_count() {
 }
 
 uint16_t waterfall_color(uint8_t v) {
-  static uint16_t lut[256];
-  static bool ready = false;
+  EXT_RAM_BSS_ATTR static uint16_t lut[256];
+  EXT_RAM_BSS_ATTR static bool ready;
   if (!ready) {
     for (int i = 0; i < 256; ++i) {
       const float t = static_cast<float>(i) / 255.0f;
@@ -246,23 +250,39 @@ void draw_waterfall_axis() {
   }
 }
 
+// Paints waterfall rows. A first paint, a restart or a long gap repaints the whole plot; otherwise the plot is scrolled and only the
+// newest rows (at most four per call, so a burst is spread over a few updates) are pushed, as the legacy dashboard does. Repainting every
+// row on every update kept the UI task at 100% of its core.
 void draw_waterfall_rows() {
   const Snapshot& s = *g_snapshot;
   const Rect p = g_layout.wf_plot;
   if (s.waterfall == nullptr || s.wf_rows == 0 || s.wf_bins == 0 || s.wf_sequence == 0 || g_line == nullptr) return;
   const size_t px_rows = static_cast<size_t>(p.h) / 2;
   const size_t rows = std::min<size_t>(s.wf_rows, 112);
-  const size_t visible = std::min<size_t>(std::min<size_t>(rows, s.wf_sequence), px_rows);
-  for (size_t r = 0; r < visible; ++r) {
-    const uint8_t* src = s.waterfall + ((s.wf_sequence - 1 - r) % rows) * s.wf_bins;
+  const uint32_t seq = s.wf_sequence;
+  auto push_row = [&](uint32_t sequence_number_of_row, int y) {
+    const uint8_t* src = s.waterfall + (sequence_number_of_row % rows) * s.wf_bins;
     for (int x = 0; x < p.w; ++x) {
       const uint16_t color = waterfall_color(src[static_cast<size_t>(x) * s.wf_bins / static_cast<size_t>(p.w)]);
       g_line[x] = color;
       g_line[p.w + x] = color;
     }
-    M5.Display.pushImage(p.x, p.y + static_cast<int>(r) * 2, p.w, 2, g_line);
+    M5.Display.pushImage(p.x, y, p.w, 2, g_line);
+  };
+  const bool full = g_drawn.wf_sequence == UINT32_MAX || seq < g_drawn.wf_sequence || seq - g_drawn.wf_sequence >= 24;
+  if (full) {
+    const size_t visible = std::min<size_t>(std::min<size_t>(rows, seq), px_rows);
+    for (size_t r = 0; r < visible; ++r) push_row(static_cast<uint32_t>(seq - 1 - r), p.y + static_cast<int>(r) * 2);
+    g_drawn.wf_sequence = seq;
+  } else {
+    const uint32_t fresh = std::min<uint32_t>(seq - g_drawn.wf_sequence, 4);
+    if (fresh == 0) return;
+    const uint32_t target = g_drawn.wf_sequence + fresh;
+    M5.Display.setScrollRect(p.x, p.y, p.w, p.h, kPlotBg);
+    M5.Display.scroll(0, static_cast<int>(fresh) * 2);
+    for (uint32_t k = 0; k < fresh; ++k) push_row(target - 1 - k, p.y + static_cast<int>(k) * 2);
+    g_drawn.wf_sequence = target;
   }
-  g_drawn.wf_sequence = s.wf_sequence;
   draw_waterfall_axis();
 }
 
@@ -289,7 +309,9 @@ void draw_waterfall_panel() {
     const int x = l.wf_plot.x + (hz - kAudioLowHz) * l.wf_plot.w / (kAudioHighHz - kAudioLowHz);
     char label[8];
     std::snprintf(label, sizeof(label), "%d", hz);
-    text(label, x, l.wf_plot.y + l.wf_plot.h + 11, kMuted, 0, middle_center);
+    // The last label would run past the right edge of the view: right-align it to the plot edge.
+    const bool last = hz == 3000;
+    text(label, last ? l.wf_plot.x + l.wf_plot.w : x, l.wf_plot.y + l.wf_plot.h + 11, kMuted, 0, last ? middle_right : middle_center);
   }
   g_drawn.wf_sequence = UINT32_MAX;
   uint16_t color;

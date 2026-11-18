@@ -53,6 +53,33 @@ inline void renormalize(float* c, float* s) {
   }
 }
 
+// Symmetric (linear-phase) FIR, folded: taps[k] == taps[n-1-k], so each pair of history samples shares one multiply, which halves the
+// multiplies. Four independent accumulators (two per channel) shorten the floating-point dependency chain. `newest_*` points at the newest
+// sample of the double-length history; the oldest is n-1 samples below it.
+inline void fir_folded(const float* taps, size_t n, const float* newest_i, const float* newest_q, float* out_i, float* out_q) {
+  const size_t half = (n - 1) / 2;
+  const float* pi = newest_i;
+  const float* qi = newest_i - (n - 1);
+  const float* pq = newest_q;
+  const float* qq = newest_q - (n - 1);
+  float i0 = 0.0f, i1 = 0.0f, q0 = 0.0f, q1 = 0.0f;
+  size_t k = 0;
+  for (; k + 1 < half; k += 2) {
+    const float t0 = taps[k], t1 = taps[k + 1];
+    i0 += t0 * (pi[-static_cast<long>(k)] + qi[k]);
+    q0 += t0 * (pq[-static_cast<long>(k)] + qq[k]);
+    i1 += t1 * (pi[-static_cast<long>(k) - 1] + qi[k + 1]);
+    q1 += t1 * (pq[-static_cast<long>(k) - 1] + qq[k + 1]);
+  }
+  for (; k < half; ++k) {
+    i0 += taps[k] * (pi[-static_cast<long>(k)] + qi[k]);
+    q0 += taps[k] * (pq[-static_cast<long>(k)] + qq[k]);
+  }
+  const float mid = taps[half];
+  *out_i = i0 + i1 + mid * pi[-static_cast<long>(half)];
+  *out_q = q0 + q1 + mid * pq[-static_cast<long>(half)];
+}
+
 }  // namespace
 
 bool rate_supported(uint32_t input_rate_hz) {
@@ -106,7 +133,8 @@ size_t max_output_samples(const Tap& tap, size_t bytes) {
   return complex_samples / (static_cast<size_t>(tap.cic_ratio) * 20u) + 2;
 }
 
-size_t process_cu8(Tap* tap, const uint8_t* iq, size_t bytes, int16_t* out, size_t capacity) {
+template <bool Fold>
+size_t process_impl(Tap* tap, const uint8_t* iq, size_t bytes, int16_t* out, size_t capacity) {
   if (tap == nullptr || tap->cic_ratio == 0 || iq == nullptr || out == nullptr) return 0;
   const double mix1_hz = static_cast<double>(tap->dial_offset_hz) + kCenterHz;   // the USB passband centre in the baseband
   const float c1 = static_cast<float>(std::cos(-2.0 * kPi * mix1_hz / static_cast<double>(kBaseRateHz)));
@@ -170,9 +198,13 @@ size_t process_cu8(Tap* tap, const uint8_t* iq, size_t bytes, int16_t* out, size
       const size_t newest = (tap->head_a == 0 ? kStageATaps : tap->head_a) - 1 + kStageATaps;
       const float* hi = &tap->hist_a[0][newest];
       const float* hq = &tap->hist_a[1][newest];
-      for (size_t k = 0; k < kStageATaps; ++k) {
-        ai += tap->taps_a[k] * hi[-static_cast<long>(k)];
-        aq += tap->taps_a[k] * hq[-static_cast<long>(k)];
+      if constexpr (Fold) {
+        fir_folded(tap->taps_a.data(), kStageATaps, hi, hq, &ai, &aq);
+      } else {
+        for (size_t k = 0; k < kStageATaps; ++k) {
+          ai += tap->taps_a[k] * hi[-static_cast<long>(k)];
+          aq += tap->taps_a[k] * hq[-static_cast<long>(k)];
+        }
       }
     }
 
@@ -190,9 +222,13 @@ size_t process_cu8(Tap* tap, const uint8_t* iq, size_t bytes, int16_t* out, size
       const size_t newest = (tap->head_b == 0 ? kStageBTaps : tap->head_b) - 1 + kStageBTaps;
       const float* hi = &tap->hist_b[0][newest];
       const float* hq = &tap->hist_b[1][newest];
-      for (size_t k = 0; k < kStageBTaps; ++k) {
-        bi += tap->taps_b[k] * hi[-static_cast<long>(k)];
-        bq += tap->taps_b[k] * hq[-static_cast<long>(k)];
+      if constexpr (Fold) {
+        fir_folded(tap->taps_b.data(), kStageBTaps, hi, hq, &bi, &bq);
+      } else {
+        for (size_t k = 0; k < kStageBTaps; ++k) {
+          bi += tap->taps_b[k] * hi[-static_cast<long>(k)];
+          bq += tap->taps_b[k] * hq[-static_cast<long>(k)];
+        }
       }
     }
 
@@ -218,6 +254,15 @@ bool self_check() {
   Tap tap;
   return begin(&tap, 2400000) && tap.cic_ratio == 10 && !rate_supported(2048000) && !rate_supported(100000) &&
          rate_supported(240000) && max_output_samples(tap, 4800000) >= 12000;
+}
+
+
+size_t process_cu8(Tap* tap, const uint8_t* iq, size_t bytes, int16_t* out, size_t capacity) {
+  return process_impl<true>(tap, iq, bytes, out, capacity);
+}
+// The plain, unfolded loop: kept as the reference the host test compares the folded path against (not used by the firmware).
+size_t process_cu8_ref(Tap* tap, const uint8_t* iq, size_t bytes, int16_t* out, size_t capacity) {
+  return process_impl<false>(tap, iq, bytes, out, capacity);
 }
 
 }  // namespace orcsdr::ftx::audio_tap

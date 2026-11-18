@@ -141,6 +141,9 @@ bool is_js8(orcsdr::ft8::DigitalMode m) { return orcsdr::ft8::mode_is_js8(m); }
 // Only Normal has an established sync pattern; every other JS8 submode is refused (never mapped to Normal).
 bool js8_supported(orcsdr::ft8::DigitalMode m) { return m == orcsdr::ft8::DigitalMode::js8_normal; }
 
+// Core for the decoder and waterfall tasks (0 = the Tab5's choice). A board whose UI task keeps core 0 nearly full can put them on core 1.
+int g_worker_core = 0;
+
 std::atomic<uint32_t> g_alloc_fail_bytes{0};   // size of the most recent PSRAM request that returned null (0 = none since start() began)
 StartReport g_start_report;
 
@@ -770,6 +773,8 @@ void reap() {
   }
 }
 
+void set_worker_core(int core) { g_worker_core = core == 1 ? 1 : 0; }
+
 bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* context, ClockValidFn clock_valid, DialOffsetFn dial_offset) {
   if (g.active.load(std::memory_order_acquire)) return true;
   reap();   // tasks from the previous session must be gone before new ones take the handles
@@ -848,7 +853,7 @@ bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* contex
   // Mark the task alive BEFORE creating it: a new task may not have run yet when the main loop next calls reap(), and a
   // false flag with a non-null handle would make reap() delete it before it starts.
   g.task_alive.store(true, std::memory_order_release);
-  if (xTaskCreatePinnedToCoreWithCaps(decoder_task, "ft8_native", 20480, nullptr, 1, &g.task, 0,
+  if (xTaskCreatePinnedToCoreWithCaps(decoder_task, "ft8_native", 20480, nullptr, 1, &g.task, g_worker_core,
                                       MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
     g.task_alive.store(false, std::memory_order_release);
     g.task = nullptr;
@@ -875,7 +880,7 @@ bool start(orcsdr::ft8::DigitalMode mode, DecodeCallback on_decode, void* contex
   }
   mem_mark("backend");
   g.wf_alive.store(true, std::memory_order_release);   // before creation, as for the decoder task above
-  if (xTaskCreatePinnedToCoreWithCaps(waterfall_task, "ft8_wf", 8192, nullptr, 1, &g.wf_task, 0, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
+  if (xTaskCreatePinnedToCoreWithCaps(waterfall_task, "ft8_wf", 8192, nullptr, 1, &g.wf_task, g_worker_core, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
     g.wf_alive.store(false, std::memory_order_release);
     g.wf_task = nullptr;
   }
