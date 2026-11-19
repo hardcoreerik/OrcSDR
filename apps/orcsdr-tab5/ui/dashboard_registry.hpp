@@ -29,6 +29,7 @@ enum class Id : uint8_t {
   dead_air,
   ais,
   visualizer,
+  skimmer,
   count,
 };
 

@@ -15,6 +15,7 @@
 #include "pocsag_dashboard.hpp"
 #include "rf24_dashboard.hpp"
 #include "ft8_dashboard.hpp"
+#include "skimmer_dashboard.hpp"
 #include "sstv_dashboard.hpp"
 
 namespace orcsdr::navigation {
@@ -46,6 +47,7 @@ void show_home(bool demo) {
   lora::leave();
   rf24::leave();
   ft8::leave();
+  skimmer::leave();
   sstv::stop();
   sstv::ui_leave();
   settings::leave();
