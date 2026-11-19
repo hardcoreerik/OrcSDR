@@ -20,7 +20,7 @@ struct FmTelemetry {
   std::vector<int> supported_gains;
   std::string receiver_name="No receiver",last_error,audio_error;
   std::array<std::uint8_t,256> spectrum{};
-  std::array<std::array<std::uint8_t,256>,36> waterfall{};
+  std::array<std::array<std::uint8_t,256>,kWaterfallRows> waterfall{};
   int waterfall_rows=0;
 };
 // One physical SDR owner, one IQ producer, one DSP/audio consumer. GUI sees

@@ -1,4 +1,5 @@
 #include "settings.hpp"
+#include "waterfall_style.hpp"
 #include <algorithm>
 #include <cerrno>
 #include <cstdio>
@@ -24,7 +25,7 @@ bool device_name(const std::string& s){
 }
 }
 bool validate_settings(const UserSettings& s){
- return s.frequency_hz>=87500000&&s.frequency_hz<=108000000&&s.volume<=100&&
+ return s.frequency_hz>=87500000&&s.frequency_hz<=108000000&&s.volume<=100&&s.palette<orcsdr::waterfall_style::kPaletteCount&&
   s.step_index<5&&s.gain_tenth_db>=-200&&s.gain_tenth_db<=900&&device_name(s.audio_device);
 }
 std::string settings_path(){
@@ -48,6 +49,7 @@ bool load_settings(const std::string& filename,UserSettings& out){
   if(key=="version"){if(n!=1)return false;version=true;}
   else if(key=="frequency_hz"){if(n<0||n>UINT32_MAX)return false;next.frequency_hz=static_cast<std::uint32_t>(n);}
   else if(key=="volume"){if(n<0||n>100)return false;next.volume=unsigned(n);}
+  else if(key=="palette"){if(n<0||n>=orcsdr::waterfall_style::kPaletteCount)return false;next.palette=unsigned(n);}
   else if(key=="step_index"){if(n<0||n>4)return false;next.step_index=unsigned(n);}
   else if(key=="mute"){if(n<0||n>1)return false;next.mute=n==1;}
   else if(key=="gain_auto"){if(n<0||n>1)return false;next.gain_auto=n==1;}
@@ -67,8 +69,8 @@ bool save_settings(const std::string& filename,const UserSettings& s){
  if(fd<0)return false;
  char buf[512]{};
  const int len=std::snprintf(buf,sizeof(buf),
-  "version=1\nfrequency_hz=%u\nvolume=%u\nstep_index=%u\nmute=%d\ngain_auto=%d\ngain_tenth_db=%d\naudio_device=%s\n",
-  s.frequency_hz,s.volume,s.step_index,s.mute?1:0,s.gain_auto?1:0,s.gain_tenth_db,s.audio_device.c_str());
+  "version=1\nfrequency_hz=%u\nvolume=%u\npalette=%u\nstep_index=%u\nmute=%d\ngain_auto=%d\ngain_tenth_db=%d\naudio_device=%s\n",
+  s.frequency_hz,s.volume,s.palette,s.step_index,s.mute?1:0,s.gain_auto?1:0,s.gain_tenth_db,s.audio_device.c_str());
  bool ok=len>0&&len<int(sizeof(buf));
  size_t at=0;
  while(ok&&at<size_t(len)){

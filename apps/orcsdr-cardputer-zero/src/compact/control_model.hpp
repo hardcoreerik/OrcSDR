@@ -1,4 +1,5 @@
 #pragma once
+#include "waterfall_style.hpp"
 #include <algorithm>
 #include <array>
 #include <cstdint>
@@ -6,23 +7,26 @@
 #include <vector>
 
 namespace orc::zero {
+constexpr int kWaterfallRows=72;
+constexpr uint32_t kDefaultSpanHz=2560000;
 constexpr uint32_t kFmMinHz=87500000, kFmMaxHz=108000000;
 constexpr std::array<uint32_t,5> kSteps{{10000,50000,100000,200000,1000000}};
-enum class Page { receive, entry, menu, gain, audio, receiver, help, error };
-enum class Key { left, right, up, down, enter, escape, backspace, menu, frequency, mute, volume_up, volume_down, gain, step, reconnect, digit, point, help, quit };
+enum class Page { receive, dashboards, settings, entry, menu, gain, audio, receiver, help, error };
+enum class Key { dashboards, left, right, up, down, enter, escape, backspace, menu, frequency, mute, palette, volume_up, volume_down, gain, step, reconnect, digit, point, help, quit };
 enum class Connection { disconnected, connecting, ready, error };
 struct Snapshot {
   uint32_t requested_hz=96100000,applied_hz=0,requested_rate=2560000,applied_rate=0;
   uint32_t bandwidth_hz=180000, step_hz=100000;
   uint64_t generation=0,known_dropped_samples=0;
+  unsigned palette=0;
   int volume=30, gain_tenth_db=0; bool muted=false,gain_auto=true,audio_ready=false,simulated=false,live_spectrum=false;
   Connection connection=Connection::disconnected;
   Page page=Page::receive;
   std::string error, receiver_name="No receiver",audio_device="default",entry;
   std::vector<int> gains;
   std::array<uint8_t,256> spectrum{};
-  std::array<std::array<uint8_t,256>,36> waterfall{};
-  int waterfall_rows=0,menu_selection=0;
+  std::array<std::array<uint8_t,256>,kWaterfallRows> waterfall{};
+  int waterfall_rows=0,menu_selection=0,dashboard_selection=0;
 };
 class ControlModel {
  public:
@@ -63,6 +67,9 @@ class ControlModel {
       return;
     }
     if(key==Key::escape){s.page=Page::receive;s.error.clear();return;}
+    if(key==Key::dashboards){s.page=Page::dashboards;return;}
+    if(s.page==Page::dashboards&&key==Key::enter){s.page=Page::receive;return;}
+    if(key==Key::palette){s.palette=(s.palette+1)%orcsdr::waterfall_style::kPaletteCount;dirty_settings=true;return;}
     if(key==Key::mute){s.muted=!s.muted;dirty_settings=true;return;}
     if(key==Key::volume_up||key==Key::volume_down){s.volume=std::clamp(s.volume+(key==Key::volume_up?5:-5),0,100);dirty_settings=true;return;}
     if(key==Key::frequency|| (key==Key::enter&&s.page==Page::receive)) {s.page=Page::entry;s.entry.clear();s.error.clear();return;}

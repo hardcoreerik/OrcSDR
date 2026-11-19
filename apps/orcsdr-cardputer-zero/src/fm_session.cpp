@@ -10,10 +10,11 @@
 #include <exception>
 #include <stdexcept>
 #include <thread>
+#include <iostream>
 
 namespace orc::zero {
 namespace {
-constexpr std::uint32_t kFmSampleRate=300000;
+constexpr std::uint32_t kFmSampleRate=kDefaultSpanHz;
 constexpr std::size_t kComplexPerBlock=8192;
 std::uint64_t steady_ns(){
   return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
@@ -138,6 +139,7 @@ void FmSession::capture_worker(std::uint32_t device){
       const auto got=receiver.read_cu8(buf.data(),buf.size());
       if(!running_.load())break;
       orc::linux_sdr::IqMetadata m{};
+      // IQ metadata describes the tuner center; UI telemetry describes the selected station.
       m.frequency_hz=applied;m.sample_rate_sps=kFmSampleRate;
       m.receiver_generation=generation;m.first_sample_index=first_sample;
       m.monotonic_ns=steady_ns();
@@ -156,20 +158,32 @@ void FmSession::dsp_worker(){
   }
   orcnode_fm_dsp_t dsp{};
   orcnode_fm_dsp_init(&dsp,kFmSampleRate,75);
+      dsp.mix_fs4=false;
   orcnode_fft_t fft{};orcnode_fft_init(&fft);
   std::array<std::int16_t,2048> pcm{};
   orc::linux_sdr::IqBlock block;
-  std::uint64_t last_generation=0,display_ns=0;
+  std::uint64_t last_generation=0,display_ns=0,audio_retry_ns=steady_ns()+1000000000ULL;
+  if(!audio_ok)std::clog<<"FM audio: "<<sink.last_error()<<"; retrying\n";
   while(running_.load()||queue_.queued_blocks()!=0){
     if(!queue_.try_pop(block)){
       std::unique_lock<std::mutex> lock(wake_mutex_);
       wake_.wait_for(lock,std::chrono::milliseconds(25),[&]{return !running_.load()||queue_.queued_blocks()>0;});
       continue;
     }
+    const auto audio_now=steady_ns();
+    if(!sink.opened()&&audio_now>=audio_retry_ns){
+      audio_retry_ns=audio_now+1000000000ULL;
+      const bool restored=sink.open(audio_device_,null_audio_);
+      std::lock_guard<std::mutex> lock(state_mutex_);
+      state_.audio_ready=restored&&sink.audible();
+      state_.audio_error=restored?"":sink.last_error();
+      if(restored)std::clog<<"FM audio restored\n";
+    }
     const auto generation=stream_generation_.load();
     if(block.meta.receiver_generation!=generation)continue; // never play stale IQ
     if(block.meta.discontinuity||block.meta.receiver_generation!=last_generation){
       orcnode_fm_dsp_init(&dsp,kFmSampleRate,75);
+      dsp.mix_fs4=false;
       sink.discard();last_generation=generation;
     }
     const size_t frames=orcnode_fm_dsp_process(&dsp,block.cu8.data(),block.cu8.size(),pcm.data(),pcm.size());
@@ -177,6 +191,8 @@ void FmSession::dsp_worker(){
     if(frames&&sink.opened()&&!sink.write_mono(pcm.data(),frames,volume_.load(),muted_.load())){
       std::lock_guard<std::mutex> lock(state_mutex_);
       state_.audio_error=sink.last_error();state_.audio_ready=false;
+      std::clog<<"FM audio: "<<state_.audio_error<<"; retrying\n";
+      audio_retry_ns=steady_ns()+1000000000ULL;
       sink.close();
     }
     const auto now=steady_ns();
@@ -188,9 +204,9 @@ void FmSession::dsp_worker(){
       std::lock_guard<std::mutex> lock(state_mutex_);
       if(block.meta.receiver_generation!=stream_generation_.load())continue;
       state_.spectrum=row;state_.has_spectrum=true;
-      for(int i=35;i>0;--i)state_.waterfall[size_t(i)]=state_.waterfall[size_t(i-1)];
+      for(int i=kWaterfallRows-1;i>0;--i)state_.waterfall[size_t(i)]=state_.waterfall[size_t(i-1)];
       state_.waterfall[0]=row;
-      state_.waterfall_rows=std::min(36,state_.waterfall_rows+1);
+      state_.waterfall_rows=std::min(kWaterfallRows,state_.waterfall_rows+1);
       state_.known_queue_dropped_samples=queue_.dropped_samples();
       state_.audio_underruns=sink.underruns();state_.audio_frames=sink.frames_written();
     }

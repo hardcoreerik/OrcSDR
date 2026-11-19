@@ -1,4 +1,5 @@
 #include "airband.hpp"
+#include "cb_scanner.hpp"
 #include <algorithm>
 #include <cmath>
 #include <complex>
@@ -26,7 +27,7 @@ uint32_t step_frequency(uint32_t hz,int direction){
   return static_cast<uint32_t>(std::clamp<int64_t>(n,kMinHz,kMaxHz));
 }
 int32_t display_offset_hz(uint32_t selected,uint32_t center){return int32_t(int64_t(selected)-int64_t(center));}
-bool parse_frequency_mhz(const std::string& s,uint32_t& hz){
+bool parse_frequency_mhz(const std::string& s,uint32_t& hz,bool broadcast,bool shortwave,bool cb){
   if(s.size()<3||s.size()>11)return false;
   uint64_t mhz=0,frac=0,pad=100000;bool dot=false,has_digit=false;
   for(char c:s){
@@ -36,7 +37,7 @@ bool parse_frequency_mhz(const std::string& s,uint32_t& hz){
     else {if(!pad)return false;frac+=pad*uint64_t(c-'0');pad/=10;}
   }
   const uint64_t value=mhz*1000000ULL+frac;
-  if(!has_digit||value>UINT32_MAX||!valid_frequency(static_cast<uint32_t>(value)))return false;
+  if(!has_digit||value>UINT32_MAX||!(cb?(value>=26965000&&value<=27405000):shortwave?(value>=1800000&&value<=23875000):broadcast?(value>=530000&&value<=1700000&&value%10000==0):valid_frequency(static_cast<uint32_t>(value))))return false;
   hz=static_cast<uint32_t>(value);return true;
 }
 Controller::Controller(){
@@ -60,9 +61,9 @@ void Controller::reset_dsp(){
   dc_=hp_x_=hp_y_=lp_a_=lp_b_=0;level_pow_=0;pcm_size_=0;fft_delay_=0;
   reset_squelch();
 }
-bool Controller::activate(uint32_t selected){
-  if(!valid_frequency(selected))return false;
-  s_=Snapshot{};s_.selected_hz=selected;s_.connection=Connection::connecting;
+bool Controller::activate(uint32_t selected,bool broadcast,bool shortwave,bool cb){
+  if(!(cb?(selected>=26965000&&selected<=27405000):shortwave?(selected>=1800000&&selected<=23875000):broadcast?(selected>=530000&&selected<=1700000&&selected%10000==0):valid_frequency(selected)))return false;
+  s_=Snapshot{};s_.broadcast=broadcast;s_.shortwave=shortwave;s_.cb=cb;if(shortwave)s_.step_hz=1000;else if(broadcast)s_.step_hz=10000;s_.selected_hz=selected;s_.connection=Connection::connecting;
   s_.tune_pending=true;s_.requested_center_hz=requested_radio().rf_center_hz;
   applied_selected_hz_=0;have_continuity_=false;reset_dsp();return true;
 }
@@ -77,11 +78,13 @@ bool Controller::restore_settings(const Settings& v){
   s_.user_muted=v.user_muted;return true;
 }
 Request Controller::requested_radio()const{
+  if(s_.shortwave||s_.cb)return {s_.selected_hz+5000u,960000u,true};
+  if(s_.broadcast)return {s_.selected_hz+125000u,960000u,true};
   const uint32_t shift=(s_.selected_hz>=136800000)?125000u:0u;
   return {shift?s_.selected_hz-125000u:s_.selected_hz+125000u,kRatePreferred,true};
 }
 bool Controller::tune_direct(uint32_t hz){
-  if(!valid_frequency(hz)||s_.connection==Connection::off)return false;
+  if(!(s_.cb?(hz>=26965000&&hz<=27405000):s_.shortwave?(hz>=1800000&&hz<=23875000):s_.broadcast?(hz>=530000&&hz<=1700000&&hz%10000==0):valid_frequency(hz))||s_.connection==Connection::off)return false;
   if(hz==s_.selected_hz&&!s_.tune_pending)return true;
   s_.selected_hz=hz;s_.requested_center_hz=requested_radio().rf_center_hz;
   s_.tune_pending=true;s_.has_spectrum=false;s_.waterfall_rows=0;s_.error[0]=0;
@@ -89,8 +92,8 @@ bool Controller::tune_direct(uint32_t hz){
 }
 bool Controller::action(Action a,char digit){
   switch(a){
-    case Action::tune_up:return tune_direct(step_frequency(s_.selected_hz,1));
-    case Action::tune_down:return tune_direct(step_frequency(s_.selected_hz,-1));
+    case Action::tune_up:return tune_direct(s_.shortwave?std::min(23875000u,s_.selected_hz+1000):s_.broadcast?std::min(1700000u,s_.selected_hz+10000):step_frequency(s_.selected_hz,1));
+    case Action::tune_down:return tune_direct(s_.shortwave?std::max(1800000u,s_.selected_hz-1000):s_.broadcast?std::max(530000u,s_.selected_hz-10000):step_frequency(s_.selected_hz,-1));
     case Action::guard:return tune_direct(kGuardHz);
     case Action::frequency_entry:s_.entry_active=true;s_.entry.fill(0);return true;
     case Action::entry_digit:{
@@ -114,7 +117,7 @@ bool Controller::action(Action a,char digit){
     case Action::entry_commit:{
       if(!s_.entry_active)return false;
       uint32_t hz=0;
-      if(!parse_frequency_mhz(s_.entry.data(),hz)){safe_error(s_.error,"INVALID AIRBAND FREQUENCY");return false;}
+      if(!parse_frequency_mhz(s_.entry.data(),hz,s_.broadcast,s_.shortwave,s_.cb)){safe_error(s_.error,"INVALID CHANNEL FREQUENCY");return false;}
       s_.entry_active=false;s_.entry.fill(0);return tune_direct(hz);
     }
     case Action::volume_up:s_.volume=std::min(100,s_.volume+5);return true;
@@ -129,7 +132,7 @@ bool Controller::action(Action a,char digit){
   }return false;
 }
 void Controller::radio_applied(uint32_t center,uint32_t rate,uint64_t generation){
-  if(center!=s_.requested_center_hz ||(rate!=kRatePreferred&&rate!=kRateFallback)||!generation){
+  if(center!=s_.requested_center_hz ||((s_.broadcast||s_.shortwave||s_.cb)?rate!=960000u:(rate!=kRatePreferred&&rate!=kRateFallback))||!generation){
     radio_failed("RADIO CENTER/RATE READBACK MISMATCH");return;
   }
   s_.applied_center_hz=center;applied_selected_hz_=s_.selected_hz;s_.input_rate=rate;s_.generation=generation;

@@ -81,6 +81,28 @@ void RtlReceiver::configure(std::uint32_t frequency,std::uint32_t rate) {
   (void)frequency;(void)rate;unsupported();
 #endif
 }
+void RtlReceiver::configure_direct_q(std::uint32_t frequency,std::uint32_t rate) {
+#ifdef ORC_HAVE_RTLSDR
+  if(!device_)throw std::logic_error("receiver not open");
+  if(frequency<500000||frequency>24000000)
+    throw std::invalid_argument("Direct Q center must be 0.5 to 24 MHz");
+  auto* dev=static_cast<rtlsdr_dev_t*>(device_);
+  const int rc=rtlsdr_set_direct_sampling(dev,2);
+  if(rc)fail("enable direct Q sampling",rc);
+  try {
+    if(rtlsdr_get_direct_sampling(dev)!=2)throw std::runtime_error("Direct Q readback mismatch");
+    const int rate_rc=rtlsdr_set_sample_rate(dev,rate);
+    if(rate_rc)fail("set direct Q sample rate",rate_rc);
+    if(rtlsdr_get_sample_rate(dev)!=rate)throw std::runtime_error("Direct Q sample rate readback mismatch");
+    retune(frequency);
+  } catch(...) {
+    rtlsdr_set_direct_sampling(dev,0);
+    throw;
+  }
+#else
+  (void)frequency;(void)rate;unsupported();
+#endif
+}
 std::size_t RtlReceiver::read_cu8(std::uint8_t* data,std::size_t bytes) {
 #ifdef ORC_HAVE_RTLSDR
   if(!device_)throw std::logic_error("receiver not open");

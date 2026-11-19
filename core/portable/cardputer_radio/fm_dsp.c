@@ -30,9 +30,9 @@ static float phase_angle(float y, float x)
     if (x < 0) a = FM_PI - a;
     return y < 0 ? -a : a;
 }
-static void init_lowpass(orcnode_fm_biquad_t *b, float q, uint32_t rate)
+static void init_lowpass(orcnode_fm_biquad_t *b, float q, uint32_t rate, float cutoff)
 {
-    const float w = 2 * FM_PI * 15000.0f / rate;
+    const float w = 2 * FM_PI * cutoff / rate;
     const float c = cosf(w), a = sinf(w) / (2 * q), norm = 1 / (1 + a);
     b->b0 = (1 - c) * 0.5f * norm;
     b->b1 = (1 - c) * norm;
@@ -52,7 +52,9 @@ int orcnode_fm_dsp_init(orcnode_fm_dsp_t *d, uint32_t input_sps, uint32_t tau_us
     if (!d || (input_sps != 300000u && input_sps != 2560000u && input_sps != 3200000u) ||
         (tau_us != 50 && tau_us != 75)) return -1;
     memset(d, 0, sizeof(*d));
+    d->deviation_hz = 75000.0f;
     d->input_sps = input_sps;
+    d->mix_fs4 = input_sps != 300000u;
     d->channel_sps = input_sps == 300000u ? 300000u : ORCNODE_FM_CHANNEL_SPS;
     d->decimation = input_sps / d->channel_sps;
     d->rf_scale = 1.0f / d->decimation;
@@ -60,10 +62,20 @@ int orcnode_fm_dsp_init(orcnode_fm_dsp_t *d, uint32_t input_sps, uint32_t tau_us
     /* OrcSDR architecture: complex one-pole channel filter (260 kHz
      * two-sided width), followed by boxcar averaging before decimation. */
     d->rf_alpha = 1 - expf(-FM_PI * 260000.0f / input_sps);
-    init_lowpass(&d->lowpass[0], 0.5411961f, d->channel_sps);
-    init_lowpass(&d->lowpass[1], 1.3065630f, d->channel_sps);
+    init_lowpass(&d->lowpass[0], 0.5411961f, d->channel_sps, 15000.0f);
+    init_lowpass(&d->lowpass[1], 1.3065630f, d->channel_sps, 15000.0f);
     return 0;
 }
+int orcnode_nfm_dsp_init(orcnode_fm_dsp_t *d)
+{
+    if (orcnode_fm_dsp_init(d, 300000u, 75u) != 0) return -1;
+    d->deviation_hz = 5000.0f;
+    d->rf_alpha = 1 - expf(-FM_PI * 16000.0f / d->input_sps);
+    init_lowpass(&d->lowpass[0], 0.5411961f, d->channel_sps, 3500.0f);
+    init_lowpass(&d->lowpass[1], 1.3065630f, d->channel_sps, 3500.0f);
+    return 0;
+}
+
 size_t FM_HOT orcnode_fm_dsp_process(orcnode_fm_dsp_t *d, const uint8_t *iq,
                             size_t bytes, int16_t *mono, size_t capacity)
 {
@@ -73,7 +85,7 @@ size_t FM_HOT orcnode_fm_dsp_process(orcnode_fm_dsp_t *d, const uint8_t *iq,
         float ii = iq[offset] - 127.5f, qq = iq[offset + 1] - 127.5f;
         /* Mix down +Fs/4 using sign changes/swaps, avoiding per-sample trig. */
         const float original_i = ii;
-        switch (d->input_sps==300000u?0:d->mix_phase) {
+        switch (d->mix_fs4 ? d->mix_phase : 0) {
         case 1: ii = qq; qq = -original_i; break;
         case 2: ii = -ii; qq = -qq; break;
         case 3: ii = -qq; qq = original_i; break;
@@ -99,7 +111,7 @@ size_t FM_HOT orcnode_fm_dsp_process(orcnode_fm_dsp_t *d, const uint8_t *iq,
         if (d->have_previous)
             fm = phase_angle(d->previous_i * q - d->previous_q * i,
                         d->previous_i * i + d->previous_q * q) *
-                 (d->channel_sps / (2 * FM_PI * 75000.0f));
+                 (d->channel_sps / (2 * FM_PI * d->deviation_hz));
         d->previous_i = i; d->previous_q = q; d->have_previous = true;
         float audio = lowpass(&d->lowpass[1], lowpass(&d->lowpass[0], fm));
         d->audio_phase += ORCNODE_FM_AUDIO_SPS;

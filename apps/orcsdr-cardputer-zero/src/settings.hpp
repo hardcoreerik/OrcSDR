@@ -5,7 +5,7 @@
 namespace orc::zero {
 struct UserSettings {
   std::uint32_t frequency_hz=96100000;
-  unsigned volume=30;
+  unsigned volume=30, palette=0;
   unsigned step_index=2;
   bool mute=false,gain_auto=true;
   int gain_tenth_db=0;

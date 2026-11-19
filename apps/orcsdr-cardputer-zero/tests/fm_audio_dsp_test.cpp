@@ -9,23 +9,24 @@
 
 namespace {
 constexpr double kPi=3.14159265358979323846;
-constexpr unsigned kIqRate=300000, kAudioRate=48000;
-std::vector<uint8_t> synthetic_wfm(unsigned seconds) {
+constexpr unsigned kAudioRate=48000;
+std::vector<uint8_t> synthetic_wfm(unsigned seconds,unsigned kIqRate,bool centered,bool narrow=false) {
   std::vector<uint8_t> iq(static_cast<size_t>(kIqRate)*seconds*2);
   double rf_phase=0.0;
   for(size_t i=0;i<iq.size()/2;++i) {
     // 1 kHz monophonic audio, 35 kHz peak FM deviation, station centered.
     const double audio=std::sin(2*kPi*1000.0*i/kIqRate);
-    rf_phase+=2*kPi*35000.0*audio/kIqRate;
+    rf_phase+=2*kPi*((narrow?2500.0:35000.0)*audio+(centered||kIqRate==300000?0:kIqRate/4))/kIqRate;
     if(rf_phase>2*kPi)rf_phase-=2*kPi;
     iq[2*i]=static_cast<uint8_t>(std::clamp(std::lround(127.5+80*std::cos(rf_phase)),0l,255l));
     iq[2*i+1]=static_cast<uint8_t>(std::clamp(std::lround(127.5+80*std::sin(rf_phase)),0l,255l));
   }
   return iq;
 }
-std::vector<int16_t> decode(const std::vector<uint8_t>& iq,size_t chunk) {
+std::vector<int16_t> decode(const std::vector<uint8_t>& iq,size_t chunk,unsigned kIqRate,bool centered,bool narrow=false) {
   orcnode_fm_dsp_t state{};
-  if(orcnode_fm_dsp_init(&state,kIqRate,75)!=0)throw std::runtime_error("FM init");
+  if((narrow?orcnode_nfm_dsp_init(&state):orcnode_fm_dsp_init(&state,kIqRate,75))!=0)throw std::runtime_error("FM init");
+  if(centered)state.mix_fs4=false;
   std::vector<int16_t> result;
   std::vector<int16_t> temporary(2048);
   for(size_t at=0;at<iq.size();) {
@@ -40,8 +41,10 @@ std::vector<int16_t> decode(const std::vector<uint8_t>& iq,size_t chunk) {
 }
 }
 int main() {
-  const auto iq=synthetic_wfm(1);
-  const auto a=decode(iq,4096),b=decode(iq,16384);
+ for(bool narrow:{false,true})for(unsigned rate:{300000u,2560000u})for(bool centered:{false,true}){
+  if(narrow&&(rate!=300000u||!centered))continue;
+  const auto iq=synthetic_wfm(1,rate,centered,narrow);
+  const auto a=decode(iq,4096,rate,centered,narrow),b=decode(iq,16384,rate,centered,narrow);
   if(a.size()<47995||a.size()>48005||a!=b) {
     std::cerr<<"48k output and chunk independence failed: "<<a.size()<<" / "<<b.size()<<"\n";
     return 1;
@@ -58,7 +61,8 @@ int main() {
     std::cerr<<"FM tone recovery failed: hz="<<hz<<" rms="<<rms<<"\n";
     return 2;
   }
-  std::cout<<"original FM DSP recovered 1 kHz test: observed_hz="<<hz
+  std::cout<<"rate="<<rate<<" narrow="<<narrow<<" original FM DSP recovered 1 kHz test: observed_hz="<<hz
            <<" rms_pcm="<<rms<<" samples="<<a.size()
            <<" chunk_4096_vs_16384=identical\n";
+ }
 }

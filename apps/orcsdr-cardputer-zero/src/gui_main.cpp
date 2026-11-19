@@ -1,4 +1,5 @@
 #include "compact_renderer.hpp"
+#include "dashboard_session.hpp"
 #include "fm_session.hpp"
 #include "settings.hpp"
 #include <algorithm>
@@ -9,6 +10,7 @@
 #include <cstdint>
 #include <cstring>
 #include <iostream>
+#include <memory>
 #include <stdexcept>
 #include <string>
 #include <thread>
@@ -26,7 +28,9 @@
 #endif
 
 namespace {
-volatile std::sig_atomic_t g_quit_signal=0;
+volatile std::sig_atomic_t g_quit_signal=0,g_palette_signal=0,g_dashboard_signal=0;
+extern "C" void request_palette(int) { g_palette_signal=1; }
+extern "C" void request_dashboard(int) { g_dashboard_signal=1; }
 extern "C" void request_signal_exit(int) { g_quit_signal=1; }
 using orc::zero::ControlModel;
 using orc::zero::Key;
@@ -35,7 +39,7 @@ using orc::zero::FmSession;
 using orc::zero::FmTelemetry;
 using orc::zero::CompactRenderer;
 struct Options { bool demo=false,null_audio=false;uint32_t device=0,freq=96100000;bool freq_explicit=false,audio_explicit=false;
- std::string display="sdl",audio="default",screenshot,view="main",input;unsigned frames=0; };
+ std::string display="sdl",audio="default",screenshot,view="main",input;unsigned frames=0,dashboard=0; };
 unsigned parse_unsigned(const std::string& s){size_t used=0;auto v=std::stoul(s,&used);if(used!=s.size()||v>UINT32_MAX)throw std::invalid_argument("bad integer");return static_cast<unsigned>(v);}
 Options parse(int argc,char** argv){
  Options a;
@@ -44,8 +48,9 @@ Options parse(int argc,char** argv){
   if(x=="--help") {std::cout<<"OrcSDR Cardputer Zero UI\n"
    <<"  --demo [--screenshot FILE] [--view main|weak|disconnected|entry|menu|gain|audio|muted|noaudio|help|long]\n"
    <<"  --display sdl|fb --device N --freq HZ --audio DEVICE [--input /dev/input/eventN]\n"
+   <<"  --dashboard fm|adsb|acars|airband|rf-lab|wifi|weather|marine|pocsag|sstv|am|dead-air|shortwave|cb|ft8|p25 (live fbdev)\n"
    <<"  --null-audio (silent diagnostic) --frames N (finite simulator test)\n"
-   <<"Keys: Z/C tune, S/D volume, F entry, M mute, G gain, T step, Tab menu, Esc cancel, Q exit\n";std::exit(0);}
+   <<"Keys: Z/C tune, S/D volume, F entry, M mute, G gain, T step, P palette, Space dashboards, Tab menu, Esc cancel, Q exit\n";std::exit(0);}
   if(++i>=argc)throw std::invalid_argument("missing option value for "+x);
   const std::string y=argv[i];
   if(x=="--device")a.device=parse_unsigned(y);
@@ -53,25 +58,45 @@ Options parse(int argc,char** argv){
   else if(x=="--audio"){a.audio=y;a.audio_explicit=true;}
   else if(x=="--display")a.display=y;
   else if(x=="--screenshot")a.screenshot=y;
+  else if(x=="--dashboard"){
+    if(y=="adsb")a.dashboard=1;
+    else if(y=="acars")a.dashboard=2;
+    else if(y=="airband")a.dashboard=3;
+    else if(y=="rf-lab")a.dashboard=5;
+    else if(y=="wifi")a.dashboard=6;
+    else if(y=="weather")a.dashboard=7;
+    else if(y=="marine")a.dashboard=8;
+    else if(y=="pocsag")a.dashboard=9;
+    else if(y=="sstv")a.dashboard=10;
+    else if(y=="am")a.dashboard=11;
+    else if(y=="dead-air")a.dashboard=12;
+    else if(y=="shortwave")a.dashboard=13;
+    else if(y=="cb")a.dashboard=14;
+    else if(y=="ft8")a.dashboard=15;
+    else if(y=="p25")a.dashboard=16;
+    else if(y!="fm")throw std::invalid_argument("Unknown dashboard: "+y);
+  }
   else if(x=="--view")a.view=y;
   else if(x=="--input")a.input=y;
   else if(x=="--frames")a.frames=parse_unsigned(y);
   else throw std::invalid_argument("unknown option "+x);
  }
  if(a.freq<orc::zero::kFmMinHz||a.freq>orc::zero::kFmMaxHz)throw std::invalid_argument("WFM supports 87.5-108 MHz");
+ if(a.dashboard&&(a.demo||a.display!="fb"||(!a.screenshot.empty()&&!a.frames)))
+   throw std::invalid_argument("--dashboard requires live fbdev; use --frames for a screenshot");
  if(a.display!="sdl"&&a.display!="fb")throw std::invalid_argument("display must be sdl or fb");
  return a;
 }
 void demo_state(ControlModel& m,const std::string& view){
  auto& s=m.s;s.simulated=true;s.connection=Connection::ready;
- s.applied_hz=101700000;s.requested_hz=s.applied_hz;s.applied_rate=300000;
+ s.applied_hz=101700000;s.requested_hz=s.applied_hz;s.applied_rate=orc::zero::kDefaultSpanHz;
  s.audio_ready=true;s.receiver_name="DEMO RTL-SDR";
  for(int i=0;i<256;++i){const double x=(i-150)/30.;
   const double p=210*std::exp(-x*x*2.3)+15+13*std::sin(i*.24);
   s.spectrum[size_t(i)]=uint8_t(std::clamp(p,0.,255.));}
- for(int j=0;j<36;++j)for(int i=0;i<256;++i)
+ for(int j=0;j<orc::zero::kWaterfallRows;++j)for(int i=0;i<256;++i)
   s.waterfall[size_t(j)][size_t(i)]=uint8_t(std::clamp(int(s.spectrum[size_t(i)])+(j*31+i*3)%25-12,0,255));
- s.waterfall_rows=36;
+ s.waterfall_rows=orc::zero::kWaterfallRows;
  if(view=="weak"){
   s.spectrum.fill(4);for(auto& row:s.waterfall)row.fill(4);
  }else if(view=="disconnected"){
@@ -116,6 +141,7 @@ void relay_controls(ControlModel& m,FmSession& session,const FmTelemetry& observ
 void action(ControlModel& m,FmSession* session,Key key,char digit=0){
  const auto before=m.s.page;
  m.handle(key,digit);
+ if(key==Key::palette)std::cout<<"Palette: "<<orcsdr::waterfall_style::palette_name(m.s.palette)<<std::endl;
  if(session&&key==Key::reconnect&&before!=orc::zero::Page::entry){
   const auto desired=m.s.requested_hz;
   // Reconnect is deliberately explicit. Do not spin hot on unplugged hardware.
@@ -138,6 +164,8 @@ bool translate_sdl(SDL_Keycode code,Key& key,char& digit){
   case SDLK_TAB:key=Key::menu;break;
   case SDLK_f:key=Key::frequency;break;
   case SDLK_m:key=Key::mute;break;
+  case SDLK_p:key=Key::palette;break;
+  case SDLK_SPACE:key=Key::dashboards;break;
   case SDLK_s:case SDLK_MINUS:key=Key::volume_down;break;
   case SDLK_d:case SDLK_EQUALS:key=Key::volume_up;break;
   case SDLK_g:key=Key::gain;break;case SDLK_t:key=Key::step;break;
@@ -167,6 +195,8 @@ int run_sdl(Options a,ControlModel& model,FmSession* session){
    if(e.type==SDL_KEYDOWN){Key key{};char digit=0;
      if(translate_sdl(e.key.keysym.sym,key,digit))action(model,session,key,digit);}
   }
+  if(g_palette_signal){g_palette_signal=0;action(model,session,Key::palette);}
+  if(g_dashboard_signal){g_dashboard_signal=0;action(model,session,Key::dashboards);}
   if(session){const auto s=session->snapshot();sync_model(model,s);relay_controls(model,*session,s);}
   frame.render(model.s);
   SDL_UpdateTexture(tex,nullptr,frame.pixels.data(),320*2);
@@ -190,7 +220,7 @@ Key translate_evdev(unsigned code,char& digit){
   case KEY_ENTER:return Key::enter;case KEY_ESC:return Key::escape;
   case KEY_BACKSPACE:return Key::backspace;case KEY_DOT:return Key::point;
   case KEY_TAB:return Key::menu;case KEY_F:return Key::frequency;
-  case KEY_M:return Key::mute;case KEY_S:case KEY_MINUS:return Key::volume_down;
+  case KEY_SPACE:return Key::dashboards;case KEY_P:return Key::palette;case KEY_M:return Key::mute;case KEY_S:case KEY_MINUS:return Key::volume_down;
   case KEY_D:case KEY_EQUAL:return Key::volume_up;case KEY_G:return Key::gain;
   case KEY_T:return Key::step;case KEY_R:return Key::reconnect;
   case KEY_H:return Key::help;case KEY_Q:return Key::quit;
@@ -224,7 +254,53 @@ int run_fb(const Options& a,ControlModel& model,FmSession* session){
  }
  const int keys=choose_input(a.input);
  if(keys<0)std::cerr<<"No matching evdev keyboard. Use --input /dev/input/eventN and check device permissions.\n";
- CompactRenderer renderer;
+ CompactRenderer renderer, dashboard_error;
+ auto dashboards=std::make_unique<orc::zero::DashboardSession>();
+ auto select_dashboard=[&](unsigned selection){
+   if(!session)return;
+   if(selection!=dashboards->mode()){
+     if(dashboards->mode())dashboards->stop();else session->stop();
+     if(selection)dashboards->start(selection,a.device,a.audio,a.null_audio,model.s.requested_hz);
+     else{
+       session->start(a.device,model.s.requested_hz,a.audio,a.null_audio);
+       session->set_volume(unsigned(model.s.volume));
+       session->set_mute(model.s.muted);
+     }
+   }
+   model.s.page=orc::zero::Page::receive;
+ };
+ auto input=[&](Key key,char digit=0){
+   if(model.s.page==orc::zero::Page::dashboards){
+     auto& selection=model.s.dashboard_selection;
+     if(key==Key::up||key==Key::left)selection=(selection+16)%17;
+     else if(key==Key::down||key==Key::right)selection=(selection+1)%17;
+     else if(key==Key::enter){
+       if(selection==4)model.s.page=orc::zero::Page::settings;
+       else{select_dashboard(unsigned(selection));model.s.page=orc::zero::Page::receive;}
+     }
+     else if(key==Key::escape||key==Key::dashboards)model.s.page=orc::zero::Page::receive;
+     else if(key==Key::quit)model.exit_requested=true;
+     return;
+   }
+   if(model.s.page==orc::zero::Page::settings){
+     if(key==Key::escape){model.s.page=orc::zero::Page::receive;return;}
+     if(key!=Key::dashboards){
+       if(key==Key::volume_up||key==Key::volume_down||key==Key::mute||key==Key::palette||key==Key::step||key==Key::quit)
+         action(model,dashboards->mode()?nullptr:session,key,digit);
+       return;
+     }
+   }
+   if(key==Key::dashboards){
+     model.s.dashboard_selection=int(dashboards->mode());
+     model.s.page=orc::zero::Page::dashboards;
+   }else if(dashboards->mode()&&key!=Key::quit&&key!=Key::palette){
+     if(!dashboards->input(key,digit)&&key==Key::escape){
+       model.s.dashboard_selection=int(dashboards->mode());
+       model.s.page=orc::zero::Page::dashboards;
+     }
+   }else action(model,dashboards->mode()?nullptr:session,key,digit);
+ };
+ if(a.dashboard)select_dashboard(a.dashboard);
  unsigned ticks=0;
  while(!model.exit_requested&&!g_quit_signal){
   if(keys>=0){pollfd pfd{keys,POLLIN,0};if(poll(&pfd,1,0)>0&&(pfd.revents&POLLIN)){
@@ -235,32 +311,41 @@ int run_fb(const Options& a,ControlModel& model,FmSession* session){
      const unsigned c=event.code;
      if(c!=KEY_LEFT&&c!=KEY_Z&&c!=KEY_RIGHT&&c!=KEY_C&&c!=KEY_UP&&c!=KEY_DOWN&&
       c!=KEY_ENTER&&c!=KEY_ESC&&c!=KEY_BACKSPACE&&c!=KEY_DOT&&c!=KEY_TAB&&c!=KEY_F&&
-      c!=KEY_M&&c!=KEY_S&&c!=KEY_MINUS&&c!=KEY_D&&c!=KEY_EQUAL&&c!=KEY_G&&c!=KEY_T&&
+      c!=KEY_SPACE&&c!=KEY_P&&c!=KEY_M&&c!=KEY_S&&c!=KEY_MINUS&&c!=KEY_D&&c!=KEY_EQUAL&&c!=KEY_G&&c!=KEY_T&&
       c!=KEY_R&&c!=KEY_H&&c!=KEY_Q&&!(c>=KEY_1&&c<=KEY_9)&&c!=KEY_0)continue;
-     key=translate_evdev(c,digit);action(model,session,key,digit);
+     key=translate_evdev(c,digit);input(key,digit);
     }
    }}
-  if(session){const auto s=session->snapshot();sync_model(model,s);relay_controls(model,*session,s);}
-  renderer.render(model.s);
+  if(g_palette_signal){g_palette_signal=0;input(Key::palette);}
+  if(g_dashboard_signal){g_dashboard_signal=0;input(Key::dashboards);}
+  if(session&&!dashboards->mode()){const auto s=session->snapshot();sync_model(model,s);relay_controls(model,*session,s);}
+  const bool show_dashboard=dashboards->mode()&&model.s.page==orc::zero::Page::receive;
+  if(!show_dashboard)renderer.render(model.s);
+  const auto& pixels=show_dashboard?dashboards->render(model.s.palette,dashboard_error):renderer.pixels;
   for(int y=0;y<170;++y){
    const auto offset=(size_t(y)+v.yoffset)*f.line_length+size_t(v.xoffset)*(v.bits_per_pixel/8);
    if(offset+320*(v.bits_per_pixel/8)>bytes)continue;
    auto* row=mapped+offset;
    for(int x=0;x<320;++x){
-    const auto color=renderer.pixels[size_t(y)*320+x];
+    const auto color=pixels[size_t(y)*320+x];
     const unsigned r=((color>>11)&31u)*255u/31u;
     const unsigned g=((color>>5)&63u)*255u/63u;
     const unsigned b=(color&31u)*255u/31u;
     const auto quant=[](unsigned value,unsigned bits){return value*((1u<<bits)-1u)/255u;};
     const std::uint32_t encoded=(quant(r,v.red.length)<<v.red.offset)|
       (quant(g,v.green.length)<<v.green.offset)|(quant(b,v.blue.length)<<v.blue.offset);
-    std::memcpy(row+x*(v.bits_per_pixel/8),&encoded,v.bits_per_pixel/8);
+    auto* target=row+x*(v.bits_per_pixel/8);
+    if(std::memcmp(target,&encoded,v.bits_per_pixel/8)!=0)
+      std::memcpy(target,&encoded,v.bits_per_pixel/8);
    }
   }
   if(++ticks==a.frames&&a.frames)break;
   std::this_thread::sleep_for(std::chrono::milliseconds(80));
  }
- if(!a.screenshot.empty())renderer.save_ppm(a.screenshot);
+ if(!a.screenshot.empty()){
+   if(dashboards->mode())renderer.pixels=dashboards->render(model.s.palette,dashboard_error);
+   if(!renderer.save_ppm(a.screenshot))throw std::runtime_error("Could not write PPM screenshot");
+ }
  if(keys>=0) ::close(keys);
  munmap(mapped,bytes);
  ::close(fd);
@@ -272,16 +357,25 @@ int main(int argc,char**argv){
  try{
   std::signal(SIGINT,request_signal_exit);
   std::signal(SIGTERM,request_signal_exit);
+  #ifdef SIGUSR1
+  std::signal(SIGUSR1,request_palette);std::signal(SIGUSR2,request_dashboard);
+#endif
   Options a=parse(argc,argv);ControlModel model;
   orc::zero::UserSettings saved{};
   if(!a.demo&&orc::zero::load_settings(orc::zero::settings_path(),saved)){
     if(!a.freq_explicit)a.freq=saved.frequency_hz;
     if(!a.audio_explicit)a.audio=saved.audio_device;
   }
+  model.s.palette=a.demo?0:saved.palette;
   model.restore(a.freq,a.demo?30:int(saved.volume),a.demo?false:saved.mute,a.demo?2:int(saved.step_index));
   FmSession session;FmSession* owner=nullptr;
   if(a.demo)demo_state(model,a.view);
-  else{session.start(a.device,a.freq,a.audio,a.null_audio);session.set_volume(unsigned(model.s.volume));session.set_mute(model.s.muted);owner=&session;}
+  else{
+    if(!a.dashboard)session.start(a.device,a.freq,a.audio,a.null_audio);
+    session.set_volume(unsigned(model.s.volume));
+    session.set_mute(model.s.muted);
+    owner=&session;
+  }
   if(!a.screenshot.empty()&&a.frames==0){
    CompactRenderer r;r.render(model.s);
    if(!r.save_ppm(a.screenshot))throw std::runtime_error("Could not write PPM screenshot");
@@ -304,6 +398,7 @@ int main(int argc,char**argv){
   if(!a.demo){
     orc::zero::UserSettings settings{};
     settings.frequency_hz=(model.s.applied_hz>=orc::zero::kFmMinHz&&model.s.applied_hz<=orc::zero::kFmMaxHz)?model.s.applied_hz:a.freq;
+    settings.palette=model.s.palette;
     settings.volume=unsigned(model.s.volume);settings.mute=model.s.muted;
     settings.step_index=unsigned(model.step_index);
     settings.audio_device=a.audio;

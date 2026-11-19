@@ -1,0 +1,45 @@
+#!/usr/bin/python3 -I
+"""Restricted system-clock control for the Cardputer UI and SSH."""
+import datetime, os, subprocess, sys
+
+def parse_utc(text):
+    if len(text)!=14 or not text.isascii() or not text.isdigit():
+        raise ValueError("Use YYYYMMDDHHMMSS in UTC")
+    value=datetime.datetime.strptime(text,"%Y%m%d%H%M%S")
+    if not 2024<=value.year<=2099: raise ValueError("Year must be 2024 to 2099")
+    return value
+
+def run(*args):
+    return subprocess.run(args,check=True,text=True,capture_output=True,timeout=8,
+        env={"PATH":"/usr/sbin:/usr/bin","TZ":"UTC","LC_ALL":"C"}).stdout
+
+def main(args):
+    if args==["--status"]:
+        print(run("/usr/bin/timedatectl","show","-p","NTP","-p","NTPSynchronized"),end="")
+        try: print(run("/usr/bin/timedatectl","show-timesync","-p","ServerName"),end="")
+        except subprocess.SubprocessError: print("ServerName=")
+        return 0
+    if args==["--validate"]: raise ValueError("Missing UTC value")
+    if len(args)==2 and args[0]=="--validate":
+        print(parse_utc(args[1]).isoformat()+"Z");return 0
+    if args==["--sync"]:
+        if os.geteuid()!=0:raise PermissionError("Clock control requires installed sudo rule")
+        run("/usr/bin/timedatectl","set-ntp","true")
+        run("/usr/bin/systemctl","restart","systemd-timesyncd.service")
+        print("SYNC REQUESTED");return 0
+    if len(args)==2 and args[0]=="--set":
+        value=parse_utc(args[1])
+        if os.geteuid()!=0:raise PermissionError("Clock control requires installed sudo rule")
+        enabled="NTP=yes" in run("/usr/bin/timedatectl","show","-p","NTP")
+        run("/usr/bin/timedatectl","set-ntp","false")
+        try:run("/usr/bin/timedatectl","set-time",value.strftime("%Y-%m-%d %H:%M:%S UTC"))
+        except Exception:
+            if enabled:run("/usr/bin/timedatectl","set-ntp","true")
+            raise
+        print("MANUAL UTC SET - NTP OFF");return 0
+    raise ValueError("Use --status, --sync, --set YYYYMMDDHHMMSS, or --validate YYYYMMDDHHMMSS")
+
+if __name__=="__main__":
+    try:sys.exit(main(sys.argv[1:]))
+    except (ValueError,PermissionError,subprocess.SubprocessError,OSError) as error:
+        print(str(error),file=sys.stderr);sys.exit(1)

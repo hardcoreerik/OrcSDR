@@ -1,5 +1,7 @@
 #pragma once
 #include "control_model.hpp"
+#include "orc_badge.hpp"
+#include "orc_mascot.hpp"
 #include "waterfall_style.hpp"
 #include <algorithm>
 #include <array>
@@ -14,12 +16,15 @@ namespace orc::zero {
 struct PixelRect { int x,y,w,h; };
 struct CompactRenderer {
   static constexpr int width=320,height=170;
-  static constexpr PixelRect header{0,0,320,16},frequency{0,16,320,38},status{0,54,320,18},
-    spectrum{2,72,316,39},waterfall{2,111,316,41},footer{0,152,320,18};
+  static constexpr PixelRect header{0,0,320,10},frequency{0,10,320,20},status{0,30,320,10},
+    spectrum{0,40,320,48},waterfall{0,88,320,72},footer{0,160,320,10};
   static constexpr uint16_t bg=0x0000,panel=0x0841,cyan=0x2e7f,green=0x6fe8,
     yellow=0xff24,muted=0x8c71,grid=0x2945,white=0xffff,red=0xf800;
   std::array<uint16_t,width*height> pixels{};
-  void fill(uint16_t color){pixels.fill(color);}
+  unsigned full_clears=0;
+  bool initialized=false;
+  Page previous_page=Page::receive;
+  void fill(uint16_t color){pixels.fill(color);++full_clears;}
   void point(int x,int y,uint16_t color){if(x>=0&&x<width&&y>=0&&y<height)pixels[size_t(y)*width+x]=color;}
   void rect(int x,int y,int w,int h,uint16_t c){if(w<=0||h<=0)return;for(int yy=std::max(0,y);yy<std::min(height,y+h);++yy)for(int xx=std::max(0,x);xx<std::min(width,x+w);++xx)point(xx,yy,c);}
   void border(int x,int y,int w,int h,uint16_t c){rect(x,y,w,1,c);rect(x,y+h-1,w,1,c);rect(x,y,1,h,c);rect(x+w-1,y,1,h,c);}
@@ -59,57 +64,93 @@ struct CompactRenderer {
     const int maxchars=limit<0?int(s.size()):std::min<int>(limit,s.size());
     for(int n=0;n<maxchars;++n){auto rows=glyph(char(std::toupper(static_cast<unsigned char>(s[n]))));for(int ry=0;ry<7;++ry)for(int rx=0;rx<5;++rx)if(rows[ry]&(1<<(4-rx)))rect(x+n*6*scale+rx*scale,y+ry*scale,scale,scale,color);}
   }
+  void badge(int x,int y,int size){
+    const auto* icon=size==28?kOrcMascot28:size==11?kOrcMascot11:kOrcMascot21;
+    const int side=size==28?28:size==11?11:21;
+    for(int yy=0;yy<side;++yy)for(int xx=0;xx<side;++xx)point(x+xx,y+yy,icon[yy*side+xx]);
+  }
   void centered(int y,const std::string& s,uint16_t c=white,int scale=1){text((width-int(s.size())*6*scale)/2,y,s,c,scale);}
   void pill(int x,int y,int w,const std::string& s,bool selected){rect(x,y,w,15,selected?0x1264:panel);border(x,y,w,15,selected?green:grid);text(x+5,y+4,s,selected?green:white,1);}
   static std::string format_mhz(uint32_t hz){char b[24];std::snprintf(b,sizeof(b),"%03u.%03u",hz/1000000,(hz%1000000)/1000);return b;}
   void render(const Snapshot& s) {
-    fill(bg);
-    rect(0,0,320,16,panel);text(4,1,"OrcSDR",green,2);
-    text(80,1,"FM BROADCAST",cyan,2);
-    const std::string conn=s.simulated?"DEMO":s.connection==Connection::ready?"RTL ON":s.connection==Connection::connecting?"OPEN...":"NO RX";
-    text(320-int(conn.size())*12-4,1,conn,s.connection==Connection::ready?green:yellow,2);
-    const bool pending=s.requested_hz!=s.applied_hz && s.connection==Connection::ready;
-    text(12,21,format_mhz(pending?s.requested_hz:(s.applied_hz?s.applied_hz:s.requested_hz)),pending?yellow:white,3);
-    text(165,26,"MHZ",cyan,2);text(223,25,"WFM",green,2);
-    text(223,44,pending?"TUNING":s.simulated?"SIMULATED":"MONO",pending?yellow:muted,1);
-    rect(0,54,320,18,panel);
-    char buf[64];std::snprintf(buf,sizeof(buf),"STEP %uK",s.step_hz/1000);text(3,56,buf,cyan,2);
-    std::snprintf(buf,sizeof(buf),"VOL %d%%",s.volume);text(119,56,s.muted?"MUTED":buf,s.muted?yellow:green,2);
-    text(210,56,s.gain_auto?"GAIN AUTO":"GAIN MAN",white,2);
-    // Visuals are NEVER synthesized in live mode. DEMO is explicit.
-    if(s.live_spectrum||s.simulated){
-      rect(2,72,316,39,0x0021);
-      for(int j=0;j<4;++j)line(2,72+j*10,317,72+j*10,grid);
-      for(int j=0;j<5;++j)line(2+j*79,72,2+j*79,110,grid);
-      // 256 source bins are mapped with the same x coordinate in spectrum and waterfall.
-      int prevx=2,prevy=110;
-      for(int x=0;x<316;++x){int bin=x*256/316;int amp=s.spectrum[bin];int y=109-amp*35/255;
-        if(x) line(prevx,prevy,2+x,y,green);
-        prevx=x+2;prevy=y;}
-      // 300 kHz center-tuned RF span; vertical cyan lines approximate
-      // the existing 260 kHz WFM channel, not a user-configurable filter.
-      line(23,73,23,110,cyan);line(297,73,297,110,cyan);
-      line(160,72,160,151,yellow);
-      text(5,74,"-150K",muted,1);
-      text(280,74,"+150K",muted,1);
-      // 36 bounded real historical rows, newest at top.
-      for(int yy=0;yy<36;++yy){int sy=111+yy;if(s.waterfall_rows<=yy)break;
-        for(int x=0;x<316;++x){int bin=x*256/316;
-          uint8_t a=s.waterfall[size_t(yy)][size_t(bin)];
-          point(x+2,sy,orcsdr::waterfall_style::color565(orcsdr::waterfall_style::Screen::fm,float(a)/255));}}
-    } else {
-      rect(2,72,316,80,panel);border(2,72,316,80,grid);
-      centered(92,s.connection==Connection::ready?"AWAITING IQ":"NO RECEIVER",yellow,2);
-      centered(120,s.connection==Connection::ready?"SPECTRUM IDLE":"R: RECONNECT",muted,1);
+    const bool layout_changed=!initialized||previous_page!=s.page;
+    if(layout_changed){fill(bg);initialized=true;previous_page=s.page;
+      rect(footer.x,footer.y,footer.w,footer.h,panel);
+      text(4,162,"SPACE DASH  F FREQ  S/D VOL  P COLOR  TAB MENU",cyan,1);
     }
-    rect(0,152,320,18,panel);
-    text(5,158,"Z/C TUNE   F FREQ   M MUTE   TAB MENU",cyan,1);
+    // Clear only the widgets being updated; framebuffer output skips identical pixels.
+    rect(0,0,320,40,panel);
+    text(4,1,"OrcSDR",green);text(50,1,"FM BROADCAST",cyan);
+    const std::string conn=s.simulated?"DEMO":s.connection==Connection::ready?(s.audio_ready?"RTL ON":"NO AUDIO"):s.connection==Connection::connecting?"OPEN...":"NO RX";
+    text(316-int(conn.size())*6,1,conn,s.connection==Connection::ready?green:yellow);
+    const bool pending=s.requested_hz!=s.applied_hz&&s.connection==Connection::ready;
+    const uint32_t station=s.applied_hz?s.applied_hz:s.requested_hz;
+    text(4,13,format_mhz(pending?s.requested_hz:station),pending?yellow:white,2);
+    text(94,19,"MHZ WFM",cyan);
+    for(int y=0;y<28;++y)
+      for(int x=0;x<28;++x)
+        point(168+x,1+y,kOrcBadge[(y*2)*kOrcBadgeSize+x*2]);
+    const uint32_t span=s.applied_rate?s.applied_rate:kDefaultSpanHz;
+    char buf[64];std::snprintf(buf,sizeof(buf),"SPAN %.3fM",span/1000000.);text(202,19,buf,cyan);
+    std::snprintf(buf,sizeof(buf),"STEP %uK",s.step_hz/1000);text(4,32,buf,cyan);
+    std::snprintf(buf,sizeof(buf),"VOL %d%%",s.volume);text(82,32,s.muted?"MUTED":buf,s.muted?yellow:green);
+    std::snprintf(buf,sizeof(buf),"G %+.1f",s.gain_tenth_db/10.);text(145,32,s.gain_auto?"G AUTO":buf,white);
+    text(208,32,orcsdr::waterfall_style::palette_name(s.palette),muted,1,18);
+    // Visuals are NEVER synthesized in live mode. DEMO is explicit.
+    rect(spectrum.x,spectrum.y,spectrum.w,spectrum.h,0x0021);
+    rect(waterfall.x,waterfall.y,waterfall.w,waterfall.h,bg);
+    if(s.live_spectrum||s.simulated){
+      const uint32_t center=station;
+      for(int j=0;j<4;++j)line(0,51+j*12,319,51+j*12,grid);
+      for(int j=0;j<5;++j)line(j*319/4,50,j*319/4,87,grid);
+      int prevy=87;
+      for(int x=0;x<320;++x){const int bin=x*256/320,amp=s.spectrum[bin];
+        const int y=87-amp*35/255;
+        if(x)line(x-1,prevy,x,y,orcsdr::waterfall_style::color565(uint8_t(s.palette),0.55f+amp/566.f));
+        prevy=y;
+      }
+      const auto rf_x=[&](int64_t hz){return int((hz-int64_t(center)+span/2)*320/span);};
+      // The shared FM DSP selects a fixed 260 kHz channel around the selected center.
+      const int tuned_x=rf_x(station);
+      for(int edge:{rf_x(int64_t(station)-130000),rf_x(int64_t(station)+130000)})
+        if(edge>=0&&edge<320)line(edge,50,edge,87,cyan);
+      for(int yy=0;yy<std::min(kWaterfallRows,s.waterfall_rows);++yy)
+        for(int x=0;x<320;++x)
+          point(x,waterfall.y+yy,orcsdr::waterfall_style::color565(uint8_t(s.palette),s.waterfall[size_t(yy)][size_t(x*256/320)]/255.f));
+      line(tuned_x,50,tuned_x,159,yellow);
+      text(2,42,format_mhz(center-span/2),muted);
+      text(139,42,format_mhz(center),muted);
+      text(276,42,format_mhz(center+span/2),muted);
+    }else{
+      centered(72,s.connection==Connection::ready?"AWAITING IQ":"NO RECEIVER",yellow,2);
+      centered(109,s.connection==Connection::ready?"SPECTRUM IDLE":"R: RECONNECT",muted);
+    }
     if(s.page!=Page::receive)overlay(s);
-    else if(!s.error.empty()){rect(5,127,310,20,0x3000);text(10,133,s.error.substr(0,45),yellow,1);}
+    else if(!s.error.empty()){rect(5,127,310,20,0x3000);text(10,133,s.error.substr(0,45),yellow);}
   }
   void overlay(const Snapshot& s) {
     rect(27,30,266,113,panel);border(27,30,266,113,cyan);
     switch(s.page){
+      case Page::dashboards:{
+        text(43,39,"OrcSDR",green,2);
+        const int first=std::max(0,s.dashboard_selection-4);
+        for(int i=0;i<5;++i){
+          const char* names[]={"FM BROADCAST","ADS-B","ACARS","AIRBAND AM","SETTINGS","RF LAB","2.4 GHZ WIFI","WEATHER","MARINE","POCSAG","SSTV","AM RADIO","DEAD AIR","SHORTWAVE","CB RADIO","FT8 RX","P25 RADIO"};
+          const int y=65+i*13;
+          rect(40,y,168,12,s.dashboard_selection==i+first?0x1264:panel);
+          text(46,y+2,names[i+first],s.dashboard_selection==i+first?green:white);
+        }
+        for(int y=0;y<kOrcBadgeSize;++y)
+          for(int x=0;x<kOrcBadgeSize;++x)
+            point(220+x,65+y,kOrcBadge[y*kOrcBadgeSize+x]);
+        text(44,131,"UP/DOWN  ENTER: OPEN  ESC: BACK",cyan);break;}
+      case Page::settings:
+        text(43,39,"OrcSDR SETTINGS",green,2);
+
+        text(43,74,s.muted?"MUTED  M":"VOL "+std::to_string(s.volume)+"%  S/D  M MUTE",white);
+        text(43,88,"FM STEP "+std::to_string(s.step_hz/1000)+"K  T",white);
+        text(43,102,std::string("PALETTE ")+orcsdr::waterfall_style::palette_name(s.palette)+"  P",white,1,38);
+        text(43,120,"ESC BACK  SPACE DASHBOARDS",cyan);break;
       case Page::entry:
         text(40,41,"ENTER FREQUENCY",cyan,2);
         rect(39,69,241,40,bg);border(39,69,241,40,green);
@@ -138,7 +179,7 @@ struct CompactRenderer {
         text(43,39,"KEYS",cyan,2);
         text(44,65,"FN+Z/C: TUNE     F: FREQ",white,1);
         text(44,79,"FN+S/D: VOLUME   M: MUTE",white,1);
-        text(44,93,"TAB: MENU   G: GAIN T: STEP",white,1);
+        text(44,93,"TAB MENU  P COLOR G GAIN T STEP",white,1);
         text(44,107,"ESC: BACK   Q: EXIT",white,1);break;}
       case Page::error:{
         text(43,39,"RECEIVER ERROR",yellow,2);

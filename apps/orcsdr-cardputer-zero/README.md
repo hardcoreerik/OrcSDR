@@ -119,3 +119,161 @@ unlabelled radio reception. The physical GUI is not yet tested on a Zero;
 check real framebuffer, keyboard, ALSA speaker/headphone routing, USB
 reconnect and controlled exit before product claims. Read
 [the architecture and device handoff](../../../docs/hardware/cardputer-zero/UI_AUDIO_CONTROLS_IMPLEMENTATION.md).
+
+## Capture the running LCD over SSH
+
+With OrcSDR already running, capture the visible Linux framebuffer without
+restarting the receiver or interrupting audio:
+
+```sh
+python3 ~/OrcSDR-zero-ui/apps/orcsdr-cardputer-zero/tools/capture_screen.py
+# Or choose a new output filename:
+python3 ~/OrcSDR-zero-ui/apps/orcsdr-cardputer-zero/tools/capture_screen.py ~/Pictures/orcsdr-live.png
+```
+
+The command prints the saved PNG path; the default is a timestamped file in
+`~/Pictures`. Copy that path to your computer with `scp`. Existing output files
+are never overwritten. It captures whatever is currently on the LCD, including
+the launcher if OrcSDR is closed. Reading the framebuffer requires video-device
+access. Python 3 and Pillow (`python3-pil`, included in the development bootstrap)
+are required. RGB565 and 32-bit framebuffers, row stride, and panning offsets are
+supported. This is a best-effort live read, not a synchronized renderer snapshot;
+a rapidly changing frame can contain parts of consecutive redraws.
+
+Run the focused pixel-decoding tests with:
+
+```sh
+python3 apps/orcsdr-cardputer-zero/tests/test_capture_screen.py
+```
+
+### Compact FT8 band controls
+
+On the FT8 RX dashboard, Left/Right selects the previous/next band using the
+shared OrcSDR FT8 presets (160 m through 2 m). The header displays the requested
+dial and TUNING until the receive worker applies it, then RX. Changing bands
+resets capture continuity and discards a partial UTC slot. Below 24 MHz the Zero
+uses direct-Q sampling; higher bands use the normal tuner. A suitable receiver
+and antenna are required. A completed slot with no messages does not establish
+live decoding or RF sensitivity.
+
+Device check: scripted evdev Left/Right input reached 50.313 MHz, returned to
+14.074 MHz, and completed a UTC slot. No live messages were decoded in that run;
+librtlsdr printed PLL warnings during tuner transitions. Physical key feel and
+LCD readability remain separate checks. Home retains the supplied Orc badge
+beside the frequency without reducing the spectrum/waterfall area.
+
+### Compact P25 receive page
+
+P25 RADIO is available in the Space selector or via `--dashboard p25`.
+F opens MHz entry (24–1766 MHz); Left/Right tunes; T cycles 12.5 kHz,
+100 kHz, 1 MHz, and 5 MHz steps. G cycles Auto/C4FM/CQPSK. S/D adjusts
+volume; M mutes. The page shows decoded NAC, system/site identity, and the
+current decoded grant. The single receiver remains on the manually selected
+frequency: trunk following and Phase II voice are not integrated yet.
+
+The Linux build compiles the existing P25 decoder core and Phase I IMBE
+voice decoder with the repository's bundled mbelib sources and notices intact.
+Only frames with valid, clear encryption metadata reach the vocoder. PCM is
+bounded per input block; unknown/encrypted frames are dropped. Decoder and
+vocoder history reset on tuning or modulation changes. Ordinary screen updates
+preserve static branding and do not perform a full-screen clear.
+
+Verification: `ctest --test-dir build/zero -R zero_p25_decoder_ui --output-on-failure`
+passed on the Zero, including shared protocol/FEC and voice self-checks,
+frequency entry limits, modulation cycling, and bounded redraw. Scripted evdev
+input applied 460.125 MHz/C4FM and captured 13,733,888 samples. The run had no
+P25 lock, decoded grant, or voice PCM; live RF/voice reception remains unverified.
+The RTL driver emitted a PLL warning at initial tune. Frequency readback and
+sample capture alone do not establish successful RF demodulation.
+
+### FT8 UTC clock
+
+On FT8, T opens the UTC clock panel. R requests a fresh network sync; F opens
+manual UTC entry in `YYYYMMDDHHMMSS` format. Enter applies the value and disables
+NTP for offline operation. Escape cancels entry or returns to FT8. Network sync
+turns NTP back on. The main FT8 page displays UTC, NTP sync state, and seconds
+until the next 15-second slot. UTC is independent of the device display timezone.
+Clock changes discard incomplete slots; UTC from before and after a clock jump
+is never combined into one decoded slot. Manual input has one-second precision;
+use NTP for accurate network time. A synchronized system clock alone does not
+prove live FT8 reception.
+
+The installed `/usr/local/libexec/orcsdr-clock` helper also supports SSH:
+
+```
+/usr/local/libexec/orcsdr-clock --status
+sudo -n /usr/local/libexec/orcsdr-clock --sync
+sudo -n /usr/local/libexec/orcsdr-clock --set 20261119013000
+```
+
+The last command sets that exact example UTC time; use the actual current UTC.
+The helper is root-owned, runs isolated Python, validates dates before mutation,
+and accepts only status, sync, set, and validation operations. The device's
+`/etc/sudoers.d/orcsdr-clock` permits hardputer to invoke only its sync/set paths.
+OrcSDR itself runs without root. `--sync` uses the installed systemd-timesyncd
+service. Other Linux time services require a matching adapter.
+
+Verified on the Zero: valid manual set, NTP-off status without the daemon,
+network sync with a fresh synchronization marker, keyboard panel navigation,
+manual-entry cancellation, and return to FT8. Tests reject malformed dates and
+shell input, and verify both directions of a UTC jump discard partial slots.
+
+### Audio startup recovery
+
+A transient ALSA busy-device error no longer leaves a receiver permanently
+silent. FM and audio dashboards retry a closed output at most once per second.
+FM logs failure/recovery and Home shows NO AUDIO when output is unavailable.
+A device test held the speaker busy with aplay, observed FM's open failure,
+released it, and verified automatic recovery to a RUNNING PCM stream owned by
+FM's audio thread. Speaker/station sound was also confirmed by the user after
+manual recovery of the earlier running build.
+
+### FT8 waterfall and world map
+
+The default FT8 receive view shows a live USB-audio waterfall from 0 to 3 kHz,
+using the exact 12 kHz PCM supplied to the decoder. The shared 1920-point FFT
+with a Hann display window is averaged in pairs: each waterfall row spans
+320 ms, with 68 rows (21.76 seconds) visible. Decoder audio is unchanged. P selects
+the existing waterfall palette. Two message rows remain below the waterfall;
+Up/Down scrolls the current slot's visible messages.
+
+M toggles an offline world map. It uses the same Natural Earth world outline,
+whole-world projection, Maidenhead conversion, and bounded 64-decode store as
+OrcSDR's main build. Yellow markers are decoded grid-square centres, not precise
+station locations. Messages without a valid grid are retained in the decode
+list but do not create a marker. The map shows an explicit empty state until
+valid locators arrive; it never invents station locations. It is a coarse
+outline map, with no online tiles or receiver-position/path overlay yet.
+T opens the UTC controls from either view.
+
+The visual model uses 106,832 bytes and the map cache/store 64,024 bytes on the
+Zero. The basemap is cached; ordinary updates replace bounded waterfall,
+message, map-marker, or UTC regions without clearing the whole screen.
+Focused tests verify a 1 kHz input appears at the right horizontal position,
+palette changes, valid/invalid grid placement, and no full-screen clears.
+The user confirmed live FT8 decoding, also recorded in a device framebuffer
+capture before installing this view. Live waterfall changes and map/clock
+navigation were verified with scripted input on the device.
+
+The compact screens use OrcSDR branding without the Oregon Radio Company
+subtitle. FT8 map view uses a one-line header and a 240 x 120 map with a recent-contact sidebar and latest-message strip; the receive
+view uses a 320 x 68 waterfall. UTC and navigation retain their bottom rows.
+Natural Earth attribution remains in the map footer.
+
+The FT8 map preserves a 2:1 geographic aspect ratio (240 x 120). Its sidebar
+shows up to five unique recently heard callsigns with grids when known; the
+latest decoded message occupies the full-width strip below the map.
+
+Last heard retains five distinct callsigns for the current FT8 session with no
+age timeout. A repeat refreshes that station and preserves its last valid grid;
+only a new distinct station arriving when all five positions are occupied
+replaces the least recently heard station. The header mascot is a tightly
+framed 28 x 28 RGB565 face embedded in the executable. Map geometry remains 2:1
+(216 x 108) beneath the taller icon header.
+
+Integration checkpoint: Satellite and LoRa/Mesh screens are not yet in the
+selector. Linux LoRa backend tests and a bounded device IQ/decode run passed,
+but that backend is not yet connected to a compact LoRa page. The P25 page
+supports manual Phase I reception only, without trunk following or Phase II
+voice. Other compact dashboards have the limitations documented above; this
+checkpoint does not claim full parity with the main Tab5 application.

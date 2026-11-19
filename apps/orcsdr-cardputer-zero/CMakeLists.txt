@@ -13,8 +13,35 @@ add_library(orc_native_decoders STATIC
   "${ORC_NATIVE_DECODER_DIR}/acars_core.cpp"
   "${ORC_NATIVE_DECODER_DIR}/acars_selftest.cpp"
   "${ORC_NATIVE_DECODER_DIR}/adsb_decoder.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/shortwave_ssb.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/ft8_audio_tap.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/ft8_native_backend.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/ft8_spectral_fft.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/ft8_mode.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/ft8_sync.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/ft8_demod.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/ft8_pipeline.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/ft8_snr.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/ft8_message.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/ft8_codec.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/ft8_ldpc.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/ft8_ldpc_decode.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/ft8_model.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/ft8_world_data.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/ft8_tuning.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/p25_decoder_core.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/p25_voice.cpp"
+  "${ORC_REPO_ROOT}/components/mbelib/mbelib.c"
+  "${ORC_REPO_ROOT}/components/mbelib/imbe7200x4400.c"
+  "${ORC_REPO_ROOT}/components/mbelib/ecc.c"
+  "${ORC_NATIVE_DECODER_DIR}/dead_air_model.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/dead_air_runes.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/pocsag_decoder_core.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/sstv_receiver.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/sstv_modes.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/sstv_auto_detect.cpp"
 )
-target_include_directories(orc_native_decoders PUBLIC "${ORC_NATIVE_DECODER_DIR}")
+target_include_directories(orc_native_decoders PUBLIC "${ORC_NATIVE_DECODER_DIR}" "${ORC_REPO_ROOT}/components/mbelib")
 target_compile_options(orc_native_decoders PRIVATE -Wall -Wextra -Wpedantic)
 
 add_library(orc_linux_iq INTERFACE)
@@ -138,6 +165,14 @@ if(ORC_ENABLE_GUI)
   target_compile_options(orc_zero_settings PRIVATE -Wall -Wextra -Wpedantic)
   add_executable(orcsdr_cardputer_zero_gui src/gui_main.cpp)
   target_link_libraries(orcsdr_cardputer_zero_gui PRIVATE orc_zero_fm_session orc_zero_settings)
+  foreach(dashboard adsb acars airband)
+    target_include_directories(orcsdr_cardputer_zero_gui PRIVATE staged-dashboards/${dashboard})
+  endforeach()
+  target_sources(orcsdr_cardputer_zero_gui PRIVATE
+    staged-dashboards/adsb/adsb_module.cpp staged-dashboards/adsb/adsb_renderer.cpp
+    staged-dashboards/acars/acars_dashboard.cpp staged-dashboards/acars/acars_renderer.cpp
+    staged-dashboards/airband/airband.cpp staged-dashboards/airband/airband_render.cpp)
+
   target_compile_options(orcsdr_cardputer_zero_gui PRIVATE -Wall -Wextra -Wpedantic)
   if(ORC_ENABLE_SDL AND PkgConfig_FOUND)
     pkg_check_modules(ORC_SDL QUIET IMPORTED_TARGET sdl2)
@@ -172,3 +207,91 @@ set(CPACK_GENERATOR "DEB")
 set(CPACK_DEBIAN_PACKAGE_SHLIBDEPS ON)
 set(CPACK_PACKAGE_CONTACT "Oregon Radio Company")
 include(CPack)
+
+if(ORC_ENABLE_GUI)
+  target_link_libraries(orc_zero_settings PUBLIC orc_zero_compact)
+  if(BUILD_TESTING)
+    add_executable(orc_zero_home_ui_test tests/home_ui_test.cpp)
+    target_link_libraries(orc_zero_home_ui_test PRIVATE orc_zero_settings orc_zero_compact)
+    add_test(NAME zero_home_layout_palette COMMAND orc_zero_home_ui_test)
+    foreach(test_target orc_zero_home_ui_test orc_zero_fm_test orc_compact_control_test orc_zero_settings_test orc_zero_audio_test)
+      if(MSVC)
+        target_compile_options(${test_target} PRIVATE /UNDEBUG)
+      else()
+        target_compile_options(${test_target} PRIVATE -UNDEBUG)
+      endif()
+    endforeach()
+  endif()
+endif()
+
+if(BUILD_TESTING)
+  add_executable(orc_zero_ft8_band_test tests/ft8_band_test.cpp)
+  target_include_directories(orc_zero_ft8_band_test PRIVATE src "${ORC_NATIVE_DECODER_DIR}")
+  target_link_libraries(orc_zero_ft8_band_test PRIVATE orc_native_decoders)
+  if(MSVC)
+    target_compile_options(orc_zero_ft8_band_test PRIVATE /UNDEBUG)
+  else()
+    target_compile_options(orc_zero_ft8_band_test PRIVATE -UNDEBUG)
+  endif()
+  add_test(NAME zero_ft8_band_presets COMMAND orc_zero_ft8_band_test)
+endif()
+
+if(BUILD_TESTING)
+  add_executable(orc_zero_p25_test tests/p25_test.cpp)
+  target_include_directories(orc_zero_p25_test PRIVATE src src/compact)
+  target_link_libraries(orc_zero_p25_test PRIVATE orc_native_decoders orc_zero_compact)
+  if(MSVC)
+    target_compile_options(orc_zero_p25_test PRIVATE /UNDEBUG)
+  else()
+    target_compile_options(orc_zero_p25_test PRIVATE -UNDEBUG)
+  endif()
+  add_test(NAME zero_p25_decoder_ui COMMAND orc_zero_p25_test)
+endif()
+
+# The LoRa core stays shared; only platform services are supplied by Linux.
+find_path(ORC_MBEDTLS_INCLUDE_DIR mbedtls/aes.h REQUIRED)
+find_library(ORC_MBEDCRYPTO_LIBRARY mbedcrypto REQUIRED)
+add_library(orc_zero_lora STATIC
+  "${ORC_NATIVE_DECODER_DIR}/lora_native_decoder.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/lora_preamble_detector.cpp"
+  src/lora_linux/esp_fft_ansi.c)
+target_include_directories(orc_zero_lora PUBLIC src "${ORC_NATIVE_DECODER_DIR}" "${ORC_MBEDTLS_INCLUDE_DIR}")
+target_compile_definitions(orc_zero_lora PRIVATE ORC_LORA_LINUX=1)
+target_link_libraries(orc_zero_lora PUBLIC "${ORC_MBEDCRYPTO_LIBRARY}" Threads::Threads)
+if(BUILD_TESTING)
+  add_executable(orc_zero_lora_test tests/lora_test.cpp)
+  target_link_libraries(orc_zero_lora_test PRIVATE orc_zero_lora orc_linux_runtime)
+  if(MSVC)
+    target_compile_options(orc_zero_lora_test PRIVATE /UNDEBUG)
+  else()
+    target_compile_options(orc_zero_lora_test PRIVATE -UNDEBUG)
+  endif()
+  add_test(NAME zero_lora_native_linux COMMAND orc_zero_lora_test)
+endif()
+
+install(FILES src/lora_linux/LICENSE src/lora_linux/PROVENANCE.md DESTINATION share/doc/orcsdr-cardputer-zero/esp-dsp)
+
+install(PROGRAMS tools/orcsdr-clock DESTINATION libexec)
+
+if(BUILD_TESTING)
+  add_executable(orc_zero_ft8_clock_slots_test tests/ft8_slots_test.cpp)
+  target_include_directories(orc_zero_ft8_clock_slots_test PRIVATE src)
+  if(MSVC)
+    target_compile_options(orc_zero_ft8_clock_slots_test PRIVATE /UNDEBUG)
+  else()
+    target_compile_options(orc_zero_ft8_clock_slots_test PRIVATE -UNDEBUG)
+  endif()
+  add_test(NAME zero_ft8_clock_discontinuity COMMAND orc_zero_ft8_clock_slots_test)
+  find_package(Python3 COMPONENTS Interpreter QUIET)
+  if(Python3_Interpreter_FOUND)
+    add_test(NAME zero_clock_helper_validation COMMAND "${Python3_EXECUTABLE}" "${CMAKE_CURRENT_SOURCE_DIR}/tests/test_clock_helper.py")
+  endif()
+endif()
+
+if(BUILD_TESTING)
+  add_executable(orc_zero_ft8_visuals_test tests/ft8_visuals_test.cpp)
+  target_link_libraries(orc_zero_ft8_visuals_test PRIVATE orc_native_decoders orc_zero_compact)
+  target_include_directories(orc_zero_ft8_visuals_test PRIVATE src)
+  target_compile_options(orc_zero_ft8_visuals_test PRIVATE -UNDEBUG)
+  add_test(NAME zero_ft8_waterfall_map COMMAND orc_zero_ft8_visuals_test)
+endif()

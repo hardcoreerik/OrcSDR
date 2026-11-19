@@ -25,6 +25,8 @@ class RtlReceiver {
   static std::vector<ReceiverInfo> enumerate();
   void open(std::uint32_t index);
   void configure(std::uint32_t freq_hz,std::uint32_t rate_sps);
+  // Explicit opt-in for receivers with a wired Q-ADC HF input.
+  void configure_direct_q(std::uint32_t frequency_hz,std::uint32_t rate_sps);
   void retune(std::uint32_t freq_hz);
   void set_tuner_gain_auto();
   void set_tuner_gain_tenth_db(int tenth_db);

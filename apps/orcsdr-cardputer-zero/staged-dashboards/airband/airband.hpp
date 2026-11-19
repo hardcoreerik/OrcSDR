@@ -24,6 +24,8 @@ struct Snapshot {
   uint64_t generation=0,known_queue_drops=0, discontinuities=0, rejected_blocks=0;
   int volume=35,squelch_db=6,gain_tenth_db=0,step_hz=kStepHz;
   bool user_muted=false,squelch_open=false,carrier_detected=false,audio_ready=false,gain_auto=true,entry_active=false,demo=false;
+  bool broadcast=false,shortwave=false,cb=false;
+  uint8_t sideband=0,cb_channel=0;
   bool has_spectrum=false,tune_pending=true;
   Connection connection=Connection::off;
   float channel_level_dbfs=-120.0f,relative_db=0.0f;
@@ -39,7 +41,7 @@ public:
   Controller();
   // UI/controller thread only, except consume() may be called on ONE DSP worker.
   // Host synchronizes actions, readbacks, and snapshot access against consume().
-  bool activate(uint32_t selected=kGuardHz);
+  bool activate(uint32_t selected=kGuardHz,bool broadcast=false,bool shortwave=false,bool cb=false);
   Request requested_radio() const;
   Settings settings() const;
   bool restore_settings(const Settings& settings);
@@ -85,7 +87,7 @@ private:
 };
 
 bool valid_frequency(uint32_t hz);
-bool parse_frequency_mhz(const std::string& text,uint32_t& hz);
+bool parse_frequency_mhz(const std::string& text,uint32_t& hz,bool broadcast=false,bool shortwave=false,bool cb=false);
 uint32_t step_frequency(uint32_t hz,int direction);
 int32_t display_offset_hz(uint32_t selected_hz,uint32_t center_hz);
 }

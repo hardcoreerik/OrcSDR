@@ -214,6 +214,14 @@ void visual_test(){
 }
 }
 int main(){
+  Controller broadcast;
+  check(broadcast.activate(1000000,true),"broadcast activation");
+  check(!broadcast.tune_direct(1005000),"reject off-grid AM channel");
+  check(broadcast.action(Action::tune_up),"step AM channel");
+  const auto request=broadcast.requested_radio();
+  check(request.rf_center_hz==1135000&&request.sample_rate_sps==960000,"direct-Q AM request");
+  broadcast.radio_applied(request.rf_center_hz,request.sample_rate_sps,1);
+  check(broadcast.snapshot().connection==Connection::ready,"accept verified AM readback");
   rate_test(2400000);rate_test(2560000);interference_test();chunks_test();
   control_test();discontinuity_test();sql_test();safety_test();visual_test();
   std::puts("PASS airband DSP, isolation, continuity, controls, gating and renderer");

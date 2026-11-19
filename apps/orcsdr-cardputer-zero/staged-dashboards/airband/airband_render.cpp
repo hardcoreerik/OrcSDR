@@ -66,14 +66,14 @@ void Renderer::init_static(){
   initialized_=true;pixels_.fill(bg);++full_clears_;
   rect(0,0,width,16,panel);text(4,1,"OrcSDR",green,2);text(92,4,"AIRBAND AM",cyan,1);
   rect(0,49,width,19,panel);rect(0,152,width,18,panel);
-  text(4,157,"F:FREQ  ARROWS:TUNE  M:MUTE  T:25K",muted,1,45);
+  text(4,157,"F:FREQ  ARROWS:TUNE  M:MUTE",muted,1,45);
   dirty_[0]={0,0,width,height};dirty_count_=1;
 }
 void Renderer::render(const Snapshot& s,const uint16_t* palette){
   init_static();dirty_count_=0;
   const bool header_changed=!have_last_ || s.demo!=last_.demo || s.connection!=last_.connection;
   const bool freq_changed=!have_last_ || s.selected_hz!=last_.selected_hz || s.tune_pending!=last_.tune_pending ||
-      s.entry_active!=last_.entry_active || s.entry!=last_.entry;
+      s.entry_active!=last_.entry_active || s.entry!=last_.entry || s.step_hz!=last_.step_hz || s.sideband!=last_.sideband || s.cb_channel!=last_.cb_channel;
   const bool state_changed=!have_last_ || s.volume!=last_.volume || s.user_muted!=last_.user_muted ||
       s.squelch_open!=last_.squelch_open || int(s.relative_db)!=int(last_.relative_db) ||
       s.audio_ready!=last_.audio_ready || s.connection!=last_.connection || s.squelch_db!=last_.squelch_db;
@@ -83,7 +83,7 @@ void Renderer::render(const Snapshot& s,const uint16_t* palette){
       s.selected_hz!=last_.selected_hz || s.error!=last_.error;
   auto dirty=[&](int y,int h){dirty_[dirty_count_++]={0,y,width,h};rect(0,y,width,h,bg);};
   if(header_changed){dirty(0,16);rect(0,0,width,16,panel);
-  text(4,1,"OrcSDR",green,2);text(92,4,"AIRBAND AM",cyan);
+  text(4,1,"OrcSDR",green,2);text(92,4,s.cb?"CB RADIO":s.shortwave?"SHORTWAVE":s.broadcast?"AM RADIO":"AIRBAND AM",cyan);
   const std::string state=s.demo?"DEMO":s.connection==Connection::ready?"RTL ON":
                           s.connection==Connection::connecting?"WAIT RX":"NO RX";
   text(319-int(state.size())*6-4,4,state,s.demo?amber:s.connection==Connection::ready?green:amber);}
@@ -91,7 +91,7 @@ void Renderer::render(const Snapshot& s,const uint16_t* palette){
   const bool pending=s.tune_pending;
   text(5,19,s.entry_active?std::string(s.entry.data())+"_":mhz(s.selected_hz),pending?amber:white,3,12);
   text(200,23,"MHZ",cyan,2);
-  text(251,18,"AM",green,2);text(249,37,pending?"TUNING":s.entry_active?"ENTER":"25 KHZ",pending?amber:muted,1,10);}
+  text(251,18,s.sideband==1?"USB":s.sideband==2?"LSB":"AM",green,2);text(249,37,pending?"TUNING":s.entry_active?"ENTER":s.cb?"CH "+std::to_string(s.cb_channel):std::to_string(s.step_hz/1000)+" KHZ",pending?amber:muted,1,10);}
   if(state_changed){dirty(49,19);rect(0,49,width,19,panel);
   char label[64];std::snprintf(label,sizeof label,"V%03d",s.volume);text(4,54,s.user_muted?"MUTED":label,s.user_muted?amber:green);
   text(68,54,s.squelch_db==0?"SQL BYPASS":s.squelch_open?"SQL OPEN":"SQL SHUT",s.squelch_open?green:amber);

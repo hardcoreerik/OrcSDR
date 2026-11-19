@@ -68,7 +68,7 @@ void Renderer::header(const Snapshot& s) {
   fill(0,0,320,16,panel);
   text(4,4,"OrcSDR",green,8);
   text(66,4,"ACARS",cyan,7);
-  text(126,4,"Oregon Radio Company",muted,20);
+
   const char* state=s.source==Source::demo?"DEMO":s.receiver==ReceiverState::receiving?"LIVE":
     s.receiver==ReceiverState::connecting?"CONNECT":s.receiver==ReceiverState::error?"ERROR":"NO RX";
   text(256,4,state,s.source==Source::demo?amber:s.receiver==ReceiverState::receiving?green:amber,10);
