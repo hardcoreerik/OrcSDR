@@ -15352,10 +15352,11 @@ const orcsdr::sstv_diag::Hooks kSstvDiagHooks = {
     [](char* out, size_t size) { orcsdr::sstv_app::tune_summary(out, size); }};
 void open_dashboard(orcsdr::dashboards::Id id) {
   using Id = orcsdr::dashboards::Id;
+  if (id != Id::skimmer && id != Id::settings) orcsdr::skimmer::leave();
   if (id != Id::settings && orcsdr::settings::active()) close_global_settings();
   // Settings opened from AIS keeps AIS (and its receiver) alive, as the header Settings button does, so closing
   // Settings can return to it. Everything else below closes AIS.
-  if (id == Id::visualizer) {          // the last All Dashboards entry (the header VIS button is gone)
+  if (id == Id::visualizer) {          // Available from All Dashboards; header VIS button is gone
     open_visualizer();
     return;
   }
