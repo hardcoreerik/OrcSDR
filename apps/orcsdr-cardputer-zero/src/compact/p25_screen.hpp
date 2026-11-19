@@ -45,7 +45,7 @@ struct P25Screen {
     if(!layout){
       frame.fill(CompactRenderer::bg);
       frame.text(4,3,"OrcSDR P25 RX",CompactRenderer::green,2);
-      
+
       frame.text(4,160,"F FREQ T STEP G MODE S/D VOL SPACE DASH",CompactRenderer::cyan);
       layout=true;
     }

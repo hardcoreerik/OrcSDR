@@ -285,7 +285,7 @@ class DashboardSession {
       if(!ft8_drawn_){
         ft8_screen_.fill(CompactRenderer::bg);
 
-        
+
 
         ft8_screen_.text(4,160,ft8_map_open_?"NATURAL EARTH  M RX T UTC SPACE DASH":"Z/C BAND M MAP T UTC SPACE DASH",CompactRenderer::cyan);
       }
@@ -341,7 +341,7 @@ class DashboardSession {
       if(!wifi_drawn_){
         wifi_render_.fill(CompactRenderer::bg);
         wifi_render_.text(4,4,"OrcSDR 2.4 GHZ WIFI",CompactRenderer::green,2);
-        
+
         wifi_render_.text(4,42,"CH  SIGNAL   NETWORK",CompactRenderer::cyan);
         wifi_render_.text(4,160,"SPACE DASHBOARDS   ESC BACK",CompactRenderer::cyan);
         wifi_drawn_=true;
@@ -366,7 +366,7 @@ class DashboardSession {
       if(!weather_drawn_){
         weather_render_.fill(CompactRenderer::bg);
         weather_render_.text(4,4,mode_==8?"OrcSDR MARINE":"OrcSDR WEATHER",CompactRenderer::green,2);
-        
+
         weather_render_.text(4,39,mode_==8?"VHF MARINE  NFM  RX ONLY":"NOAA WEATHER RADIO  NFM",CompactRenderer::cyan);
         weather_render_.text(4,144,"Z/C CHANNEL   S/D VOLUME   M MUTE",CompactRenderer::cyan);
         weather_render_.text(4,160,"SPACE DASHBOARDS   ESC BACK",CompactRenderer::cyan);
@@ -386,7 +386,7 @@ class DashboardSession {
       if(!sstv_drawn_){
         sstv_render_.fill(CompactRenderer::bg);
         sstv_render_.text(4,3,"OrcSDR SSTV",CompactRenderer::green,2);
-        
+
         sstv_render_.text(4,159,"Z/C TUNE   UP/DOWN GALLERY   SPACE DASH",CompactRenderer::cyan);
         sstv_drawn_=true;
       }
@@ -414,7 +414,7 @@ class DashboardSession {
       if(!pager_drawn_){
         pager_render_.fill(CompactRenderer::bg);
         pager_render_.text(4,4,"OrcSDR POCSAG",CompactRenderer::green,2);
-        
+
         pager_render_.text(4,145,"Z/C TUNE 12.5K  T BAND  UP/DOWN LOG",CompactRenderer::cyan);
         pager_render_.text(4,160,"SPACE DASHBOARDS   ESC BACK",CompactRenderer::cyan);
         pager_drawn_=true;
@@ -443,7 +443,7 @@ class DashboardSession {
         if(!lab_drawn_){
           lab_render_.fill(CompactRenderer::bg);
           lab_render_.text(4,4,"OrcSDR RF LAB",CompactRenderer::green,2);
-          
+
           lab_render_.text(4,149,"RELATIVE TO ADC FULL SCALE",CompactRenderer::muted);
           lab_render_.text(4,161,"Z/C TUNE 100K  SPACE DASH  ESC BACK",CompactRenderer::cyan);
           lab_drawn_=true;
