@@ -8555,6 +8555,62 @@ __attribute__((noinline)) static void rtl_session_restart_if_requested() {
   }
 }
 
+// Step 3c: a stream did not start: roll the session state back, honour a newer request, report why.
+__attribute__((noinline)) static void rtl_session_start_failed(bool remote, esp_err_t err) {
+  rtl_active_sample_rate_sps.store(0, std::memory_order_release);
+  rtl_capture_state.store(RtlCaptureState::failed, std::memory_order_release);
+  // A band change made while this stream was still connecting cancelled the wait (restart + stop were set by
+  // queue_local_rtl_listen). Nothing else consumes the restart in this state, so start the new band here.
+  if (rtl_restart_requested.exchange(false, std::memory_order_acq_rel)) {
+    rtl_stop_requested.store(false, std::memory_order_release);
+    rtl_capture_requested.store(true, std::memory_order_release);
+    Serial.println("RTL_START cancelled by a newer request; restarting");
+  }
+  g_rtl_active_source.store(static_cast<uint8_t>(orcsdr::source::Active::none),
+                            std::memory_order_release);
+  g_rtl_remote_narrow.store(false, std::memory_order_release);
+  if (remote) {
+    // Say why (connect failed, not an rtl_tcp server, server busy or silent...) instead of one fixed sentence.
+    char why[48];
+    snprintf(why, sizeof(why), "remote: %s",
+             orcsdr::rtl_tcp::end_reason_name(orcsdr::rtl_tcp_source::status().last_reason));
+    set_rtl_profile_status(why);
+  } else {
+    set_rtl_profile_status("start failed");
+  }
+  rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
+  if (rtl_am_scan_active.load(std::memory_order_acquire)) {
+    if (orcsdr::am_finder::active()) orcsdr::am_finder::cancel();
+    rtl_rate_override_sps.store(0, std::memory_order_release);
+    rtl_am_scan_active.store(false, std::memory_order_release);
+    rtl_am_scan_found.store(0, std::memory_order_relaxed);
+    rtl_ui_frequency_hz = am_finder_restore_hz;
+    rtl_requested_frequency_hz.store(am_finder_restore_hz,
+                                     std::memory_order_release);
+    rtl_stop_requested.store(false, std::memory_order_release);
+    rtl_capture_requested.store(true, std::memory_order_release);
+    Serial.printf("RTL_AM_SCAN failed reason=stream_start result=%s restored_hz=%u\n",
+                  esp_rtl_sdr_err_to_name(err), am_finder_restore_hz);
+  }
+}
+
+// Step 3c: a stream started: mark the session running, restore audio, set the status (same statements, same order).
+__attribute__((noinline)) static void rtl_session_start_ok(RtlBand band) {
+  rtl_capture_state.store(RtlCaptureState::running, std::memory_order_release);
+  set_radio_session_state(orcsdr::radio::ReceiverState::running);
+  sync_rtl_audio_for_band(band);
+  g_speaker_retry_ms = 0;
+  if (band == RtlBand::p25 &&
+      !p25_survey_active.load(std::memory_order_relaxed)) {
+    p25_entry_probe_tsbk_good = orcsdr::p25decoder::snapshot().tsbk_good;
+    p25_entry_probe_at_ms = millis() + 2500;
+    Serial.printf("RTL_P25_PROBE start control_hz=%lu dwell_ms=2500\n",
+                  static_cast<unsigned long>(p25_control_frequency_hz));
+  }
+  set_rtl_profile_status("continuous listening");
+  resume_rtl_speaker();
+}
+
 static void rtl_driver_app_task(void *) {
   while (true) {
     if (orcsdr::sd_transfer::active()) {
@@ -8708,56 +8764,10 @@ static void rtl_driver_app_task(void *) {
                       static_cast<unsigned>(kFmAudioDecim));
       }
       if (err != ESP_OK) {
-        rtl_active_sample_rate_sps.store(0, std::memory_order_release);
-        rtl_capture_state.store(RtlCaptureState::failed, std::memory_order_release);
-        // A band change made while this stream was still connecting cancelled the wait (restart + stop were set by
-        // queue_local_rtl_listen). Nothing else consumes the restart in this state, so start the new band here.
-        if (rtl_restart_requested.exchange(false, std::memory_order_acq_rel)) {
-          rtl_stop_requested.store(false, std::memory_order_release);
-          rtl_capture_requested.store(true, std::memory_order_release);
-          Serial.println("RTL_START cancelled by a newer request; restarting");
-        }
-        g_rtl_active_source.store(static_cast<uint8_t>(orcsdr::source::Active::none),
-                                  std::memory_order_release);
-        g_rtl_remote_narrow.store(false, std::memory_order_release);
-        if (remote) {
-          // Say why (connect failed, not an rtl_tcp server, server busy or silent...) instead of one fixed sentence.
-          char why[48];
-          snprintf(why, sizeof(why), "remote: %s",
-                   orcsdr::rtl_tcp::end_reason_name(orcsdr::rtl_tcp_source::status().last_reason));
-          set_rtl_profile_status(why);
-        } else {
-          set_rtl_profile_status("start failed");
-        }
-        rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
-        if (rtl_am_scan_active.load(std::memory_order_acquire)) {
-          if (orcsdr::am_finder::active()) orcsdr::am_finder::cancel();
-          rtl_rate_override_sps.store(0, std::memory_order_release);
-          rtl_am_scan_active.store(false, std::memory_order_release);
-          rtl_am_scan_found.store(0, std::memory_order_relaxed);
-          rtl_ui_frequency_hz = am_finder_restore_hz;
-          rtl_requested_frequency_hz.store(am_finder_restore_hz,
-                                           std::memory_order_release);
-          rtl_stop_requested.store(false, std::memory_order_release);
-          rtl_capture_requested.store(true, std::memory_order_release);
-          Serial.printf("RTL_AM_SCAN failed reason=stream_start result=%s restored_hz=%u\n",
-                        esp_rtl_sdr_err_to_name(err), am_finder_restore_hz);
-        }
+        rtl_session_start_failed(remote, err);
         /* Stay on radio UI so power/home chrome cannot paint over controls. */
       } else {
-        rtl_capture_state.store(RtlCaptureState::running, std::memory_order_release);
-        set_radio_session_state(orcsdr::radio::ReceiverState::running);
-        sync_rtl_audio_for_band(band);
-        g_speaker_retry_ms = 0;
-        if (band == RtlBand::p25 &&
-            !p25_survey_active.load(std::memory_order_relaxed)) {
-          p25_entry_probe_tsbk_good = orcsdr::p25decoder::snapshot().tsbk_good;
-          p25_entry_probe_at_ms = millis() + 2500;
-          Serial.printf("RTL_P25_PROBE start control_hz=%lu dwell_ms=2500\n",
-                        static_cast<unsigned long>(p25_control_frequency_hz));
-        }
-        set_rtl_profile_status("continuous listening");
-        resume_rtl_speaker();
+        rtl_session_start_ok(band);
         uint32_t spectrum_last_ms = 0;
         uint32_t adsb_metrics_last_ms = 0;
         uint32_t pocsag_metrics_last_ms = 0;

@@ -2,6 +2,14 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Receiver session start outcome named: step 3c of the runtime split — 2026-11-18
+
+No behaviour change intended. The failure branch of a stream start (35 statements: roll back the sample rate, capture state and source, honour a newer request, say why, cancel an AM scan) is now `rtl_session_start_failed(remote, err)`, and the success branch up to the speaker resume (13 statements) is `rtl_session_start_ok(band)`, both `noinline` in `main.cpp`, moved by script and checked token for token.
+
+- **Measured:** `main.cpp` 21,136 lines (1,024,894 bytes). New frames: `rtl_session_start_failed` 208, `rtl_session_start_ok` 496 (it holds the P25 decoder snapshot temporary). **The `rtl_driver_app_task` frame rose from 1,104 to 1,200 bytes** although code left it; the cause was not traced (stack-slot sharing across the outlined blocks is the likely one). On the start-ok path the task plus that function is about 1,700 bytes against 1,104 before; the task has a 16,384-byte stack. Static RAM unchanged.
+- **Device (COM17, M5Stack Tab5), same recorder and baseline as 3a/3b, 6 minutes after the flash:** 8 of 11 dashboards identical; SSTV has the same extra `RTL_DMA_WATCH` line as in 3a/3b; P25 has the same sequence with fewer follow-the-call retunes (live RF); LoRa shows two extra `RTL_IQ_START`/`RTL_IQ_DONE` lines, an energy-triggered capture on air, not part of the session sequence (start and stop lines match). 35 of 35 refusals; `main_stack_hwm` 6,336.
+- **Not checked:** a failed start (server off, wrong address), the cancelled-by-a-newer-request restart, the AM finder failure path, the remote (rtl_tcp) start, and the real stack high-water mark of the `rtl_app` task (the firmware does not report it).
+
 ## Unreleased — Receiver session stop and restart named: step 3b of the runtime split — 2026-11-17
 
 No behaviour change intended. The stop sequence of a receiver session (22 statements) is now `rtl_session_stop(remote)` and the restart check after it (6 statements) `rtl_session_restart_if_requested()`, both `noinline` in `main.cpp`, moved by script and checked token for token.
