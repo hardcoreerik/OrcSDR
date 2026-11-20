@@ -1,0 +1,23 @@
+name: Support report host tests
+
+on:
+  pull_request:
+    paths:
+      - 'apps/orcsdr-tab5/ui/main.cpp'
+      - 'apps/orcsdr-tab5/ui/support_report.hpp'
+      - 'tools/test_support_report.py'
+      - '.github/workflows/support-report-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/orcsdr-tab5/ui/main.cpp'
+      - 'apps/orcsdr-tab5/ui/support_report.hpp'
+      - 'tools/test_support_report.py'
+
+jobs:
+  support-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and test support report
+        run: python3 tools/test_support_report.py
