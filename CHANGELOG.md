@@ -2,6 +2,15 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Receiver session running loop named: step 3e of the runtime split — 2026-11-19
+
+No behaviour change intended. The loop that runs while a stream is live (auto FM scan, hot retune, stall and rate checks, periodic status, spectrum scheduling; 263 statements) is now `rtl_session_run(band, frequency_hz, remote)`, `noinline` in `main.cpp`, moved whole by script and checked token for token. Its locals stay locals of that function, so no state struct was needed, and the `break` and `continue` statements still act on the same loop.
+
+- **Measured:** `main.cpp` 21,171 lines (1,024,474 bytes). **`rtl_driver_app_task` frame 1,248 to 144 bytes**; `rtl_session_run` 944. The deepest path through the task is about 1,090 bytes, against 1,104 before item 5 step 3. `rtl_driver_app_task` is now a short list of named phases: begin, reset, start, failed or ok, run, stop, restart. Static RAM unchanged.
+- **Device (COM17, M5Stack Tab5), local, 6 minutes after the flash:** 9 of 11 dashboards identical; P25 has fewer live-RF retunes; SSTV has the usual extra `RTL_DMA_WATCH` line. 35 of 35 refusals, `main_stack_hwm` 6,336.
+- **Device, remote (rtl_tcp to the PC server), 3d firmware against 3e firmware, each on a freshly reset unit 6 minutes after the reset:** FM and AM identical; Shortwave identical except that the 3d run had one `RTL_MAIN_STALL stage=loop_gap` timing line the 3e run did not. A first 3e remote run taken 200 s after the local dashboards showed a USB re-probe and DMA-watch lines and was discarded as a disturbed measurement.
+- **Not checked:** the stall restart and the rate-adapter restart (they end this loop with `break`), the auto FM scan, a remote link that falls behind, and the real stack high-water mark of the `rtl_app` task.
+
 ## Unreleased — Receiver session begin and start named: step 3d of the runtime split — 2026-11-19
 
 No behaviour change intended. The gate of a session start (source choice, band and frequency clamp, the unsupported-frequency exit) is `rtl_session_begin(plan)` with a small `RtlSessionPlan` (remote, band, frequency, volume); the stream configuration, HF route, offset tuning, gain reset, start, HF warning and no-memory retry (87 statements) are `rtl_session_start(band, frequency_hz, remote, st)`, which returns the error code. Both are `noinline` in `main.cpp`; the start block was moved by script and checked token for token, the gate was rewritten by hand (`continue` became `return false`, the volume is read at the same point).

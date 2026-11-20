@@ -8732,6 +8732,275 @@ __attribute__((noinline)) static esp_err_t rtl_session_start(RtlBand band, uint3
   return err;
 }
 
+// Step 3e: the running loop of a receiver session (touch-free hot retune, auto FM, stall and rate checks, periodic
+// status and spectrum scheduling). The whole block moved as it was; its locals stay locals of this function, and the
+// breaks and continues still end or restart this same loop.
+__attribute__((noinline)) static void rtl_session_run(RtlBand band, uint32_t frequency_hz, bool remote) {
+  uint32_t spectrum_last_ms = 0;
+  uint32_t adsb_metrics_last_ms = 0;
+  uint32_t pocsag_metrics_last_ms = 0;
+  uint32_t stream_progress_last_ms = millis();
+  uint64_t stream_progress_bytes = 0;
+  uint8_t stream_stall_checks = 0;
+  esp_rtl_sdr_metrics_t initial_metrics{};
+  if (esp_rtl_sdr_get_metrics(g_rtl, &initial_metrics) == ESP_OK)
+    stream_progress_bytes = initial_metrics.bytes_total;
+  uint32_t last_lo_applied_hz =
+      band == RtlBand::fm ? rtl_fm_command_lo_hz(frequency_hz) : frequency_hz;
+  uint32_t last_lo_apply_ms = 0;
+  bool auto_fm_scanning = false;
+  uint32_t auto_fm_frequency_hz = kRtlFmMinHz + kRtlFmAutoStepHz / 2;
+  uint32_t auto_fm_sample_at_ms = 0;
+  uint32_t auto_fm_best_hz = frequency_hz;
+  float auto_fm_best_level = -120.0f;
+  orcsdr::rtl_tcp::State last_remote_state = orcsdr::rtl_tcp::State::streaming;
+  bool last_remote_behind = false;
+  while (!rtl_stop_requested.load(std::memory_order_acquire) &&
+         (remote ? orcsdr::rtl_tcp_source::alive()
+                 : g_rtl_device_ready.load(std::memory_order_acquire))) {
+    /* Touch + hot retune on this task (not in IQ callback): responsive STOP/FREQ. */
+    if (orcsdr::settings::active()) {
+      vTaskDelay(pdMS_TO_TICKS(20));
+      continue;
+    }
+
+    /*
+     * Coalesce LO applies: only retune when the 5 kHz target changed and
+     * at most every kRtlHotRetuneMinIntervalMs. Rapid 1 kHz UI updates
+     * must not each drain USB (that caused chop + reverb-like smear).
+     */
+    const uint32_t now_retune = millis();
+    if (g_stream_band == RtlBand::fm && !auto_fm_scanning &&
+        rtl_auto_fm_requested.exchange(false, std::memory_order_acq_rel)) {
+      auto_fm_scanning = true;
+      rtl_auto_fm_active.store(true, std::memory_order_release);
+      auto_fm_frequency_hz = kRtlFmMinHz + kRtlFmAutoStepHz / 2;
+      auto_fm_best_hz = frequency_hz;
+      auto_fm_best_level = -120.0f;
+      rtl_scope_span_hz.store(rtl_span_cap_hz(), std::memory_order_relaxed);   // widest the live stream covers (a remote stream is narrower than 2.4 MHz)
+      // FM owns its Settings/Spectrum surfaces.  Reset the shared
+      // renderer for the scan, but never repaint legacy Browse chrome.
+      reset_spectrum_renderer();
+      request_hot_retune(auto_fm_frequency_hz, false);
+      auto_fm_sample_at_ms = now_retune + kRtlFmAutoSettleMs;
+      rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
+      Serial.println("RTL_AUTO_FM start");
+    }
+    if (auto_fm_scanning && now_retune >= auto_fm_sample_at_ms) {
+      const float level = rtl_scope_peak_level.load(std::memory_order_relaxed);
+      const int32_t offset = rtl_scope_peak_offset_hz.load(std::memory_order_relaxed);
+      const int64_t found = static_cast<int64_t>(auto_fm_frequency_hz) + offset;
+      const uint32_t found_hz = rtl_clamp_frequency(
+          RtlBand::fm, found > 0 ? static_cast<uint32_t>(found) : 0u);
+      if (level > auto_fm_best_level) {
+        auto_fm_best_level = level;
+        auto_fm_best_hz = ((found_hz + 50000u) / 100000u) * 100000u;
+      }
+      Serial.printf("RTL_AUTO_FM sample center=%u peak=%u level=%.1f\n",
+                    auto_fm_frequency_hz, found_hz, static_cast<double>(level));
+      if (auto_fm_frequency_hz + kRtlFmAutoStepHz / 2 >= kRtlFmMaxHz) {
+        auto_fm_scanning = false;
+        rtl_auto_fm_active.store(false, std::memory_order_release);
+        request_hot_retune(auto_fm_best_hz, false);
+        persist_fm_frequency(auto_fm_best_hz);
+        rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
+        Serial.printf("RTL_AUTO_FM done frequency_hz=%u level=%.1f\n",
+                      auto_fm_best_hz, static_cast<double>(auto_fm_best_level));
+      } else {
+        auto_fm_frequency_hz += kRtlFmAutoStepHz;
+        reset_spectrum_renderer();
+        request_hot_retune(auto_fm_frequency_hz, false);
+        auto_fm_sample_at_ms = now_retune + kRtlFmAutoSettleMs;
+      }
+    }
+    service_p25_entry_probe(now_retune);
+    service_shared_scan(now_retune);
+    service_audio_auto_gain(now_retune);
+    uint32_t desired_lo = rtl_hot_retune_hz.load(std::memory_order_acquire);
+    const bool force_lo =
+        rtl_fm_force_lo_apply.load(std::memory_order_acquire);
+    if (desired_lo != 0 && (remote || g_rtl != nullptr) &&
+        (force_lo || desired_lo != last_lo_applied_hz) &&
+        (now_retune - last_lo_apply_ms) >= kRtlHotRetuneMinIntervalMs) {
+      const uint32_t next =
+          g_stream_band == RtlBand::fm
+              ? desired_lo
+              : rtl_clamp_frequency(g_stream_band, desired_lo);
+      (void)rtl_hot_retune_hz.compare_exchange_strong(
+          desired_lo, 0, std::memory_order_acq_rel);
+      rtl_fm_force_lo_apply.store(false, std::memory_order_release);
+      // rtl_tcp has no acknowledgement: OK here means the command was queued.
+      esp_err_t te = remote ? (orcsdr::rtl_tcp_source::retune(next) ? ESP_OK : ESP_ERR_NO_MEM)
+                            : esp_rtl_sdr_retune_hz(g_rtl, next);
+      last_lo_apply_ms = now_retune;
+      if (te == ESP_OK) {
+        last_lo_applied_hz = next;
+        /* Channel changes need a demod/RDS wipe. */
+        if (force_lo || g_stream_band != RtlBand::fm) {
+          rtl_audio_reset_demod_filters();
+        }
+        Serial.printf("RTL_HOT_TUNE display=%u lo=%u ok\n",
+                      rtl_ui_frequency_hz, next);
+      } else {
+        /* Keep the request so the next loop retries. A single failed
+         * EP0 after RDS lock was leaving the UI on 95.3 and the LO
+         * on 94.5. */
+        rtl_hot_retune_hz.compare_exchange_strong(desired_lo, next,
+                                                  std::memory_order_release);
+        if (desired_lo == 0) rtl_hot_retune_hz.store(next, std::memory_order_release);
+        rtl_fm_force_lo_apply.store(true, std::memory_order_release);
+        Serial.printf("RTL_HOT_TUNE display=%u lo=%u -> %s retry\n",
+                      rtl_ui_frequency_hz, next,
+                      esp_rtl_sdr_err_to_name(te));
+      }
+    }
+
+    const uint32_t ui_revision = rtl_ui_revision.load(std::memory_order_acquire);
+    if (!orcsdr::settings::active() && g_stream_band != RtlBand::adsb &&
+        ui_revision != drawn_rtl_ui_revision) {
+      drawn_rtl_ui_revision = ui_revision;
+      rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
+    }
+
+    const uint32_t now = millis();
+    if (now - stream_progress_last_ms >= 2000) {
+      stream_progress_last_ms = now;
+      esp_rtl_sdr_metrics_t progress{};
+      if (remote) {
+        // The rtl_tcp session owns stall detection and bounded reconnect; the
+        // USB stall restart below does not apply to a network stream.
+        const auto remote_state = orcsdr::rtl_tcp_source::state();
+        // Under ~85% of the needed byte rate the server is queueing and what is
+        // heard or shown lags real time; say so instead of calling it live.
+        const uint32_t link_pct = orcsdr::rtl_tcp_source::link_ratio_pct();
+        const bool behind = remote_state == orcsdr::rtl_tcp::State::streaming &&
+                            link_pct > 0 && link_pct < 85;
+        // A link that stays behind gets a lower rate (1.44 -> 0.96 -> 0.24 MS/s): slower
+        // spectrum span, but live audio instead of stutter.
+        // After a healthy minute it probes one rung back up, and backs off if that fails.
+        const auto rate_change =
+            (remote_state == orcsdr::rtl_tcp::State::streaming &&
+             g_stream_band != RtlBand::adsb &&  // ADS-B keeps its own rate
+             rtl_rate_override_sps.load(std::memory_order_acquire) == 0 &&  // a pinned rate (FT8's 240 kS/s) is not the adapter's to move
+             !rtl_band_needs_fixed_rate(g_stream_band))  // so do LoRa, POCSAG and P25 (their decoders need 960 kS/s)
+                ? orcsdr::rtl_tcp_source::note_link_and_adapt(
+                      link_pct, rtl_remote_wanted_rate(g_stream_band), kRtlDemodRateSps)  // 240 kS/s needs the capped read size in rtl_tcp_sink_acquire
+                : orcsdr::rtl_tcp::RateAdapter::Change::none;
+        if (rate_change != orcsdr::rtl_tcp::RateAdapter::Change::none) {
+          Serial.printf("RTL_TCP_RATE_%s link=%u%% new_rate=%u\n",
+                        rate_change == orcsdr::rtl_tcp::RateAdapter::Change::down ? "DOWN" : "UP", link_pct,
+                        orcsdr::rtl_tcp_source::adapted_rate(rtl_remote_wanted_rate(g_stream_band)));
+          rtl_restart_requested.store(true, std::memory_order_release);
+          rtl_stop_requested.store(true, std::memory_order_release);
+          break;
+        }
+        if (remote_state != last_remote_state || behind != last_remote_behind) {
+          last_remote_state = remote_state;
+          last_remote_behind = behind;
+          const bool live = remote_state == orcsdr::rtl_tcp::State::streaming;
+          set_radio_session_state(live ? orcsdr::radio::ReceiverState::running
+                                       : orcsdr::radio::ReceiverState::starting);
+          // ADS-B is fixed at 2.048 MS/s (about 4.1 MB/s): name that limit, so a slow link is not mistaken for a bad server.
+          set_rtl_profile_status(behind ? (g_stream_band == RtlBand::adsb
+                                               ? "remote link too slow for ADS-B (needs ~4.1 MB/s)"
+                                               : "remote link too slow: behind real time")
+                                 : live ? (g_stream_band == RtlBand::adsb
+                                               ? "listening (remote; ADS-B needs ~4.1 MB/s)"
+                                               : "continuous listening (remote)")
+                                        : "remote reconnecting");
+          rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
+        }
+      } else if (esp_rtl_sdr_get_metrics(g_rtl, &progress) == ESP_OK) {
+        if (progress.bytes_total > stream_progress_bytes) {
+          stream_progress_bytes = progress.bytes_total;
+          stream_stall_checks = 0;
+        } else if (++stream_stall_checks >= 2) {
+          Serial.printf("RTL_STREAM_STALL band=%s bytes=%llu restarting=1\n",
+                        rtl_band_name(g_stream_band),
+                        static_cast<unsigned long long>(progress.bytes_total));
+          rtl_restart_requested.store(true, std::memory_order_release);
+          rtl_stop_requested.store(true, std::memory_order_release);
+          break;
+        }
+      }
+    }
+    service_p25_follow(now);
+    service_lora_survey(now);
+    if (g_stream_band == RtlBand::adsb && now - adsb_metrics_last_ms >= 5000) {
+      adsb_metrics_last_ms = now;
+      expire_adsb_tracks(now);
+      if (serial_verbosity_at(SerialVerbosity::debug)) print_adsb_status();
+    }
+    if (g_stream_band == RtlBand::pocsag && now - pocsag_metrics_last_ms >= 5000) {
+      pocsag_metrics_last_ms = now;
+      if (serial_verbosity_at(SerialVerbosity::debug) && pocsag_decoder_instance)
+        print_pocsag_status();
+    }
+    // One active owner receives the bounded periodic status repaint.
+    // Home already updates from loop(); a full paint here stalls IQ
+    // (choppy music + frozen scope).
+    if (!orcsdr::settings::active() && !orcsdr::home::active() &&
+        orcsdr::screens::status().active != orcsdr::screens::Id::adsb &&
+        now - rtl_signal_meter_last_ms >= kRtlSignalMeterIntervalMs) {
+      rtl_signal_meter_last_ms = now;
+      rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
+    }
+    if (g_stream_band == RtlBand::fm) rds_log_status();
+    /* A full audio recording is saved by orcsdr::audio_rec::service() on the main loop, not here. */
+    if (g_iq_rec_export_pending.exchange(false, std::memory_order_acq_rel)) {
+      (void)iq_rec_stop_and_export();
+      if (!orcsdr::settings::active())
+        rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
+    }
+    const bool gfx_on = rtl_graphics_enabled.load(std::memory_order_acquire);
+    const bool web_scope = orcsdr::web_console::spectrum_demanded();
+    if (web_scope || sstv_tune_spectrum_wanted() ||
+        (g_stream_band == RtlBand::cb && !orcsdr::settings::active() &&
+         orc_tool_current() != OrcTool::Capture) ||
+        (!orcsdr::settings::active() && !orcsdr::home::active() &&
+         g_stream_band != RtlBand::adsb && gfx_on &&
+         orc_tool_current() != OrcTool::Capture)) {
+      const bool sound_on = rtl_audio_enabled.load(std::memory_order_relaxed);
+      const bool audio_stressed =
+          sound_on && rtl_audio.dropped_chunks > 0 &&
+          rtl_audio.dropped_chunks * 2u > rtl_audio.queued_chunks + 2u;
+      const uint32_t normal_visual_interval =
+          g_stream_band == RtlBand::lora || sstv_tune_spectrum_wanted() ||
+                  (g_stream_band == RtlBand::airband && orcsdr::airband::spectrum_active()) ||
+                  (g_stream_band == RtlBand::fm && orcsdr::fm::spectrum_active()) ||
+                  (g_stream_band == RtlBand::shortwave && orcsdr::shortwave::spectrum_active()) ||
+        (g_stream_band == RtlBand::am && orcsdr::am::spectrum_active()) ||
+        (g_stream_band == RtlBand::cb && orcsdr::cb::spectrum_active()) ||
+        (g_stream_band == RtlBand::p25 && orcsdr::p25::spectrum_active())
+              ? kRtlLoraSpectrumIntervalMs
+              : kRtlSpectrumIntervalMs;
+      // A browser watching the web console limits the trace to 250 ms, but not when the Airband
+      // scope is on the device's own screen: that one should stay lively.
+      const bool local_scope_wins =
+          (g_stream_band == RtlBand::airband && orcsdr::airband::spectrum_active()) ||
+          (g_stream_band == RtlBand::fm && orcsdr::fm::spectrum_active()) ||
+          (g_stream_band == RtlBand::shortwave && orcsdr::shortwave::spectrum_active()) ||
+        (g_stream_band == RtlBand::am && orcsdr::am::spectrum_active()) ||
+        (g_stream_band == RtlBand::cb && orcsdr::cb::spectrum_active()) ||
+        (g_stream_band == RtlBand::p25 && orcsdr::p25::spectrum_active());
+      const uint32_t visual_interval = (web_scope && !local_scope_wins) ? 250u : audio_stressed
+                                           ? kRtlSpectrumStressedIntervalMs
+                                           : normal_visual_interval;
+      if (now - rtl_session_started_ms >= kRtlAudioPrimeMs &&
+          now - spectrum_last_ms >= visual_interval) {
+        spectrum_last_ms = now;
+        rtl_stream_spectrum_pending.store(true, std::memory_order_release);
+      }
+    } else if (orc_tool_current() == OrcTool::Capture &&
+               (now - spectrum_last_ms) >= 500) {
+      spectrum_last_ms = now;
+      rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
+    }
+
+    vTaskDelay(pdMS_TO_TICKS(20));
+  }
+}
+
 static void rtl_driver_app_task(void *) {
   while (true) {
     if (orcsdr::sd_transfer::active()) {
@@ -8796,269 +9065,7 @@ static void rtl_driver_app_task(void *) {
         /* Stay on radio UI so power/home chrome cannot paint over controls. */
       } else {
         rtl_session_start_ok(band);
-        uint32_t spectrum_last_ms = 0;
-        uint32_t adsb_metrics_last_ms = 0;
-        uint32_t pocsag_metrics_last_ms = 0;
-        uint32_t stream_progress_last_ms = millis();
-        uint64_t stream_progress_bytes = 0;
-        uint8_t stream_stall_checks = 0;
-        esp_rtl_sdr_metrics_t initial_metrics{};
-        if (esp_rtl_sdr_get_metrics(g_rtl, &initial_metrics) == ESP_OK)
-          stream_progress_bytes = initial_metrics.bytes_total;
-        uint32_t last_lo_applied_hz =
-            band == RtlBand::fm ? rtl_fm_command_lo_hz(frequency_hz) : frequency_hz;
-        uint32_t last_lo_apply_ms = 0;
-        bool auto_fm_scanning = false;
-        uint32_t auto_fm_frequency_hz = kRtlFmMinHz + kRtlFmAutoStepHz / 2;
-        uint32_t auto_fm_sample_at_ms = 0;
-        uint32_t auto_fm_best_hz = frequency_hz;
-        float auto_fm_best_level = -120.0f;
-        orcsdr::rtl_tcp::State last_remote_state = orcsdr::rtl_tcp::State::streaming;
-        bool last_remote_behind = false;
-        while (!rtl_stop_requested.load(std::memory_order_acquire) &&
-               (remote ? orcsdr::rtl_tcp_source::alive()
-                       : g_rtl_device_ready.load(std::memory_order_acquire))) {
-          /* Touch + hot retune on this task (not in IQ callback): responsive STOP/FREQ. */
-          if (orcsdr::settings::active()) {
-            vTaskDelay(pdMS_TO_TICKS(20));
-            continue;
-          }
-
-          /*
-           * Coalesce LO applies: only retune when the 5 kHz target changed and
-           * at most every kRtlHotRetuneMinIntervalMs. Rapid 1 kHz UI updates
-           * must not each drain USB (that caused chop + reverb-like smear).
-           */
-          const uint32_t now_retune = millis();
-          if (g_stream_band == RtlBand::fm && !auto_fm_scanning &&
-              rtl_auto_fm_requested.exchange(false, std::memory_order_acq_rel)) {
-            auto_fm_scanning = true;
-            rtl_auto_fm_active.store(true, std::memory_order_release);
-            auto_fm_frequency_hz = kRtlFmMinHz + kRtlFmAutoStepHz / 2;
-            auto_fm_best_hz = frequency_hz;
-            auto_fm_best_level = -120.0f;
-            rtl_scope_span_hz.store(rtl_span_cap_hz(), std::memory_order_relaxed);   // widest the live stream covers (a remote stream is narrower than 2.4 MHz)
-            // FM owns its Settings/Spectrum surfaces.  Reset the shared
-            // renderer for the scan, but never repaint legacy Browse chrome.
-            reset_spectrum_renderer();
-            request_hot_retune(auto_fm_frequency_hz, false);
-            auto_fm_sample_at_ms = now_retune + kRtlFmAutoSettleMs;
-            rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
-            Serial.println("RTL_AUTO_FM start");
-          }
-          if (auto_fm_scanning && now_retune >= auto_fm_sample_at_ms) {
-            const float level = rtl_scope_peak_level.load(std::memory_order_relaxed);
-            const int32_t offset = rtl_scope_peak_offset_hz.load(std::memory_order_relaxed);
-            const int64_t found = static_cast<int64_t>(auto_fm_frequency_hz) + offset;
-            const uint32_t found_hz = rtl_clamp_frequency(
-                RtlBand::fm, found > 0 ? static_cast<uint32_t>(found) : 0u);
-            if (level > auto_fm_best_level) {
-              auto_fm_best_level = level;
-              auto_fm_best_hz = ((found_hz + 50000u) / 100000u) * 100000u;
-            }
-            Serial.printf("RTL_AUTO_FM sample center=%u peak=%u level=%.1f\n",
-                          auto_fm_frequency_hz, found_hz, static_cast<double>(level));
-            if (auto_fm_frequency_hz + kRtlFmAutoStepHz / 2 >= kRtlFmMaxHz) {
-              auto_fm_scanning = false;
-              rtl_auto_fm_active.store(false, std::memory_order_release);
-              request_hot_retune(auto_fm_best_hz, false);
-              persist_fm_frequency(auto_fm_best_hz);
-              rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
-              Serial.printf("RTL_AUTO_FM done frequency_hz=%u level=%.1f\n",
-                            auto_fm_best_hz, static_cast<double>(auto_fm_best_level));
-            } else {
-              auto_fm_frequency_hz += kRtlFmAutoStepHz;
-              reset_spectrum_renderer();
-              request_hot_retune(auto_fm_frequency_hz, false);
-              auto_fm_sample_at_ms = now_retune + kRtlFmAutoSettleMs;
-            }
-          }
-          service_p25_entry_probe(now_retune);
-          service_shared_scan(now_retune);
-          service_audio_auto_gain(now_retune);
-          uint32_t desired_lo = rtl_hot_retune_hz.load(std::memory_order_acquire);
-          const bool force_lo =
-              rtl_fm_force_lo_apply.load(std::memory_order_acquire);
-          if (desired_lo != 0 && (remote || g_rtl != nullptr) &&
-              (force_lo || desired_lo != last_lo_applied_hz) &&
-              (now_retune - last_lo_apply_ms) >= kRtlHotRetuneMinIntervalMs) {
-            const uint32_t next =
-                g_stream_band == RtlBand::fm
-                    ? desired_lo
-                    : rtl_clamp_frequency(g_stream_band, desired_lo);
-            (void)rtl_hot_retune_hz.compare_exchange_strong(
-                desired_lo, 0, std::memory_order_acq_rel);
-            rtl_fm_force_lo_apply.store(false, std::memory_order_release);
-            // rtl_tcp has no acknowledgement: OK here means the command was queued.
-            esp_err_t te = remote ? (orcsdr::rtl_tcp_source::retune(next) ? ESP_OK : ESP_ERR_NO_MEM)
-                                  : esp_rtl_sdr_retune_hz(g_rtl, next);
-            last_lo_apply_ms = now_retune;
-            if (te == ESP_OK) {
-              last_lo_applied_hz = next;
-              /* Channel changes need a demod/RDS wipe. */
-              if (force_lo || g_stream_band != RtlBand::fm) {
-                rtl_audio_reset_demod_filters();
-              }
-              Serial.printf("RTL_HOT_TUNE display=%u lo=%u ok\n",
-                            rtl_ui_frequency_hz, next);
-            } else {
-              /* Keep the request so the next loop retries. A single failed
-               * EP0 after RDS lock was leaving the UI on 95.3 and the LO
-               * on 94.5. */
-              rtl_hot_retune_hz.compare_exchange_strong(desired_lo, next,
-                                                        std::memory_order_release);
-              if (desired_lo == 0) rtl_hot_retune_hz.store(next, std::memory_order_release);
-              rtl_fm_force_lo_apply.store(true, std::memory_order_release);
-              Serial.printf("RTL_HOT_TUNE display=%u lo=%u -> %s retry\n",
-                            rtl_ui_frequency_hz, next,
-                            esp_rtl_sdr_err_to_name(te));
-            }
-          }
-
-          const uint32_t ui_revision = rtl_ui_revision.load(std::memory_order_acquire);
-          if (!orcsdr::settings::active() && g_stream_band != RtlBand::adsb &&
-              ui_revision != drawn_rtl_ui_revision) {
-            drawn_rtl_ui_revision = ui_revision;
-            rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
-          }
-
-          const uint32_t now = millis();
-          if (now - stream_progress_last_ms >= 2000) {
-            stream_progress_last_ms = now;
-            esp_rtl_sdr_metrics_t progress{};
-            if (remote) {
-              // The rtl_tcp session owns stall detection and bounded reconnect; the
-              // USB stall restart below does not apply to a network stream.
-              const auto remote_state = orcsdr::rtl_tcp_source::state();
-              // Under ~85% of the needed byte rate the server is queueing and what is
-              // heard or shown lags real time; say so instead of calling it live.
-              const uint32_t link_pct = orcsdr::rtl_tcp_source::link_ratio_pct();
-              const bool behind = remote_state == orcsdr::rtl_tcp::State::streaming &&
-                                  link_pct > 0 && link_pct < 85;
-              // A link that stays behind gets a lower rate (1.44 -> 0.96 -> 0.24 MS/s): slower
-              // spectrum span, but live audio instead of stutter.
-              // After a healthy minute it probes one rung back up, and backs off if that fails.
-              const auto rate_change =
-                  (remote_state == orcsdr::rtl_tcp::State::streaming &&
-                   g_stream_band != RtlBand::adsb &&  // ADS-B keeps its own rate
-                   rtl_rate_override_sps.load(std::memory_order_acquire) == 0 &&  // a pinned rate (FT8's 240 kS/s) is not the adapter's to move
-                   !rtl_band_needs_fixed_rate(g_stream_band))  // so do LoRa, POCSAG and P25 (their decoders need 960 kS/s)
-                      ? orcsdr::rtl_tcp_source::note_link_and_adapt(
-                            link_pct, rtl_remote_wanted_rate(g_stream_band), kRtlDemodRateSps)  // 240 kS/s needs the capped read size in rtl_tcp_sink_acquire
-                      : orcsdr::rtl_tcp::RateAdapter::Change::none;
-              if (rate_change != orcsdr::rtl_tcp::RateAdapter::Change::none) {
-                Serial.printf("RTL_TCP_RATE_%s link=%u%% new_rate=%u\n",
-                              rate_change == orcsdr::rtl_tcp::RateAdapter::Change::down ? "DOWN" : "UP", link_pct,
-                              orcsdr::rtl_tcp_source::adapted_rate(rtl_remote_wanted_rate(g_stream_band)));
-                rtl_restart_requested.store(true, std::memory_order_release);
-                rtl_stop_requested.store(true, std::memory_order_release);
-                break;
-              }
-              if (remote_state != last_remote_state || behind != last_remote_behind) {
-                last_remote_state = remote_state;
-                last_remote_behind = behind;
-                const bool live = remote_state == orcsdr::rtl_tcp::State::streaming;
-                set_radio_session_state(live ? orcsdr::radio::ReceiverState::running
-                                             : orcsdr::radio::ReceiverState::starting);
-                // ADS-B is fixed at 2.048 MS/s (about 4.1 MB/s): name that limit, so a slow link is not mistaken for a bad server.
-                set_rtl_profile_status(behind ? (g_stream_band == RtlBand::adsb
-                                                     ? "remote link too slow for ADS-B (needs ~4.1 MB/s)"
-                                                     : "remote link too slow: behind real time")
-                                       : live ? (g_stream_band == RtlBand::adsb
-                                                     ? "listening (remote; ADS-B needs ~4.1 MB/s)"
-                                                     : "continuous listening (remote)")
-                                              : "remote reconnecting");
-                rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
-              }
-            } else if (esp_rtl_sdr_get_metrics(g_rtl, &progress) == ESP_OK) {
-              if (progress.bytes_total > stream_progress_bytes) {
-                stream_progress_bytes = progress.bytes_total;
-                stream_stall_checks = 0;
-              } else if (++stream_stall_checks >= 2) {
-                Serial.printf("RTL_STREAM_STALL band=%s bytes=%llu restarting=1\n",
-                              rtl_band_name(g_stream_band),
-                              static_cast<unsigned long long>(progress.bytes_total));
-                rtl_restart_requested.store(true, std::memory_order_release);
-                rtl_stop_requested.store(true, std::memory_order_release);
-                break;
-              }
-            }
-          }
-          service_p25_follow(now);
-          service_lora_survey(now);
-          if (g_stream_band == RtlBand::adsb && now - adsb_metrics_last_ms >= 5000) {
-            adsb_metrics_last_ms = now;
-            expire_adsb_tracks(now);
-            if (serial_verbosity_at(SerialVerbosity::debug)) print_adsb_status();
-          }
-          if (g_stream_band == RtlBand::pocsag && now - pocsag_metrics_last_ms >= 5000) {
-            pocsag_metrics_last_ms = now;
-            if (serial_verbosity_at(SerialVerbosity::debug) && pocsag_decoder_instance)
-              print_pocsag_status();
-          }
-          // One active owner receives the bounded periodic status repaint.
-          // Home already updates from loop(); a full paint here stalls IQ
-          // (choppy music + frozen scope).
-          if (!orcsdr::settings::active() && !orcsdr::home::active() &&
-              orcsdr::screens::status().active != orcsdr::screens::Id::adsb &&
-              now - rtl_signal_meter_last_ms >= kRtlSignalMeterIntervalMs) {
-            rtl_signal_meter_last_ms = now;
-            rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
-          }
-          if (g_stream_band == RtlBand::fm) rds_log_status();
-          /* A full audio recording is saved by orcsdr::audio_rec::service() on the main loop, not here. */
-          if (g_iq_rec_export_pending.exchange(false, std::memory_order_acq_rel)) {
-            (void)iq_rec_stop_and_export();
-            if (!orcsdr::settings::active())
-              rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
-          }
-          const bool gfx_on = rtl_graphics_enabled.load(std::memory_order_acquire);
-          const bool web_scope = orcsdr::web_console::spectrum_demanded();
-          if (web_scope || sstv_tune_spectrum_wanted() ||
-              (g_stream_band == RtlBand::cb && !orcsdr::settings::active() &&
-               orc_tool_current() != OrcTool::Capture) ||
-              (!orcsdr::settings::active() && !orcsdr::home::active() &&
-               g_stream_band != RtlBand::adsb && gfx_on &&
-               orc_tool_current() != OrcTool::Capture)) {
-            const bool sound_on = rtl_audio_enabled.load(std::memory_order_relaxed);
-            const bool audio_stressed =
-                sound_on && rtl_audio.dropped_chunks > 0 &&
-                rtl_audio.dropped_chunks * 2u > rtl_audio.queued_chunks + 2u;
-            const uint32_t normal_visual_interval =
-                g_stream_band == RtlBand::lora || sstv_tune_spectrum_wanted() ||
-                        (g_stream_band == RtlBand::airband && orcsdr::airband::spectrum_active()) ||
-                        (g_stream_band == RtlBand::fm && orcsdr::fm::spectrum_active()) ||
-                        (g_stream_band == RtlBand::shortwave && orcsdr::shortwave::spectrum_active()) ||
-              (g_stream_band == RtlBand::am && orcsdr::am::spectrum_active()) ||
-              (g_stream_band == RtlBand::cb && orcsdr::cb::spectrum_active()) ||
-              (g_stream_band == RtlBand::p25 && orcsdr::p25::spectrum_active())
-                    ? kRtlLoraSpectrumIntervalMs
-                    : kRtlSpectrumIntervalMs;
-            // A browser watching the web console limits the trace to 250 ms, but not when the Airband
-            // scope is on the device's own screen: that one should stay lively.
-            const bool local_scope_wins =
-                (g_stream_band == RtlBand::airband && orcsdr::airband::spectrum_active()) ||
-                (g_stream_band == RtlBand::fm && orcsdr::fm::spectrum_active()) ||
-                (g_stream_band == RtlBand::shortwave && orcsdr::shortwave::spectrum_active()) ||
-              (g_stream_band == RtlBand::am && orcsdr::am::spectrum_active()) ||
-              (g_stream_band == RtlBand::cb && orcsdr::cb::spectrum_active()) ||
-              (g_stream_band == RtlBand::p25 && orcsdr::p25::spectrum_active());
-            const uint32_t visual_interval = (web_scope && !local_scope_wins) ? 250u : audio_stressed
-                                                 ? kRtlSpectrumStressedIntervalMs
-                                                 : normal_visual_interval;
-            if (now - rtl_session_started_ms >= kRtlAudioPrimeMs &&
-                now - spectrum_last_ms >= visual_interval) {
-              spectrum_last_ms = now;
-              rtl_stream_spectrum_pending.store(true, std::memory_order_release);
-            }
-          } else if (orc_tool_current() == OrcTool::Capture &&
-                     (now - spectrum_last_ms) >= 500) {
-            spectrum_last_ms = now;
-            rtl_stream_ui_refresh_pending.store(true, std::memory_order_release);
-          }
-
-          vTaskDelay(pdMS_TO_TICKS(20));
-        }
+        rtl_session_run(band, frequency_hz, remote);
         rtl_session_stop(remote);
       }
       rtl_session_restart_if_requested();
