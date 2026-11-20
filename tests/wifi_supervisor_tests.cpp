@@ -118,6 +118,13 @@ int main() {
     g_now += 1; g_log.clear(); run(s); CHECK(g_log.size() == 2 && g_log[0].find("down_s=60 ") != std::string::npos);
     reset(); g_remote = false; run(s); CHECK_LOG("deferred");
   }
+  {  // down time is exact on an EVEN clock too (the old `millis() | 1` made it 1 ms short, so 60 s read as 59)
+    reset(); ws::State s; g_remote = true; connected = false; g_now = 200000;
+    run(s); g_log.clear(); g_now += 60000; run(s);
+    CHECK(g_log.size() == 2 && g_log[0].find("down_s=60 ") != std::string::npos);
+    g_now += 5; connected = true; g_log.clear(); run(s); CHECK(!s.down);   // link back: not down any more
+    connected = false; g_now = 0; run(s); CHECK(s.down && s.down_since_ms == 0);   // down at clock 0 still counts as down
+  }
   {  // keep-alive: needs remote, the option, being down 5 min, and 5 min since the last re-arm
     reset(); ws::State s; g_remote = true; g_keepalive = true; connected = false; connecting = false; recoveries = 3; attempts = 9;
     s.last_health_ms = g_now;   // keep the health line out of this test
@@ -139,7 +146,7 @@ int main() {
   {  // keep-alive off, or connecting, or scanning: nothing
     for (int what = 0; what < 3; ++what) {
       reset(); ws::State s; g_remote = true; g_keepalive = what != 0; connected = false; connecting = what == 1; scan_running = what == 2;
-      s.last_health_ms = 1; s.down_since_ms = 1; s.last_rearm_ms = 0; g_now = 1000000; s.last_health_ms = g_now;
+      s.last_health_ms = 1; s.down = true; s.down_since_ms = 1; s.last_rearm_ms = 0; g_now = 1000000; s.last_health_ms = g_now;
       run(s);
       CHECK_LOG("deferred");
     }

@@ -2,6 +2,16 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Three review quirks dealt with — 2026-11-19
+
+Owner asked for the review quirks to be dealt with by best practice. One real fix, two deliberate non-changes.
+
+- **Fixed: Wi-Fi down time on an even clock.** `wifi_supervisor` stored when the link went down as `millis() | 1` so that 0 could mean "not down"; on an even `millis()` that made `down_s` in `RTL_WIFI_HEALTH` and `RTL_WIFI_KEEPALIVE` read 1 ms short (60 s showed as 59). It now keeps a separate `down` flag. The health and keep-alive timing rules are otherwise unchanged. New host test with an even clock and a clock of 0 (it would fail on the old code).
+- **Not changed: Shortwave `save_memory` and the clock.** Nothing reads `saved_utc` back for display; it is only a CSV column. Refusing the save before the clock is set would lose a saved station to protect a field nobody reads, so the save stays; `saved_utc = 0` now documented as "unknown" in `shortwave_model.hpp`.
+- **Not changed: P25 `import_profile` "imported-99".** The profile list holds at most 16 entries (`kMaxProfiles`), so the 99-name case cannot be reached from this list. If the SD card holds profiles the list does not show, the library decides on a name clash; that is a different question and is not touched.
+- **Still open, owner's call:** Shortwave settings/home refresh, Shortwave retune result ignored, P25 `skip_talkgroup` with no talkgroup known.
+- **Device (COM17, M5Stack Tab5), 3 minutes after the flash:** 35 of 35 refusals, `main_stack_hwm` 6,468. The remote health and keep-alive lines were not exercised on the device (they need a remote source and an outage, which are not allowed).
+
 ## Unreleased — Receiver session start outcome named: step 3c of the runtime split — 2026-11-18
 
 No behaviour change intended. The failure branch of a stream start (35 statements: roll back the sample rate, capture state and source, honour a newer request, say why, cancel an AM scan) is now `rtl_session_start_failed(remote, err)`, and the success branch up to the speaker resume (13 statements) is `rtl_session_start_ok(band)`, both `noinline` in `main.cpp`, moved by script and checked token for token.

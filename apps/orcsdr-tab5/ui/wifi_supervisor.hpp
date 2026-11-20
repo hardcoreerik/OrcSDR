@@ -16,6 +16,7 @@ constexpr uint32_t kLostRecoveryDelayMs = 2000;
 
 struct State {
   bool link_failure_handled = false;
+  bool down = false;               // the link has been down since down_since_ms
   uint32_t down_since_ms = 0;
   uint32_t last_rearm_ms = 0;
   uint32_t last_health_ms = 0;

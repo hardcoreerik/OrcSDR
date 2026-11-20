@@ -42,8 +42,11 @@ bool service(State& state, const Vars& vars, const Hooks& hooks) {
   // Evidence for the Wi-Fi wedge: one line a minute while a remote receiver may depend on Wi-Fi, so a long soak shows what changed
   // before Wi-Fi died (link flags, retry budgets, how long it has been down, internal DMA RAM).
   const bool remote_may_need_wifi = hooks.remote_may_need_wifi();
-  if (*vars.connected) state.down_since_ms = 0;
-  else if (state.down_since_ms == 0) state.down_since_ms = hooks.now_ms() | 1u;
+  if (*vars.connected) state.down = false;
+  else if (!state.down) {
+    state.down = true;
+    state.down_since_ms = hooks.now_ms();
+  }
   if (remote_may_need_wifi && hooks.now_ms() - state.last_health_ms >= kHealthMs) {
     state.last_health_ms = hooks.now_ms();
     say(hooks.io,
@@ -51,14 +54,14 @@ bool service(State& state, const Vars& vars, const Hooks& hooks) {
         "dma_free=%lu stream=%s\n",
         *vars.connected ? 1 : 0, *vars.station_ready ? 1 : 0, hooks.link_failed() ? 1 : 0,
         static_cast<unsigned>(*vars.reconnect_attempts), static_cast<unsigned>(*vars.link_recoveries),
-        static_cast<unsigned long>(state.down_since_ms ? (hooks.now_ms() - state.down_since_ms) / 1000u : 0u),
+        static_cast<unsigned long>(state.down ? (hooks.now_ms() - state.down_since_ms) / 1000u : 0u),
         static_cast<unsigned long>(hooks.dma_free_bytes()), hooks.stream_state_name());
   }
   // Optional (Settings > RTL_TCP, off by default): reconnect and C6 link recovery are bounded, so a Wi-Fi outage longer than about
   // four minutes (an access point restarting) left the Tab5 offline until someone reset it. With this on, a remote receiver's Wi-Fi
   // gets a fresh budget every 5 minutes it stays down. It reuses the existing reconnect and recovery paths.
   if (remote_may_need_wifi && hooks.keepalive_enabled() && !*vars.connected && !*vars.connecting &&
-      !*vars.scan_running && state.down_since_ms != 0 && hooks.now_ms() - state.down_since_ms >= kKeepaliveDownMs &&
+      !*vars.scan_running && state.down && hooks.now_ms() - state.down_since_ms >= kKeepaliveDownMs &&
       hooks.now_ms() - state.last_rearm_ms >= kKeepaliveDownMs) {
     state.last_rearm_ms = hooks.now_ms();
     *vars.link_recoveries = 0;

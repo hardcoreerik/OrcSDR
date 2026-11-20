@@ -47,7 +47,7 @@ struct StationCard {
 struct Memory {
   uint32_t frequency_hz = 0;
   uint32_t bandwidth_hz = 0;
-  uint64_t saved_utc = 0;
+  uint64_t saved_utc = 0;  // UTC seconds when saved; 0 means unknown (the clock was not set). Nothing reads it back for display.
   bool favorite = false;
   char mode[8]{};
   char station[64]{};
