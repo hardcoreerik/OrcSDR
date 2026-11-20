@@ -8611,6 +8611,127 @@ __attribute__((noinline)) static void rtl_session_start_ok(RtlBand band) {
   resume_rtl_speaker();
 }
 
+// Step 3d: the gate of a session start: choose the source and band, refuse a frequency the dongle cannot tune.
+struct RtlSessionPlan {
+  bool remote = false;
+  RtlBand band = RtlBand::fm;
+  uint32_t frequency_hz = 0;
+  uint8_t volume = 0;
+};
+
+__attribute__((noinline)) static bool rtl_session_begin(RtlSessionPlan& plan) {
+  const bool remote = rtl_choose_source() == orcsdr::source::Active::remote_tcp;
+  g_rtl_remote_narrow.store(remote, std::memory_order_release);  // before any rate is chosen
+  rtl_capture_state.store(RtlCaptureState::queued, std::memory_order_release);
+  const RtlBand band = rtl_requested_band.load(std::memory_order_acquire);
+  const uint32_t frequency_hz = rtl_clamp_frequency(
+      band, rtl_requested_frequency_hz.load(std::memory_order_acquire));
+  if (!rtl_frequency_supported(frequency_hz)) {
+    rtl_capture_state.store(RtlCaptureState::ready, std::memory_order_release);
+    set_radio_session_state(orcsdr::radio::ReceiverState::ready);
+    report_unsupported_frequency(frequency_hz);
+    return false;
+  }
+  plan.remote = remote;
+  plan.band = band;
+  plan.frequency_hz = frequency_hz;
+  plan.volume = rtl_requested_volume.load(std::memory_order_acquire);
+  return true;
+}
+
+// Step 3d: configure and start the stream (USB or rtl_tcp), with the retry on no memory. Same statements, same order.
+__attribute__((noinline)) static esp_err_t rtl_session_start(RtlBand band, uint32_t frequency_hz, bool remote,
+                                                          esp_rtl_sdr_stream_config_t& st) {
+  esp_rtl_sdr_stream_config_default(&st);
+  st.preset = ESP_RTL_SDR_PRESET_CUSTOM_HZ;
+  st.frequency_hz =
+      band == RtlBand::fm ? rtl_fm_command_lo_hz(frequency_hz) : frequency_hz;
+  const uint32_t lab_rate = rtl_rate_override_sps.load(std::memory_order_acquire);
+  const uint32_t band_default_rate = rtl_default_sample_rate(band);
+  st.sample_rate_sps = lab_rate ? lab_rate : band_default_rate;
+  rtl_stream_default_rate_sps.store(band_default_rate, std::memory_order_release);
+  rtl_active_sample_rate_sps.store(st.sample_rate_sps, std::memory_order_release);
+  // The scope span must never claim more bandwidth than the stream carries.
+  if (rtl_scope_span_hz.load(std::memory_order_relaxed) > st.sample_rate_sps)
+    rtl_scope_span_hz.store(st.sample_rate_sps, std::memory_order_relaxed);
+  // V4L/V4: CB uses the tuner's direct input like the V3c. Through the
+  // 28.8 MHz upconverter, strong AM stations fold onto 28.8 MHz - f
+  // (1600 kHz lands on channel 20). Other bands keep the upconverter.
+  if (const auto profile = g_rtl_profile.load(std::memory_order_acquire);
+      !remote && (profile == ESP_RTL_SDR_PROFILE_BLOG_V4L || profile == ESP_RTL_SDR_PROFILE_BLOG_V4)) {
+    const uint32_t direct_min_hz =
+        rtl_hf_direct_override_hz != UINT32_MAX ? rtl_hf_direct_override_hz
+        : band == RtlBand::cb                       ? kRtlHfDirectMinHz
+                                                    : 0;
+    Serial.printf("RTL_HF_ROUTE band=%s route=%s min_hz=%lu result=%s\n",
+                  rtl_band_name(band), direct_min_hz ? "DIRECT" : "UPCONVERTER",
+                  static_cast<unsigned long>(direct_min_hz),
+                  esp_rtl_sdr_err_to_name(
+                      esp_rtl_sdr_set_hf_direct_min_hz(g_rtl, direct_min_hz)));
+  }
+  log_dram_budget("rtl_before_start");
+  esp_err_t offset_err = ESP_OK;
+  if (!remote && rtl_has_device_capability(ESP_RTL_SDR_CAP_OFFSET_TUNING)) {
+    offset_err = esp_rtl_sdr_set_offset_tuning(
+        g_rtl, rtl_offset_tuning_enabled.load(std::memory_order_acquire));
+    Serial.printf("RTL_OFFSET_CONFIG requested=%d result=%s correction=hardware\n",
+                  rtl_offset_tuning_enabled.load(std::memory_order_relaxed) ? 1 : 0,
+                  esp_rtl_sdr_err_to_name(offset_err));
+  }
+  g_rtl_active_source.store(static_cast<uint8_t>(remote ? orcsdr::source::Active::remote_tcp
+                                                        : orcsdr::source::Active::local_usb),
+                            std::memory_order_release);
+  if (remote) {
+    // rtl_tcp keeps its tuner state between clients: a stream for another band must start from a known gain, not from
+    // the last band's (a same-band restart, such as a rate step, keeps the user's gain).
+    static int last_remote_band = -1;
+    if (last_remote_band != static_cast<int>(band)) {
+      orcsdr::rtl_tcp_source::reset_gain_to_auto();
+      last_remote_band = static_cast<int>(band);
+    }
+  }
+  esp_err_t err = remote ? (orcsdr::rtl_tcp_source::start_and_wait(
+                                st.sample_rate_sps, st.frequency_hz, 12000,
+                                [] { return rtl_stop_requested.load(std::memory_order_acquire); })
+                                ? ESP_OK : ESP_ERR_TIMEOUT)
+                         : (offset_err == ESP_OK ? esp_rtl_sdr_start(g_rtl, &st) : offset_err);
+  Serial.printf("RTL_START %s rate=%u display_hz=%u lo_hz=%u\n",
+                esp_rtl_sdr_err_to_name(err), st.sample_rate_sps, frequency_hz,
+                st.frequency_hz);
+  if (remote && err == ESP_OK && frequency_hz < kRtlNoHfMinHz) {
+    // HF over rtl_tcp: only a server whose dongle handles HF itself (an RTL-SDR Blog V4 reports tuner 6)
+    // or that was told to use direct sampling will deliver anything below 24 MHz. The greeting does not
+    // say which, so say what we can see and let the user judge. Nothing is sent to change the server.
+    const auto remote_status = orcsdr::rtl_tcp_source::status();
+    const bool likely_hf = remote_status.tuner_type_raw == 6;
+    Serial.printf("RTL_REMOTE_HF frequency_hz=%u tuner=%u hf_capable=%s\n",
+                  static_cast<unsigned>(frequency_hz),
+                  static_cast<unsigned>(remote_status.tuner_type_raw),
+                  likely_hf ? "likely" : "unknown");
+    if (!likely_hf) set_rtl_sdr_status("remote HF needs a Blog V4 or direct sampling");
+  }
+  log_dram_budget("rtl_after_start");
+  begin_power_monitor("rtl_start");
+  if (err == ESP_ERR_NO_MEM) {
+    vTaskDelay(pdMS_TO_TICKS(500));
+    err = esp_rtl_sdr_start(g_rtl, &st);
+    Serial.printf("RTL_START_RETRY %s rate=%u frequency_hz=%u\n",
+                  esp_rtl_sdr_err_to_name(err), st.sample_rate_sps, frequency_hz);
+  }
+  if (err == ESP_OK && band == RtlBand::fm) {
+    Serial.printf("RTL_WBFM_DSP rate=%u filter_hz=%u iq_lpf_k=%.2f audio_lpf_k=%.2f "
+                  "decim=%u/%u note=app_side_filter\n",
+                  st.sample_rate_sps,
+                  rtl_filter_bandwidth_hz.load(std::memory_order_relaxed),
+                  static_cast<double>(rtl_filter_alpha(RtlBand::fm,
+                                                       st.sample_rate_sps)),
+                  static_cast<double>(kWbfmAudioLpfK),
+                  static_cast<unsigned>(rtl_rf_decimation(st.sample_rate_sps)),
+                  static_cast<unsigned>(kFmAudioDecim));
+  }
+  return err;
+}
+
 static void rtl_driver_app_task(void *) {
   while (true) {
     if (orcsdr::sd_transfer::active()) {
@@ -8661,108 +8782,15 @@ static void rtl_driver_app_task(void *) {
     if (rtl_device_ready() && !radio_io_paused() &&
         !g_rtl_server_owner.load(std::memory_order_acquire) &&
         rtl_capture_requested.exchange(false, std::memory_order_acq_rel)) {
-      const bool remote = rtl_choose_source() == orcsdr::source::Active::remote_tcp;
-      g_rtl_remote_narrow.store(remote, std::memory_order_release);  // before any rate is chosen
-      rtl_capture_state.store(RtlCaptureState::queued, std::memory_order_release);
-      const RtlBand band = rtl_requested_band.load(std::memory_order_acquire);
-      const uint32_t frequency_hz = rtl_clamp_frequency(
-          band, rtl_requested_frequency_hz.load(std::memory_order_acquire));
-      if (!rtl_frequency_supported(frequency_hz)) {
-        rtl_capture_state.store(RtlCaptureState::ready, std::memory_order_release);
-        set_radio_session_state(orcsdr::radio::ReceiverState::ready);
-        report_unsupported_frequency(frequency_hz);
-        continue;
-      }
-      const uint8_t volume = rtl_requested_volume.load(std::memory_order_acquire);
+      RtlSessionPlan plan;
+      if (!rtl_session_begin(plan)) continue;
+      const bool remote = plan.remote;
+      const RtlBand band = plan.band;
+      const uint32_t frequency_hz = plan.frequency_hz;
+      const uint8_t volume = plan.volume;
       rtl_session_reset(band, frequency_hz, volume);
       esp_rtl_sdr_stream_config_t st;
-      esp_rtl_sdr_stream_config_default(&st);
-      st.preset = ESP_RTL_SDR_PRESET_CUSTOM_HZ;
-      st.frequency_hz =
-          band == RtlBand::fm ? rtl_fm_command_lo_hz(frequency_hz) : frequency_hz;
-      const uint32_t lab_rate = rtl_rate_override_sps.load(std::memory_order_acquire);
-      const uint32_t band_default_rate = rtl_default_sample_rate(band);
-      st.sample_rate_sps = lab_rate ? lab_rate : band_default_rate;
-      rtl_stream_default_rate_sps.store(band_default_rate, std::memory_order_release);
-      rtl_active_sample_rate_sps.store(st.sample_rate_sps, std::memory_order_release);
-      // The scope span must never claim more bandwidth than the stream carries.
-      if (rtl_scope_span_hz.load(std::memory_order_relaxed) > st.sample_rate_sps)
-        rtl_scope_span_hz.store(st.sample_rate_sps, std::memory_order_relaxed);
-      // V4L/V4: CB uses the tuner's direct input like the V3c. Through the
-      // 28.8 MHz upconverter, strong AM stations fold onto 28.8 MHz - f
-      // (1600 kHz lands on channel 20). Other bands keep the upconverter.
-      if (const auto profile = g_rtl_profile.load(std::memory_order_acquire);
-          !remote && (profile == ESP_RTL_SDR_PROFILE_BLOG_V4L || profile == ESP_RTL_SDR_PROFILE_BLOG_V4)) {
-        const uint32_t direct_min_hz =
-            rtl_hf_direct_override_hz != UINT32_MAX ? rtl_hf_direct_override_hz
-            : band == RtlBand::cb                       ? kRtlHfDirectMinHz
-                                                        : 0;
-        Serial.printf("RTL_HF_ROUTE band=%s route=%s min_hz=%lu result=%s\n",
-                      rtl_band_name(band), direct_min_hz ? "DIRECT" : "UPCONVERTER",
-                      static_cast<unsigned long>(direct_min_hz),
-                      esp_rtl_sdr_err_to_name(
-                          esp_rtl_sdr_set_hf_direct_min_hz(g_rtl, direct_min_hz)));
-      }
-      log_dram_budget("rtl_before_start");
-      esp_err_t offset_err = ESP_OK;
-      if (!remote && rtl_has_device_capability(ESP_RTL_SDR_CAP_OFFSET_TUNING)) {
-        offset_err = esp_rtl_sdr_set_offset_tuning(
-            g_rtl, rtl_offset_tuning_enabled.load(std::memory_order_acquire));
-        Serial.printf("RTL_OFFSET_CONFIG requested=%d result=%s correction=hardware\n",
-                      rtl_offset_tuning_enabled.load(std::memory_order_relaxed) ? 1 : 0,
-                      esp_rtl_sdr_err_to_name(offset_err));
-      }
-      g_rtl_active_source.store(static_cast<uint8_t>(remote ? orcsdr::source::Active::remote_tcp
-                                                            : orcsdr::source::Active::local_usb),
-                                std::memory_order_release);
-      if (remote) {
-        // rtl_tcp keeps its tuner state between clients: a stream for another band must start from a known gain, not from
-        // the last band's (a same-band restart, such as a rate step, keeps the user's gain).
-        static int last_remote_band = -1;
-        if (last_remote_band != static_cast<int>(band)) {
-          orcsdr::rtl_tcp_source::reset_gain_to_auto();
-          last_remote_band = static_cast<int>(band);
-        }
-      }
-      esp_err_t err = remote ? (orcsdr::rtl_tcp_source::start_and_wait(
-                                    st.sample_rate_sps, st.frequency_hz, 12000,
-                                    [] { return rtl_stop_requested.load(std::memory_order_acquire); })
-                                    ? ESP_OK : ESP_ERR_TIMEOUT)
-                             : (offset_err == ESP_OK ? esp_rtl_sdr_start(g_rtl, &st) : offset_err);
-      Serial.printf("RTL_START %s rate=%u display_hz=%u lo_hz=%u\n",
-                    esp_rtl_sdr_err_to_name(err), st.sample_rate_sps, frequency_hz,
-                    st.frequency_hz);
-      if (remote && err == ESP_OK && frequency_hz < kRtlNoHfMinHz) {
-        // HF over rtl_tcp: only a server whose dongle handles HF itself (an RTL-SDR Blog V4 reports tuner 6)
-        // or that was told to use direct sampling will deliver anything below 24 MHz. The greeting does not
-        // say which, so say what we can see and let the user judge. Nothing is sent to change the server.
-        const auto remote_status = orcsdr::rtl_tcp_source::status();
-        const bool likely_hf = remote_status.tuner_type_raw == 6;
-        Serial.printf("RTL_REMOTE_HF frequency_hz=%u tuner=%u hf_capable=%s\n",
-                      static_cast<unsigned>(frequency_hz),
-                      static_cast<unsigned>(remote_status.tuner_type_raw),
-                      likely_hf ? "likely" : "unknown");
-        if (!likely_hf) set_rtl_sdr_status("remote HF needs a Blog V4 or direct sampling");
-      }
-      log_dram_budget("rtl_after_start");
-      begin_power_monitor("rtl_start");
-      if (err == ESP_ERR_NO_MEM) {
-        vTaskDelay(pdMS_TO_TICKS(500));
-        err = esp_rtl_sdr_start(g_rtl, &st);
-        Serial.printf("RTL_START_RETRY %s rate=%u frequency_hz=%u\n",
-                      esp_rtl_sdr_err_to_name(err), st.sample_rate_sps, frequency_hz);
-      }
-      if (err == ESP_OK && band == RtlBand::fm) {
-        Serial.printf("RTL_WBFM_DSP rate=%u filter_hz=%u iq_lpf_k=%.2f audio_lpf_k=%.2f "
-                      "decim=%u/%u note=app_side_filter\n",
-                      st.sample_rate_sps,
-                      rtl_filter_bandwidth_hz.load(std::memory_order_relaxed),
-                      static_cast<double>(rtl_filter_alpha(RtlBand::fm,
-                                                           st.sample_rate_sps)),
-                      static_cast<double>(kWbfmAudioLpfK),
-                      static_cast<unsigned>(rtl_rf_decimation(st.sample_rate_sps)),
-                      static_cast<unsigned>(kFmAudioDecim));
-      }
+      esp_err_t err = rtl_session_start(band, frequency_hz, remote, st);
       if (err != ESP_OK) {
         rtl_session_start_failed(remote, err);
         /* Stay on radio UI so power/home chrome cannot paint over controls. */

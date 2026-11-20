@@ -2,6 +2,15 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Receiver session begin and start named: step 3d of the runtime split — 2026-11-19
+
+No behaviour change intended. The gate of a session start (source choice, band and frequency clamp, the unsupported-frequency exit) is `rtl_session_begin(plan)` with a small `RtlSessionPlan` (remote, band, frequency, volume); the stream configuration, HF route, offset tuning, gain reset, start, HF warning and no-memory retry (87 statements) are `rtl_session_start(band, frequency_hz, remote, st)`, which returns the error code. Both are `noinline` in `main.cpp`; the start block was moved by script and checked token for token, the gate was rewritten by hand (`continue` became `return false`, the volume is read at the same point).
+
+- **Measured:** `main.cpp` 21,164 lines (1,025,571 bytes). New frames: `rtl_session_start` 192, `rtl_session_begin` 64. **The `rtl_driver_app_task` frame is 1,248 bytes (was 1,200 after 3c, 1,104 after 3b)**: it keeps growing as blocks leave, so the frame is set by something else (the running loop); 3e is expected to cut it.
+- **Device (COM17, M5Stack Tab5), local, 6 minutes after the flash:** 9 of 11 dashboards identical; P25 has fewer live-RF retunes; SSTV has the usual extra `RTL_DMA_WATCH` line; LoRa matches this time (its extra capture lines in 3c were live RF). 35 of 35 refusals, `main_stack_hwm` 6,336.
+- **Device, remote (rtl_tcp to a PC server, Blog V4, `192.168.1.15:1234`), old firmware against new, both 6 minutes after a flash:** FM and AM sequences identical (start at 1.44 MS/s, `RTL_REMOTE_HF` on AM, stop lines); Shortwave identical except one extra `RTL_MAIN_STALL stage=loop_gap` line (a timing report) in the new run. The first remote run of the new firmware, taken straight after the local run, showed a USB re-probe and was discarded as a disturbed measurement. The Tab5's saved source (usb) and server (192.168.1.219:1234) were restored after every run.
+- **Not checked:** a failed remote start (server off), the cancelled-by-a-newer-request restart, the no-memory retry, V4/V4L HF routing on a USB dongle other than the one fitted.
+
 ## Unreleased — Three review quirks dealt with — 2026-11-19
 
 Owner asked for the review quirks to be dealt with by best practice. One real fix, two deliberate non-changes.
