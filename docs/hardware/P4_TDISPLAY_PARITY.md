@@ -8,6 +8,8 @@ The table below is the initial 2026-11-06 inventory and is kept as the record of
 
 **What "verified" does and does not cover:** the screens draw correctly with real receiver data and their controls act. On-air decodes were not shown for FT8 (no signal in the lab), AIS (no vessels in range) or SSTV (only the built-in Robot36 self-test decoded). The Dead Air SD journal count was confirmed through the serial status, not by reading the file back. The USE button of the location picker, the wizard's WI-FI button and a reboot with a saved wizard record were not exercised.
 
+**2026-11-19 re-check (COM32, build `gt_ft8` at HEAD `7481ee6c`, flashed, power-on boot):** 10 rounds across all 18 screens ran with no reset, panic, `task_wdt` or heap message (`soak2_full.log`, private); at the end uptime 900 s, `dma_free` 80,515, `dma_min` 30,919, tasks 34; Home `draw_us` 7-10 ms. Tab5 compile at HEAD passed; the 8 compact-layout host tests pass. An earlier soak had reported `reset_reason=panic` in round 0; its core dump came from an image whose ELF no longer exists (app SHA 4045dfa72) and could not be decoded, so the cause of that panic is **not identified**. The raw dump is kept privately. If it returns, decode it with `idf.py -B C:\b\gt_ft8 -p COM32 coredump-info` before reflashing.
+
 **Not on the P4 yet:**
 - RF VISUALIZER: blocked on a display-backend decision (the Tab5 draws into the panel's raw frame buffers; the P4 builds with `ORCSDR_NO_RAW_BUFFERS`).
 - The MAPS download page (writes pack files to the card and pauses reception: needs its own supervised test).
