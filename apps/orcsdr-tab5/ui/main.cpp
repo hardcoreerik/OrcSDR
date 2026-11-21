@@ -148,6 +148,7 @@
 #include "rtl_tcp_server.hpp"
 #include "rtl_tcp_source.hpp"
 #include "pluto_home.hpp"
+#include "reset_reason_name.hpp"
 #include "pluto_source.hpp"
 #include "source_capabilities.hpp"
 #include "radio_ui_service.hpp"
@@ -21002,7 +21003,7 @@ void process_command(char* command) {
     Serial.printf("RTL_HEALTH_STATUS uptime_ms=%u free_heap=%u min_free_heap=%u "
                   "dma_free=%u dma_min=%u dma_largest=%u tasks=%u main_stack_hwm=%u "
                   "reset_reason=%d internal_free=%u internal_min=%u internal_largest=%u "
-                  "psram_free=%u psram_largest=%u\n",
+                  "psram_free=%u psram_largest=%u reset_name=%s\n",
                   millis(), esp_get_free_heap_size(), esp_get_minimum_free_heap_size(),
                   heap_caps_get_free_size(dma_caps),
                   heap_caps_get_minimum_free_size(dma_caps),
@@ -21014,7 +21015,8 @@ void process_command(char* command) {
                   heap_caps_get_minimum_free_size(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
                   heap_caps_get_largest_free_block(MALLOC_CAP_INTERNAL | MALLOC_CAP_8BIT),
                   heap_caps_get_free_size(MALLOC_CAP_SPIRAM),
-                  heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM));
+                  heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM),
+                  orcsdr::reset_reason_name(esp_reset_reason()));
     return;
   }
   if (strncmp(command, "RTL_DEAD_AIR FLOOD ", 19) == 0) {
@@ -23917,21 +23919,7 @@ void setup() {
   // globals caused a boot-time "Could not reserve internal/DMA pool" abort).
   allocate_pocsag_state();
   const esp_reset_reason_t reset_reason = esp_reset_reason();
-  const char* reset_name = "unknown";
-  switch (reset_reason) {
-    case ESP_RST_POWERON: reset_name = "poweron"; break;
-    case ESP_RST_EXT: reset_name = "ext_pin"; break;
-    case ESP_RST_SW: reset_name = "software"; break;
-    case ESP_RST_PANIC: reset_name = "panic"; break;
-    case ESP_RST_INT_WDT: reset_name = "int_wdt"; break;
-    case ESP_RST_TASK_WDT: reset_name = "task_wdt"; break;
-    case ESP_RST_WDT: reset_name = "wdt"; break;
-    case ESP_RST_DEEPSLEEP: reset_name = "deepsleep"; break;
-    case ESP_RST_BROWNOUT: reset_name = "brownout"; break;
-    case ESP_RST_SDIO: reset_name = "sdio"; break;
-    case ESP_RST_USB: reset_name = "usb"; break;
-    default: break;
-  }
+  const char* reset_name = orcsdr::reset_reason_name(reset_reason);
   Serial.printf("RTL_RESET_REASON code=%d name=%s\n", static_cast<int>(reset_reason),
                 reset_name);
 #if CONFIG_ESP_BROWNOUT_DET
