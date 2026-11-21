@@ -1,6 +1,7 @@
 #pragma once
 #include "adsb_renderer.hpp"
 #include "acars_renderer.hpp"
+#include "acars_archive_worker.hpp"
 #include "acars_tuning.hpp"
 #include "airband.hpp"
 #include "linux_audio.hpp"
@@ -57,6 +58,7 @@ class DashboardSession {
     if(worker_.joinable())worker_.join();
     clock_.stop();
     if(dead_air_storage_){dead_air_storage_->stop();dead_air_storage_.reset();}
+    ac_archive_.stop();
     mode_=0;
   }
   void start(unsigned mode,unsigned device,const std::string& audio,bool silent,uint32_t rf_center){
@@ -106,7 +108,15 @@ class DashboardSession {
     weather_drawn_=false;
     cb_channel_=orcsdr::cb::kHighwayChannel;
     if(mode==3||mode==11||mode==13||mode==14)am_.activate(mode==14?orcsdr::cb::kChannelsHz[cb_channel_]:mode==13?7100000:mode==11?1000000:airband::kGuardHz,mode==11,mode==13,mode==14);
-    if(mode==2){ac_tuning_=AcarsTuning{};ac_.receiver_connecting();}
+    if(mode==2){
+      ac_tuning_=AcarsTuning{};ac_.receiver_connecting();
+      const char* data=std::getenv("XDG_DATA_HOME");const char* home=std::getenv("HOME");
+      const auto root=data&&data[0]=='/'?std::filesystem::path(data):home?std::filesystem::path(home)/".local/share":std::filesystem::path{};
+      if(!root.empty())ac_archive_.start(root/"orcsdr/acars");
+      ac_.set_archive_listener(+[](void* context,const acars_dashboard::Record& record){
+        static_cast<acars_dashboard::ArchiveWorker*>(context)->enqueue(record);
+      },&ac_archive_);
+    }
     running_=true;
     worker_=std::thread([=]{
       if(mode==6){run_wifi();return;}
@@ -281,6 +291,9 @@ class DashboardSession {
       ads_render_.render(state,palette);return ads_render_.pixels();
     }
     if(mode_==2){
+      std::array<acars_dashboard::Record,acars_dashboard::kHistory> archive{};size_t archive_total=0;
+      const size_t archive_held=ac_archive_.recent(0,archive.data(),archive.size(),&archive_total);
+      ac_.set_archive(archive.data(),archive_held,archive_total,ac_archive_.dropped(),ac_archive_.failed());
       ac_.service();auto state=ac_.snapshot();const auto tuning=ac_tuning_;lock.unlock();
       state.requested_channel_hz=tuning.requested;
       ac_render_.render(state,now());ac_frame_.pixels=ac_render_.pixels();
@@ -1093,6 +1106,7 @@ class DashboardSession {
   CompactRenderer sw_frame_;
   orcsdr::shortwave_ssb::Choice sw_choice_=orcsdr::shortwave_ssb::Choice::automatic;
   AcarsTuning ac_tuning_;
+  acars_dashboard::ArchiveWorker ac_archive_;
   CompactRenderer ac_frame_;
   SatelliteScreen satellite_;
   LoraScreen lora_;

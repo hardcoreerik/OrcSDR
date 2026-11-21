@@ -8,11 +8,16 @@ get_filename_component(ORC_REPO_ROOT "${CMAKE_CURRENT_SOURCE_DIR}/../../../.." A
 set(ORC_TAB5_UI "${ORC_REPO_ROOT}/apps/orcsdr-tab5/ui")
 set(ORC_CARDPUTER "${ORC_REPO_ROOT}/apps/orcsdr-cardputer-zero/src")
 add_library(orc_zero_acars STATIC
-  acars_dashboard.cpp acars_renderer.cpp
-  "${ORC_TAB5_UI}/acars_core.cpp")
+  acars_dashboard.cpp acars_renderer.cpp acars_archive_worker.cpp
+  "${ORC_TAB5_UI}/acars_core.cpp" "${ORC_TAB5_UI}/acars_dashboard_model.cpp" "${ORC_TAB5_UI}/acars_demo_data.cpp"
+  "${ORC_TAB5_UI}/acars_archive.cpp")
 target_include_directories(orc_zero_acars PUBLIC
   "${CMAKE_CURRENT_SOURCE_DIR}" "${ORC_TAB5_UI}" "${ORC_CARDPUTER}" "${ORC_CARDPUTER}/compact")
-target_compile_options(orc_zero_acars PRIVATE -Wall -Wextra -Wpedantic)
+if(MSVC)
+  target_compile_options(orc_zero_acars PRIVATE /W4)
+else()
+  target_compile_options(orc_zero_acars PRIVATE -Wall -Wextra -Wpedantic)
+endif()
 
 add_executable(orc_zero_acars_preview preview.cpp)
 target_link_libraries(orc_zero_acars_preview PRIVATE orc_zero_acars)
@@ -21,8 +26,16 @@ include(CTest)
 if(BUILD_TESTING)
   add_executable(orc_zero_acars_test tests/acars_dashboard_test.cpp "${ORC_TAB5_UI}/acars_selftest.cpp")
   target_link_libraries(orc_zero_acars_test PRIVATE orc_zero_acars)
-  target_compile_options(orc_zero_acars_test PRIVATE -Wall -Wextra -Wpedantic)
+  if(MSVC)
+    target_compile_options(orc_zero_acars_test PRIVATE /W4)
+  else()
+    target_compile_options(orc_zero_acars_test PRIVATE -Wall -Wextra -Wpedantic)
+  endif()
   add_test(NAME staged_zero_acars_regressions COMMAND orc_zero_acars_test)
+  add_executable(orc_zero_acars_tuning_test "${ORC_REPO_ROOT}/apps/orcsdr-cardputer-zero/tests/acars_tuning_test.cpp"
+    "${ORC_TAB5_UI}/ft8_tuning.cpp")
+  target_link_libraries(orc_zero_acars_tuning_test PRIVATE orc_zero_acars)
+  add_test(NAME staged_zero_acars_tuning COMMAND orc_zero_acars_tuning_test)
   add_test(NAME staged_zero_acars_preview COMMAND orc_zero_acars_preview
     --demo --screenshot "${CMAKE_CURRENT_BINARY_DIR}/acars-demo.ppm")
   add_test(NAME staged_zero_acars_empty COMMAND orc_zero_acars_preview

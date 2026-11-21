@@ -110,9 +110,21 @@ void Dashboard::append(const orcsdr::acars::Message& m,uint64_t ns) {
     // If selected record was evicted, selection follows the oldest survivor.
   }else ++view_.held;
   view_.history[view_.held-1]=r;
+  size_t aircraft=view_.aircraft_held;
+  for(size_t i=0;i<view_.aircraft_held;++i)if(std::memcmp(view_.aircraft[i].tail,m.tail,7)==0){aircraft=i;break;}
+  if(aircraft==view_.aircraft_held&&view_.aircraft_held<kHistory)++view_.aircraft_held;
+  if(aircraft<kHistory){auto& a=view_.aircraft[aircraft];std::memcpy(a.tail,m.tail,7);std::memcpy(a.flight,m.flight,6);++a.messages;a.last_seen_ns=ns;}
   if(!view_.detail)view_.selected=view_.held-1;
   view_.selected_serial=view_.history[view_.selected].serial;
   bump();
+  if(view_.source==Source::live&&archive_listener_)archive_listener_(archive_context_,r);
+}
+void Dashboard::set_archive(const Record* records,size_t count,size_t total,uint32_t dropped,bool failed){
+  const size_t n=std::min(count,kHistory);bool changed=view_.archive_held!=n||view_.archive_total!=total;
+  if(n&&std::memcmp(view_.archive.data(),records,n*sizeof(Record))!=0)changed=true;
+  view_.archive_held=n;view_.archive_total=total;if(n)std::copy(records,records+n,view_.archive.begin());
+  if(failed)message_error(view_,"ARCHIVE WRITE ERROR");else if(dropped)message_error(view_,"ARCHIVE QUEUE FULL");
+  if(changed)bump();
 }
 void Dashboard::service() {
   const auto source=view_.source;
@@ -160,6 +172,7 @@ void Dashboard::set_gain(bool automatic,int tenth_db) {
 void Dashboard::receiver_connecting(){if(view_.source==Source::live){ui_connecting_=true;view_.receiver=ReceiverState::connecting;bump();}}
 bool Dashboard::input(Input action) {
   const auto old=view_.revision;
+  if(action==Input::next_view&&!view_.detail){view_.view=View((uint8_t(view_.view)+1)%3);view_.selected=0;bump();return true;}
   if(action==Input::back) {if(view_.detail){view_.detail=false;view_.detail_scroll=0;bump();}}
   else if(!view_.held) return false;
   else if(action==Input::detail) {view_.detail=true;view_.detail_scroll=0;view_.history[view_.selected].unread=false;bump();}
@@ -180,6 +193,7 @@ bool Dashboard::input(Input action) {
 }
 bool Dashboard::handle_compact_key(orc::zero::Key key) {
   switch(key) {
+    case orc::zero::Key::menu: return input(Input::next_view);
     case orc::zero::Key::up: return input(view_.detail?Input::scroll_up:Input::previous);
     case orc::zero::Key::down: return input(view_.detail?Input::scroll_down:Input::next);
     case orc::zero::Key::enter: return view_.detail?false:input(Input::detail);

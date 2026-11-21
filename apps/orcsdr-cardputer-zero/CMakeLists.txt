@@ -12,6 +12,9 @@ set(ORC_NATIVE_DECODER_DIR "${ORC_REPO_ROOT}/apps/orcsdr-tab5/ui")
 add_library(orc_native_decoders STATIC
   "${ORC_NATIVE_DECODER_DIR}/acars_core.cpp"
   "${ORC_NATIVE_DECODER_DIR}/acars_selftest.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/acars_dashboard_model.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/acars_demo_data.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/acars_archive.cpp"
   "${ORC_NATIVE_DECODER_DIR}/adsb_decoder.cpp"
   "${ORC_NATIVE_DECODER_DIR}/shortwave_ssb.cpp"
   "${ORC_NATIVE_DECODER_DIR}/ft8_audio_tap.cpp"
@@ -172,6 +175,7 @@ if(ORC_ENABLE_GUI)
   target_sources(orcsdr_cardputer_zero_gui PRIVATE
     staged-dashboards/adsb/adsb_module.cpp staged-dashboards/adsb/adsb_renderer.cpp
     staged-dashboards/acars/acars_dashboard.cpp staged-dashboards/acars/acars_renderer.cpp
+    staged-dashboards/acars/acars_archive_worker.cpp
     staged-dashboards/airband/airband.cpp staged-dashboards/airband/airband_render.cpp)
 
   target_compile_options(orcsdr_cardputer_zero_gui PRIVATE -Wall -Wextra -Wpedantic)

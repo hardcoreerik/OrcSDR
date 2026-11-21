@@ -100,7 +100,21 @@ void Renderer::status(const Snapshot& s) {
 }
 void Renderer::rows(const Snapshot& s,uint64_t now) {
   fill(0,kListY,320,96,bg);
-  if(s.held==0){
+  if(s.view==View::aircraft){
+    if(!s.aircraft_held){text(20,90,"NO AIRCRAFT YET",amber,46);}
+    for(size_t row=0;row<kRows&&row<s.aircraft_held;++row){
+      const auto& a=s.aircraft[s.aircraft_held-1-row];const int y=kListY+int(row)*kRowHeight;
+      auto tail=safe_id(a.tail,7),flight=safe_id(a.flight,6);text(12,y+3,tail.c_str(),white,7);text(86,y+3,flight.c_str(),cyan,6);
+      char b[32];std::snprintf(b,sizeof(b),"%u MSG",a.messages);text(160,y+3,b,green,12);
+      std::snprintf(b,sizeof(b),"%us",age_seconds(now,a.last_seen_ns));text(255,y+3,b,muted,7);
+    }
+  }else if(s.view==View::archive){
+    if(!s.archive_held){text(20,90,"ARCHIVE EMPTY",amber,46);}
+    for(size_t row=0;row<kRows&&row<s.archive_held;++row){const auto& rec=s.archive[row];const auto& m=rec.message;const int y=kListY+int(row)*kRowHeight;
+      auto tail=safe_id(m.tail,7),label=safe_id(m.label,2),flight=safe_id(m.flight,6);text(12,y+1,tail.c_str(),white,7);text(62,y+1,label.c_str(),cyan,2);text(86,y+1,flight.c_str(),white,6);
+      const auto preview=safe_ascii(m.text,std::min<size_t>(m.text_length,orcsdr::acars::kMaxBlockBytes),48);text(12,y+10,preview.c_str(),muted,48);
+    }
+  }else if(s.held==0){
     const char* label=s.receiver==ReceiverState::receiving?"AWAITING VERIFIED ACARS":
       s.receiver==ReceiverState::connecting?"CONNECTING RECEIVER":s.receiver==ReceiverState::error?"RECEIVER ERROR":"RECEIVER DISCONNECTED";
     text(20,90,label,amber,46);
@@ -128,7 +142,8 @@ void Renderer::rows(const Snapshot& s,uint64_t now) {
     }
   }
   fill(0,152,320,18,panel);
-  text(3,157,s.detail?"UP/DN SCROLL  ESC BACK":"UP/DN SELECT ENTER DETAIL F FREQ Z/C TUNE",cyan,52);
+  const char* footer=s.detail?"UP/DN SCROLL ESC BACK":s.view==View::activity?"M VIEW UP/DN SELECT ENTER DETAIL F FREQ":"M VIEW  ACTIVITY / AIRCRAFT / ARCHIVE";
+  text(3,157,footer,cyan,52);
   dirty(0,kListY,320,114);
 }
 void Renderer::detail(const Snapshot& s) {

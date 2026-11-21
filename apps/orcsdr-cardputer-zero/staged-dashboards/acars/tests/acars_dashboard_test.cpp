@@ -1,13 +1,17 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 #include "acars_dashboard.hpp"
 #include "acars_renderer.hpp"
+#include "acars_archive_worker.hpp"
 #include "acars_selftest.hpp" // canonical deterministic on-channel CU8 RF generator
 #include <algorithm>
 #include <array>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <chrono>
+#include <filesystem>
 #include <iostream>
+#include <thread>
 #include <vector>
 using namespace orc::zero::acars_dashboard;
 namespace {
@@ -224,8 +228,21 @@ void test_discontinuity(){
   CHECK(d.snapshot().counters.stream_resets>=2);
   feed_signal(d,4096,17);CHECK(d.snapshot().held==1);
 }
+void test_archive_worker(){
+  const auto dir=std::filesystem::temp_directory_path()/"oa";
+  std::error_code ec;std::filesystem::remove_all(dir,ec);
+  ArchiveWorker worker;CHECK(worker.start(dir));
+  Record record{};record.serial=7;record.monotonic_ns=42*ns;record.message=msg("ARCHIVED");
+  CHECK(worker.enqueue(record));
+  std::array<Record,2> rows{};size_t total=0;
+  for(int n=0;n<50&&worker.recent(0,rows.data(),rows.size(),&total)==0;++n)std::this_thread::sleep_for(std::chrono::milliseconds(10));
+  CHECK(worker.recent(0,rows.data(),rows.size(),&total)==1);CHECK(total==1);
+  CHECK(rows[0].message.text_length==8);CHECK(std::memcmp(rows[0].message.text,"ARCHIVED",8)==0);
+  worker.stop();CHECK(!worker.failed());
+  CHECK(std::filesystem::exists(dir/"undated.jsonl"));std::filesystem::remove_all(dir,ec);
 }
-int main(){test_radio();test_ring_ui();test_render_payload();test_crc_repair();test_frame_status();test_real_rf();test_retune_source();test_discontinuity();
+}
+int main(){test_radio();test_ring_ui();test_render_payload();test_crc_repair();test_frame_status();test_real_rf();test_retune_source();test_discontinuity();test_archive_worker();
   if(failures){std::cerr<<failures<<" staged ACARS checks failed\n";return 1;}
   std::cout<<"Staged ACARS model, actual CU8->24k->CRC decoder, continuity, repair, UI: PASS\n";
 }
