@@ -247,6 +247,10 @@ if(BUILD_TESTING)
     target_compile_options(orc_zero_p25_test PRIVATE -UNDEBUG)
   endif()
   add_test(NAME zero_p25_decoder_ui COMMAND orc_zero_p25_test)
+  add_executable(orc_zero_p25_profile_scan_test tests/p25_profile_scan_test.cpp)
+  target_include_directories(orc_zero_p25_profile_scan_test PRIVATE src)
+  target_compile_options(orc_zero_p25_profile_scan_test PRIVATE -UNDEBUG)
+  add_test(NAME zero_p25_profile_scan COMMAND orc_zero_p25_profile_scan_test)
 endif()
 
 # The LoRa core stays shared; only platform services are supplied by Linux.
