@@ -1,0 +1,44 @@
+name: Portable C++ core (canonical-source gate)
+
+on:
+  push:
+    branches: [main, agents/portable-core-20261106]
+    paths:
+      - "core/portable/**"
+      - "tests/acars_core_smoke.cpp"
+      - "apps/orcsdr-tab5/ui/**"
+      - ".github/workflows/portable-core.yml"
+  pull_request:
+    paths:
+      - "core/portable/**"
+      - "tests/acars_core_smoke.cpp"
+      - "apps/orcsdr-tab5/ui/**"
+      - ".github/workflows/portable-core.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  canonical-linux:
+    name: Linux x86-64 ${{ matrix.compiler }} ${{ matrix.config }}
+    runs-on: ubuntu-24.04
+    strategy:
+      fail-fast: false
+      matrix:
+        compiler: [gcc, clang]
+        config: [Debug, Release]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify pinned Git source blobs
+        run: python3 core/portable/check_source_inventory.py
+      - name: Configure canonical sources
+        run: |
+          cmake -S core/portable -B build/portable \
+            -DCMAKE_CXX_COMPILER=${{ matrix.compiler == 'gcc' && 'g++' || 'clang++' }} \
+            -DCMAKE_BUILD_TYPE=${{ matrix.config }} \
+            -DBUILD_TESTING=ON
+      - name: Compile original ACARS and ADS-B sources
+        run: cmake --build build/portable --parallel 2
+      - name: Run deterministic decoder tests
+        run: ctest --test-dir build/portable --output-on-failure --no-tests=error

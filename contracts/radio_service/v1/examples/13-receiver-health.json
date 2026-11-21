@@ -1,0 +1,33 @@
+{
+  "contract": "orcsdr.radio-service",
+  "version": {
+    "major": 1,
+    "minor": 0
+  },
+  "kind": "receiver_health",
+  "host_id": "host-example-01",
+  "boot_id": "boot-example-07",
+  "receiver_id": "receiver-usb-port-1",
+  "attachment_id": "attach-042",
+  "session_id": "session-0009",
+  "generation": 7,
+  "sequence": 21,
+  "time": {
+    "monotonic_ns": 4000000000,
+    "utc_valid": false,
+    "utc_unix_ms": null,
+    "clock_source": "unavailable",
+    "utc_uncertainty_ms": null
+  },
+  "payload": {
+    "usb_bytes_received": 65536,
+    "iq_bytes_delivered": 65536,
+    "iq_bytes_consumed": 65536,
+    "usb_errors": 0,
+    "dropped_complex_samples": null,
+    "ring_overrun_bytes": 0,
+    "effective_sample_rate_sps": 2399000,
+    "buffer_fill_bytes": null,
+    "uptime_ms": 12000
+  }
+}

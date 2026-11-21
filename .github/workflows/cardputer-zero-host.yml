@@ -1,0 +1,217 @@
+name: Cardputer Zero Linux host smoke
+
+on:
+  push:
+    branches:
+      - codex/cardputer-zero-linux-bringup-20261102
+      - agents/cardputer-zero-orcdec-20261106
+      - codex/cardputer-zero-ui-audio-controls
+    paths:
+      - 'apps/orcsdr-cardputer-zero/**'
+      - 'core/portable/**'
+      - 'contracts/radio_service/**'
+      - 'tests/radio_service_v1/**'
+      - 'tests/acars_core_smoke.cpp'
+      - 'apps/orcsdr-tab5/ui/acars_core.*'
+      - 'apps/orcsdr-tab5/ui/acars_selftest.*'
+      - 'apps/orcsdr-tab5/ui/adsb_decoder.*'
+      - '.github/workflows/cardputer-zero-host.yml'
+  pull_request:
+    paths:
+      - 'apps/orcsdr-cardputer-zero/**'
+      - 'core/portable/**'
+      - 'contracts/radio_service/**'
+      - 'tests/radio_service_v1/**'
+      - 'tests/acars_core_smoke.cpp'
+      - 'apps/orcsdr-tab5/ui/acars_core.*'
+      - 'apps/orcsdr-tab5/ui/acars_selftest.*'
+      - 'apps/orcsdr-tab5/ui/adsb_decoder.*'
+      - '.github/workflows/cardputer-zero-host.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  linux-host:
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: ["ubuntu-24.04", "ubuntu-24.04-arm"]
+        rtl: ["OFF", "ON"]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install host rtl-sdr development package
+        if: matrix.rtl == 'ON'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y pkg-config librtlsdr-dev
+          pkg-config --modversion librtlsdr
+      - name: Record runner architecture
+        run: uname -m | tee cardputer-zero-architecture.log
+      - name: Configure
+        run: |
+          set -o pipefail
+          cmake -S apps/orcsdr-cardputer-zero -B build/cardputer-zero-ci -DCMAKE_BUILD_TYPE=Release -DORC_ENABLE_RTLSDR=${{ matrix.rtl }} 2>&1 | tee cardputer-zero-configure.log
+      - name: Build
+        run: |
+          set -o pipefail
+          cmake --build build/cardputer-zero-ci --parallel 2>&1 | tee cardputer-zero-build.log
+      - name: Run deterministic decoder / IQ tests
+        run: |
+          set -o pipefail
+          ctest --test-dir build/cardputer-zero-ci --output-on-failure --verbose 2>&1 | tee cardputer-zero-ctest.log
+      - name: Check application CLI
+        run: |
+          set -o pipefail
+          ./build/cardputer-zero-ci/orcsdr_cardputer_zero --demo 2>&1 | tee cardputer-zero-demo.log
+      - name: Check library-enabled device enumeration (no RF hardware in CI)
+        if: matrix.rtl == 'ON'
+        run: |
+          set -o pipefail
+          ./build/cardputer-zero-ci/orcsdr_cardputer_zero --list 2>&1 | tee cardputer-zero-list.log
+      - name: Preserve per-run logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cardputer-zero-${{ matrix.os }}-rtl-${{ matrix.rtl }}
+          path: cardputer-zero-*.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  zero-gui-audio-toolchain:
+    name: Cardputer Linux GUI/audio dependency probe
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install GUI / audio / receiver SDK headers
+        run: |
+          set -o pipefail
+          bash apps/orcsdr-cardputer-zero/tools/bootstrap_gui_audio_dev.sh 2>&1 | tee cardputer-zero-deps-install.log
+      - name: Compile and link graphics/audio/USB toolchain probe
+        run: |
+          set -o pipefail
+          cc -Wall -Wextra -Werror -std=c11 \
+            apps/orcsdr-cardputer-zero/tools/dependency_probe.c \
+            $(pkg-config --cflags --libs sdl2 alsa libevdev libdrm librtlsdr fftw3f) \
+            -o /tmp/cardputer-zero-dependency-probe 2>&1 | tee cardputer-zero-deps-build.log
+          /tmp/cardputer-zero-dependency-probe 2>&1 | tee cardputer-zero-deps-run.log
+      - name: Upload dependency probe logs
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cardputer-zero-gui-audio-dev-probe
+          path: cardputer-zero-deps-*.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  zero-vendor-gui-sdk:
+    name: Pinned Cardputer Zero vendor SDK/LVGL sources
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fetch and verify pinned vendor GUI SDK sources
+        run: |
+          set -o pipefail
+          bash apps/orcsdr-cardputer-zero/tools/bootstrap_vendor_sdk.sh "$RUNNER_TEMP/orc-zero-sdk" 2>&1 | tee cardputer-zero-vendor-sdk.log
+      - name: Preserve vendor toolchain provenance
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cardputer-zero-vendor-sdk-provenance
+          path: cardputer-zero-vendor-sdk.log
+          if-no-files-found: warn
+          retention-days: 14
+
+  zero-gui-audio-build:
+    name: Compact native UI + audio build and simulator
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install developer dependencies
+        run: bash apps/orcsdr-cardputer-zero/tools/bootstrap_gui_audio_dev.sh
+      - name: Configure native graphics, SDR and audio
+        run: |
+          set -o pipefail
+          cmake -S apps/orcsdr-cardputer-zero -B build/zero-gui -DCMAKE_BUILD_TYPE=Release -DORC_ENABLE_GUI=ON -DORC_ENABLE_ALSA=ON -DORC_ENABLE_SDL=ON -DORC_ENABLE_RTLSDR=ON 2>&1 | tee cardputer-zero-gui-config.log
+      - name: Build and test GUI/audio and original CLI
+        run: |
+          set -o pipefail
+          cmake --build build/zero-gui --parallel 2 2>&1 | tee cardputer-zero-gui-build.log
+          ctest --test-dir build/zero-gui --output-on-failure --verbose 2>&1 | tee cardputer-zero-gui-test.log
+      - name: Render real native UI through SDL (headless graphics)
+        env:
+          SDL_VIDEODRIVER: dummy
+        run: |
+          set -o pipefail
+          mkdir -p build/zero-gui/screens
+          ./build/zero-gui/orcsdr_cardputer_zero_gui --demo --display sdl --frames 2 --screenshot build/zero-gui/screens/main.ppm 2>&1 | tee cardputer-zero-gui-sdl.log
+          for screen in weak disconnected entry menu gain audio muted noaudio help long; do
+            ./build/zero-gui/orcsdr_cardputer_zero_gui --demo --view "$screen" --screenshot "build/zero-gui/screens/$screen.ppm"
+          done
+          python3 - <<'PY'
+          from pathlib import Path
+          from PIL import Image, ImageDraw
+          p=Path('build/zero-gui/screens')
+          names=['main','weak','disconnected','entry','menu','gain','audio','muted','noaudio','help','long']
+          out=Image.new('RGB',(1280,3*190),'#181818'); d=ImageDraw.Draw(out)
+          for i,name in enumerate(names):
+            im=Image.open(p/f'{name}.ppm')
+            if im.size!=(320,170): raise SystemExit(f'{name}: invalid dimensions {im.size}')
+            im.save(p/f'{name}.png')
+            x=(i%4)*320; y=(i//4)*190
+            out.paste(im,(x,y+18));d.text((x+3,y+2),name,fill='white')
+          out.save(p/'contact.png')
+          print('11 exact 320x170 renderer captures verified')
+          PY
+      - name: Upload GUI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cardputer-zero-native-gui-audio
+          path: |
+            cardputer-zero-gui-*.log
+            build/zero-gui/screens/*.png
+          if-no-files-found: warn
+          retention-days: 14
+
+  integrated-core-contract:
+    name: Shared core + Radio Service v1 integration
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify canonical source snapshots
+        run: |
+          set -o pipefail
+          python3 core/portable/check_source_inventory.py 2>&1 | tee cardputer-zero-source-provenance.log
+      - name: Compile canonical ACARS and ADS-B
+        run: |
+          set -o pipefail
+          cmake -S core/portable -B build/cardputer-portable -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON 2>&1 | tee cardputer-zero-portable-config.log
+          cmake --build build/cardputer-portable --parallel 2>&1 | tee cardputer-zero-portable-build.log
+          ctest --test-dir build/cardputer-portable --output-on-failure 2>&1 | tee cardputer-zero-portable-test.log
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Validate shared Radio Service schema and negative contracts
+        run: |
+          set -o pipefail
+          python -m pip install 'jsonschema>=4.21,<5'
+          python -m unittest discover -s tests/radio_service_v1 -v 2>&1 | tee cardputer-zero-radio-contract.log
+          cc -std=c11 -Wall -Wextra -Werror -pedantic tests/radio_service_v1/abi_probe.c -o /tmp/orc-radio-abi-c
+          /tmp/orc-radio-abi-c
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic tests/radio_service_v1/abi_probe.c -o /tmp/orc-radio-abi-cpp
+          /tmp/orc-radio-abi-cpp
+      - name: Preserve integrated CI evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: cardputer-zero-shared-core-contract
+          path: cardputer-zero-*.log
+          if-no-files-found: warn
+          retention-days: 14

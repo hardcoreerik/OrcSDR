@@ -1,0 +1,1587 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/hardcoreerik/OrcSDR/blob/agents/radio-contract-v1-20261106/contracts/radio_service/v1/schema.json",
+  "title": "OrcSDR Radio Service v1 canonical envelope",
+  "description": "Additive contract for local and remote adapters; not the existing Headless /api/v1 contract.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "contract",
+    "version",
+    "kind",
+    "host_id",
+    "boot_id",
+    "receiver_id",
+    "attachment_id",
+    "session_id",
+    "generation",
+    "sequence",
+    "time",
+    "payload"
+  ],
+  "properties": {
+    "contract": {
+      "const": "orcsdr.radio-service"
+    },
+    "version": {
+      "$ref": "#/$defs/version"
+    },
+    "kind": {
+      "enum": [
+        "hello",
+        "hello_result",
+        "capabilities",
+        "receiver_state",
+        "command",
+        "command_result",
+        "iq_block",
+        "spectrum_frame",
+        "audio_frame",
+        "decoder_event",
+        "receiver_health"
+      ]
+    },
+    "host_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "boot_id": {
+      "type": "string",
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "receiver_id": {
+      "$ref": "#/$defs/optional_id"
+    },
+    "attachment_id": {
+      "$ref": "#/$defs/optional_id"
+    },
+    "session_id": {
+      "$ref": "#/$defs/optional_id"
+    },
+    "generation": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "sequence": {
+      "type": "integer",
+      "minimum": 0
+    },
+    "time": {
+      "$ref": "#/$defs/time"
+    },
+    "payload": {
+      "type": "object"
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "hello"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/hello"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "hello_result"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/hello_result"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "capabilities"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/capabilities"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "receiver_state"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/receiver_state"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "command"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/command"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "command_result"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/command_result"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "iq_block"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/iq_block"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "spectrum_frame"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/spectrum_frame"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "audio_frame"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/audio_frame"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "decoder_event"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/decoder_event"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "receiver_health"
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "payload": {
+            "$ref": "#/$defs/receiver_health"
+          }
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "enum": [
+              "iq_block",
+              "spectrum_frame",
+              "audio_frame",
+              "decoder_event",
+              "receiver_health"
+            ]
+          }
+        },
+        "required": [
+          "kind"
+        ]
+      },
+      "then": {
+        "properties": {
+          "receiver_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "attachment_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "session_id": {
+            "type": "string",
+            "minLength": 1
+          },
+          "generation": {
+            "type": "integer",
+            "minimum": 1
+          }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "optional_id": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "minLength": 1,
+      "maxLength": 128
+    },
+    "version": {
+      "type": "object",
+      "required": [
+        "major",
+        "minor"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "major": {
+          "const": 1
+        },
+        "minor": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    },
+    "time": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "monotonic_ns",
+        "utc_valid",
+        "utc_unix_ms",
+        "clock_source",
+        "utc_uncertainty_ms"
+      ],
+      "properties": {
+        "monotonic_ns": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "utc_valid": {
+          "type": "boolean"
+        },
+        "utc_unix_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "clock_source": {
+          "enum": [
+            "unavailable",
+            "system",
+            "ntp",
+            "gnss",
+            "host",
+            "manual"
+          ]
+        },
+        "utc_uncertainty_ms": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "utc_valid": {
+                "const": true
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "utc_unix_ms": {
+                "type": "integer"
+              },
+              "utc_uncertainty_ms": {
+                "type": "number"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "utc_valid": {
+                "const": false
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "utc_unix_ms": {
+                "type": "null"
+              },
+              "utc_uncertainty_ms": {
+                "type": "null"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "hz_range": {
+      "type": "object",
+      "required": [
+        "min_hz",
+        "max_hz"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "min_hz": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "max_hz": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "host_capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "display",
+        "network_interfaces",
+        "storage",
+        "audio_output"
+      ],
+      "properties": {
+        "display": {
+          "type": "boolean"
+        },
+        "network_interfaces": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "enum": [
+              "ethernet",
+              "wifi",
+              "cellular",
+              "usb",
+              "other"
+            ]
+          }
+        },
+        "storage": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "available",
+            "recording"
+          ],
+          "properties": {
+            "available": {
+              "type": "boolean"
+            },
+            "recording": {
+              "type": "boolean"
+            }
+          }
+        },
+        "audio_output": {
+          "type": "boolean"
+        }
+      }
+    },
+    "receiver_capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transport",
+        "frequency_ranges",
+        "sample_rates_sps",
+        "sample_rate_ranges_sps",
+        "gain",
+        "tuner",
+        "services",
+        "tx"
+      ],
+      "properties": {
+        "transport": {
+          "enum": [
+            "usb",
+            "network",
+            "virtual",
+            "file",
+            "spi",
+            "pcie",
+            "other"
+          ]
+        },
+        "frequency_ranges": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/hz_range"
+          }
+        },
+        "sample_rates_sps": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "integer",
+            "minimum": 1
+          }
+        },
+        "sample_rate_ranges_sps": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "min_sps",
+              "max_sps"
+            ],
+            "properties": {
+              "min_sps": {
+                "type": "integer",
+                "minimum": 1
+              },
+              "max_sps": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        },
+        "gain": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "manual",
+            "auto",
+            "steps_tenth_db"
+          ],
+          "properties": {
+            "manual": {
+              "type": "boolean"
+            },
+            "auto": {
+              "type": "boolean"
+            },
+            "steps_tenth_db": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "integer"
+              }
+            }
+          }
+        },
+        "tuner": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "bias_tee",
+            "rtl_agc",
+            "direct_sampling",
+            "ppm_correction",
+            "bandwidths_hz"
+          ],
+          "properties": {
+            "bias_tee": {
+              "type": "boolean"
+            },
+            "rtl_agc": {
+              "type": "boolean"
+            },
+            "direct_sampling": {
+              "type": "boolean"
+            },
+            "ppm_correction": {
+              "type": "boolean"
+            },
+            "bandwidths_hz": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "integer",
+                "minimum": 1
+              }
+            }
+          }
+        },
+        "services": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "iq",
+            "spectrum",
+            "audio",
+            "decode",
+            "scan",
+            "record"
+          ],
+          "properties": {
+            "iq": {
+              "type": "boolean"
+            },
+            "spectrum": {
+              "type": "boolean"
+            },
+            "audio": {
+              "type": "boolean"
+            },
+            "decode": {
+              "type": "boolean"
+            },
+            "scan": {
+              "type": "boolean"
+            },
+            "record": {
+              "type": "boolean"
+            }
+          }
+        },
+        "tx": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "supported",
+            "frequency_ranges",
+            "modes"
+          ],
+          "properties": {
+            "supported": {
+              "type": "boolean"
+            },
+            "frequency_ranges": {
+              "type": "array",
+              "items": {
+                "$ref": "#/$defs/hz_range"
+              }
+            },
+            "modes": {
+              "type": "array",
+              "uniqueItems": true,
+              "items": {
+                "type": "string"
+              }
+            }
+          }
+        }
+      }
+    },
+    "hello": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "supported_versions",
+        "supported_data_transports",
+        "requested_scopes"
+      ],
+      "properties": {
+        "supported_versions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "$ref": "#/$defs/supported_version"
+          }
+        },
+        "supported_data_transports": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "requested_scopes": {
+          "$ref": "#/$defs/scopes"
+        }
+      }
+    },
+    "scopes": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": {
+        "enum": [
+          "observe",
+          "tune",
+          "stream",
+          "record",
+          "admin",
+          "tx"
+        ]
+      }
+    },
+    "hello_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selected_version",
+        "granted_scopes",
+        "supported_data_transports",
+        "authenticated",
+        "status"
+      ],
+      "properties": {
+        "selected_version": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/version"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "granted_scopes": {
+          "$ref": "#/$defs/scopes"
+        },
+        "supported_data_transports": {
+          "type": "array",
+          "uniqueItems": true,
+          "items": {
+            "type": "string"
+          }
+        },
+        "authenticated": {
+          "type": "boolean"
+        },
+        "status": {
+          "enum": [
+            "compatible",
+            "incompatible",
+            "unauthorized"
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "compatible"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "selected_version": {
+                "$ref": "#/$defs/version"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "incompatible",
+                  "unauthorized"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "selected_version": {
+                "type": "null"
+              },
+              "granted_scopes": {
+                "maxItems": 0
+              }
+            }
+          }
+        }
+      ]
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "host",
+        "receiver",
+        "evidence"
+      ],
+      "properties": {
+        "host": {
+          "$ref": "#/$defs/host_capabilities"
+        },
+        "receiver": {
+          "$ref": "#/$defs/receiver_capabilities"
+        },
+        "evidence": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "source",
+            "proven"
+          ],
+          "properties": {
+            "source": {
+              "type": "string",
+              "minLength": 1
+            },
+            "proven": {
+              "type": "boolean"
+            }
+          }
+        }
+      }
+    },
+    "applied_settings": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "center_frequency_hz",
+        "sample_rate_sps",
+        "gain_mode",
+        "gain_tenth_db"
+      ],
+      "properties": {
+        "center_frequency_hz": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "sample_rate_sps": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 1
+        },
+        "gain_mode": {
+          "enum": [
+            "auto",
+            "manual",
+            "unknown"
+          ]
+        },
+        "gain_tenth_db": {
+          "type": [
+            "integer",
+            "null"
+          ]
+        }
+      }
+    },
+    "receiver_state": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "state",
+        "owner",
+        "applied",
+        "pending_command_id"
+      ],
+      "properties": {
+        "state": {
+          "enum": [
+            "absent",
+            "present",
+            "ready",
+            "configuring",
+            "streaming",
+            "stopping",
+            "error"
+          ]
+        },
+        "owner": {
+          "$ref": "#/$defs/optional_id"
+        },
+        "applied": {
+          "$ref": "#/$defs/applied_settings"
+        },
+        "pending_command_id": {
+          "$ref": "#/$defs/optional_id"
+        }
+      }
+    },
+    "requested": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "frequency_hz": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "sample_rate_sps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "gain_mode": {
+          "enum": [
+            "auto",
+            "manual"
+          ]
+        },
+        "gain_tenth_db": {
+          "type": "integer"
+        },
+        "enabled": {
+          "type": "boolean"
+        },
+        "format": {
+          "type": "string"
+        },
+        "sink_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "minProperties": 1
+    },
+    "command": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command_id",
+        "operation",
+        "expected_generation",
+        "expected_attachment_id",
+        "requested"
+      ],
+      "properties": {
+        "command_id": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 128
+        },
+        "operation": {
+          "enum": [
+            "tune",
+            "set_rate",
+            "set_gain",
+            "set_bias_tee",
+            "stream.start",
+            "stream.stop",
+            "record.start",
+            "record.stop",
+            "receiver.connect",
+            "receiver.disconnect",
+            "tx.start",
+            "tx.stop"
+          ]
+        },
+        "expected_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "expected_attachment_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "requested": {
+          "$ref": "#/$defs/requested"
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "tune"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "requested": {
+                "required": [
+                  "frequency_hz"
+                ]
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "operation": {
+                "const": "set_rate"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "requested": {
+                "required": [
+                  "sample_rate_sps"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    "error": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "code",
+        "message",
+        "retryable"
+      ],
+      "properties": {
+        "code": {
+          "enum": [
+            "INVALID_ARGUMENT",
+            "UNSUPPORTED_CAPABILITY",
+            "OUT_OF_RANGE",
+            "STALE_GENERATION",
+            "ATTACHMENT_CHANGED",
+            "RECEIVER_BUSY",
+            "UNAUTHORIZED",
+            "HARDWARE_FAILURE",
+            "TIMEOUT",
+            "NOT_READY",
+            "VERSION_INCOMPATIBLE",
+            "TRANSPORT_UNAVAILABLE"
+          ]
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        },
+        "retryable": {
+          "type": "boolean"
+        }
+      }
+    },
+    "command_result": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "command_id",
+        "operation",
+        "status",
+        "requested",
+        "applied",
+        "result_generation",
+        "backend_ack",
+        "ack_source",
+        "error"
+      ],
+      "properties": {
+        "command_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "operation": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "enum": [
+            "unavailable",
+            "pending",
+            "applied",
+            "failed"
+          ]
+        },
+        "requested": {
+          "$ref": "#/$defs/requested"
+        },
+        "applied": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/applied_settings"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        },
+        "result_generation": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "backend_ack": {
+          "type": "boolean"
+        },
+        "ack_source": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "error": {
+          "oneOf": [
+            {
+              "$ref": "#/$defs/error"
+            },
+            {
+              "type": "null"
+            }
+          ]
+        }
+      },
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "applied"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "applied": {
+                "$ref": "#/$defs/applied_settings"
+              },
+              "backend_ack": {
+                "const": true
+              },
+              "ack_source": {
+                "type": "string",
+                "minLength": 1
+              },
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "const": "pending"
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "applied": {
+                "type": "null"
+              },
+              "backend_ack": {
+                "const": false
+              },
+              "ack_source": {
+                "type": "null"
+              },
+              "error": {
+                "type": "null"
+              }
+            }
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "status": {
+                "enum": [
+                  "failed",
+                  "unavailable"
+                ]
+              }
+            }
+          },
+          "then": {
+            "properties": {
+              "backend_ack": {
+                "const": false
+              },
+              "error": {
+                "$ref": "#/$defs/error"
+              }
+            }
+          }
+        }
+      ]
+    },
+    "data_ref": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "transport",
+        "stream_id"
+      ],
+      "properties": {
+        "transport": {
+          "enum": [
+            "in_process",
+            "shared_memory",
+            "rtl_tcp",
+            "orcstream",
+            "legacy_websocket",
+            "file"
+          ]
+        },
+        "stream_id": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "iq_block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "format",
+        "sample_rate_sps",
+        "center_frequency_hz",
+        "first_sample_index",
+        "complex_sample_count",
+        "payload_bytes",
+        "dropped_complex_samples_since_previous",
+        "data_ref"
+      ],
+      "properties": {
+        "format": {
+          "enum": [
+            "cu8",
+            "cs8",
+            "cs16le",
+            "cf32le"
+          ]
+        },
+        "sample_rate_sps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "center_frequency_hz": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "first_sample_index": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "complex_sample_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "payload_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "dropped_complex_samples_since_previous": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "data_ref": {
+          "$ref": "#/$defs/data_ref"
+        }
+      }
+    },
+    "spectrum_frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "center_frequency_hz",
+        "span_hz",
+        "fft_size",
+        "bin_count",
+        "bins",
+        "unit",
+        "window",
+        "first_sample_index",
+        "calibrated",
+        "dropped_frames_since_previous"
+      ],
+      "properties": {
+        "center_frequency_hz": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "span_hz": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "fft_size": {
+          "type": "integer",
+          "minimum": 2
+        },
+        "bin_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "bins": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "number"
+          }
+        },
+        "unit": {
+          "enum": [
+            "dbfs",
+            "relative",
+            "dbm"
+          ]
+        },
+        "window": {
+          "type": "string",
+          "minLength": 1
+        },
+        "first_sample_index": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "calibrated": {
+          "type": "boolean"
+        },
+        "dropped_frames_since_previous": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "audio_frame": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sample_rate_sps",
+        "channels",
+        "format",
+        "frame_count",
+        "payload_bytes",
+        "data_ref",
+        "underruns_since_previous"
+      ],
+      "properties": {
+        "sample_rate_sps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "channels": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 8
+        },
+        "format": {
+          "enum": [
+            "s16le",
+            "f32le"
+          ]
+        },
+        "frame_count": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "payload_bytes": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "data_ref": {
+          "$ref": "#/$defs/data_ref"
+        },
+        "underruns_since_previous": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "decoder_event": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "event_id",
+        "protocol",
+        "frequency_hz",
+        "decoder",
+        "integrity",
+        "origin",
+        "classification",
+        "fields",
+        "confidence"
+      ],
+      "properties": {
+        "event_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "protocol": {
+          "type": "string",
+          "minLength": 1
+        },
+        "frequency_hz": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "decoder": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "name",
+            "version",
+            "source_sha"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "version": {
+              "type": "string",
+              "minLength": 1
+            },
+            "source_sha": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          }
+        },
+        "integrity": {
+          "enum": [
+            "crc_valid",
+            "fec_valid",
+            "candidate",
+            "unverified",
+            "invalid"
+          ]
+        },
+        "origin": {
+          "enum": [
+            "live_rf",
+            "replay",
+            "injected",
+            "synthetic"
+          ]
+        },
+        "classification": {
+          "type": "string",
+          "minLength": 1
+        },
+        "fields": {
+          "type": "object"
+        },
+        "confidence": {
+          "type": [
+            "number",
+            "null"
+          ],
+          "minimum": 0,
+          "maximum": 1
+        }
+      }
+    },
+    "receiver_health": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "usb_bytes_received",
+        "iq_bytes_delivered",
+        "iq_bytes_consumed",
+        "usb_errors",
+        "dropped_complex_samples",
+        "ring_overrun_bytes",
+        "effective_sample_rate_sps",
+        "buffer_fill_bytes",
+        "uptime_ms"
+      ],
+      "properties": {
+        "usb_bytes_received": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "iq_bytes_delivered": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "iq_bytes_consumed": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "usb_errors": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "dropped_complex_samples": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "ring_overrun_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "effective_sample_rate_sps": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "buffer_fill_bytes": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        },
+        "uptime_ms": {
+          "type": [
+            "integer",
+            "null"
+          ],
+          "minimum": 0
+        }
+      }
+    },
+    "supported_version": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "major",
+        "minor"
+      ],
+      "properties": {
+        "major": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "minor": {
+          "type": "integer",
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

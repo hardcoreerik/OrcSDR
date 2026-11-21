@@ -1,0 +1,8 @@
+[Desktop Entry]
+Type=Application
+Name=OrcSDR Cardputer Zero
+Comment=Native OrcSDR FM receiver and spectrum instrument
+Exec=/usr/bin/orcsdr_cardputer_zero_gui --display fb
+Icon=/usr/share/APPLaunch/share/images/orcsdr-cardputer.png
+Terminal=false
+Categories=AudioVideo;Audio;HamRadio;

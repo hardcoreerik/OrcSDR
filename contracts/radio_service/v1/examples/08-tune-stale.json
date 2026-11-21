@@ -1,0 +1,44 @@
+{
+  "contract": "orcsdr.radio-service",
+  "version": {
+    "major": 1,
+    "minor": 0
+  },
+  "kind": "command_result",
+  "host_id": "host-example-01",
+  "boot_id": "boot-example-07",
+  "receiver_id": "receiver-usb-port-1",
+  "attachment_id": "attach-042",
+  "session_id": "session-0009",
+  "generation": 8,
+  "sequence": 24,
+  "time": {
+    "monotonic_ns": 4000000000,
+    "utc_valid": false,
+    "utc_unix_ms": null,
+    "clock_source": "unavailable",
+    "utc_uncertainty_ms": null
+  },
+  "payload": {
+    "command_id": "cmd-0020",
+    "operation": "tune",
+    "status": "failed",
+    "requested": {
+      "frequency_hz": 105500000
+    },
+    "applied": {
+      "center_frequency_hz": 101700000,
+      "sample_rate_sps": 2400000,
+      "gain_mode": "manual",
+      "gain_tenth_db": 297
+    },
+    "result_generation": 8,
+    "backend_ack": false,
+    "ack_source": null,
+    "error": {
+      "code": "STALE_GENERATION",
+      "message": "session was retuned by another owner",
+      "retryable": true
+    }
+  }
+}

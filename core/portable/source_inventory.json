@@ -1,0 +1,654 @@
+{
+  "schema_version": 1,
+  "generated_from_git_trees": "2026-11-06",
+  "references": {
+    "canonical": {
+      "repository": "hardcoreerik/OrcSDR",
+      "ref": "main",
+      "commit": "1dbf2d455a5c2bf8bf69ef804336418879b7325f"
+    },
+    "headless": {
+      "repository": "hardcoreerik/OrcSDR-Headless",
+      "ref": "feat/m5gfx-web-mirror",
+      "commit": "67e535e3a8562709d190194363f7d81ce77fe2f3"
+    },
+    "mobile": {
+      "repository": "hardcoreerik/OrcSDR-Mobile",
+      "ref": "main",
+      "commit": "b5fe05d39972c0ee4b1cb6830f903facf58cb3b2"
+    }
+  },
+  "licensing": {
+    "canonical": "AGPL-3.0-only; separate commercial terms subject to rights review",
+    "headless_vendor": "OrcSDR sources, copied with existing notices",
+    "mobile_extracts": "See native/core/SOURCE_MANIFEST.json and UPSTREAM.md in Mobile; commercial rights not cleared"
+  },
+  "headless_vendor": [
+    {
+      "group": "acars",
+      "canonical_path": "apps/orcsdr-tab5/ui/acars_core.cpp",
+      "canonical_blob": "85d20ef9d7a2ec4cc787a43bdddee9dd010dd39a",
+      "headless_path": "core/decoders/vendor/orcsdr/acars_core.cpp",
+      "headless_blob": "85d20ef9d7a2ec4cc787a43bdddee9dd010dd39a",
+      "identical": true
+    },
+    {
+      "group": "acars",
+      "canonical_path": "apps/orcsdr-tab5/ui/acars_core.hpp",
+      "canonical_blob": "f92e9d6488be32a2ea50b88fcd752ea88deed048",
+      "headless_path": "core/decoders/vendor/orcsdr/acars_core.hpp",
+      "headless_blob": "f92e9d6488be32a2ea50b88fcd752ea88deed048",
+      "identical": true
+    },
+    {
+      "group": "adsb",
+      "canonical_path": "apps/orcsdr-tab5/ui/adsb_decoder.cpp",
+      "canonical_blob": "45c66c060b55f7c106f3d496f1743977ad487da6",
+      "headless_path": "core/decoders/vendor/orcsdr/adsb_decoder.cpp",
+      "headless_blob": "45c66c060b55f7c106f3d496f1743977ad487da6",
+      "identical": true
+    },
+    {
+      "group": "adsb",
+      "canonical_path": "apps/orcsdr-tab5/ui/adsb_decoder.hpp",
+      "canonical_blob": "adee22621c66ca2a1a47062c86d4b221764f9cdf",
+      "headless_path": "core/decoders/vendor/orcsdr/adsb_decoder.hpp",
+      "headless_blob": "adee22621c66ca2a1a47062c86d4b221764f9cdf",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_codec.cpp",
+      "canonical_blob": "ff11b64d52c265280fe53aff921c00fa8e330723",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_codec.cpp",
+      "headless_blob": "ff11b64d52c265280fe53aff921c00fa8e330723",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_codec.hpp",
+      "canonical_blob": "3c5516239ed17dad5325c0002fa43486dafb1f29",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_codec.hpp",
+      "headless_blob": "3c5516239ed17dad5325c0002fa43486dafb1f29",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_decoder_backend.hpp",
+      "canonical_blob": "0a2ebfd02ae4bd577a910fa1a8fa03884ade85a4",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_decoder_backend.hpp",
+      "headless_blob": "0a2ebfd02ae4bd577a910fa1a8fa03884ade85a4",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_demod.cpp",
+      "canonical_blob": "248892f4c2abb38fd0472babb07efff00ef6a981",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_demod.cpp",
+      "headless_blob": "248892f4c2abb38fd0472babb07efff00ef6a981",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_demod.hpp",
+      "canonical_blob": "1e442f59586d04b7670b5842a1af59bc6b5d2389",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_demod.hpp",
+      "headless_blob": "1e442f59586d04b7670b5842a1af59bc6b5d2389",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_ldpc_decode.cpp",
+      "canonical_blob": "8936e34f81d5ad076212cf5363f3d8dfcecdcd38",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_ldpc_decode.cpp",
+      "headless_blob": "8936e34f81d5ad076212cf5363f3d8dfcecdcd38",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_ldpc_decode.hpp",
+      "canonical_blob": "42977d07c784a276c1b2806359f66721321f291c",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_ldpc_decode.hpp",
+      "headless_blob": "42977d07c784a276c1b2806359f66721321f291c",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_ldpc_graph.hpp",
+      "canonical_blob": "a427577d714b690076c66c17238425bc421c66d8",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_ldpc_graph.hpp",
+      "headless_blob": "a427577d714b690076c66c17238425bc421c66d8",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_ldpc.cpp",
+      "canonical_blob": "2d3757116f850c27ef4013cc60280bcdbfc35f52",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_ldpc.cpp",
+      "headless_blob": "2d3757116f850c27ef4013cc60280bcdbfc35f52",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_ldpc.hpp",
+      "canonical_blob": "933b8c9b9dc2dec9c26b03c957027d6563dbcd11",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_ldpc.hpp",
+      "headless_blob": "933b8c9b9dc2dec9c26b03c957027d6563dbcd11",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_message.cpp",
+      "canonical_blob": "bf0eabfab9589b4b30fc41f5c57e2870830cc256",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_message.cpp",
+      "headless_blob": "bf0eabfab9589b4b30fc41f5c57e2870830cc256",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_message.hpp",
+      "canonical_blob": "0b18802983a6daf6dda1ed8c58f879a668bf3264",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_message.hpp",
+      "headless_blob": "0b18802983a6daf6dda1ed8c58f879a668bf3264",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_mode.cpp",
+      "canonical_blob": "f311a41354ddbb3ac75733a635cb57a4c3c93fbb",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_mode.cpp",
+      "headless_blob": "f311a41354ddbb3ac75733a635cb57a4c3c93fbb",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_mode.hpp",
+      "canonical_blob": "0e1ed9a50c2e0e8b3e360375c3aa1b0d1b25ffe4",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_mode.hpp",
+      "headless_blob": "0e1ed9a50c2e0e8b3e360375c3aa1b0d1b25ffe4",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_model.cpp",
+      "canonical_blob": "a2d5de207e503ae26a79bcd2638c6f7699743659",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_model.cpp",
+      "headless_blob": "a2d5de207e503ae26a79bcd2638c6f7699743659",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_model.hpp",
+      "canonical_blob": "3b7099057429ddcf6be7a222c4bfd4af468582a4",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_model.hpp",
+      "headless_blob": "3b7099057429ddcf6be7a222c4bfd4af468582a4",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_native_backend.cpp",
+      "canonical_blob": "87facfa013d06750a8636577503c09f6a17bcbd0",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_native_backend.cpp",
+      "headless_blob": "87facfa013d06750a8636577503c09f6a17bcbd0",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_native_backend.hpp",
+      "canonical_blob": "6f81d3c7482adf26c3161ddb999b05e6c6fd2578",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_native_backend.hpp",
+      "headless_blob": "6f81d3c7482adf26c3161ddb999b05e6c6fd2578",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_pipeline.cpp",
+      "canonical_blob": "48c0fce1ed728f0dbaab7af9cc8a599ab4efd0f3",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_pipeline.cpp",
+      "headless_blob": "48c0fce1ed728f0dbaab7af9cc8a599ab4efd0f3",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_pipeline.hpp",
+      "canonical_blob": "cbaa5292675bed7c1c9db1bd6c8bf09c75055eae",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_pipeline.hpp",
+      "headless_blob": "cbaa5292675bed7c1c9db1bd6c8bf09c75055eae",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_snr.cpp",
+      "canonical_blob": "908be4bf12e4f762b190945ca3e7d8a1cd06af4e",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_snr.cpp",
+      "headless_blob": "908be4bf12e4f762b190945ca3e7d8a1cd06af4e",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_snr.hpp",
+      "canonical_blob": "41590e36c7fa9f3b66e79c271e12df0f21a16cec",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_snr.hpp",
+      "headless_blob": "41590e36c7fa9f3b66e79c271e12df0f21a16cec",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_spectral_fft.cpp",
+      "canonical_blob": "f3ff11c1cd1f8cf4631e7376952ed7725a723460",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_spectral_fft.cpp",
+      "headless_blob": "f3ff11c1cd1f8cf4631e7376952ed7725a723460",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_spectral_fft.hpp",
+      "canonical_blob": "d918625fce4d515bda7665b9a8d39ed5134853c7",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_spectral_fft.hpp",
+      "headless_blob": "d918625fce4d515bda7665b9a8d39ed5134853c7",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_spectral.cpp",
+      "canonical_blob": "65aef0e05c6bc849cacda6b9a0a6c5157c395d88",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_spectral.cpp",
+      "headless_blob": "65aef0e05c6bc849cacda6b9a0a6c5157c395d88",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_spectral.hpp",
+      "canonical_blob": "9148a5066d8adf85ce0a5738f0a5f2dd7a079326",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_spectral.hpp",
+      "headless_blob": "9148a5066d8adf85ce0a5738f0a5f2dd7a079326",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_sync.cpp",
+      "canonical_blob": "e806f00819461b663897398d114a631592a7b39a",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_sync.cpp",
+      "headless_blob": "e806f00819461b663897398d114a631592a7b39a",
+      "identical": true
+    },
+    {
+      "group": "ft8",
+      "canonical_path": "apps/orcsdr-tab5/ui/ft8_sync.hpp",
+      "canonical_blob": "467d354fe13ee6ba2ef848404f20e910811fbe32",
+      "headless_path": "core/decoders/vendor/orcsdr/ft8_sync.hpp",
+      "headless_blob": "467d354fe13ee6ba2ef848404f20e910811fbe32",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_codec.cpp",
+      "canonical_blob": "2be10596966a28337faf3e13434af1f71845ac5d",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_codec.cpp",
+      "headless_blob": "2be10596966a28337faf3e13434af1f71845ac5d",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_codec.hpp",
+      "canonical_blob": "7cad3bf5d4de6efe0ab57807068544266e85cf67",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_codec.hpp",
+      "headless_blob": "7cad3bf5d4de6efe0ab57807068544266e85cf67",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_decoder.cpp",
+      "canonical_blob": "1167450f576718f975db61d39e895395198fd48c",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_decoder.cpp",
+      "headless_blob": "1167450f576718f975db61d39e895395198fd48c",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_decoder.hpp",
+      "canonical_blob": "21e1a13cc5674700bd5ce36e35efa431df936100",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_decoder.hpp",
+      "headless_blob": "21e1a13cc5674700bd5ce36e35efa431df936100",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_demod.cpp",
+      "canonical_blob": "cb18bc4444686a2c8168015764549fe19c108bd8",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_demod.cpp",
+      "headless_blob": "cb18bc4444686a2c8168015764549fe19c108bd8",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_demod.hpp",
+      "canonical_blob": "a617800e37288f25920d4d3b68f728acc1f2b079",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_demod.hpp",
+      "headless_blob": "a617800e37288f25920d4d3b68f728acc1f2b079",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_fec.cpp",
+      "canonical_blob": "38e0cef52e478ba7c9a2e6a2840b030e2d064c5f",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_fec.cpp",
+      "headless_blob": "38e0cef52e478ba7c9a2e6a2840b030e2d064c5f",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_fec.hpp",
+      "canonical_blob": "9a94b3c7222456e45c3e946012c086b1c8e6374b",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_fec.hpp",
+      "headless_blob": "9a94b3c7222456e45c3e946012c086b1c8e6374b",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_frame.cpp",
+      "canonical_blob": "72f761c333c6757b73591493e6c866b5204b0866",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_frame.cpp",
+      "headless_blob": "72f761c333c6757b73591493e6c866b5204b0866",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_frame.hpp",
+      "canonical_blob": "0af078dc54dc1d0c77dbf0c958df3e3289927fbe",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_frame.hpp",
+      "headless_blob": "0af078dc54dc1d0c77dbf0c958df3e3289927fbe",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_frontend.cpp",
+      "canonical_blob": "c4dedff63f0a52acc884527798c79bff5877a313",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_frontend.cpp",
+      "headless_blob": "c4dedff63f0a52acc884527798c79bff5877a313",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_frontend.hpp",
+      "canonical_blob": "8f3f7a116e22fb7817c60fa281b467e849ddc76a",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_frontend.hpp",
+      "headless_blob": "8f3f7a116e22fb7817c60fa281b467e849ddc76a",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_ldpc_graph.hpp",
+      "canonical_blob": "22fa05ac54a2e20234e9c3ab68610d26292b3d95",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_ldpc_graph.hpp",
+      "headless_blob": "22fa05ac54a2e20234e9c3ab68610d26292b3d95",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_message.cpp",
+      "canonical_blob": "10d0d47a2649195568f8bc981158c2b7352b51e1",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_message.cpp",
+      "headless_blob": "10d0d47a2649195568f8bc981158c2b7352b51e1",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_message.hpp",
+      "canonical_blob": "2b55864fae6e52bd98638ea50cfd16ea75812257",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_message.hpp",
+      "headless_blob": "2b55864fae6e52bd98638ea50cfd16ea75812257",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_mode.cpp",
+      "canonical_blob": "b70b1afc1bda33ac8e8fb6072e30461b09af1724",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_mode.cpp",
+      "headless_blob": "b70b1afc1bda33ac8e8fb6072e30461b09af1724",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_mode.hpp",
+      "canonical_blob": "dd3b026489906a1123b4533ce148226c523fb215",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_mode.hpp",
+      "headless_blob": "dd3b026489906a1123b4533ce148226c523fb215",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_native_backend.cpp",
+      "canonical_blob": "e684082256f971525aa6cda40876f37c402c6f9d",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_native_backend.cpp",
+      "headless_blob": "e684082256f971525aa6cda40876f37c402c6f9d",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_native_backend.hpp",
+      "canonical_blob": "0a9c3bfa160babc5691f59920b2b41f15c964134",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_native_backend.hpp",
+      "headless_blob": "0a9c3bfa160babc5691f59920b2b41f15c964134",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_osd.cpp",
+      "canonical_blob": "53491114642b25a35b4907e91096c8b909a3cc16",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_osd.cpp",
+      "headless_blob": "53491114642b25a35b4907e91096c8b909a3cc16",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_osd.hpp",
+      "canonical_blob": "bc053dbd273cad27efc800f86c10434c0b8f8270",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_osd.hpp",
+      "headless_blob": "bc053dbd273cad27efc800f86c10434c0b8f8270",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_snr.cpp",
+      "canonical_blob": "af55f6bd0122ebdb442a0bb607e5441a16645a0d",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_snr.cpp",
+      "headless_blob": "af55f6bd0122ebdb442a0bb607e5441a16645a0d",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_snr.hpp",
+      "canonical_blob": "ce542358dad288d4d83a9b58317b8e34e2e29f4c",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_snr.hpp",
+      "headless_blob": "ce542358dad288d4d83a9b58317b8e34e2e29f4c",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_spectral.cpp",
+      "canonical_blob": "2d415dc33036e8200dd1f40a3717cf3a4e9427a7",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_spectral.cpp",
+      "headless_blob": "2d415dc33036e8200dd1f40a3717cf3a4e9427a7",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_spectral.hpp",
+      "canonical_blob": "d713eb85e199159cd47f53eb0891bca743699766",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_spectral.hpp",
+      "headless_blob": "d713eb85e199159cd47f53eb0891bca743699766",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_sync.cpp",
+      "canonical_blob": "9b995748932c5b095584459458ac39c93a5165c8",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_sync.cpp",
+      "headless_blob": "9b995748932c5b095584459458ac39c93a5165c8",
+      "identical": true
+    },
+    {
+      "group": "js8",
+      "canonical_path": "apps/orcsdr-tab5/ui/js8_sync.hpp",
+      "canonical_blob": "50ad7540758497735caabce23ccfb802dd6dca5f",
+      "headless_path": "core/decoders/vendor/orcsdr/js8_sync.hpp",
+      "headless_blob": "50ad7540758497735caabce23ccfb802dd6dca5f",
+      "identical": true
+    },
+    {
+      "group": "lora",
+      "canonical_path": "apps/orcsdr-tab5/ui/lora_native_decoder.cpp",
+      "canonical_blob": "1e67b68ef183638072983312ee5636f3b6a3022f",
+      "headless_path": "core/decoders/vendor/orcsdr/lora_native_decoder.cpp",
+      "headless_blob": "5ec9f9cdf4214bb9d222441d9302fd4b8bbf99b7",
+      "identical": false
+    },
+    {
+      "group": "lora",
+      "canonical_path": "apps/orcsdr-tab5/ui/lora_native_decoder.hpp",
+      "canonical_blob": "ba490298d3e085638b7040b725b210e8625305e1",
+      "headless_path": "core/decoders/vendor/orcsdr/lora_native_decoder.hpp",
+      "headless_blob": "5c827142e8d92388031c2423fa96309876d483ba",
+      "identical": false
+    },
+    {
+      "group": "lora",
+      "canonical_path": "apps/orcsdr-tab5/ui/lora_preamble_detector.cpp",
+      "canonical_blob": "3f901187c896e1b1daf56635816e2b041ddc27c5",
+      "headless_path": "core/decoders/vendor/orcsdr/lora_preamble_detector.cpp",
+      "headless_blob": "3f901187c896e1b1daf56635816e2b041ddc27c5",
+      "identical": true
+    },
+    {
+      "group": "lora",
+      "canonical_path": "apps/orcsdr-tab5/ui/lora_preamble_detector.hpp",
+      "canonical_blob": "cdc50ad2c10ca677694dfc3c053c45e8d511fa23",
+      "headless_path": "core/decoders/vendor/orcsdr/lora_preamble_detector.hpp",
+      "headless_blob": "cdc50ad2c10ca677694dfc3c053c45e8d511fa23",
+      "identical": true
+    },
+    {
+      "group": "p25",
+      "canonical_path": "apps/orcsdr-tab5/ui/p25_decoder_core.cpp",
+      "canonical_blob": "20fc6d9d6e7f35efbb78604c383622240e4b0af2",
+      "headless_path": "core/decoders/vendor/orcsdr/p25_decoder_core.cpp",
+      "headless_blob": "20fc6d9d6e7f35efbb78604c383622240e4b0af2",
+      "identical": true
+    },
+    {
+      "group": "p25",
+      "canonical_path": "apps/orcsdr-tab5/ui/p25_decoder_core.hpp",
+      "canonical_blob": "790fe270e0653f6ed562999c630850470de74804",
+      "headless_path": "core/decoders/vendor/orcsdr/p25_decoder_core.hpp",
+      "headless_blob": "790fe270e0653f6ed562999c630850470de74804",
+      "identical": true
+    },
+    {
+      "group": "pocsag",
+      "canonical_path": "apps/orcsdr-tab5/ui/pocsag_decoder_core.cpp",
+      "canonical_blob": "407a7f40603ee09ff50e65820035c564c66d6667",
+      "headless_path": "core/decoders/vendor/orcsdr/pocsag_decoder_core.cpp",
+      "headless_blob": "407a7f40603ee09ff50e65820035c564c66d6667",
+      "identical": true
+    },
+    {
+      "group": "pocsag",
+      "canonical_path": "apps/orcsdr-tab5/ui/pocsag_decoder_core.hpp",
+      "canonical_blob": "3c8cfe626564554bb1c2b26c13d398434ce975d2",
+      "headless_path": "core/decoders/vendor/orcsdr/pocsag_decoder_core.hpp",
+      "headless_blob": "3c8cfe626564554bb1c2b26c13d398434ce975d2",
+      "identical": true
+    },
+    {
+      "group": "rf_analysis",
+      "canonical_path": "apps/orcsdr-tab5/ui/rf_analysis.hpp",
+      "canonical_blob": "a0602cadbe5c73c855bca9cc8e86d08eb29900be",
+      "headless_path": "core/decoders/vendor/orcsdr/rf_analysis.hpp",
+      "headless_blob": "a0602cadbe5c73c855bca9cc8e86d08eb29900be",
+      "identical": true
+    },
+    {
+      "group": "sstv",
+      "canonical_path": "apps/orcsdr-tab5/ui/sstv_auto_detect.cpp",
+      "canonical_blob": "f213a8a2a7d33b26462ca42c39007b85c3a72bec",
+      "headless_path": "core/decoders/vendor/orcsdr/sstv_auto_detect.cpp",
+      "headless_blob": "f213a8a2a7d33b26462ca42c39007b85c3a72bec",
+      "identical": true
+    },
+    {
+      "group": "sstv",
+      "canonical_path": "apps/orcsdr-tab5/ui/sstv_auto_detect.hpp",
+      "canonical_blob": "23390f3dbc0b2ac771b8c0214b2cda4c4f8cb7fc",
+      "headless_path": "core/decoders/vendor/orcsdr/sstv_auto_detect.hpp",
+      "headless_blob": "23390f3dbc0b2ac771b8c0214b2cda4c4f8cb7fc",
+      "identical": true
+    },
+    {
+      "group": "sstv",
+      "canonical_path": "apps/orcsdr-tab5/ui/sstv_modes.cpp",
+      "canonical_blob": "c61d626ca765bb4f8a9d63ac91db7237e03b90ed",
+      "headless_path": "core/decoders/vendor/orcsdr/sstv_modes.cpp",
+      "headless_blob": "c61d626ca765bb4f8a9d63ac91db7237e03b90ed",
+      "identical": true
+    },
+    {
+      "group": "sstv",
+      "canonical_path": "apps/orcsdr-tab5/ui/sstv_receiver.cpp",
+      "canonical_blob": "6df58fd041c272bc0e97474d4772a899f9cb3dca",
+      "headless_path": "core/decoders/vendor/orcsdr/sstv_receiver.cpp",
+      "headless_blob": "6df58fd041c272bc0e97474d4772a899f9cb3dca",
+      "identical": true
+    },
+    {
+      "group": "sstv",
+      "canonical_path": "apps/orcsdr-tab5/ui/sstv_receiver.hpp",
+      "canonical_blob": "b97924a3376392d8446c3cb40ba6c634ce60661f",
+      "headless_path": "core/decoders/vendor/orcsdr/sstv_receiver.hpp",
+      "headless_blob": "b97924a3376392d8446c3cb40ba6c634ce60661f",
+      "identical": true
+    }
+  ],
+  "mobile_extracts": [
+    {
+      "canonical_path": "apps/orcsdr-tab5/ui/acars_core.cpp",
+      "canonical_blob": "85d20ef9d7a2ec4cc787a43bdddee9dd010dd39a",
+      "mobile_path": "native/core/src/acars_core.cpp",
+      "mobile_blob": "85d20ef9d7a2ec4cc787a43bdddee9dd010dd39a",
+      "normalization": "exact",
+      "identical": true
+    },
+    {
+      "canonical_path": "apps/orcsdr-tab5/ui/acars_core.hpp",
+      "canonical_blob": "f92e9d6488be32a2ea50b88fcd752ea88deed048",
+      "mobile_path": "native/core/include/acars_core.hpp",
+      "mobile_blob": "f92e9d6488be32a2ea50b88fcd752ea88deed048",
+      "normalization": "exact",
+      "identical": true
+    },
+    {
+      "canonical_path": "apps/orcsdr-tab5/ui/adsb_decoder.cpp",
+      "canonical_blob": "45c66c060b55f7c106f3d496f1743977ad487da6",
+      "mobile_path": "native/core/adsb/adsb_decoder.cpp",
+      "mobile_blob": "491b934cb2668cbe28c5b0d373540bf54c8d23a1",
+      "normalization": "strip_spdx_line",
+      "identical": false
+    },
+    {
+      "canonical_path": "apps/orcsdr-tab5/ui/adsb_decoder.hpp",
+      "canonical_blob": "adee22621c66ca2a1a47062c86d4b221764f9cdf",
+      "mobile_path": "native/core/adsb/adsb_decoder.hpp",
+      "mobile_blob": "d036b784a29562a5a87504b003357defb73eb580",
+      "normalization": "strip_spdx_line",
+      "identical": false
+    },
+    {
+      "canonical_path": "apps/orcsdr-tab5/dsp/frontend_coeffs.hpp",
+      "canonical_blob": "0cc162462d7ea85b990be7a0d634bd326e712665",
+      "mobile_path": "native/core/dsp/upstream/frontend_coeffs.hpp",
+      "mobile_blob": "0cc162462d7ea85b990be7a0d634bd326e712665",
+      "normalization": "exact",
+      "identical": true
+    }
+  ]
+}

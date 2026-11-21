@@ -1,0 +1,85 @@
+{
+  "contract": "orcsdr.radio-service",
+  "version": {
+    "major": 1,
+    "minor": 0
+  },
+  "kind": "capabilities",
+  "host_id": "host-example-01",
+  "boot_id": "boot-example-07",
+  "receiver_id": "receiver-usb-port-1",
+  "attachment_id": "attach-042",
+  "session_id": "session-0009",
+  "generation": 7,
+  "sequence": 21,
+  "time": {
+    "monotonic_ns": 4000000000,
+    "utc_valid": false,
+    "utc_unix_ms": null,
+    "clock_source": "unavailable",
+    "utc_uncertainty_ms": null
+  },
+  "payload": {
+    "host": {
+      "display": false,
+      "network_interfaces": [],
+      "storage": {
+        "available": true,
+        "recording": false
+      },
+      "audio_output": false
+    },
+    "receiver": {
+      "transport": "usb",
+      "frequency_ranges": [
+        {
+          "min_hz": 24000000,
+          "max_hz": 1766000000
+        }
+      ],
+      "sample_rates_sps": [
+        240000,
+        300000,
+        1024000,
+        2048000,
+        2400000
+      ],
+      "sample_rate_ranges_sps": [],
+      "gain": {
+        "manual": true,
+        "auto": true,
+        "steps_tenth_db": [
+          0,
+          90,
+          197,
+          297,
+          421
+        ]
+      },
+      "tuner": {
+        "bias_tee": false,
+        "rtl_agc": true,
+        "direct_sampling": false,
+        "ppm_correction": true,
+        "bandwidths_hz": []
+      },
+      "services": {
+        "iq": true,
+        "spectrum": true,
+        "audio": false,
+        "decode": true,
+        "scan": true,
+        "record": false
+      },
+      "tx": {
+        "supported": false,
+        "frequency_ranges": [],
+        "modes": []
+      }
+    },
+    "evidence": {
+      "source": "adapter snapshot; illustrative, not hardware certified",
+      "proven": false
+    }
+  }
+}

@@ -1,0 +1,40 @@
+{
+  "contract": "orcsdr.radio-service",
+  "version": {
+    "major": 1,
+    "minor": 0
+  },
+  "kind": "decoder_event",
+  "host_id": "host-example-01",
+  "boot_id": "boot-example-07",
+  "receiver_id": "receiver-usb-port-1",
+  "attachment_id": "attach-042",
+  "session_id": "session-0009",
+  "generation": 7,
+  "sequence": 21,
+  "time": {
+    "monotonic_ns": 4000000000,
+    "utc_valid": false,
+    "utc_unix_ms": null,
+    "clock_source": "unavailable",
+    "utc_uncertainty_ms": null
+  },
+  "payload": {
+    "event_id": "adsb-71",
+    "protocol": "adsb",
+    "frequency_hz": 1090000000,
+    "decoder": {
+      "name": "orcsdr-adsb",
+      "version": "source-pinned",
+      "source_sha": null
+    },
+    "integrity": "crc_valid",
+    "origin": "live_rf",
+    "classification": "aircraft_position",
+    "fields": {
+      "icao": "ABC123",
+      "position_valid": false
+    },
+    "confidence": null
+  }
+}

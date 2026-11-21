@@ -2,6 +2,9 @@
 
 #include "rf_analysis.hpp"
 
+#ifdef ORC_LORA_LINUX
+#include "lora_linux/platform.hpp"
+#else
 #include <dsps_fft2r.h>
 #include <esp_heap_caps.h>
 #include <esp_memory_utils.h>
@@ -9,6 +12,9 @@
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
 #include <mbedtls/aes.h>
+
+inline bool scratch_memory_eligible(const void* p){return esp_ptr_external_ram(p);}
+#endif
 
 #include <algorithm>
 #include <atomic>
@@ -179,11 +185,11 @@ bool allocate_fixed_scratch(Scratch* scratch, ScratchAllocator allocator) {
   scratch->trace_alternate_metrics = static_cast<SymbolAlternateMetric*>(allocator(
       sizeof(SymbolAlternateMetric) * 128, caps));
   if (scratch->recovery_alternates == nullptr || scratch->trace_alternate_metrics == nullptr ||
-      !esp_ptr_external_ram(scratch->task) ||
-      !esp_ptr_external_ram(scratch->fft) ||
-      !esp_ptr_external_ram(scratch->downchirp) || !esp_ptr_external_ram(scratch->twiddle) ||
-      !esp_ptr_external_ram(scratch->recovery_alternates) ||
-      !esp_ptr_external_ram(scratch->trace_alternate_metrics)) {
+      !scratch_memory_eligible(scratch->task) ||
+      !scratch_memory_eligible(scratch->fft) ||
+      !scratch_memory_eligible(scratch->downchirp) || !scratch_memory_eligible(scratch->twiddle) ||
+      !scratch_memory_eligible(scratch->recovery_alternates) ||
+      !scratch_memory_eligible(scratch->trace_alternate_metrics)) {
     free_fixed_scratch(scratch);
     return false;
   }
@@ -1067,14 +1073,24 @@ void release_capture_workspace() {
 
 size_t capture_workspace_bytes() { return g_scratch.resampled_capacity * 2; }
 
+namespace {
+bool platform_fft_ready(){
+#ifdef ORC_LORA_LINUX
+  return true; // Linux ANSI FFTs use the caller's prepared twiddles.
+#else
+  return rf_analysis::initialize_fft();
+#endif
+}
+}
+
 bool initialize() {
   if (g_scratch.fft != nullptr && g_scratch.downchirp != nullptr && g_scratch.twiddle != nullptr &&
       g_scratch.recovery_alternates != nullptr) {
-    return esp_ptr_external_ram(g_scratch.fft) && esp_ptr_external_ram(g_scratch.downchirp) &&
-           esp_ptr_external_ram(g_scratch.twiddle) &&
-           esp_ptr_external_ram(g_scratch.recovery_alternates) && rf_analysis::initialize_fft();
+    return scratch_memory_eligible(g_scratch.fft) && scratch_memory_eligible(g_scratch.downchirp) &&
+           scratch_memory_eligible(g_scratch.twiddle) &&
+           scratch_memory_eligible(g_scratch.recovery_alternates) && platform_fft_ready();
   }
-  if (!allocate_fixed_scratch(&g_scratch, heap_caps_malloc) || !rf_analysis::initialize_fft()) {
+  if (!allocate_fixed_scratch(&g_scratch, heap_caps_malloc) || !platform_fft_ready()) {
     free_fixed_scratch(&g_scratch);
     return false;
   }

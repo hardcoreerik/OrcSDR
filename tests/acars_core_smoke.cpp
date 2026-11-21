@@ -1,7 +1,13 @@
 // SPDX-License-Identifier: AGPL-3.0-only
 // Minimal standalone CI gate. The larger offline audit is in acars_standard_audit.cpp.
 #include "acars_core.hpp"
-#include <cassert>
+#include <cstdlib>
+#define REQUIRE(condition) do { \
+  if (!(condition)) { \
+    std::fprintf(stderr, "ACARS smoke failed: %s at %s:%d\\n", #condition, __FILE__, __LINE__); \
+    std::abort(); \
+  } \
+} while (false)
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
@@ -40,29 +46,29 @@ void feed(FrameDecoder& f, const std::vector<uint8_t>& b, bool invert=false, boo
 }
 int main(){
   const uint8_t k7[]={0xcb,0x37,0x3e,0x6b};
-  assert(crc16_kermit(k7,4)==0);
+  REQUIRE(crc16_kermit(k7,4)==0);
   const auto valid=frame();
-  assert(crc16_kermit(valid.data(),valid.size()-1)==0);
+  REQUIRE(crc16_kermit(valid.data(),valid.size()-1)==0);
   for(int invert=0;invert<2;++invert){
     Sink sink;FrameDecoder dec;dec.set_frequency(131550000);dec.set_callback(Sink::receive,&sink);
     feed(dec,valid,invert!=0);
-    assert(sink.count==1);
-    assert(sink.last.frequency_hz==131550000);
-    assert(std::strcmp(sink.last.tail,"N123456")==0);
-    assert(std::strcmp(sink.last.flight,"UAL111")==0);
-    assert(sink.last.text_length>10);
-    assert(!sink.last.corrected && sink.last.end_marker==3);
+    REQUIRE(sink.count==1);
+    REQUIRE(sink.last.frequency_hz==131550000);
+    REQUIRE(std::strcmp(sink.last.tail,"N123456")==0);
+    REQUIRE(std::strcmp(sink.last.flight,"UAL111")==0);
+    REQUIRE(sink.last.text_length>10);
+    REQUIRE(!sink.last.corrected && sink.last.end_marker==3);
   }
   {
     auto damaged=valid;damaged[2]^=4;
     Sink sink;FrameDecoder dec;dec.set_callback(Sink::receive,&sink);
     feed(dec,damaged);
-    assert(sink.count==1 && sink.last.corrected && sink.last.corrected_bits==1);
+    REQUIRE(sink.count==1 && sink.last.corrected && sink.last.corrected_bits==1);
   }
   {
     Sink sink;FrameDecoder dec;dec.set_callback(Sink::receive,&sink);
     feed(dec,valid,false,true);
-    assert(sink.count==1);
+    REQUIRE(sink.count==1);
   }
   std::puts("ACARS smoke/CRC/FEC/sync passed");
 }

@@ -1,9 +1,14 @@
 #include "lora_preamble_detector.hpp"
 
+#ifdef ORC_LORA_LINUX
+#include "lora_linux/platform.hpp"
+#else
 #include <dsps_fft2r.h>
 #include <esp_err.h>
 #include <esp_heap_caps.h>
 #include <esp_timer.h>
+
+#endif
 
 #include <atomic>
 #include <cmath>

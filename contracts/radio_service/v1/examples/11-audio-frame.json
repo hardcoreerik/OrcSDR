@@ -1,0 +1,34 @@
+{
+  "contract": "orcsdr.radio-service",
+  "version": {
+    "major": 1,
+    "minor": 0
+  },
+  "kind": "audio_frame",
+  "host_id": "host-example-01",
+  "boot_id": "boot-example-07",
+  "receiver_id": "receiver-usb-port-1",
+  "attachment_id": "attach-042",
+  "session_id": "session-0009",
+  "generation": 7,
+  "sequence": 21,
+  "time": {
+    "monotonic_ns": 4000000000,
+    "utc_valid": false,
+    "utc_unix_ms": null,
+    "clock_source": "unavailable",
+    "utc_uncertainty_ms": null
+  },
+  "payload": {
+    "sample_rate_sps": 48000,
+    "channels": 1,
+    "format": "s16le",
+    "frame_count": 480,
+    "payload_bytes": 960,
+    "data_ref": {
+      "transport": "in_process",
+      "stream_id": "audio-fm-1"
+    },
+    "underruns_since_previous": 0
+  }
+}
