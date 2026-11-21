@@ -1,6 +1,7 @@
 #pragma once
 #include "adsb_renderer.hpp"
 #include "acars_renderer.hpp"
+#include "acars_tuning.hpp"
 #include "airband.hpp"
 #include "linux_audio.hpp"
 #include "iq_metrics.hpp"
@@ -10,12 +11,17 @@
 #include "ft8_visuals.hpp"
 #include <ctime>
 #include "compact/p25_screen.hpp"
+#include "compact/lora_screen.hpp"
+#include "compact/satellite_screen.hpp"
+#include "iq_spectrum.hpp"
 #include "p25_voice.hpp"
+#include "p25_follow.hpp"
 #include <memory>
 #include <cstring>
 #include "sideband_pcm.hpp"
 #include "cb_scanner.hpp"
 #include "dead_air_screen.hpp"
+#include "dead_air_storage.hpp"
 #include "fm_dsp.h"
 #include "pocsag_decoder_core.hpp"
 #include "sstv_receiver.hpp"
@@ -43,13 +49,14 @@ class DashboardSession {
     {72,156625000},{73,156675000},{74,156725000},{77,156875000}
   };
   static constexpr unsigned marine_default_=3;
-  static constexpr bool is_nfm(unsigned mode){return mode==7||mode==8;}
+  static constexpr bool is_nfm(unsigned mode){return mode==7||mode==8||mode==18;}
   ~DashboardSession(){stop();}
   unsigned mode() const {return mode_;}
   void stop(){
     running_=false;
     if(worker_.joinable())worker_.join();
     clock_.stop();
+    if(dead_air_storage_){dead_air_storage_->stop();dead_air_storage_.reset();}
     mode_=0;
   }
   void start(unsigned mode,unsigned device,const std::string& audio,bool silent,uint32_t rf_center){
@@ -65,13 +72,23 @@ class DashboardSession {
     clock_open_=clock_entry_=false;clock_digits_.clear();clock_tick_=0;
     if(mode==15){clock_.start();ft8_visual_.clear();ft8_map_.clear();ft8_map_open_=false;ft8_log_offset_=0;ft8_visual_painted_=ft8_map_painted_=~uint64_t{0};ft8_visual_palette_=~0u;}
     if(mode==16)p25_=P25Screen{};
-    if(mode==12)dead_air_=DeadAirScreen{};
+    if(mode==17)lora_=LoraScreen{};
+    if(mode==18)satellite_=SatelliteScreen{};
+    if(mode==12){
+      dead_air_=DeadAirScreen{};dead_air_storage_=std::make_unique<DeadAirStorage>();
+      dead_air_.set_event_listener(orcsdr::dead_air::enqueue_event,&dead_air_storage_->queue());
+      const char* data=std::getenv("XDG_DATA_HOME");const char* home=std::getenv("HOME");
+      const auto root=data&&data[0]=='/'?std::filesystem::path(data):home?std::filesystem::path(home)/".local/share":std::filesystem::path{};
+      if(!root.empty())dead_air_storage_->start(root/"orcsdr/dead-air");
+      else dead_air_.storage_status(0,0,true);
+    }
     lab_={};
     wifi_rows_.clear();
     wifi_ready_=false;
     marine_index_=marine_default_;
     lab_target_=mode==8?marine_channels_[marine_index_].hz:mode==7?162400000:rf_center;
     if(mode==9)lab_target_=929662500;
+    if(mode==18)lab_target_=satellite_.tuning.requested;
     if(mode==10){
       lab_target_=145800000;
       sstv_index_=0;
@@ -89,13 +106,25 @@ class DashboardSession {
     weather_drawn_=false;
     cb_channel_=orcsdr::cb::kHighwayChannel;
     if(mode==3||mode==11||mode==13||mode==14)am_.activate(mode==14?orcsdr::cb::kChannelsHz[cb_channel_]:mode==13?7100000:mode==11?1000000:airband::kGuardHz,mode==11,mode==13,mode==14);
-    if(mode==2)ac_.receiver_connecting();
+    if(mode==2){ac_tuning_=AcarsTuning{};ac_.receiver_connecting();}
     running_=true;
-    worker_=std::thread([=]{if(mode==6)run_wifi();else run(mode,device,audio,silent,rf_center);});
+    worker_=std::thread([=]{
+      if(mode==6){run_wifi();return;}
+      while(running_){
+        if(mode==17)run_lora(device);else run(mode,device,audio,silent,rf_center);
+        for(int n=0;n<10&&running_;++n)std::this_thread::sleep_for(std::chrono::milliseconds(100));
+      }
+    });
   }
   bool input(Key key,char digit){
     std::lock_guard<std::mutex> lock(mutex_);
     if(mode_==16)return p25_.input(key,digit);
+    if(mode_==17)return lora_.input(key,digit);
+    if(mode_==18){
+      const bool handled=satellite_.input(key,digit);
+      lab_target_=satellite_.tuning.requested;weather_volume_=satellite_.tuning.volume;weather_muted_=satellite_.tuning.muted;
+      return handled;
+    }
     if(mode_==1){
       using A=adsb::Action;
       if(key==Key::escape&&!ads_.snapshot(now()).detail)return false;
@@ -103,6 +132,7 @@ class DashboardSession {
       return true;
     }
     if(mode_==2){
+      if(ac_tuning_.input(key,digit))return true;
       ac_.service();
       if(key==Key::escape&&!ac_.snapshot().detail)return false;
       ac_.handle_compact_key(key);
@@ -126,6 +156,9 @@ class DashboardSession {
           if(key==Key::enter&&clock_.set(clock_digits_))clock_entry_=false;
         }
         clock_tick_=0;return true;
+      }
+      if(key==Key::gain){
+        ft8_band_.toggle_mode();ft8_header_dirty_=true;clock_tick_=0;return true;
       }
       if(key==Key::mute){
         ft8_map_open_=!ft8_map_open_;ft8_screen_.rect(0,0,320,146,CompactRenderer::bg);ft8_map_painted_=ft8_visual_painted_=~uint64_t{0};
@@ -248,22 +281,35 @@ class DashboardSession {
       ads_render_.render(state,palette);return ads_render_.pixels();
     }
     if(mode_==2){
-      ac_.service();auto state=ac_.snapshot();lock.unlock();
-      ac_render_.render(state,now());return ac_render_.pixels();
+      ac_.service();auto state=ac_.snapshot();const auto tuning=ac_tuning_;lock.unlock();
+      state.requested_channel_hz=tuning.requested;
+      ac_render_.render(state,now());ac_frame_.pixels=ac_render_.pixels();
+      if(tuning.editing){
+        ac_frame_.rect(10,47,300,72,CompactRenderer::panel);ac_frame_.border(10,47,300,72,CompactRenderer::cyan);
+        ac_frame_.text(16,54,"ACARS CHANNEL MHZ",CompactRenderer::cyan);
+        ac_frame_.text(16,72,tuning.entry+"_",CompactRenderer::white,2,23);
+        ac_frame_.text(16,100,tuning.error.empty()?"ENTER APPLY  ESC CANCEL":tuning.error,CompactRenderer::yellow,1,47);
+      }
+      return ac_frame_.pixels;
     }
     if(mode_==16)return p25_.render();
+    if(mode_==17)return lora_.render();
+    if(mode_==18)return satellite_.render(palette);
     if(mode_==12){
+      if(dead_air_storage_)dead_air_.storage_status(dead_air_storage_->saved(),dead_air_storage_->dropped(),dead_air_storage_->failed());
       dead_air_.render();
       return dead_air_.frame().pixels;
     }
     if(mode_==15){
-      const auto utc=std::time(nullptr);
+      const auto utc_ms=std::chrono::duration_cast<std::chrono::milliseconds>(std::chrono::system_clock::now().time_since_epoch()).count();
+      const std::time_t utc=utc_ms/1000;
+      const auto ui_tick=utc_ms/500;
       std::tm tm{};gmtime_r(&utc,&tm);
       const auto clock=clock_.snapshot();
       if(clock_open_){
-        if(clock_tick_!=utc){
+        if(clock_tick_!=ui_tick){
           ft8_screen_.rect(0,36,320,134,CompactRenderer::bg);
-          ft8_screen_.text(4,39,"UTC CLOCK / FT8",CompactRenderer::green,2);
+          ft8_screen_.text(4,39,std::string("UTC CLOCK / ")+orcsdr::ft8::mode_name(ft8_band_.mode),CompactRenderer::green,2);
           char b[64];std::strftime(b,sizeof(b),"%Y-%m-%d %H:%M:%S UTC",&tm);
           ft8_screen_.text(4,61,b,CompactRenderer::white);
           ft8_screen_.text(4,74,clock.ntp?(clock.synced?"NTP SYNCHRONIZED":"NTP WAITING FOR NETWORK"):"MANUAL CLOCK - NTP OFF",clock.synced?CompactRenderer::green:CompactRenderer::yellow);
@@ -278,7 +324,7 @@ class DashboardSession {
             ft8_screen_.text(4,133,"MANUAL ENTRY DISABLES NETWORK SYNC",CompactRenderer::muted);
           }
           ft8_screen_.text(4,160,"ESC BACK   SPACE DASHBOARDS",CompactRenderer::cyan);
-          clock_tick_=utc;
+          clock_tick_=ui_tick;
         }
         return ft8_screen_.pixels;
       }
@@ -287,16 +333,16 @@ class DashboardSession {
 
 
 
-        ft8_screen_.text(4,160,ft8_map_open_?"NATURAL EARTH  M RX T UTC SPACE DASH":"Z/C BAND M MAP T UTC SPACE DASH",CompactRenderer::cyan);
+        ft8_screen_.text(4,160,ft8_map_open_?"NATURAL EARTH  M RX T UTC SPACE DASH":"Z/C BAND G MODE M MAP T UTC SPACE",CompactRenderer::cyan);
       }
       if(!ft8_drawn_||ft8_header_dirty_){
         const auto* preset=orcsdr::ft8::band(ft8_band_.index);
         char label[54];
-        std::snprintf(label,sizeof(label),"%.3f MHZ USB  %s  %s",preset->dial_hz/1e6,preset->label,
-          ft8_applied_==preset->dial_hz?"RX":"TUNING");
+        std::snprintf(label,sizeof(label),"%.4f MHZ USB  %s  %s",ft8_band_.dial()/1e6,preset->label,
+          ft8_applied_==ft8_band_.dial()&&ft8_applied_mode_==ft8_band_.mode?"RX":"TUNING");
         ft8_screen_.rect(0,0,320,36,CompactRenderer::bg);
         ft8_screen_.badge(1,1,28);
-        ft8_screen_.text(33,3,ft8_map_open_?"OrcSDR FT8 MAP":"OrcSDR FT8 RX",CompactRenderer::green,ft8_map_open_?1:2);
+        ft8_screen_.text(33,3,std::string("OrcSDR ")+orcsdr::ft8::mode_name(ft8_band_.mode)+(ft8_map_open_?" MAP":" RX"),CompactRenderer::green,ft8_map_open_?1:2);
         ft8_screen_.text(33,23,label,CompactRenderer::white);
         ft8_header_dirty_=false;
       }
@@ -323,14 +369,16 @@ class DashboardSession {
         }
       }
       ft8_drawn_=true;
-      if(clock_tick_!=utc){
+      if(clock_tick_!=ui_tick){
         char b[64];std::strftime(b,sizeof(b),"UTC %H:%M:%S",&tm);
-        const std::string label=std::string(b)+(clock.synced?" NTP SYNC":" UNSYNC")+" SLOT "+std::to_string(15-utc%15)+"S";
+        const auto period=orcsdr::ft8::slot_ms(ft8_band_.mode);
+        char remaining[16];std::snprintf(remaining,sizeof(remaining),"%.1fS",(period-utc_ms%period)/1000.);
+        const std::string label=std::string(b)+(clock.synced?" NTP SYNC":" UNSYNC")+" SLOT "+remaining;
         ft8_screen_.rect(0,146,320,10,CompactRenderer::bg);
         ft8_screen_.text(4,147,label,clock.synced?CompactRenderer::green:CompactRenderer::yellow);
-        clock_tick_=utc;
+        clock_tick_=ui_tick;
         ft8_screen_.rect(0,160,320,10,CompactRenderer::bg);
-        ft8_screen_.text(4,160,ft8_map_open_?"NATURAL EARTH  M RX T UTC SPACE DASH":"Z/C BAND M MAP T UTC SPACE DASH",CompactRenderer::cyan);
+        ft8_screen_.text(4,160,ft8_map_open_?"NATURAL EARTH  M RX T UTC SPACE DASH":"Z/C BAND G MODE M MAP T UTC SPACE",CompactRenderer::cyan);
       }
       return ft8_screen_.pixels;
     }
@@ -340,7 +388,7 @@ class DashboardSession {
       lock.unlock();
       if(!wifi_drawn_){
         wifi_render_.fill(CompactRenderer::bg);
-        wifi_render_.text(4,4,"OrcSDR 2.4 GHZ WIFI",CompactRenderer::green,2);
+        wifi_render_.badge(1,1,28);wifi_render_.text(33,4,"OrcSDR 2.4 GHZ WIFI",CompactRenderer::green,2);
 
         wifi_render_.text(4,42,"CH  SIGNAL   NETWORK",CompactRenderer::cyan);
         wifi_render_.text(4,160,"SPACE DASHBOARDS   ESC BACK",CompactRenderer::cyan);
@@ -365,7 +413,7 @@ class DashboardSession {
       lock.unlock();
       if(!weather_drawn_){
         weather_render_.fill(CompactRenderer::bg);
-        weather_render_.text(4,4,mode_==8?"OrcSDR MARINE":"OrcSDR WEATHER",CompactRenderer::green,2);
+        weather_render_.badge(1,1,28);weather_render_.text(33,4,mode_==8?"OrcSDR MARINE":"OrcSDR WEATHER",CompactRenderer::green,2);
 
         weather_render_.text(4,39,mode_==8?"VHF MARINE  NFM  RX ONLY":"NOAA WEATHER RADIO  NFM",CompactRenderer::cyan);
         weather_render_.text(4,144,"Z/C CHANNEL   S/D VOLUME   M MUTE",CompactRenderer::cyan);
@@ -385,7 +433,7 @@ class DashboardSession {
     if(mode_==10){
       if(!sstv_drawn_){
         sstv_render_.fill(CompactRenderer::bg);
-        sstv_render_.text(4,3,"OrcSDR SSTV",CompactRenderer::green,2);
+        sstv_render_.text(33,3,"OrcSDR SSTV",CompactRenderer::green,2);
 
         sstv_render_.text(4,159,"Z/C TUNE   UP/DOWN GALLERY   SPACE DASH",CompactRenderer::cyan);
         sstv_drawn_=true;
@@ -395,13 +443,14 @@ class DashboardSession {
         char line[52];
         std::snprintf(line,sizeof(line),"%.4f MHZ  %s  GALLERY %zu",lab_target_/1e6,
           lab_target_!=lab_.center?"TUNING":sstv_index_?"GALLERY":sstv_ready_?"LIVE IMAGE":"WAITING FOR IMAGE",sstv_archived_);
-        sstv_render_.text(4,21,line,CompactRenderer::white);
+        sstv_render_.text(33,21,line,CompactRenderer::white,1,47);
         if(sstv_ready_)
           for(int y=0;y<120;++y)
             for(int x=0;x<160;++x)
               sstv_render_.point(80+x,34+y,sstv_pixels_[y*160+x]);
         sstv_rendered_=sstv_revision_;
       }
+      sstv_render_.badge(1,1,28);
       return sstv_render_.pixels;
     }
     if(mode_==9){
@@ -413,7 +462,7 @@ class DashboardSession {
       lock.unlock();
       if(!pager_drawn_){
         pager_render_.fill(CompactRenderer::bg);
-        pager_render_.text(4,4,"OrcSDR POCSAG",CompactRenderer::green,2);
+        pager_render_.badge(1,1,28);pager_render_.text(33,4,"OrcSDR POCSAG",CompactRenderer::green,2);
 
         pager_render_.text(4,145,"Z/C TUNE 12.5K  T BAND  UP/DOWN LOG",CompactRenderer::cyan);
         pager_render_.text(4,160,"SPACE DASHBOARDS   ESC BACK",CompactRenderer::cyan);
@@ -442,7 +491,7 @@ class DashboardSession {
       if(!lab_drawn_ || lab.sequence!=last_lab_sequence_ || lab.center!=last_lab_center_ || target!=last_lab_target_){
         if(!lab_drawn_){
           lab_render_.fill(CompactRenderer::bg);
-          lab_render_.text(4,4,"OrcSDR RF LAB",CompactRenderer::green,2);
+          lab_render_.badge(1,1,28);lab_render_.text(33,4,"OrcSDR RF LAB",CompactRenderer::green,2);
 
           lab_render_.text(4,149,"RELATIVE TO ADC FULL SCALE",CompactRenderer::muted);
           lab_render_.text(4,161,"Z/C TUNE 100K  SPACE DASH  ESC BACK",CompactRenderer::cyan);
@@ -532,6 +581,66 @@ class DashboardSession {
     return std::chrono::duration_cast<std::chrono::nanoseconds>(
       std::chrono::steady_clock::now().time_since_epoch()).count();
   }
+  void run_lora(unsigned device)noexcept{
+    try{
+      linux_sdr::RtlReceiver radio;radio.open(device);
+      uint32_t target;uint8_t sf;
+      {std::lock_guard<std::mutex> lock(mutex_);target=lora_.tuning.requested;sf=lora_.sf;}
+      radio.configure(target,960000);
+      if(!orcsdr::lora_native::initialize()||!orcsdr::lora_preamble::configure(sf))throw std::runtime_error("LoRa workspace allocation failed");
+      std::array<uint8_t,8192> buffer{};
+      std::vector<uint8_t> preroll(480000),capture;capture.reserve(7680000);
+      size_t ring_at=0,ring_used=0;bool capturing=false;
+      uint64_t next_update=0;
+      {
+        std::lock_guard<std::mutex> lock(mutex_);error_.clear();lora_.tuning.applied=target;
+        lora_.capturing=lora_.decoding=false;++lora_.revision;
+      }
+      std::clog<<"LoRa RF "<<target<<" SF "<<unsigned(sf)<<" BW 250000 rate 960000"<<std::endl;
+      while(running_){
+        uint32_t requested;uint8_t requested_sf;bool manual;
+        {std::lock_guard<std::mutex> lock(mutex_);requested=lora_.tuning.requested;requested_sf=lora_.sf;manual=lora_.manual;lora_.manual=false;}
+        if(requested!=target||requested_sf!=sf){
+          radio.retune(requested);target=requested;sf=requested_sf;
+          if(!orcsdr::lora_preamble::configure(sf))throw std::runtime_error("LoRa SF allocation failed");
+          orcsdr::lora_preamble::reset();capture.clear();capturing=false;ring_at=ring_used=0;
+          std::lock_guard<std::mutex> lock(mutex_);lora_.tuning.applied=target;lora_.capturing=false;++lora_.revision;
+          std::clog<<"LoRa RF "<<target<<" SF "<<unsigned(sf)<<std::endl;
+        }
+        const auto bytes=radio.read_cu8(buffer.data(),buffer.size());
+        const auto result=orcsdr::lora_preamble::feed(buffer.data(),bytes);
+        if(!capturing&&(result.fired||manual)){
+          capture.clear();
+          for(size_t n=0;n<ring_used;++n)capture.push_back(preroll[(ring_at+preroll.size()-ring_used+n)%preroll.size()]);
+          capturing=true;
+          std::lock_guard<std::mutex> lock(mutex_);lora_.capturing=true;++lora_.revision;
+        }
+        if(capturing)capture.insert(capture.end(),buffer.begin(),buffer.begin()+bytes);
+        for(size_t n=0;n<bytes;++n){preroll[ring_at]=buffer[n];ring_at=(ring_at+1)%preroll.size();ring_used=std::min(ring_used+1,preroll.size());}
+        if(capturing&&((capture.size()>=960000&&result.quiet_samples>=144000)||capture.size()+buffer.size()>7680000)){
+          {std::lock_guard<std::mutex> lock(mutex_);lora_.capturing=false;lora_.decoding=true;++lora_.revision;}
+          std::array<orcsdr::lora_native::Packet,orcsdr::lora_native::kMaxPacketsPerCapture> packets{};
+          orcsdr::lora_native::Stats stats;orcsdr::lora_native::Config config;
+          const auto found=orcsdr::lora_native::decode_capture_in_place(capture.data(),capture.size(),960000,sf,250000,target,config,packets.data(),packets.size(),&stats);
+          if(stats.workspace_failed)throw std::runtime_error("LoRa capture workspace allocation failed");
+          {
+            std::lock_guard<std::mutex> lock(mutex_);lora_.decoding=false;++lora_.captures;
+            lora_.crc_ok+=stats.crc_ok;lora_.crc_failed+=stats.crc_failures;lora_.decode_ms=stats.decode_millis;
+            for(size_t n=0;n<found;++n)lora_.add(packets[n]);
+            ++lora_.revision;
+          }
+          std::clog<<"LoRa capture bytes "<<capture.size()<<" packets "<<found<<" crc_ok "<<stats.crc_ok<<" decode_ms "<<stats.decode_millis<<std::endl;
+          radio.retune(target);orcsdr::lora_preamble::reset();capture.clear();capturing=false;ring_at=ring_used=0;
+        }
+        if(now()>=next_update){
+          std::lock_guard<std::mutex> lock(mutex_);lora_.preamble=orcsdr::lora_preamble::status();++lora_.revision;next_update=now()+250000000;
+        }
+      }
+    }catch(const std::exception& e){
+      std::lock_guard<std::mutex> lock(mutex_);error_=e.what();std::cerr<<"LoRa: "<<error_<<std::endl;
+    }
+    orcsdr::lora_native::release_capture_workspace();
+  }
   struct Audio {
     AudioSink sink;
     std::vector<int16_t> pcm;
@@ -547,22 +656,27 @@ class DashboardSession {
         std::lock_guard<std::mutex> lock(mutex_);
         if(mode==1){auto r=ads_.radio_request();meta.frequency_hz=r.center_hz;meta.sample_rate_sps=r.rate_sps;}
         if(mode==2){
-          if(!acars_dashboard::make_radio_request(acars_dashboard::kDefaultChannelHz,ac_request))
+          if(!acars_dashboard::make_radio_request(ac_tuning_.requested,ac_request))
             throw std::runtime_error("Invalid ACARS channel");
           meta.frequency_hz=ac_request.center_hz;meta.sample_rate_sps=ac_request.rate_sps;
         }
         if(mode==3||mode==11||mode==13||mode==14){auto r=am_.requested_radio();meta.frequency_hz=r.rf_center_hz;meta.sample_rate_sps=r.sample_rate_sps;}
       }
       if(mode==5||mode==12){meta.frequency_hz=rf_center;meta.sample_rate_sps=kDefaultSpanHz;}
-      if(is_nfm(mode)){meta.frequency_hz=mode==8?marine_channels_[marine_default_].hz:162400000;meta.sample_rate_sps=300000;}
+      if(is_nfm(mode)){meta.frequency_hz=mode==18?lab_target_:mode==8?marine_channels_[marine_default_].hz:162400000;meta.sample_rate_sps=300000;}
       if(mode==9){meta.frequency_hz=929662500;meta.sample_rate_sps=orcsdr::pocsag::kInputSampleRateHz;}
       if(mode==10){meta.frequency_hz=145800000;meta.sample_rate_sps=300000;}
-      if(mode==16){meta.frequency_hz=851000000;meta.sample_rate_sps=960000;}
-      uint32_t ft8_dial=7074000;
+      if(mode==16){std::lock_guard<std::mutex> lock(mutex_);meta.frequency_hz=p25_.requested;meta.sample_rate_sps=960000;}
+      uint32_t ft8_dial;
+      {std::lock_guard<std::mutex> lock(mutex_);ft8_dial=ft8_band_.dial();}
+      orcsdr::ftx::Mode ft8_mode;
+      {std::lock_guard<std::mutex> lock(mutex_);ft8_dial=ft8_band_.dial();ft8_mode=ft8_band_.mode==orcsdr::ft8::DigitalMode::ft4?orcsdr::ftx::Mode::ft4:orcsdr::ftx::Mode::ft8;}
       if(mode==15){meta.frequency_hz=ft8_dial;meta.sample_rate_sps=960000;}
-      if(mode==11||mode==13||mode==15)radio.configure_direct_q(meta.frequency_hz,meta.sample_rate_sps);
+      if(mode==11||mode==13||(mode==15&&ft8_dial<24000000))radio.configure_direct_q(meta.frequency_hz,meta.sample_rate_sps);
       else radio.configure(meta.frequency_hz,meta.sample_rate_sps);
       orcsdr::pocsag::Decoder pager;
+      orcnode_fft_t satellite_fft{};
+      if(mode==18)orcnode_fft_init(&satellite_fft);
       orcnode_fm_dsp_t narrow{};
       std::array<int16_t,1024> weather_pcm{};
       if(is_nfm(mode)||mode==10)orcnode_nfm_dsp_init(&narrow);
@@ -585,7 +699,7 @@ class DashboardSession {
       linux_sdr::IqBlock ft8_block;
       if(mode==15){
         ft8=std::make_unique<Ft8Receiver>();
-        if(!ft8->begin())throw std::runtime_error("FT8 decoder allocation failed");
+        if(!ft8->begin(ft8_mode))throw std::runtime_error("FT8 decoder allocation failed");
         ft8->observe_audio(+[](const int16_t* pcm,size_t count,bool reset,void* context){
           auto& self=*static_cast<DashboardSession*>(context);
           std::lock_guard<std::mutex> lock(self.mutex_);
@@ -593,9 +707,10 @@ class DashboardSession {
         },this);
         ft8_block.cu8.reserve(8192);
         std::lock_guard<std::mutex> lock(mutex_);
-        ft8_applied_=ft8_dial;
+        ft8_applied_=ft8_dial;ft8_applied_mode_=ft8_band_.mode;
         ft8_header_dirty_=true;
       }
+      P25Follow p25_follow;
       std::unique_ptr<orcsdr::p25voice::Decoder> p25_voice;
       if(mode==16){
         orcsdr::p25core::reset(uint32_t(now()/1000000));
@@ -608,6 +723,8 @@ class DashboardSession {
       uint64_t audio_retry_ns=now()+1000000000ULL;
       {
         std::lock_guard<std::mutex> lock(mutex_);
+        error_.clear();
+        if(mode==18){satellite_.signal.connection=Connection::ready;satellite_.signal.audio_ready=audio_open&&audio.sink.audible();satellite_.tuning.applied=meta.frequency_hz;}
         if(mode==16){p25_.applied=meta.frequency_hz;p25_.audio_ready=audio_open&&audio.sink.audible();++p25_.revision;}
         if(is_nfm(mode))weather_audio_=audio_open&&audio.sink.audible();
         if(mode==1){ads_.activate(meta.receiver_generation,now());ads_.receiver_ready(now());}
@@ -626,19 +743,39 @@ class DashboardSession {
       linux_sdr::IqBlock dead_air_block;
       if(mode==12)dead_air_block.cu8.reserve(buffer.size());
       while(running_){
+        if(mode==2){
+          uint32_t target;{std::lock_guard<std::mutex> lock(mutex_);target=ac_tuning_.requested;}
+          if(target!=ac_request.channel_hz){
+            acars_dashboard::RadioRequest next;
+            if(!acars_dashboard::make_radio_request(target,next))throw std::runtime_error("Invalid ACARS channel request");
+            radio.retune(next.center_hz);ac_request=next;
+            meta.frequency_hz=radio.frequency_hz();meta.first_sample_index=0;meta.receiver_generation=++generation_;
+            std::lock_guard<std::mutex> lock(mutex_);
+            if(!ac_.start(ac_request,meta.receiver_generation))throw std::runtime_error("ACARS retune failed");
+            std::clog<<"ACARS channel "<<target<<" RF "<<meta.frequency_hz<<std::endl;
+          }
+        }
         if(needs_audio&&!audio.sink.opened()&&now()>=audio_retry_ns){
           audio_retry_ns=now()+1000000000ULL;
           const bool restored=audio.sink.open(output,silent);
           std::lock_guard<std::mutex> lock(mutex_);
           const bool audible=restored&&audio.sink.audible();
           if(mode==16){p25_.audio_ready=audible;++p25_.revision;}
-          else if(is_nfm(mode))weather_audio_=audible;
+          else if(is_nfm(mode)){weather_audio_=audible;if(mode==18)satellite_.signal.audio_ready=audible;}
           else am_.audio_available(audible,restored?"":audio.sink.last_error().c_str());
           if(restored)std::clog<<"Dashboard "<<mode<<" audio restored"<<std::endl;
         }
         if(mode==16){
-          uint32_t target;orcsdr::p25core::Modulation modulation;
-          {std::lock_guard<std::mutex> lock(mutex_);target=p25_.requested;modulation=p25_.modulation;}
+          uint32_t control;bool enabled,hold;orcsdr::p25core::Modulation modulation;
+          {std::lock_guard<std::mutex> lock(mutex_);control=p25_.requested;modulation=p25_.modulation;enabled=p25_.auto_follow;hold=p25_.hold;}
+          const uint32_t target=p25_follow.update(control,enabled,hold,orcsdr::p25core::snapshot(),uint32_t(now()/1000000));
+          {
+            std::lock_guard<std::mutex> lock(mutex_);
+            if(p25_.following!=p25_follow.voice||p25_.held_talkgroup!=p25_follow.held){
+              p25_.following=p25_follow.voice;p25_.held_talkgroup=p25_follow.held;++p25_.revision;
+            }
+            p25_.followed_grant=p25_follow.grant;
+          }
           if(target!=meta.frequency_hz||modulation!=orcsdr::p25core::modulation()){
             if(target!=meta.frequency_hz)radio.retune(target);
             meta.frequency_hz=radio.frequency_hz();
@@ -652,22 +789,27 @@ class DashboardSession {
           }
         }
         if(mode==15){
-          uint32_t target;
-          {std::lock_guard<std::mutex> lock(mutex_);target=ft8_band_.dial();}
-          if(target!=ft8_dial){
+          uint32_t target;orcsdr::ft8::DigitalMode requested_mode;
+          {std::lock_guard<std::mutex> lock(mutex_);target=ft8_band_.dial();requested_mode=ft8_band_.mode;}
+          const auto next_mode=requested_mode==orcsdr::ft8::DigitalMode::ft4?orcsdr::ftx::Mode::ft4:orcsdr::ftx::Mode::ft8;
+          if(target!=ft8_dial||next_mode!=ft8_mode){
             // Reopen to reset both the tuner/direct-Q path and buffered IQ.
             radio.close();radio.open(device);
             if(target<24000000)radio.configure_direct_q(target,meta.sample_rate_sps);
             else radio.configure(target,meta.sample_rate_sps);
             ft8_dial=radio.frequency_hz();
+            if(next_mode!=ft8_mode){
+              if(!ft8->begin(next_mode))throw std::runtime_error("Digital mode decoder allocation failed");
+              ft8_mode=next_mode;
+            }
             meta.frequency_hz=ft8_dial;
             meta.first_sample_index=0;
             meta.receiver_generation=++generation_;
             std::lock_guard<std::mutex> lock(mutex_);
-            ft8_applied_=ft8_dial;
+            ft8_applied_=ft8_dial;ft8_applied_mode_=requested_mode;
             ft8_header_dirty_=true;
             ft8_lines_.clear();ft8_last_utc_=0;ft8_visual_.clear();
-            std::clog<<"FT8 band RF "<<ft8_dial<<std::endl;
+            std::clog<<orcsdr::ft8::mode_name(requested_mode)<<" band RF "<<ft8_dial<<std::endl;
           }
         }
         if(mode==5||is_nfm(mode)||mode==9||mode==10){
@@ -677,6 +819,10 @@ class DashboardSession {
             try{
               radio.retune(target);
               meta.frequency_hz=radio.frequency_hz();
+              if(mode==18){
+                std::lock_guard<std::mutex> lock(mutex_);satellite_.tuning.applied=meta.frequency_hz;
+                satellite_.signal.waterfall_rows=0;satellite_.signal.live_spectrum=false;
+              }
               meta.first_sample_index=0;
               next_measurement=0;
               if(mode==10){
@@ -730,6 +876,14 @@ class DashboardSession {
           }
           next_measurement=meta.monotonic_ns+250000000;
         }
+        if(mode==18&&meta.monotonic_ns>=next_measurement){
+          std::array<uint8_t,256> row{};spectrum_row(satellite_fft,buffer.data(),row);
+          std::lock_guard<std::mutex> lock(mutex_);
+          auto& state=satellite_.signal;state.spectrum=row;state.live_spectrum=true;
+          for(int y=kWaterfallRows-1;y>0;--y)state.waterfall[y]=state.waterfall[y-1];
+          state.waterfall[0]=row;state.waterfall_rows=std::min(kWaterfallRows,state.waterfall_rows+1);
+          next_measurement=meta.monotonic_ns+100000000;
+        }
         if(is_nfm(mode)){
           const auto count=orcnode_fm_dsp_process(&narrow,buffer.data(),bytes,weather_pcm.data(),weather_pcm.size());
           int volume;
@@ -744,7 +898,7 @@ class DashboardSession {
             audio.sink.close();
           audio_retry_ns=now()+1000000000ULL;
             std::lock_guard<std::mutex> lock(mutex_);
-            weather_audio_=false;
+            weather_audio_=false;if(mode==18)satellite_.signal.audio_ready=false;
           }
         }
         if(mode==10){
@@ -847,7 +1001,7 @@ class DashboardSession {
                 for(auto& ch:line)if(ch<32||ch>126)ch='?';
                 ft8_lines_.push_back(std::move(line));
               }
-              std::clog<<"FT8 slot "<<epoch<<" messages "<<count<<std::endl;
+              std::clog<<(ft8_mode==orcsdr::ftx::Mode::ft4?"FT4":"FT8")<<" slot "<<epoch<<" messages "<<count<<std::endl;
               completed=true;
             });
           // Synchronous decoding can overrun the USB buffer. Flush and start
@@ -926,7 +1080,7 @@ class DashboardSession {
     std::lock_guard<std::mutex> lock(mutex_);
     if(mode==1)ads_.stop();
     if(mode==2)ac_.stop();
-    if(mode==3||mode==11||mode==13||mode==14)am_.stop();
+    if(!running_&&(mode==3||mode==11||mode==13||mode==14))am_.stop();
     if(mode==10)orcsdr::sstv::stop();
   }
   struct LabSnapshot {
@@ -938,6 +1092,10 @@ class DashboardSession {
   size_t cb_channel_=orcsdr::cb::kHighwayChannel;
   CompactRenderer sw_frame_;
   orcsdr::shortwave_ssb::Choice sw_choice_=orcsdr::shortwave_ssb::Choice::automatic;
+  AcarsTuning ac_tuning_;
+  CompactRenderer ac_frame_;
+  SatelliteScreen satellite_;
+  LoraScreen lora_;
   P25Screen p25_;
   Ft8Visuals ft8_visual_;
   Ft8WorldMap ft8_map_;
@@ -948,6 +1106,7 @@ class DashboardSession {
   bool clock_open_=false,clock_entry_=false;
   std::string clock_digits_;
   std::time_t clock_tick_=0;
+  orcsdr::ft8::DigitalMode ft8_applied_mode_=orcsdr::ft8::DigitalMode::ft8;
   Ft8BandSelection ft8_band_;
   uint32_t ft8_applied_=0;
   bool ft8_header_dirty_=true;
@@ -955,6 +1114,7 @@ class DashboardSession {
   std::vector<std::string> ft8_lines_;
   uint64_t ft8_last_utc_=0,ft8_render_epoch_=0;
   bool ft8_drawn_=false;
+  std::unique_ptr<DeadAirStorage> dead_air_storage_;
   DeadAirScreen dead_air_;
   CompactRenderer sstv_render_;
   std::array<uint16_t,160*120> sstv_pixels_{};

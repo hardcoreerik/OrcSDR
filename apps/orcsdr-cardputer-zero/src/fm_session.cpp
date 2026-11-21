@@ -3,6 +3,7 @@
 #include "rtl_receiver.hpp"
 #include "fm_dsp.h"
 #include "scan_dsp.h"
+#include "iq_spectrum.hpp"
 #include <algorithm>
 #include <array>
 #include <chrono>
@@ -20,18 +21,7 @@ std::uint64_t steady_ns(){
   return static_cast<std::uint64_t>(std::chrono::duration_cast<std::chrono::nanoseconds>(
       std::chrono::steady_clock::now().time_since_epoch()).count());
 }
-void spectrum_row(orcnode_fft_t& fft,const std::uint8_t* iq,std::array<std::uint8_t,256>& row){
-  std::array<float,ORCNODE_FFT_N> psd{};
-  if(orcnode_cu8_psd(&fft,iq,2*ORCNODE_FFT_N,psd.data())!=0)return;
-  std::array<float,ORCNODE_WATERFALL_BINS> power{};
-  for(std::size_t i=0;i<power.size();++i){
-    const auto at=(2*i+ORCNODE_FFT_N/2)%ORCNODE_FFT_N;
-    power[i]=std::max(psd[at],psd[(at+1)%ORCNODE_FFT_N]);
-  }
-  std::array<std::uint8_t,ORCNODE_WATERFALL_BINS> bins{};
-  orcnode_waterfall_render(power.data(),bins.data());
-  for(std::size_t i=0;i<row.size();++i) row[i]=std::max(bins[2*i],bins[2*i+1]);
-}
+
 }
 FmSession::FmSession():queue_(8,2*kComplexPerBlock){}
 FmSession::~FmSession(){stop();}
@@ -88,6 +78,7 @@ FmTelemetry FmSession::snapshot()const{
   std::lock_guard<std::mutex> lock(state_mutex_);return state_;
 }
 void FmSession::capture_worker(std::uint32_t device){
+ while(running_.load()){
   try{
     orc::linux_sdr::RtlReceiver receiver;
     receiver.open(device);
@@ -101,6 +92,8 @@ void FmSession::capture_worker(std::uint32_t device){
       state_.requested_hz=applied;state_.applied_rate_sps=receiver.sample_rate_sps();
       state_.generation=generation;state_.supported_gains=caps.tuner_gains_tenth_db;
       state_.receiver_name="RTL-SDR tuner "+std::to_string(caps.tuner_type);
+      state_.last_error.clear();
+      std::clog<<"FM receiver connected at "<<applied<<std::endl;
     }
     std::vector<std::uint8_t> buf(2*kComplexPerBlock);
     std::uint64_t first_sample=0,processed_gain_seq=0;
@@ -147,7 +140,13 @@ void FmSession::capture_worker(std::uint32_t device){
       first_sample+=got/2;
       wake_.notify_one();
     }
-  }catch(const std::exception& e){set_error(e.what());running_.store(false);stream_generation_.fetch_add(1);queue_.flush_discontinuity();wake_.notify_all();}
+  }catch(const std::exception& e){
+    if(!running_.load())break;
+    set_error(e.what());stream_generation_.fetch_add(1);queue_.flush_discontinuity();wake_.notify_all();
+    std::clog<<"FM receiver unavailable; retrying: "<<e.what()<<std::endl;
+    for(int n=0;n<10&&running_.load();++n)std::this_thread::sleep_for(std::chrono::milliseconds(100));
+  }
+ }
 }
 void FmSession::dsp_worker(){
   AudioSink sink;
@@ -208,6 +207,7 @@ void FmSession::dsp_worker(){
       state_.waterfall[0]=row;
       state_.waterfall_rows=std::min(kWaterfallRows,state_.waterfall_rows+1);
       state_.known_queue_dropped_samples=queue_.dropped_samples();
+      state_.audio_ready=sink.audible();
       state_.audio_underruns=sink.underruns();state_.audio_frames=sink.frames_written();
     }
   }

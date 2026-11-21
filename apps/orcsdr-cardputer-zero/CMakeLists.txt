@@ -35,6 +35,7 @@ add_library(orc_native_decoders STATIC
   "${ORC_REPO_ROOT}/components/mbelib/imbe7200x4400.c"
   "${ORC_REPO_ROOT}/components/mbelib/ecc.c"
   "${ORC_NATIVE_DECODER_DIR}/dead_air_model.cpp"
+  "${ORC_NATIVE_DECODER_DIR}/dead_air_journal.cpp"
   "${ORC_NATIVE_DECODER_DIR}/dead_air_runes.cpp"
   "${ORC_NATIVE_DECODER_DIR}/pocsag_decoder_core.cpp"
   "${ORC_NATIVE_DECODER_DIR}/sstv_receiver.cpp"
@@ -294,4 +295,72 @@ if(BUILD_TESTING)
   target_include_directories(orc_zero_ft8_visuals_test PRIVATE src)
   target_compile_options(orc_zero_ft8_visuals_test PRIVATE -UNDEBUG)
   add_test(NAME zero_ft8_waterfall_map COMMAND orc_zero_ft8_visuals_test)
+endif()
+
+if(TARGET orcsdr_cardputer_zero_gui)
+  target_link_libraries(orcsdr_cardputer_zero_gui PRIVATE orc_zero_lora)
+endif()
+if(BUILD_TESTING)
+  add_executable(orc_zero_lora_ui_test tests/lora_ui_test.cpp)
+  target_link_libraries(orc_zero_lora_ui_test PRIVATE orc_zero_lora orc_native_decoders orc_zero_compact)
+  target_compile_options(orc_zero_lora_ui_test PRIVATE -UNDEBUG)
+  add_test(NAME zero_lora_compact_ui COMMAND orc_zero_lora_ui_test)
+endif()
+
+if(BUILD_TESTING)
+  add_executable(orc_zero_satellite_test tests/satellite_test.cpp)
+  target_include_directories(orc_zero_satellite_test PRIVATE src)
+  target_link_libraries(orc_zero_satellite_test PRIVATE orc_native_decoders orc_zero_compact orc_zero_fm_dsp)
+  target_compile_options(orc_zero_satellite_test PRIVATE -UNDEBUG)
+  add_test(NAME zero_satellite_compact COMMAND orc_zero_satellite_test)
+endif()
+
+if(BUILD_TESTING)
+  add_executable(orc_zero_bias_tee_test tests/bias_tee_test.cpp)
+  target_include_directories(orc_zero_bias_tee_test PRIVATE src)
+  target_compile_options(orc_zero_bias_tee_test PRIVATE -UNDEBUG)
+  add_test(NAME zero_bias_tee_control COMMAND orc_zero_bias_tee_test)
+endif()
+
+if(BUILD_TESTING)
+  add_executable(orc_zero_acars_tuning_test tests/acars_tuning_test.cpp staged-dashboards/acars/acars_dashboard.cpp staged-dashboards/acars/acars_renderer.cpp)
+  target_include_directories(orc_zero_acars_tuning_test PRIVATE src staged-dashboards/acars)
+  target_link_libraries(orc_zero_acars_tuning_test PRIVATE orc_native_decoders orc_zero_compact)
+  target_compile_options(orc_zero_acars_tuning_test PRIVATE -UNDEBUG)
+  add_test(NAME zero_acars_channel_tuning COMMAND orc_zero_acars_tuning_test)
+endif()
+
+if(BUILD_TESTING)
+  add_executable(orc_zero_p25_follow_test tests/p25_follow_test.cpp)
+  target_include_directories(orc_zero_p25_follow_test PRIVATE src "${ORC_NATIVE_DECODER_DIR}")
+  target_compile_options(orc_zero_p25_follow_test PRIVATE -UNDEBUG)
+  add_test(NAME zero_p25_phase1_follow COMMAND orc_zero_p25_follow_test)
+endif()
+
+if(BUILD_TESTING)
+  add_executable(orc_zero_dead_air_storage_test tests/dead_air_storage_test.cpp)
+  target_include_directories(orc_zero_dead_air_storage_test PRIVATE src)
+  target_link_libraries(orc_zero_dead_air_storage_test PRIVATE orc_native_decoders orc_zero_compact Threads::Threads)
+  target_compile_options(orc_zero_dead_air_storage_test PRIVATE -UNDEBUG)
+  add_test(NAME zero_dead_air_journal COMMAND orc_zero_dead_air_storage_test)
+endif()
+
+if(BUILD_TESTING)
+  foreach(case ft4_slots ft4_receiver)
+    add_executable(orc_zero_${case}_test tests/${case}_test.cpp)
+    target_include_directories(orc_zero_${case}_test PRIVATE src)
+    target_link_libraries(orc_zero_${case}_test PRIVATE orc_native_decoders)
+    target_compile_options(orc_zero_${case}_test PRIVATE -UNDEBUG)
+    add_test(NAME zero_${case} COMMAND orc_zero_${case}_test)
+  endforeach()
+endif()
+
+if(BUILD_TESTING)
+  add_executable(orc_zero_branding_test tests/dashboard_branding_test.cpp
+    staged-dashboards/acars/acars_renderer.cpp staged-dashboards/adsb/adsb_renderer.cpp
+    staged-dashboards/airband/airband_render.cpp staged-dashboards/airband/airband.cpp)
+  target_include_directories(orc_zero_branding_test PRIVATE src staged-dashboards/acars staged-dashboards/adsb staged-dashboards/airband)
+  target_link_libraries(orc_zero_branding_test PRIVATE orc_native_decoders orc_zero_compact)
+  target_compile_options(orc_zero_branding_test PRIVATE -UNDEBUG)
+  add_test(NAME zero_dashboard_branding COMMAND orc_zero_branding_test)
 endif()

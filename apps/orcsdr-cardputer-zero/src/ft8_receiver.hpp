@@ -10,9 +10,11 @@ class Ft8Receiver {
  public:
   using AudioObserver=void(*)(const int16_t*,size_t,bool,void*);
   void observe_audio(AudioObserver observer,void* context){observer_=observer;context_=context;}
-  bool begin(){
-    slots_.clear();
-    return decoder_.begin(12000,orcsdr::ftx::Mode::ft8,{});
+  bool begin(orcsdr::ftx::Mode mode=orcsdr::ftx::Mode::ft8){
+    if(mode!=orcsdr::ftx::Mode::ft8&&mode!=orcsdr::ftx::Mode::ft4)return false;
+    tap_=Ft8IqTap{};
+    if(!slots_.set_period(orcsdr::ftx::profile(mode).slot_ms))return false;
+    return decoder_.begin(12000,mode,{});
   }
   template<class Emit>
   bool consume(const linux_sdr::IqBlock& block,uint32_t dial,bool direct_q,

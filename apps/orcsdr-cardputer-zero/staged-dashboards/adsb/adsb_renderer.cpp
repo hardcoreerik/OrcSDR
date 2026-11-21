@@ -1,4 +1,5 @@
 #include "adsb_renderer.hpp"
+#include "../../src/compact/orc_mascot.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -84,9 +85,9 @@ void Renderer::text(int x,int y,const char* s,uint16_t c,int max,int scale) {
 void Renderer::header(const Snapshot& s) {
   ++stats_.dirty_widgets;
   rect(0,0,320,35,bg);rect(0,0,320,17,panel);
-  text(4,2,"OrcSDR",green,6,2);text(93,3,"ADS-B",cyan,5,2);
+  text(33,2,"OrcSDR",green,6,2);text(122,3,"ADS-B",cyan,5,2);
   text(255,5,s.is_demo?"DEMO":state_text(s.status),state_color(s.status),10,1);
-  text(4,23,"1090 MHZ",white,8);text(75,23,"2.048M CU8",cyan,12);
+  text(33,23,"1090 MHZ",white,8);text(108,23,"2.048M CU8",cyan,12);
   char buffer[44];
   std::snprintf(buffer,sizeof(buffer),s.counters.unique_capped?"A%zu U>=%llu C%llu":"A%zu U%llu C%llu",s.count,
     static_cast<unsigned long long>(s.counters.unique_seen),
@@ -173,6 +174,7 @@ void Renderer::render(const Snapshot& s,unsigned palette_index) {
     }
     if(s.detail!=previous_.detail)footer(s);
   }
+  for(int y=0;y<28;++y)for(int x=0;x<28;++x)rect(1+x,1+y,1,1,orc::zero::kOrcMascot28[y*28+x]);
   previous_=s;
 }
 bool Renderer::save_ppm(const std::string& path) const {

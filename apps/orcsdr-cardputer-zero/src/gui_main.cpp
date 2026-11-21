@@ -2,6 +2,7 @@
 #include "dashboard_session.hpp"
 #include "fm_session.hpp"
 #include "settings.hpp"
+#include "bias_tee.hpp"
 #include <algorithm>
 #include <cmath>
 #include <csignal>
@@ -38,7 +39,7 @@ using orc::zero::Connection;
 using orc::zero::FmSession;
 using orc::zero::FmTelemetry;
 using orc::zero::CompactRenderer;
-struct Options { bool demo=false,null_audio=false;uint32_t device=0,freq=96100000;bool freq_explicit=false,audio_explicit=false;
+struct Options { bool demo=false,null_audio=false;uint32_t device=0,freq=96100000;bool freq_explicit=false,audio_explicit=false,bias_explicit=false,bias_tee=false;
  std::string display="sdl",audio="default",screenshot,view="main",input;unsigned frames=0,dashboard=0; };
 unsigned parse_unsigned(const std::string& s){size_t used=0;auto v=std::stoul(s,&used);if(used!=s.size()||v>UINT32_MAX)throw std::invalid_argument("bad integer");return static_cast<unsigned>(v);}
 Options parse(int argc,char** argv){
@@ -48,12 +49,14 @@ Options parse(int argc,char** argv){
   if(x=="--help") {std::cout<<"OrcSDR Cardputer Zero UI\n"
    <<"  --demo [--screenshot FILE] [--view main|weak|disconnected|entry|menu|gain|audio|muted|noaudio|help|long]\n"
    <<"  --display sdl|fb --device N --freq HZ --audio DEVICE [--input /dev/input/eventN]\n"
-   <<"  --dashboard fm|adsb|acars|airband|rf-lab|wifi|weather|marine|pocsag|sstv|am|dead-air|shortwave|cb|ft8|p25 (live fbdev)\n"
+   <<"  --dashboard fm|adsb|acars|airband|rf-lab|wifi|weather|marine|pocsag|sstv|am|dead-air|shortwave|cb|ft8|p25|lora|satellite (live fbdev)\n"
+   <<"  --bias-tee on|off (antenna DC power; overrides saved setting)\n"
    <<"  --null-audio (silent diagnostic) --frames N (finite simulator test)\n"
    <<"Keys: Z/C tune, S/D volume, F entry, M mute, G gain, T step, P palette, Space dashboards, Tab menu, Esc cancel, Q exit\n";std::exit(0);}
   if(++i>=argc)throw std::invalid_argument("missing option value for "+x);
   const std::string y=argv[i];
   if(x=="--device")a.device=parse_unsigned(y);
+  else if(x=="--bias-tee"){if(y!="on"&&y!="off")throw std::invalid_argument("--bias-tee requires on or off");a.bias_explicit=true;a.bias_tee=y=="on";}
   else if(x=="--freq"){a.freq=parse_unsigned(y);a.freq_explicit=true;}
   else if(x=="--audio"){a.audio=y;a.audio_explicit=true;}
   else if(x=="--display")a.display=y;
@@ -74,6 +77,8 @@ Options parse(int argc,char** argv){
     else if(y=="cb")a.dashboard=14;
     else if(y=="ft8")a.dashboard=15;
     else if(y=="p25")a.dashboard=16;
+    else if(y=="lora")a.dashboard=17;
+    else if(y=="satellite")a.dashboard=18;
     else if(y!="fm")throw std::invalid_argument("Unknown dashboard: "+y);
   }
   else if(x=="--view")a.view=y;
@@ -129,6 +134,7 @@ void sync_model(ControlModel& m,const FmTelemetry& s){
  if(s.last_error!=last_error_displayed){
   last_error_displayed=s.last_error;
   if(!s.last_error.empty()){u.page=orc::zero::Page::error;u.error=s.last_error;}
+  else if(u.page==orc::zero::Page::error){u.page=orc::zero::Page::receive;u.error.clear();}
  }
 }
 void relay_controls(ControlModel& m,FmSession& session,const FmTelemetry& observed){
@@ -162,6 +168,7 @@ bool translate_sdl(SDL_Keycode code,Key& key,char& digit){
   case SDLK_BACKSPACE:key=Key::backspace;break;
   case SDLK_PERIOD:key=Key::point;break;
   case SDLK_TAB:key=Key::menu;break;
+  case SDLK_b:key=Key::bias_tee;break;
   case SDLK_f:key=Key::frequency;break;
   case SDLK_m:key=Key::mute;break;
   case SDLK_p:key=Key::palette;break;
@@ -222,6 +229,7 @@ Key translate_evdev(unsigned code,char& digit){
   case KEY_TAB:return Key::menu;case KEY_F:return Key::frequency;
   case KEY_SPACE:return Key::dashboards;case KEY_P:return Key::palette;case KEY_M:return Key::mute;case KEY_S:case KEY_MINUS:return Key::volume_down;
   case KEY_D:case KEY_EQUAL:return Key::volume_up;case KEY_G:return Key::gain;
+  case KEY_B:return Key::bias_tee;
   case KEY_T:return Key::step;case KEY_R:return Key::reconnect;
   case KEY_H:return Key::help;case KEY_Q:return Key::quit;
   default:return Key::escape; // caller must ignore unsupported scan codes
@@ -272,8 +280,8 @@ int run_fb(const Options& a,ControlModel& model,FmSession* session){
  auto input=[&](Key key,char digit=0){
    if(model.s.page==orc::zero::Page::dashboards){
      auto& selection=model.s.dashboard_selection;
-     if(key==Key::up||key==Key::left)selection=(selection+16)%17;
-     else if(key==Key::down||key==Key::right)selection=(selection+1)%17;
+     if(key==Key::up)selection=(selection+18)%19;
+     else if(key==Key::down)selection=(selection+1)%19;
      else if(key==Key::enter){
        if(selection==4)model.s.page=orc::zero::Page::settings;
        else{select_dashboard(unsigned(selection));model.s.page=orc::zero::Page::receive;}
@@ -283,6 +291,10 @@ int run_fb(const Options& a,ControlModel& model,FmSession* session){
      return;
    }
    if(model.s.page==orc::zero::Page::settings){
+     if(key==Key::bias_tee){
+       model.s.bias_tee=!model.s.bias_tee;model.dirty_settings=true;
+       orc::linux_sdr::bias_tee.request(model.s.bias_tee);return;
+     }
      if(key==Key::escape){model.s.page=orc::zero::Page::receive;return;}
      if(key!=Key::dashboards){
        if(key==Key::volume_up||key==Key::volume_down||key==Key::mute||key==Key::palette||key==Key::step||key==Key::quit)
@@ -312,12 +324,13 @@ int run_fb(const Options& a,ControlModel& model,FmSession* session){
      if(c!=KEY_LEFT&&c!=KEY_Z&&c!=KEY_RIGHT&&c!=KEY_C&&c!=KEY_UP&&c!=KEY_DOWN&&
       c!=KEY_ENTER&&c!=KEY_ESC&&c!=KEY_BACKSPACE&&c!=KEY_DOT&&c!=KEY_TAB&&c!=KEY_F&&
       c!=KEY_SPACE&&c!=KEY_P&&c!=KEY_M&&c!=KEY_S&&c!=KEY_MINUS&&c!=KEY_D&&c!=KEY_EQUAL&&c!=KEY_G&&c!=KEY_T&&
-      c!=KEY_R&&c!=KEY_H&&c!=KEY_Q&&!(c>=KEY_1&&c<=KEY_9)&&c!=KEY_0)continue;
+      c!=KEY_B&&c!=KEY_R&&c!=KEY_H&&c!=KEY_Q&&!(c>=KEY_1&&c<=KEY_9)&&c!=KEY_0)continue;
      key=translate_evdev(c,digit);input(key,digit);
     }
    }}
   if(g_palette_signal){g_palette_signal=0;input(Key::palette);}
   if(g_dashboard_signal){g_dashboard_signal=0;input(Key::dashboards);}
+  model.s.bias_tee_state=orc::linux_sdr::bias_tee.state();
   if(session&&!dashboards->mode()){const auto s=session->snapshot();sync_model(model,s);relay_controls(model,*session,s);}
   const bool show_dashboard=dashboards->mode()&&model.s.page==orc::zero::Page::receive;
   if(!show_dashboard)renderer.render(model.s);
@@ -365,7 +378,10 @@ int main(int argc,char**argv){
   if(!a.demo&&orc::zero::load_settings(orc::zero::settings_path(),saved)){
     if(!a.freq_explicit)a.freq=saved.frequency_hz;
     if(!a.audio_explicit)a.audio=saved.audio_device;
+    if(!a.bias_explicit)a.bias_tee=saved.bias_tee;
   }
+  model.s.bias_tee=a.demo?false:a.bias_tee;
+  orc::linux_sdr::bias_tee.request(model.s.bias_tee);
   model.s.palette=a.demo?0:saved.palette;
   model.restore(a.freq,a.demo?30:int(saved.volume),a.demo?false:saved.mute,a.demo?2:int(saved.step_index));
   FmSession session;FmSession* owner=nullptr;
@@ -398,7 +414,7 @@ int main(int argc,char**argv){
   if(!a.demo){
     orc::zero::UserSettings settings{};
     settings.frequency_hz=(model.s.applied_hz>=orc::zero::kFmMinHz&&model.s.applied_hz<=orc::zero::kFmMaxHz)?model.s.applied_hz:a.freq;
-    settings.palette=model.s.palette;
+    settings.palette=model.s.palette;settings.bias_tee=model.s.bias_tee;
     settings.volume=unsigned(model.s.volume);settings.mute=model.s.muted;
     settings.step_index=unsigned(model.step_index);
     settings.audio_device=a.audio;

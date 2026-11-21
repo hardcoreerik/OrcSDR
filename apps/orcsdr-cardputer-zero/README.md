@@ -168,8 +168,8 @@ P25 RADIO is available in the Space selector or via `--dashboard p25`.
 F opens MHz entry (24–1766 MHz); Left/Right tunes; T cycles 12.5 kHz,
 100 kHz, 1 MHz, and 5 MHz steps. G cycles Auto/C4FM/CQPSK. S/D adjusts
 volume; M mutes. The page shows decoded NAC, system/site identity, and the
-current decoded grant. The single receiver remains on the manually selected
-frequency: trunk following and Phase II voice are not integrated yet.
+current decoded grant. The compact receiver now supports Phase I grant following as described below.
+Phase II voice is not integrated.
 
 The Linux build compiles the existing P25 decoder core and Phase I IMBE
 voice decoder with the repository's bundled mbelib sources and notices intact.
@@ -271,9 +271,165 @@ replaces the least recently heard station. The header mascot is a tightly
 framed 28 x 28 RGB565 face embedded in the executable. Map geometry remains 2:1
 (216 x 108) beneath the taller icon header.
 
-Integration checkpoint: Satellite and LoRa/Mesh screens are not yet in the
-selector. Linux LoRa backend tests and a bounded device IQ/decode run passed,
-but that backend is not yet connected to a compact LoRa page. The P25 page
-supports manual Phase I reception only, without trunk following or Phase II
-voice. Other compact dashboards have the limitations documented above; this
+Integration checkpoint: The Satellite receive workspace is now in the selector. The LoRa/Mesh page is now
+connected to the Linux native decoder as described below. The P25 page
+supports Phase I reception and grant following; Phase II voice remains unavailable. Other compact dashboards have the limitations documented above; this
 checkpoint does not claim full parity with the main Tab5 application.
+
+### Automatic USB receiver recovery
+
+The receiver retries failed USB open/read operations once per second while the
+app remains open. Starting without the RTL-SDR and plugging it in later starts
+the stream automatically. Removing/reconnecting it restarts capture with a new
+stream generation; stale IQ and partial decoder slots are discarded. FT8's
+session map/last-heard history is retained. The selected RTL device index still
+applies; stable serial-number selection with multiple dongles is not provided.
+
+Device verification disabled/re-enabled only the identified 0bda:2838 USB
+interface. FM and FT8 both passed absent startup, initial connection, interrupted
+stream, and automatic reconnection without pressing R. This is logical USB
+removal testing; cable/power faults on other receivers remain a physical gate.
+The dashboard selector uses Up/Down only; Left/Right no longer changes its row.
+Scripted evdev input and framebuffer comparisons verified all four directions.
+
+### Compact LoRa/Mesh receiver
+
+Open LORA / MESH from Space or launch with `--dashboard lora`. F enters MHz,
+Left/Right tunes, T cycles tuning steps, G cycles SF7 through SF12, Enter starts
+a manual diagnostic capture, and Up/Down scrolls packet history. Bandwidth is
+currently fixed at 250 kHz. Startup defaults to 906.875 MHz / SF11.
+
+The existing shared LoRa preamble detector runs on 960 kS/s IQ. Automatic capture
+retains 250 ms of pre-roll, ends after quiet or at a four-second cap, and passes
+owned IQ to the existing native decoder. The receiver pauses while decoding,
+then flushes buffered IQ and resumes preamble detection. A capture reserves up
+to 7.68 MB plus a 480 kB pre-roll buffer and native decoder workspace. Manual
+captures without a signal are bounded to approximately half a second. No
+private channel key is read; packet summaries use the shared decoder's existing
+public/plaintext handling. Persistent packet archives, regional channel menus,
+private-key setup, and uninterrupted reception during decode are not ported.
+
+The page keeps 32 packet-summary lines in RAM and reports capture count, CRC
+results, preamble windows, and decoder duration. Static chrome is retained on
+ordinary updates. Device testing tuned 915.125 MHz, changed SF11 to SF12, and
+processed two 963,328-byte manual captures in 143/168 ms with zero CRC-valid
+packets. That proves the capture/decode path ran, not live RF packet support.
+The shared native self-check and compact-control/history/redraw tests passed.
+
+### Bias Tee antenna power
+
+Open Settings in the Space selector and press B to request Bias Tee ON/OFF.
+The default is OFF. The preference is saved with the other user settings on
+clean exit, applies to all radio pages, and is reapplied after USB reconnect.
+`--bias-tee on` or `--bias-tee off` explicitly overrides the saved preference
+for a launch. Settings shows the requested value and WAIT RX, PENDING, APPLIED,
+or DRIVER ERROR. APPLIED means librtlsdr accepted the command; it is not a
+voltage measurement or proof the dongle has a wired Bias Tee. The transport
+sends OFF before closing the device. Abrupt power loss/process termination
+cannot guarantee an orderly OFF command. Use a compatible receiver and antenna
+system: enabling Bias Tee places DC power on the antenna connector.
+
+Fake-driver tests cover default OFF, ON/OFF requests, one call per change,
+reapplication on reconnect, OFF on close, and command failures. Settings tests
+cover persistence, legacy defaults, and invalid values. On-device tests use OFF;
+antenna-port voltage and actual powered-LNA behavior are not verified.
+
+### Satellite receive workspace
+
+SATELLITE in Space, or `--dashboard satellite`, matches the main application's
+general NFM browse workspace at 137.5 MHz. It is not an APT/image decoder or
+orbital/pass tracker. F enters MHz; Left/Right tunes; T changes tuning step;
+S/D changes volume; M mutes. Live spectrum and waterfall use the same portable
+FFT as FM, with a 300 kS/s capture and a narrow 16 kHz channel indication.
+The shared NFM path supplies 48 kHz speaker PCM. USB and audio recovery apply.
+
+Device verification for the Satellite/Bias Tee addition: Settings ON/OFF UI
+was exercised in demo mode without a receiver. The connected driver's OFF
+command returned success and Settings showed OFF APPLIED. Satellite captured
+live IQ at 137.5 MHz/300 kS/s, produced changing waterfall pixels, opened a
+RUNNING speaker PCM stream owned by its audio worker, and accepted 145.800 MHz
+entry. This is transport/render/PCM evidence, not reception of a satellite or
+a measurement of antenna-port DC voltage. Actual ON output was not energized.
+
+### ACARS channel tuning
+
+F opens ACARS channel entry in MHz. Enter applies a valid 118–137 MHz channel
+on the existing 25 kHz grid; Escape cancels. Left/Right or Z/C steps 25 kHz.
+Up/Down and Enter retain message selection/detail behavior outside entry.
+The requested channel maps to a receiver centre 60 kHz below it for the shared
+240 kS/s frontend. Retuning flushes USB IQ, increments the capture generation,
+and resets the channel frontend/decoder; the bounded message history remains.
+The selected channel also survives the worker's automatic USB reconnect.
+
+`zero_acars_channel_tuning` verifies entry, rejection of out-of-range/off-grid
+values, clamping, stepping, and the RF offset. Device input applied 131.725 MHz,
+stepped to 131.750 MHz and back, with logs confirming 131.665/131.690 MHz RF
+centres. No live ACARS messages were decoded during that bounded run. Regional
+channel menus, aircraft/activity views, and archive integration remain gaps.
+
+### P25 Phase I follow and hold
+
+On P25, F sets the control frequency; R toggles automatic Phase I follow and H
+holds the first accepted talkgroup until hold is disabled or the control
+frequency changes. Fresh clear FDMA grants can retune the receiver to the voice
+carrier. The shared decoder and vocoder reset on each RF change. The receiver
+returns to control after 3 seconds without voice acquisition or 1.8 seconds
+without further voice frames, matching the main application's follow timeouts.
+An encrypted voice indication returns to control and skips that talkgroup for
+30 seconds. TDMA grants are not followed for voice; Phase II voice is still
+unavailable. Manual frequency/modulation controls and volume/mute remain.
+
+The portable state machine adapts the Phase I decisions in Tab5 main.cpp's
+service_p25_follow, using the existing decoder's grant and encryption metadata.
+Its test covers stale/encrypted/TDMA grants, hold selection, acquire/hang
+returns, encryption cooldown, disable, changing control frequency and uint32
+clock wrap. Existing P25 core/vocoder/UI tests passed too. Device testing
+confirmed R/H controls, display changes and control retuning to 460.125 MHz.
+No live P25 lock, grant, or followed call was received in that run. Profiles,
+control-channel scanning, aliases, and the main multi-view UI remain gaps.
+
+### Dead Air durable event journal
+
+Opening DEAD AIR starts a dedicated storage worker and an exclusive session
+JSONL file under `$XDG_DATA_HOME/orcsdr/dead-air` or
+`~/.local/share/orcsdr/dead-air`. The page's RF events and Enter marks use the
+main application's existing event queue, versioned serializer and durable
+journal logic. Each file is created with mode 0600; existing files are never
+overwritten. Saved counts include only flushed records. The page displays
+storage errors and queue drops. Normal close drains the queue and writes the
+session-end counts. Abrupt shutdown can leave an incomplete final record; no
+claim of durability is made for records not confirmed saved.
+
+Observation and manual-event times use the system's UTC when plausible; an
+unknown clock remains null in the shared format. The receive/render paths
+never perform disk writes. Existing logs are retained without automatic pruning;
+users must manage disk space. This adds event evidence, not the main build's
+audio clips, microphone, environmental sensors, sweep/review controls or
+on-device archive browser.
+
+The focused storage test verifies a durable UTC mark, graceful finish, failure
+reporting, bounded redraw and preservation of a blocking existing file. Device
+testing at 96.1 MHz recorded an Enter mark, parsed the JSONL, checked mode 0600,
+and confirmed session_end saved=1/lost=0/producer_dropped=0 after clean exit.
+
+### FT4 on the FT8 dashboard
+
+G switches the receive mode between FT8 and FT4. Band selection uses the main
+application's shared FT8/FT4 dial table, including 7.0475 MHz for FT4 on 40 m.
+The exact dial is shown to four decimal places. UTC slot assembly uses 15-second
+periods for FT8 and 7.5 seconds for FT4. Switching modes clears the partial slot,
+resets the audio tap/backend and USB capture generation, and updates the header
+and countdown. FT8 remains the startup default. Existing map/last-heard session
+history is retained; decoded records carry the backend's actual mode. G remains
+mode selection only on this dashboard; T still opens UTC controls and M toggles
+the map. JS8 modes remain unavailable because the shared backend does not
+advertise them as supported.
+
+Local and Zero tests passed FT4 slot boundaries/gaps, original FT8 discontinuity
+behavior, shared mode-specific band presets, and the native FT4 receiver. A
+test-only synthetic IQ message decoded as CQ K1ABC FN42 through the full
+CU8-to-USB-audio/slot/native-decoder path, with mode and grid asserted. It was
+never transmitted. Device input selected FT4/7.0475 MHz, completed a UTC-aligned
+7.5-second slot, opened the map, and returned to FT8/7.074 MHz. That live RF slot
+contained zero decoded messages; live over-the-air FT4 decoding remains
+unverified. These results do not replace RF antenna/band acceptance.

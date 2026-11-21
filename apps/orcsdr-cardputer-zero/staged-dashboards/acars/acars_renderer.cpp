@@ -66,8 +66,8 @@ void Renderer::text(int x,int y,const char* str,uint16_t color,size_t limit) {
 }
 void Renderer::header(const Snapshot& s) {
   fill(0,0,320,16,panel);
-  text(4,4,"OrcSDR",green,8);
-  text(66,4,"ACARS",cyan,7);
+  text(33,4,"OrcSDR",green,8);
+  text(95,4,"ACARS",cyan,7);
 
   const char* state=s.source==Source::demo?"DEMO":s.receiver==ReceiverState::receiving?"LIVE":
     s.receiver==ReceiverState::connecting?"CONNECT":s.receiver==ReceiverState::error?"ERROR":"NO RX";
@@ -78,8 +78,8 @@ void Renderer::status(const Snapshot& s) {
   fill(0,16,320,40,bg);
   const uint32_t hz=s.applied_channel_hz?s.applied_channel_hz:s.requested_channel_hz;
   const auto freq=mhz(hz);
-  text(5,18,freq.c_str(),white,12);text(66,18,"MHZ",cyan,3);
-  text(98,18,"AM 24KS",green,8);
+  text(33,18,freq.c_str(),white,12);text(94,18,"MHZ",cyan,3);
+  text(126,18,"AM 24KS",green,8);
   char gain[28];if(s.auto_gain)std::snprintf(gain,sizeof(gain),"GAIN AUTO");
   else std::snprintf(gain,sizeof(gain),"GAIN %+.1f",double(s.gain_tenth_db)/10.);
   text(202,18,gain,cyan,18);
@@ -128,7 +128,7 @@ void Renderer::rows(const Snapshot& s,uint64_t now) {
     }
   }
   fill(0,152,320,18,panel);
-  text(3,157,s.detail?"UP/DN SCROLL  ESC BACK":"UP/DN SELECT  ENTER DETAIL  F FREQ",cyan,52);
+  text(3,157,s.detail?"UP/DN SCROLL  ESC BACK":"UP/DN SELECT ENTER DETAIL F FREQ Z/C TUNE",cyan,52);
   dirty(0,kListY,320,114);
 }
 void Renderer::detail(const Snapshot& s) {
@@ -138,7 +138,7 @@ void Renderer::detail(const Snapshot& s) {
   char b[64];
   std::snprintf(b,sizeof(b),"%s %s %s",mhz(m.frequency_hz).c_str(),
     m.corrected?"CRC CORRECTED":"CRC VERIFIED",m.end_marker==0x17?"ETB":m.end_marker==0x03?"ETX":"UNKNOWN");
-  text(6,19,b,green,50);
+  text(33,19,b,green,47);
   auto tail=safe_id(m.tail,7),flight=safe_id(m.flight,6),label=safe_id(m.label,2);
   std::snprintf(b,sizeof(b),"TAIL %s FLT %s LAB %s",tail.c_str(),flight.c_str(),label.c_str());
   text(6,31,b,white,50);
@@ -172,6 +172,7 @@ void Renderer::render(const Snapshot& s,uint64_t now_ns) {
     if(page_changed||s.revision!=previous_.revision||now_ns/1000000000u!=previous_second_)
       rows(s,now_ns);
   }
+  for(int y=0;y<28;++y)for(int x=0;x<28;++x)fill(1+x,1+y,1,1,orc::zero::kOrcMascot28[y*28+x]);
   previous_=s;
   previous_second_=now_ns/1000000000u;
 }

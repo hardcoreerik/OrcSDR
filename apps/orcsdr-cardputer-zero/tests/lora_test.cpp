@@ -26,6 +26,19 @@ int main(int argc,char** argv){
   std::vector<uint8_t> silence(8192,128);
   for(int n=0;n<64;++n)assert(!orcsdr::lora_preamble::feed(silence.data(),silence.size()).fired);
   assert(orcsdr::lora_preamble::status().windows>0);
+  orcsdr::lora_preamble::reset();
+  constexpr double rate=960000,bw=250000,symbol=2048/bw,pi=3.14159265358979323846;
+  bool fired=false;uint64_t sample=0;
+  for(int block=0;block<40;++block){
+    for(size_t j=0;j<silence.size()/2;++j,++sample){
+      const double t=std::fmod(sample/rate,symbol);
+      const double phase=2*pi*(-bw*.5*t+bw/(2*symbol)*t*t);
+      silence[j*2]=uint8_t(std::lround(127.5+100*std::cos(phase)));
+      silence[j*2+1]=uint8_t(std::lround(127.5+100*std::sin(phase)));
+    }
+    fired|=orcsdr::lora_preamble::feed(silence.data(),silence.size()).fired;
+  }
+  assert(fired);
   assert(!orcsdr::lora_preamble::configure(6));
   if(argc==2&&std::string(argv[1])=="--device"){
     orc::linux_sdr::RtlReceiver radio;radio.open(0);radio.configure(906875000,960000);

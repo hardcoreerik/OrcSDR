@@ -7,6 +7,9 @@ struct P25Screen {
   CompactRenderer frame;
   uint32_t requested=851000000,applied=0;
   int volume=35;
+  bool auto_follow=true,hold=false,following=false;
+  uint16_t held_talkgroup=0;
+  orcsdr::p25core::Grant followed_grant{};
   bool muted=false,audio_ready=false,entry_active=false,layout=false;
   unsigned step_index=0;
   orcsdr::p25core::Modulation modulation=orcsdr::p25core::Modulation::auto_detect;
@@ -30,6 +33,8 @@ struct P25Screen {
       }
     }else{
       if(key==Key::escape)return false;
+      if(key==Key::reconnect)auto_follow=!auto_follow;
+      if(key==Key::help)hold=!hold;
       if(key==Key::frequency){entry.clear();error.clear();entry_active=true;}
       if(key==Key::left||key==Key::right)
         requested=uint32_t(std::clamp<int64_t>(int64_t(requested)+(key==Key::left?-int64_t(steps[step_index]):steps[step_index]),24000000,1766000000));
@@ -44,7 +49,7 @@ struct P25Screen {
   const auto& render(){
     if(!layout){
       frame.fill(CompactRenderer::bg);
-      frame.text(4,3,"OrcSDR P25 RX",CompactRenderer::green,2);
+      frame.badge(1,1,28);frame.text(33,3,"OrcSDR P25 RX",CompactRenderer::green,2);
 
       frame.text(4,160,"F FREQ T STEP G MODE S/D VOL SPACE DASH",CompactRenderer::cyan);
       layout=true;
@@ -52,7 +57,7 @@ struct P25Screen {
     if(painted==revision)return frame.pixels;
     frame.rect(0,37,320,118,CompactRenderer::bg);
     char b[80];
-    std::snprintf(b,sizeof(b),"%.4f MHZ %s",requested/1e6,requested==applied?"RX":"TUNING");
+    std::snprintf(b,sizeof(b),"%.4f MHZ %s",(following?applied:requested)/1e6,following?"VOICE":requested==applied?"CONTROL":"TUNING");
     frame.text(4,39,b,CompactRenderer::white);
     std::snprintf(b,sizeof(b),"STEP %.1fK  %s",steps[step_index]/1000.,orcsdr::p25core::modulation_name(modulation));
     frame.text(4,51,b,CompactRenderer::cyan);
@@ -64,13 +69,14 @@ struct P25Screen {
       frame.text(4,68,b,state.frame_sync?CompactRenderer::green:CompactRenderer::yellow,1,52);
       std::snprintf(b,sizeof(b),"SYS %03X WACN %05X SITE %u/%u",state.system_id,state.wacn,state.rfss,state.site);
       frame.text(4,81,b,CompactRenderer::white,1,52);
-      const auto& g=state.current_grant;
+      const auto& g=following?followed_grant:state.current_grant;
       std::snprintf(b,sizeof(b),"TG %u SRC %u %.4fM",g.talkgroup,g.source_id,g.frequency_hz/1e6);
       frame.text(4,94,g.valid?b:"NO DECODED GRANT",CompactRenderer::cyan,1,52);
       std::snprintf(b,sizeof(b),"VOL %d%% %s PCM %u",volume,muted?"MUTED":audio_ready?"AUDIO":"NO AUDIO",voice_pcm);
       frame.text(4,109,b,CompactRenderer::white,1,52);
-      frame.text(4,124,"PHASE I CLEAR VOICE / MANUAL TUNE",CompactRenderer::cyan);
-      frame.text(4,138,"NO TRUNK FOLLOW OR PHASE II VOICE",CompactRenderer::muted);
+      std::snprintf(b,sizeof(b),"R AUTO %s  H HOLD %s TG %u",auto_follow?"ON":"OFF",hold?"ON":"OFF",held_talkgroup);
+      frame.text(4,124,b,CompactRenderer::cyan,1,52);
+      frame.text(4,138,"PHASE I FOLLOW - NO PHASE II VOICE",CompactRenderer::muted);
     }
     painted=revision;return frame.pixels;
   }

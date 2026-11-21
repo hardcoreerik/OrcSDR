@@ -1,4 +1,6 @@
 #include "rtl_receiver.hpp"
+#include "bias_tee.hpp"
+#include <iostream>
 #include <algorithm>
 #include <limits>
 #include <stdexcept>
@@ -58,7 +60,7 @@ void RtlReceiver::open(std::uint32_t index) {
     if(dev) rtlsdr_close(dev);
     fail("open RTL-SDR (check USB host, permissions and power)",rc);
   }
-  device_=dev;
+  device_=dev;bias_tee.connect();
 #else
   (void)index;unsupported();
 #endif
@@ -108,6 +110,9 @@ std::size_t RtlReceiver::read_cu8(std::uint8_t* data,std::size_t bytes) {
   if(!device_)throw std::logic_error("receiver not open");
   if(!data||bytes<128||(bytes&1u)||bytes>static_cast<std::size_t>(std::numeric_limits<int>::max()))
     throw std::invalid_argument("receiver read requires even CU8 size of at least 128 bytes");
+  const auto before=bias_tee.state();
+  bias_tee.service([&](int enabled){return rtlsdr_set_bias_tee(static_cast<rtlsdr_dev_t*>(device_),enabled);});
+  if(before!=bias_tee.state())std::clog<<"Bias Tee requested "<<(bias_tee.requested()?"ON":"OFF")<<" driver "<<int(bias_tee.state())<<std::endl;
   int got=0;
   const int rc=rtlsdr_read_sync(static_cast<rtlsdr_dev_t*>(device_),data,static_cast<int>(bytes),&got);
   if(rc)fail("USB synchronous IQ read",rc);
@@ -119,7 +124,7 @@ std::size_t RtlReceiver::read_cu8(std::uint8_t* data,std::size_t bytes) {
 }
 void RtlReceiver::close() noexcept {
 #ifdef ORC_HAVE_RTLSDR
-  if(device_){rtlsdr_close(static_cast<rtlsdr_dev_t*>(device_));device_=nullptr;}
+  if(device_){bias_tee.disconnect([&](int enabled){return rtlsdr_set_bias_tee(static_cast<rtlsdr_dev_t*>(device_),enabled);});rtlsdr_close(static_cast<rtlsdr_dev_t*>(device_));device_=nullptr;}
 #else
   device_=nullptr;
 #endif

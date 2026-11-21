@@ -80,16 +80,14 @@ struct CompactRenderer {
     }
     // Clear only the widgets being updated; framebuffer output skips identical pixels.
     rect(0,0,320,40,panel);
-    text(4,1,"OrcSDR",green);text(50,1,"FM BROADCAST",cyan);
+    badge(1,1,28);text(33,1,"OrcSDR",green);text(79,1,"FM BROADCAST",cyan);
     const std::string conn=s.simulated?"DEMO":s.connection==Connection::ready?(s.audio_ready?"RTL ON":"NO AUDIO"):s.connection==Connection::connecting?"OPEN...":"NO RX";
     text(316-int(conn.size())*6,1,conn,s.connection==Connection::ready?green:yellow);
     const bool pending=s.requested_hz!=s.applied_hz&&s.connection==Connection::ready;
     const uint32_t station=s.applied_hz?s.applied_hz:s.requested_hz;
-    text(4,13,format_mhz(pending?s.requested_hz:station),pending?yellow:white,2);
-    text(94,19,"MHZ WFM",cyan);
-    for(int y=0;y<28;++y)
-      for(int x=0;x<28;++x)
-        point(168+x,1+y,kOrcBadge[(y*2)*kOrcBadgeSize+x*2]);
+    text(33,13,format_mhz(pending?s.requested_hz:station),pending?yellow:white,2);
+    text(123,19,"MHZ WFM",cyan);
+
     const uint32_t span=s.applied_rate?s.applied_rate:kDefaultSpanHz;
     char buf[64];std::snprintf(buf,sizeof(buf),"SPAN %.3fM",span/1000000.);text(202,19,buf,cyan);
     std::snprintf(buf,sizeof(buf),"STEP %uK",s.step_hz/1000);text(4,32,buf,cyan);
@@ -110,9 +108,9 @@ struct CompactRenderer {
         prevy=y;
       }
       const auto rf_x=[&](int64_t hz){return int((hz-int64_t(center)+span/2)*320/span);};
-      // The shared FM DSP selects a fixed 260 kHz channel around the selected center.
+      // Use the selected demodulator channel width around the tuned center.
       const int tuned_x=rf_x(station);
-      for(int edge:{rf_x(int64_t(station)-130000),rf_x(int64_t(station)+130000)})
+      for(int edge:{rf_x(int64_t(station)-s.bandwidth_hz/2),rf_x(int64_t(station)+s.bandwidth_hz/2)})
         if(edge>=0&&edge<320)line(edge,50,edge,87,cyan);
       for(int yy=0;yy<std::min(kWaterfallRows,s.waterfall_rows);++yy)
         for(int x=0;x<320;++x)
@@ -135,7 +133,7 @@ struct CompactRenderer {
         text(43,39,"OrcSDR",green,2);
         const int first=std::max(0,s.dashboard_selection-4);
         for(int i=0;i<5;++i){
-          const char* names[]={"FM BROADCAST","ADS-B","ACARS","AIRBAND AM","SETTINGS","RF LAB","2.4 GHZ WIFI","WEATHER","MARINE","POCSAG","SSTV","AM RADIO","DEAD AIR","SHORTWAVE","CB RADIO","FT8 RX","P25 RADIO"};
+          const char* names[]={"FM BROADCAST","ADS-B","ACARS","AIRBAND AM","SETTINGS","RF LAB","2.4 GHZ WIFI","WEATHER","MARINE","POCSAG","SSTV","AM RADIO","DEAD AIR","SHORTWAVE","CB RADIO","FT8 RX","P25 RADIO","LORA / MESH","SATELLITE"};
           const int y=65+i*13;
           rect(40,y,168,12,s.dashboard_selection==i+first?0x1264:panel);
           text(46,y+2,names[i+first],s.dashboard_selection==i+first?green:white);
@@ -147,10 +145,13 @@ struct CompactRenderer {
       case Page::settings:
         text(43,39,"OrcSDR SETTINGS",green,2);
 
-        text(43,74,s.muted?"MUTED  M":"VOL "+std::to_string(s.volume)+"%  S/D  M MUTE",white);
-        text(43,88,"FM STEP "+std::to_string(s.step_hz/1000)+"K  T",white);
-        text(43,102,std::string("PALETTE ")+orcsdr::waterfall_style::palette_name(s.palette)+"  P",white,1,38);
-        text(43,120,"ESC BACK  SPACE DASHBOARDS",cyan);break;
+        text(43,61,s.muted?"MUTED  M":"VOL "+std::to_string(s.volume)+"%  S/D  M MUTE",white);
+        text(43,74,"FM STEP "+std::to_string(s.step_hz/1000)+"K  T",white);
+        text(43,87,std::string("PALETTE ")+orcsdr::waterfall_style::palette_name(s.palette)+"  P",white,1,38);
+        text(43,100,std::string("B BIAS TEE ")+(s.bias_tee?"ON":"OFF")+
+          (s.bias_tee_state==-2?" DRIVER ERROR":s.bias_tee_state<0?" WAIT RX":s.bias_tee_state==int(s.bias_tee)?" APPLIED":" PENDING"),s.bias_tee?yellow:white);
+        text(43,113,"ANTENNA DC POWER - COMPATIBLE RX ONLY",muted,1,39);
+        text(43,130,"ESC BACK  SPACE DASHBOARDS",cyan);break;
       case Page::entry:
         text(40,41,"ENTER FREQUENCY",cyan,2);
         rect(39,69,241,40,bg);border(39,69,241,40,green);

@@ -1,4 +1,5 @@
 #include "airband.hpp"
+#include "../../src/compact/orc_mascot.hpp"
 #include <algorithm>
 #include <cctype>
 #include <cstdio>
@@ -64,7 +65,7 @@ void Renderer::text(int x,int y,const std::string& s,uint16_t color,int scale,in
 void Renderer::init_static(){
   if(initialized_)return;
   initialized_=true;pixels_.fill(bg);++full_clears_;
-  rect(0,0,width,16,panel);text(4,1,"OrcSDR",green,2);text(92,4,"AIRBAND AM",cyan,1);
+  rect(0,0,width,16,panel);text(33,1,"OrcSDR",green,2);text(92,4,"AIRBAND AM",cyan,1);
   rect(0,49,width,19,panel);rect(0,152,width,18,panel);
   text(4,157,"F:FREQ  ARROWS:TUNE  M:MUTE",muted,1,45);
   dirty_[0]={0,0,width,height};dirty_count_=1;
@@ -83,13 +84,13 @@ void Renderer::render(const Snapshot& s,const uint16_t* palette){
       s.selected_hz!=last_.selected_hz || s.error!=last_.error;
   auto dirty=[&](int y,int h){dirty_[dirty_count_++]={0,y,width,h};rect(0,y,width,h,bg);};
   if(header_changed){dirty(0,16);rect(0,0,width,16,panel);
-  text(4,1,"OrcSDR",green,2);text(92,4,s.cb?"CB RADIO":s.shortwave?"SHORTWAVE":s.broadcast?"AM RADIO":"AIRBAND AM",cyan);
+  text(33,1,"OrcSDR",green,2);text(116,4,s.cb?"CB RADIO":s.shortwave?"SHORTWAVE":s.broadcast?"AM RADIO":"AIRBAND AM",cyan);
   const std::string state=s.demo?"DEMO":s.connection==Connection::ready?"RTL ON":
                           s.connection==Connection::connecting?"WAIT RX":"NO RX";
   text(319-int(state.size())*6-4,4,state,s.demo?amber:s.connection==Connection::ready?green:amber);}
   if(freq_changed){dirty(16,33);
   const bool pending=s.tune_pending;
-  text(5,19,s.entry_active?std::string(s.entry.data())+"_":mhz(s.selected_hz),pending?amber:white,3,12);
+  text(33,19,s.entry_active?std::string(s.entry.data())+"_":mhz(s.selected_hz),pending?amber:white,3,12);
   text(200,23,"MHZ",cyan,2);
   text(251,18,s.sideband==1?"USB":s.sideband==2?"LSB":"AM",green,2);text(249,37,pending?"TUNING":s.entry_active?"ENTER":s.cb?"CH "+std::to_string(s.cb_channel):std::to_string(s.step_hz/1000)+" KHZ",pending?amber:muted,1,10);}
   if(state_changed){dirty(49,19);rect(0,49,width,19,panel);
@@ -122,6 +123,7 @@ void Renderer::render(const Snapshot& s,const uint16_t* palette){
   line(marker-2,109,marker-2,114,cyan);line(marker+2,109,marker+2,114,cyan);
   rect(3,112,91,8,panel);text(5,112,"SPAN 640 KHZ",muted);
   if(s.error[0]){rect(1,121,316,11,panel);text(4,123,s.error.data(),red,1,50);}}
+  for(int y=0;y<28;++y)for(int x=0;x<28;++x)point(1+x,1+y,orc::zero::kOrcMascot28[y*28+x]);
   last_=s;last_palette_=palette;have_last_=true;palette_invalid_=false;
 }
 bool Renderer::save_ppm(const std::string& path)const{

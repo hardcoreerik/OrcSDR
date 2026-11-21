@@ -12,7 +12,7 @@ int main(){
  m.s.spectrum.fill(128);m.s.waterfall[0].fill(128);m.s.waterfall_rows=1;
  CompactRenderer r;r.render(m.s);auto first=r.pixels;auto clears=r.full_clears;
  for(int y=0;y<28;++y)for(int x=0;x<28;++x)
-   assert(r.pixels[(1+y)*320+168+x]==kOrcBadge[y*2*kOrcBadgeSize+x*2]);
+   assert(r.pixels[(1+y)*320+1+x]==kOrcMascot28[y*28+x]);
  assert(r.pixels[80*320+160]==CompactRenderer::yellow);
  assert(r.pixels[70*320+143]==CompactRenderer::cyan);
  r.render(m.s);assert(r.pixels==first&&r.full_clears==clears);

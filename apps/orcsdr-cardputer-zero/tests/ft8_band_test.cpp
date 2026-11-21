@@ -12,6 +12,10 @@ int main(){
     b.step(true);
   }
   assert(b.index==initial);
+  b.index=orcsdr::ft8::nearest_band(7074000);b.toggle_mode();
+  assert(b.mode==orcsdr::ft8::DigitalMode::ft4&&b.dial()==7047500);
+  for(size_t n=0;n<count;++n){assert(b.dial()==orcsdr::ft8::mode_dial_hz(b.index,b.mode));b.step(true);}
+  b.toggle_mode();assert(b.dial()==7074000);
   b.index=0;b.step(false);assert(b.index==count-1);
   b.step(true);assert(b.index==0);
   std::cout<<"FT8 shared band presets and wrap PASS\n";
