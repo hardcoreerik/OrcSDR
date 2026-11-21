@@ -12,6 +12,8 @@
 #include <ctime>
 #include "compact/p25_screen.hpp"
 #include "compact/lora_screen.hpp"
+#include "lora_history.hpp"
+#include "settings.hpp"
 #include "compact/satellite_screen.hpp"
 #include "iq_spectrum.hpp"
 #include "p25_voice.hpp"
@@ -72,7 +74,11 @@ class DashboardSession {
     clock_open_=clock_entry_=false;clock_digits_.clear();clock_tick_=0;
     if(mode==15){clock_.start();ft8_visual_.clear();ft8_map_.clear();ft8_map_open_=false;ft8_log_offset_=0;ft8_visual_painted_=ft8_map_painted_=~uint64_t{0};ft8_visual_palette_=~0u;}
     if(mode==16)p25_=P25Screen{};
-    if(mode==17)lora_=LoraScreen{};
+    if(mode==17){
+      lora_=LoraScreen{};UserSettings saved{};
+      if(load_settings(settings_path(),saved))lora_.set_plan(saved.lora_region,uint16_t(saved.lora_slot));
+      lora_.lines=lora_history::load(lora_history::path());++lora_.revision;
+    }
     if(mode==18)satellite_=SatelliteScreen{};
     if(mode==12){
       dead_air_=DeadAirScreen{};dead_air_storage_=std::make_unique<DeadAirStorage>();
@@ -119,7 +125,15 @@ class DashboardSession {
   bool input(Key key,char digit){
     std::lock_guard<std::mutex> lock(mutex_);
     if(mode_==16)return p25_.input(key,digit);
-    if(mode_==17)return lora_.input(key,digit);
+    if(mode_==17){
+      const size_t region=lora_.region;const uint16_t slot=lora_.slot;const bool handled=lora_.input(key,digit);
+      if(handled&&(region!=lora_.region||slot!=lora_.slot)){
+        UserSettings saved{};load_settings(settings_path(),saved);
+        saved.lora_region=unsigned(lora_.region);saved.lora_slot=lora_.slot;
+        if(!save_settings(settings_path(),saved))std::cerr<<"Could not save LoRa region settings\n";
+      }
+      return handled;
+    }
     if(mode_==18){
       const bool handled=satellite_.input(key,digit);
       lab_target_=satellite_.tuning.requested;weather_volume_=satellite_.tuning.volume;weather_muted_=satellite_.tuning.muted;
@@ -629,6 +643,7 @@ class DashboardSession {
             for(size_t n=0;n<found;++n)lora_.add(packets[n]);
             ++lora_.revision;
           }
+          for(size_t n=0;n<found;++n)if(!lora_history::append(lora_history::path(),packets[n]))std::cerr<<"LoRa packet history write failed\n";
           std::clog<<"LoRa capture bytes "<<capture.size()<<" packets "<<found<<" crc_ok "<<stats.crc_ok<<" decode_ms "<<stats.decode_millis<<std::endl;
           radio.retune(target);orcsdr::lora_preamble::reset();capture.clear();capturing=false;ring_at=ring_used=0;
         }

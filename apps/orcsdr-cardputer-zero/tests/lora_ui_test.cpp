@@ -4,6 +4,8 @@
 using namespace orc::zero;
 int main(){
  LoraScreen s;s.render();auto before=s.frame.pixels;auto clears=s.frame.full_clears;
+ const auto us=s.tuning.requested;s.input(Key::step,0);assert(s.region==1&&s.tuning.requested!=us);
+ s.set_plan(s.region,1);s.input(Key::left,0);assert(s.slot==orcsdr::lora_plan::slot_count(s.region));
  s.input(Key::gain,0);assert(s.sf==12);s.input(Key::gain,0);assert(s.sf==7);
  s.input(Key::frequency,0);for(char c:std::string("915.125"))s.input(c=='.'?Key::point:Key::digit,c);
  s.input(Key::enter,0);assert(!s.tuning.entry_active&&s.tuning.requested==915125000);

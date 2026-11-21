@@ -3,21 +3,30 @@
 #include <cstring>
 #include "lora_native_decoder.hpp"
 #include "lora_preamble_detector.hpp"
+#include "lora_region_plan.hpp"
 namespace orc::zero {
 struct LoraScreen {
   P25Screen tuning;
   CompactRenderer frame;
   uint8_t sf=11;
+  size_t region=0;uint16_t slot=20;
   bool layout=false,capturing=false,decoding=false,manual=false;
   uint32_t captures=0,crc_ok=0,crc_failed=0,decode_ms=0;
   uint64_t revision=0,painted=~uint64_t{0};
   size_t offset=0;
   orcsdr::lora_preamble::Status preamble{};
   std::vector<std::string> lines;
-  LoraScreen(){tuning.requested=906875000;tuning.step_index=1;}
+  LoraScreen(){set_plan(0,orcsdr::lora_plan::default_slot(0));tuning.step_index=1;}
+  void set_plan(size_t requested_region,uint16_t requested_slot){
+    region=std::min(requested_region,orcsdr::lora_plan::kRegions.size()-1);
+    slot=std::clamp<uint16_t>(requested_slot,1,orcsdr::lora_plan::slot_count(region));
+    tuning.requested=orcsdr::lora_plan::frequency_hz(region,slot);++revision;
+  }
   bool input(Key key,char digit){
     if(key==Key::escape&&!tuning.entry_active)return false;
-    if(tuning.entry_active||key==Key::frequency||key==Key::left||key==Key::right||key==Key::step||key==Key::escape)tuning.input(key,digit);
+    if(tuning.entry_active||key==Key::frequency||key==Key::escape)tuning.input(key,digit);
+    else if(key==Key::step)set_plan((region+1)%orcsdr::lora_plan::kRegions.size(),orcsdr::lora_plan::default_slot((region+1)%orcsdr::lora_plan::kRegions.size()));
+    else if(key==Key::left||key==Key::right)set_plan(region,key==Key::left?(slot==1?orcsdr::lora_plan::slot_count(region):slot-1):(slot==orcsdr::lora_plan::slot_count(region)?1:slot+1));
     else if(key==Key::gain)sf=sf==12?7:sf+1;
     else if(key==Key::enter)manual=true;
     else if(key==Key::up&&offset)--offset;
@@ -40,7 +49,7 @@ struct LoraScreen {
     }
     if(painted==revision)return frame.pixels;
     frame.rect(33,21,287,13,frame.bg);char b[80];
-    std::snprintf(b,sizeof(b),"%.4f MHZ SF%u BW250K %s",tuning.requested/1e6,sf,tuning.requested==tuning.applied?"RX":"TUNING");
+    std::snprintf(b,sizeof(b),"%s %u/%u %.3f SF%u %s",orcsdr::lora_plan::kRegions[region].code,slot,orcsdr::lora_plan::slot_count(region),tuning.requested/1e6,sf,tuning.requested==tuning.applied?"RX":"TUNE");
     frame.text(33,23,b,frame.white,1,47);
     frame.rect(0,36,320,120,frame.bg);
     if(tuning.entry_active){
@@ -53,7 +62,7 @@ struct LoraScreen {
       frame.text(4,51,b,frame.white,1,52);
       if(lines.empty())frame.text(4,76,"WAITING FOR RECEIVED PACKETS",frame.muted);
       for(size_t n=offset;n<std::min(lines.size(),offset+6);++n)frame.text(4,68+int(n-offset)*11,lines[n],n%2?frame.white:frame.green,1,52);
-      frame.text(4,141,"UP/DOWN HISTORY - RX PAUSES DURING DECODE",frame.muted);
+      frame.text(4,141,"LEFT/RIGHT SLOT  T REGION  UP/DOWN LOG",frame.muted);
     }
     painted=revision;return frame.pixels;
   }

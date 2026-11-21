@@ -295,9 +295,11 @@ Scripted evdev input and framebuffer comparisons verified all four directions.
 ### Compact LoRa/Mesh receiver
 
 Open LORA / MESH from Space or launch with `--dashboard lora`. F enters MHz,
-Left/Right tunes, T cycles tuning steps, G cycles SF7 through SF12, Enter starts
-a manual diagnostic capture, and Up/Down scrolls packet history. Bandwidth is
-currently fixed at 250 kHz. Startup defaults to 906.875 MHz / SF11.
+T cycles the region plan, Left/Right selects the channel slot within it, G cycles
+SF7 through SF12, Enter starts a manual diagnostic capture, and Up/Down scrolls
+packet history. Bandwidth is currently fixed at 250 kHz. The region and slot are
+restored from the saved settings on open; a first run with no saved plan starts on
+US slot 20 at 906.875 MHz / SF11.
 
 The existing shared LoRa preamble detector runs on 960 kS/s IQ. Automatic capture
 retains 250 ms of pre-roll, ends after quiet or at a four-second cap, and passes
@@ -306,8 +308,17 @@ then flushes buffered IQ and resumes preamble detection. A capture reserves up
 to 7.68 MB plus a 480 kB pre-roll buffer and native decoder workspace. Manual
 captures without a signal are bounded to approximately half a second. No
 private channel key is read; packet summaries use the shared decoder's existing
-public/plaintext handling. Persistent packet archives, regional channel menus,
-private-key setup, and uninterrupted reception during decode are not ported.
+public/plaintext handling. Changing region or slot rewrites the settings file, so
+the selected plan survives a restart. Private-key setup, uninterrupted reception
+during decode, and browsing history beyond the most recent packets remain unported.
+
+Each decoded packet is appended as one tab-separated `header<TAB>text` record to
+`$XDG_DATA_HOME/orcsdr/lora/packets.tsv` or `~/.local/share/orcsdr/lora/packets.tsv`,
+created with mode 0600 and fsynced before the receiver resumes. The file is
+append-only: existing records are never rewritten or pruned, so the user manages
+disk growth. On open the last 16 packets (32 summary lines) are reloaded newest
+first; older records stay on disk but are not shown. Control characters in a
+packet payload are replaced with `?` so a record cannot break the line format.
 
 The page keeps 32 packet-summary lines in RAM and reports capture count, CRC
 results, preamble windows, and decoder duration. Static chrome is retained on
@@ -315,6 +326,16 @@ ordinary updates. Device testing tuned 915.125 MHz, changed SF11 to SF12, and
 processed two 963,328-byte manual captures in 143/168 ms with zero CRC-valid
 packets. That proves the capture/decode path ran, not live RF packet support.
 The shared native self-check and compact-control/history/redraw tests passed.
+
+Persistence verification (2026-11-21, Zero with an RTL2838/R820T receiver, Release
+build with librtlsdr and ALSA enabled): with region 4 slot 3 saved and two packet
+records on disk, LORA / MESH opened on JP 3/12 at 921.125 MHz and listed both
+records newest first. A scripted T advanced the plan to ANZ and wrote
+`lora_region=5 lora_slot=20`; a following Right wrote `lora_slot=21`, and the LCD
+read ANZ 21/52 920.125 MHz. That covers plan save/restore and history reload. The
+append path is covered by `zero_lora_packet_history` only: no live LoRa packet was
+decoded, so reception during a real capture, and the cost of the per-packet fsync
+inside the capture loop, remain unverified.
 
 ### Bias Tee antenna power
 

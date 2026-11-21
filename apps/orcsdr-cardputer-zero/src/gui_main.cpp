@@ -413,6 +413,7 @@ int main(int argc,char**argv){
   }
   if(!a.demo){
     orc::zero::UserSettings settings{};
+    orc::zero::load_settings(orc::zero::settings_path(),settings);
     settings.frequency_hz=(model.s.applied_hz>=orc::zero::kFmMinHz&&model.s.applied_hz<=orc::zero::kFmMaxHz)?model.s.applied_hz:a.freq;
     settings.palette=model.s.palette;settings.bias_tee=model.s.bias_tee;
     settings.volume=unsigned(model.s.volume);settings.mute=model.s.muted;
