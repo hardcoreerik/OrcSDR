@@ -1,0 +1,48 @@
+name: Decoder replay tranche
+
+on:
+  pull_request:
+    paths:
+      - apps/orcsdr-tab5/ui/p25_*
+      - apps/orcsdr-tab5/ui/wwv_tick.*
+      - components/mbelib/**
+      - tests/p25_core_tests.cpp
+      - tests/p25_config_tests.cpp
+      - tests/wwv_tick_tests.cpp
+      - tests/fixtures/p25_control_lane_453925.orciq
+      - tests/fixtures/wwv/wwv_10mhz_dial_1khz_below_15s.wav
+      - tools/test-p25-core.*
+      - tools/test-decoder-replay.sh
+      - .github/workflows/decoder-replay.yml
+  push:
+    branches: [main]
+    paths:
+      - apps/orcsdr-tab5/ui/p25_*
+      - apps/orcsdr-tab5/ui/wwv_tick.*
+      - components/mbelib/**
+      - tests/p25_core_tests.cpp
+      - tests/p25_config_tests.cpp
+      - tests/wwv_tick_tests.cpp
+      - tests/fixtures/p25_control_lane_453925.orciq
+      - tests/fixtures/wwv/wwv_10mhz_dial_1khz_below_15s.wav
+      - tools/test-p25-core.*
+      - tools/test-decoder-replay.sh
+      - .github/workflows/decoder-replay.yml
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  replay:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Run checked-in decoder replays
+        run: bash tools/test-decoder-replay.sh
