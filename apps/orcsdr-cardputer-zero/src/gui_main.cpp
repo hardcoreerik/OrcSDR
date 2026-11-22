@@ -162,7 +162,8 @@ bool translate_sdl(SDL_Keycode code,Key& key,char& digit){
  switch(code){
   case SDLK_LEFT:case SDLK_z:key=Key::left;break;
   case SDLK_RIGHT:case SDLK_c:key=Key::right;break;
-  case SDLK_UP:key=Key::up;break;case SDLK_DOWN:key=Key::down;break;
+  case SDLK_UP:case SDLK_f:key=Key::up;break;
+  case SDLK_DOWN:case SDLK_x:key=Key::down;break;
   case SDLK_RETURN:key=Key::enter;break;
   case SDLK_ESCAPE:key=Key::escape;break;
   case SDLK_HOME:key=Key::home;break;
@@ -170,7 +171,7 @@ bool translate_sdl(SDL_Keycode code,Key& key,char& digit){
   case SDLK_PERIOD:key=Key::point;break;
   case SDLK_TAB:key=Key::menu;break;
   case SDLK_b:key=Key::bias_tee;break;
-  case SDLK_f:key=Key::frequency;break;
+  case SDLK_v:key=Key::frequency;break;
   case SDLK_m:key=Key::mute;break;
   case SDLK_p:key=Key::palette;break;
   case SDLK_SPACE:key=Key::dashboards;break;
@@ -224,10 +225,10 @@ Key translate_evdev(unsigned code,char& digit){
  if(code==KEY_0){digit='0';return Key::digit;}
  switch(code){
   case KEY_LEFT:case KEY_Z:return Key::left;case KEY_RIGHT:case KEY_C:return Key::right;
-  case KEY_UP:return Key::up;case KEY_DOWN:return Key::down;
+  case KEY_UP:case KEY_F:return Key::up;case KEY_DOWN:case KEY_X:return Key::down;
   case KEY_ENTER:return Key::enter;case KEY_ESC:return Key::escape;case KEY_HOME:return Key::home;
   case KEY_BACKSPACE:return Key::backspace;case KEY_DOT:return Key::point;
-  case KEY_TAB:return Key::menu;case KEY_F:return Key::frequency;
+  case KEY_TAB:return Key::menu;case KEY_V:return Key::frequency;
   case KEY_SPACE:return Key::dashboards;case KEY_P:return Key::palette;case KEY_M:return Key::mute;case KEY_S:case KEY_MINUS:return Key::volume_down;
   case KEY_D:case KEY_EQUAL:return Key::volume_up;case KEY_G:return Key::gain;
   case KEY_B:return Key::bias_tee;
@@ -333,7 +334,7 @@ int run_fb(const Options& a,ControlModel& model,FmSession* session){
      Key key{};char digit=0;
      const unsigned c=event.code;
      if(c!=KEY_LEFT&&c!=KEY_Z&&c!=KEY_RIGHT&&c!=KEY_C&&c!=KEY_UP&&c!=KEY_DOWN&&
-      c!=KEY_ENTER&&c!=KEY_ESC&&c!=KEY_BACKSPACE&&c!=KEY_DOT&&c!=KEY_TAB&&c!=KEY_F&&
+      c!=KEY_ENTER&&c!=KEY_ESC&&c!=KEY_BACKSPACE&&c!=KEY_DOT&&c!=KEY_TAB&&c!=KEY_F&&c!=KEY_X&&c!=KEY_V&&
       c!=KEY_HOME&&
       c!=KEY_SPACE&&c!=KEY_P&&c!=KEY_M&&c!=KEY_S&&c!=KEY_MINUS&&c!=KEY_D&&c!=KEY_EQUAL&&c!=KEY_G&&c!=KEY_T&&
       c!=KEY_B&&c!=KEY_R&&c!=KEY_H&&c!=KEY_Q&&!(c>=KEY_1&&c<=KEY_9)&&c!=KEY_0)continue;

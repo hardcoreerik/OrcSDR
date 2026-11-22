@@ -514,9 +514,23 @@ decoding. If the script itself is killed with `SIGKILL` the launcher stays froze
 
 The internal keyboard is the `tca8418c` controller at
 `/dev/input/cardputer-zero-internal`. It reports the four arrow codes and
-`KEY_HOME`. It does **not** report `KEY_FN`, so a binding built on an `EV_KEY`
-`KEY_FN` modifier can never fire on this hardware even though it compiles. Dump
-the capability bitmap before trusting a scancode.
+`KEY_HOME`. It does **not** report `KEY_FN`.
+
+Fn is handled **inside the keyboard controller**, not in software: with Fn
+latched, `F`/`X`/`Z`/`C` emit the arrow codes; with Fn off they emit the letter
+codes. The application never sees a modifier and cannot tell whether Fn is on, so
+navigation must not depend on it. The compact UI maps the four keys directly, the
+way their legends read:
+
+| Key | Action with Fn off |
+| --- | --- |
+| `F` | Up |
+| `Z` | Left |
+| `X` | Down |
+| `C` | Right |
+
+Frequency entry moved from `F` to `V` because `F` is now Up; every footer shows
+`V FREQ`. The desktop SDL bindings follow the same mapping.
 
 ### Screen timeout
 

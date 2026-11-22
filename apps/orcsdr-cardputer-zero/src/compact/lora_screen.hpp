@@ -45,7 +45,7 @@ struct LoraScreen {
   const auto& render(){
     if(!layout){
       frame.fill(frame.bg);frame.badge(1,1,28);frame.text(33,3,"OrcSDR LORA/MESH",frame.green,2,23);
-      frame.keys(4,160,{{"F","FREQ"},{"G","SF"},{"ENTER","CAPTURE"},{"SPACE","DASH"}});layout=true;
+      frame.keys(4,160,{{"V","FREQ"},{"G","SF"},{"ENTER","CAPTURE"},{"SPACE","DASH"}});layout=true;
     }
     if(painted==revision)return frame.pixels;
     frame.rect(33,21,287,13,frame.bg);char b[80];

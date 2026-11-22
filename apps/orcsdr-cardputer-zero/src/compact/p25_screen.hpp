@@ -65,7 +65,7 @@ struct P25Screen {
       frame.fill(CompactRenderer::bg);
       frame.badge(1,1,28);frame.text(33,3,"OrcSDR P25 RX",CompactRenderer::green,2);
 
-      frame.keys(4,160,{{"F","FREQ"},{"T","STEP"},{"G","MODE"},{"S/D","VOL"},{"SPACE","DASH"}});
+      frame.keys(4,160,{{"V","FREQ"},{"T","STEP"},{"G","MODE"},{"S/D","VOL"},{"SPACE","DASH"}});
       layout=true;
     }
     if(painted==revision)return frame.pixels;

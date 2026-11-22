@@ -21,7 +21,7 @@ struct SatelliteScreen {
     frame.text(33,21,b,frame.white);
     std::snprintf(b,sizeof(b),"STEP %.1fK VOL %d%% %s",tuning.steps[tuning.step_index]/1000.,tuning.volume,tuning.muted?"MUTED":signal.audio_ready?"AUDIO":"NO AUDIO");
     frame.text(4,32,b,frame.cyan);
-    frame.rect(0,160,320,10,frame.panel);frame.keys(4,162,{{"F","FREQ"},{"T","STEP"},{"S/D","VOL"},{"M","MUTE"},{"SPACE","DASH"}});
+    frame.rect(0,160,320,10,frame.panel);frame.keys(4,162,{{"V","FREQ"},{"T","STEP"},{"S/D","VOL"},{"M","MUTE"},{"SPACE","DASH"}});
     if(tuning.entry_active){
       frame.rect(10,55,300,55,frame.panel);frame.border(10,55,300,55,frame.cyan);
       frame.text(16,61,"MHZ "+tuning.entry+"_",frame.white,2,23);

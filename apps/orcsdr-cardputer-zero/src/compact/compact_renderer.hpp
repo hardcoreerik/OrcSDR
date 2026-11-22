@@ -100,7 +100,7 @@ struct CompactRenderer {
     const bool layout_changed=!initialized||previous_page!=s.page;
     if(layout_changed){fill(bg);initialized=true;previous_page=s.page;
       rect(footer.x,footer.y,footer.w,footer.h,panel);
-      keys(4,162,{{"SPACE","DASH"},{"F","FREQ"},{"S/D","VOL"},{"P","COLOR"},{"TAB","MENU"}});
+      keys(4,162,{{"SPACE","DASH"},{"V","FREQ"},{"S/D","VOL"},{"P","COLOR"},{"TAB","MENU"}});
     }
     // Clear only the widgets being updated; framebuffer output skips identical pixels.
     rect(0,0,320,40,panel);
