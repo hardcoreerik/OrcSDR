@@ -135,11 +135,27 @@ results = (
 )
 
 def redact(text: str) -> str:
+    """Scrub GitHub tokens and HTTP authorization credentials from log text."""
     text = re.sub(r"github_pat_[A-Za-z0-9_]{8,}", "[redacted]", text)
     text = re.sub(r"gh[pousr]_[A-Za-z0-9_]{8,}", "[redacted]", text)
-    text = re.sub(r"(?i)(authorization:\s*)\S+", r"\1[redacted]", text)
-    text = re.sub(r"(?i)(bearer\s+)\S+", r"\1[redacted]", text)
+    text = re.sub(
+        r"(?i)(authorization:\s*)(?:(?:bearer|basic|token|apikey|api-key|digest)\s+)?[^\s\"']+",
+        r"\1[redacted]",
+        text,
+    )
+    text = re.sub(r"(?i)(bearer\s+)[^\s\"']+", r"\1[redacted]", text)
     return text
+
+def strip_post_job_cleanup(raw_lines: list[str]) -> list[str]:
+    """Drop trailing GitHub Actions post-job cleanup lines when earlier output exists."""
+    pattern = re.compile(r"^(?:\d{4}-\d{2}-\d{2}T\S+\s+)?Post job cleanup\.$")
+    for idx in range(len(raw_lines) - 1, -1, -1):
+        if pattern.match(raw_lines[idx]):
+            prefix = raw_lines[:idx]
+            if any(line.strip() for line in prefix):
+                return prefix
+            break
+    return raw_lines
 
 lines = [f"@{assignee}", ""]
 if kind == "resolve":
@@ -202,10 +218,12 @@ else:
                 raw = fh.read()
         except OSError:
             raw = ""
+    raw = raw.lstrip("\ufeff")
     raw = raw.replace("\x00", "").replace("\r\n", "\n").replace("\r", "\n")
-    raw = re.sub(r"\x1b\[[0-9;]*[A-Za-z]", "", raw)
+    raw = re.sub(r"\x1b\[[0-9;?]*[ -/]*[@-~]", "", raw)
+    raw = re.sub(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)", "", raw)
     raw = redact(raw)
-    raw_lines = raw.splitlines()
+    raw_lines = strip_post_job_cleanup(raw.splitlines())
     while raw_lines and raw_lines[-1] == "":
         raw_lines.pop()
     truncated = len(raw_lines) > 80
@@ -282,24 +300,78 @@ fi
 
 jobs_file=$tmpdir/jobs.json
 log_file=$tmpdir/failed.log
-if ! gh run view "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --json jobs >"$jobs_file" 2>"$tmpdir/jobs.err"; then
+if ! gh run view "$GITHUB_RUN_ID" --attempt "$NIGHTLY_ATTEMPT" --repo "$GITHUB_REPOSITORY" --json jobs >"$jobs_file" 2>"$tmpdir/jobs.err"; then
   echo "::warning::Could not read job steps; the issue will list the failed jobs without step names."
   printf '%s\n' '{"jobs":[]}' >"$jobs_file"
 fi
 
+failed_jobs_file=$tmpdir/failed_jobs.tsv
+python3 - "$jobs_file" >"$failed_jobs_file" <<'PY'
+import json, sys
+
+try:
+    data = json.load(open(sys.argv[1], encoding="utf-8"))
+except (OSError, json.JSONDecodeError):
+    data = {}
+for job in data.get("jobs") or []:
+    if (job.get("conclusion") or "") not in ("failure", "timed_out"):
+        continue
+    job_id = job.get("databaseId")
+    if job_id is None:
+        job_id = job.get("id")
+    if job_id is not None and str(job_id).isdigit():
+        name = (job.get("name") or "unknown job").replace("\t", " ").replace("\r", " ").replace("\n", " ")
+        print(f"{job_id}\t{name}")
+PY
+
 log_tries=${NIGHTLY_ALERT_LOG_RETRIES:-4}
 log_sleep=${NIGHTLY_ALERT_LOG_SLEEP:-5}
 log_ok=0
-for ((attempt=1; attempt<=log_tries; attempt++)); do
-  if timeout 60 gh run view "$GITHUB_RUN_ID" --repo "$GITHUB_REPOSITORY" --log-failed >"$log_file" 2>"$tmpdir/log.err"; then
-    log_ok=1
-    break
-  fi
-  echo "Failed-step log fetch attempt ${attempt} failed." >&2
-  if [ "$attempt" -lt "$log_tries" ]; then
-    sleep "$log_sleep"
-  fi
-done
+if [ -s "$failed_jobs_file" ]; then
+  for ((attempt=1; attempt<=log_tries; attempt++)); do
+    all_ok=1
+    while IFS=$'\t' read -r job_id _; do
+      [ -n "$job_id" ] || continue
+      if [ -s "$tmpdir/job-${job_id}.log" ]; then
+        continue
+      fi
+      if timeout 60 gh api --allow-escape-sequences "repos/${GITHUB_REPOSITORY}/actions/jobs/${job_id}/logs" </dev/null >"$tmpdir/job-${job_id}.tmp" 2>"$tmpdir/log.err" && [ -s "$tmpdir/job-${job_id}.tmp" ]; then
+        mv "$tmpdir/job-${job_id}.tmp" "$tmpdir/job-${job_id}.log"
+      else
+        rm -f "$tmpdir/job-${job_id}.tmp"
+        all_ok=0
+      fi
+    done <"$failed_jobs_file"
+    if [ "$all_ok" -eq 1 ]; then
+      break
+    fi
+    echo "Failed-step log fetch attempt ${attempt} failed." >&2
+    if [ "$attempt" -lt "$log_tries" ]; then
+      sleep "$log_sleep"
+    fi
+  done
+
+  present_logs=0
+  while IFS=$'\t' read -r job_id _; do
+    [ -n "$job_id" ] || continue
+    if [ -s "$tmpdir/job-${job_id}.log" ]; then
+      present_logs=$((present_logs + 1))
+    fi
+  done <"$failed_jobs_file"
+
+  : >"$log_file"
+  while IFS=$'\t' read -r job_id job_name; do
+    [ -n "$job_id" ] || continue
+    if [ -s "$tmpdir/job-${job_id}.log" ]; then
+      if [ "$present_logs" -gt 1 ]; then
+        printf '=== %s ===\n' "$job_name" >>"$log_file"
+      fi
+      cat "$tmpdir/job-${job_id}.log" >>"$log_file"
+      printf '\n' >>"$log_file"
+      log_ok=1
+    fi
+  done <"$failed_jobs_file"
+fi
 if [ "$log_ok" -eq 0 ]; then
   echo "::warning::Failed-step logs were not available."
   : >"$log_file"

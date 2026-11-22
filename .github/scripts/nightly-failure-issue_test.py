@@ -46,7 +46,7 @@ def option(name):
 FLAGS = {
     "--repo", "-R", "--json", "--jq", "--label", "--title", "--body-file",
     "--assignee", "--add-assignee", "--reason", "--color", "--description",
-    "--limit", "--state", "-L", "-F", "-l", "-t", "-a", "-b",
+    "--limit", "--state", "--attempt", "-L", "-F", "-l", "-t", "-a", "-b",
 }
 
 def positionals(start):
@@ -71,8 +71,24 @@ def find_issue(number):
 
 cmd = args[0]
 if cmd == "api":
-    endpoint = positionals(1)[0]
-    name = endpoint.rstrip("/").rsplit("/", 1)[-1]
+    endpoint = positionals(1)[0].split("?", 1)[0].strip("/")
+    parts = endpoint.split("/")
+    if len(parts) == 7 and parts[0] == "repos" and parts[3:5] == ["actions", "jobs"] and parts[5].isdigit() and parts[6] == "logs":
+        if "--allow-escape-sequences" not in args:
+            die(
+                "the response contains terminal escape sequences; pass --allow-escape-sequences to output it anyway",
+                1,
+            )
+        left = int(state.get("log_failures_remaining") or 0)
+        if left:
+            state["log_failures_remaining"] = left - 1
+            save()
+            die("logs not ready", 1)
+        job_logs = state.get("job_logs") or {}
+        content = job_logs[parts[5]] if parts[5] in job_logs else (state.get("log") or "")
+        sys.stdout.write(content)
+        raise SystemExit(0)
+    name = endpoint.rsplit("/", 1)[-1]
     if name in state["labels"]:
         print(json.dumps({"name": name}))
         raise SystemExit(0)
@@ -157,18 +173,16 @@ if cmd == "issue" and args[1] == "close":
     raise SystemExit(0)
 
 if cmd == "run" and args[1] == "view":
+    if "--log-failed" in args:
+        run_id = positionals(2)[0] if positionals(2) else "unknown"
+        die(
+            f"run {run_id} is still in progress; logs will be available when it is complete",
+            1,
+        )
     if option("--json") == "jobs":
         if state.get("fail_jobs"):
             die("jobs api down", 1)
         print(json.dumps(state.get("run") or {"jobs": []}))
-        raise SystemExit(0)
-    if "--log-failed" in args:
-        left = int(state.get("log_failures_remaining") or 0)
-        if left:
-            state["log_failures_remaining"] = left - 1
-            save()
-            die("logs not ready", 1)
-        sys.stdout.write(state.get("log") or "")
         raise SystemExit(0)
 
 die("unexpected gh invocation: " + " ".join(args), 2)
@@ -176,12 +190,14 @@ die("unexpected gh invocation: " + " ".join(args), 2)
 
 
 def blank_state(**overrides) -> dict:
+    """Return a clean initial mock GitHub state dictionary."""
     state = {
         "labels": [],
         "issues": [],
         "next": 1,
         "run": {"jobs": []},
         "log": "",
+        "job_logs": {},
         "log_failures_remaining": 0,
         "fail_jobs": False,
         "fail_assignee_on_create": False,
@@ -193,6 +209,7 @@ def blank_state(**overrides) -> dict:
 
 
 def open_issue(number: int, body: str = "old failure", **overrides) -> dict:
+    """Build an open nightly-failure issue fixture for mock state."""
     issue = {
         "number": number,
         "state": "open",
@@ -210,6 +227,7 @@ def open_issue(number: int, body: str = "old failure", **overrides) -> dict:
 FAILED_TESTS_JOBS = {
     "jobs": [
         {
+            "databaseId": 1001,
             "name": "tests",
             "conclusion": "failure",
             "steps": [
@@ -217,14 +235,17 @@ FAILED_TESTS_JOBS = {
                 {"name": "P25 core tests", "conclusion": "failure"},
             ],
         },
-        {"name": "build", "conclusion": "skipped", "steps": []},
-        {"name": "publish", "conclusion": "skipped", "steps": []},
+        {"databaseId": 1002, "name": "build", "conclusion": "skipped", "steps": []},
+        {"databaseId": 1003, "name": "publish", "conclusion": "skipped", "steps": []},
     ]
 }
 
 
 class NightlyFailureIssueTest(unittest.TestCase):
+    """Test suite for nightly-failure-issue.sh and firmware-nightly.yml wiring."""
+
     def run_alert(self, results: dict, state: dict, extra_env: dict | None = None):
+        """Execute nightly-failure-issue.sh against a temporary mock gh executable."""
         with tempfile.TemporaryDirectory() as tmp:
             work = Path(tmp)
             mock = work / "gh"
@@ -271,6 +292,7 @@ class NightlyFailureIssueTest(unittest.TestCase):
             return completed, saved, calls
 
     def test_failure_opens_one_assigned_issue_with_run_step_and_log_tail(self):
+        """Verify first failure opens one assigned issue with steps, redaction, and log tail."""
         log = "\n".join(f"line-{i:03d}" for i in range(200))
         log += "\nerror: boom\nAuthorization: Bearer ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZ1234\n"
         completed, state, calls = self.run_alert(
@@ -305,11 +327,12 @@ class NightlyFailureIssueTest(unittest.TestCase):
         self.assertIn("mode=failure", completed.stdout)
 
     def test_log_fence_grows_past_tildes_in_the_log(self):
+        """Verify markdown tilde fence grows longer than tildes in the log excerpt."""
         completed, state, _calls = self.run_alert(
             {"gate": "failure", "tests": "skipped", "build": "skipped", "publish": "skipped", "gate_build": ""},
             blank_state(
                 log="~~~~\nsecret-fence-line\n",
-                run={"jobs": [{"name": "gate", "conclusion": "failure", "steps": []}]},
+                run={"jobs": [{"databaseId": 2001, "name": "gate", "conclusion": "failure", "steps": []}]},
             ),
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -319,6 +342,7 @@ class NightlyFailureIssueTest(unittest.TestCase):
         self.assertIn("`gate` (job failed before a step was marked failed)", body)
 
     def test_second_failure_comments_instead_of_opening_another_issue(self):
+        """Verify subsequent failed run comments on the open issue instead of creating a duplicate."""
         state = blank_state(
             labels=["nightly-failure"],
             issues=[open_issue(7, body="first report")],
@@ -343,6 +367,7 @@ class NightlyFailureIssueTest(unittest.TestCase):
         self.assertFalse(any(call[:2] == ["issue", "create"] for call in calls))
 
     def test_same_run_does_not_comment_twice(self):
+        """Verify the HTML run/attempt marker prevents duplicate comments for the same run."""
         marker = "<!-- nightly-failure-run:4242:1 -->"
         state = blank_state(
             labels=["nightly-failure"],
@@ -360,6 +385,7 @@ class NightlyFailureIssueTest(unittest.TestCase):
         self.assertIn("already records", completed.stdout)
 
     def test_comments_on_every_open_issue_and_ignores_closed_ones(self):
+        """Verify all open labeled issues get updated and assigned while closed ones are ignored."""
         state = blank_state(
             labels=["nightly-failure"],
             issues=[
@@ -368,6 +394,7 @@ class NightlyFailureIssueTest(unittest.TestCase):
                 open_issue(5, assignees=[]),
             ],
             next=10,
+            run={"jobs": [{"databaseId": 3001, "name": "build", "conclusion": "failure", "steps": []}]},
             log="again\n",
         )
         completed, saved, calls = self.run_alert(
@@ -386,6 +413,7 @@ class NightlyFailureIssueTest(unittest.TestCase):
         self.assertFalse(any(call[:2] == ["issue", "create"] for call in calls))
 
     def test_publish_success_closes_the_open_issue(self):
+        """Verify a full published nightly closes open failure issues as completed."""
         state = blank_state(
             labels=["nightly-failure"],
             issues=[open_issue(7), open_issue(8)],
@@ -410,6 +438,7 @@ class NightlyFailureIssueTest(unittest.TestCase):
         self.assertIn("mode=resolve", completed.stdout)
 
     def test_deliberate_skip_closes_with_skip_outcome(self):
+        """Verify deliberate build=false skip resolves open nightly-failure issues."""
         state = blank_state(labels=["nightly-failure"], issues=[open_issue(3)], next=4)
         completed, saved, _calls = self.run_alert(
             {"gate": "success", "tests": "skipped", "build": "skipped", "publish": "skipped", "gate_build": "false"},
@@ -421,6 +450,7 @@ class NightlyFailureIssueTest(unittest.TestCase):
         self.assertIn("skipped on purpose because main did not need a new firmware build", issue["comments"][0])
 
     def test_green_run_with_no_issue_is_a_no_op(self):
+        """Verify a green nightly with no open issue creates nothing."""
         completed, saved, calls = self.run_alert(
             {"gate": "success", "tests": "success", "build": "success", "publish": "success", "gate_build": "true"},
             blank_state(labels=["nightly-failure"]),
@@ -431,6 +461,7 @@ class NightlyFailureIssueTest(unittest.TestCase):
         self.assertIn("No open nightly-failure issue", completed.stdout)
 
     def test_resolve_does_not_create_the_label(self):
+        """Verify resolve mode exits cleanly without creating the label when absent."""
         completed, saved, calls = self.run_alert(
             {"gate": "success", "tests": "skipped", "build": "skipped", "publish": "skipped", "gate_build": "false"},
             blank_state(),
@@ -440,9 +471,16 @@ class NightlyFailureIssueTest(unittest.TestCase):
         self.assertFalse(any(call[:2] == ["label", "create"] for call in calls))
 
     def test_skipped_build_after_a_failed_test_stays_a_failure(self):
+        """Verify downstream skipped build/publish after failed tests still reports failure."""
         completed, saved, _calls = self.run_alert(
             {"gate": "success", "tests": "failure", "build": "skipped", "publish": "skipped", "gate_build": "true"},
-            blank_state(labels=["nightly-failure"], issues=[open_issue(1)], next=2, log="nope\n"),
+            blank_state(
+                labels=["nightly-failure"],
+                issues=[open_issue(1)],
+                next=2,
+                run=FAILED_TESTS_JOBS,
+                log="nope\n",
+            ),
             {"GITHUB_RUN_ID": "77", "NIGHTLY_RUN_URL": "https://github.com/hardcoreerik/OrcSDR/actions/runs/77"},
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
@@ -451,6 +489,7 @@ class NightlyFailureIssueTest(unittest.TestCase):
         self.assertNotIn("Closing this issue", saved["issues"][0]["comments"][0])
 
     def test_timeout_counts_as_failure(self):
+        """Verify a timed_out job result opens a failure issue with fallback job details."""
         completed, saved, _calls = self.run_alert(
             {"gate": "success", "tests": "success", "build": "timed_out", "publish": "skipped", "gate_build": "true"},
             blank_state(log=""),
@@ -461,6 +500,7 @@ class NightlyFailureIssueTest(unittest.TestCase):
         self.assertIn("Failed-step logs were not available", body)
 
     def test_cancelled_run_does_not_open_or_close(self):
+        """Verify cancelled job results leave existing issues untouched with no API writes."""
         state = blank_state(labels=["nightly-failure"], issues=[open_issue(7)], next=8)
         completed, saved, calls = self.run_alert(
             {"gate": "success", "tests": "success", "build": "cancelled", "publish": "skipped", "gate_build": "true"},
@@ -473,6 +513,7 @@ class NightlyFailureIssueTest(unittest.TestCase):
         self.assertIn("mode=cancelled", completed.stdout)
 
     def test_weird_skip_leaves_the_issue_open(self):
+        """Verify unexpected skipped combinations do not close open issues."""
         state = blank_state(labels=["nightly-failure"], issues=[open_issue(7)], next=8)
         completed, saved, calls = self.run_alert(
             {"gate": "success", "tests": "skipped", "build": "skipped", "publish": "skipped", "gate_build": "true"},
@@ -485,6 +526,7 @@ class NightlyFailureIssueTest(unittest.TestCase):
         self.assertIn("mode=leave", completed.stdout)
 
     def test_missing_logs_still_open_the_issue(self):
+        """Verify missing job metadata falls back cleanly without calling --log-failed."""
         completed, saved, calls = self.run_alert(
             {"gate": "success", "tests": "success", "build": "success", "publish": "failure", "gate_build": "true"},
             blank_state(log_failures_remaining=3, fail_jobs=True),
@@ -494,12 +536,121 @@ class NightlyFailureIssueTest(unittest.TestCase):
         body = saved["issues"][0]["body"]
         self.assertIn("`publish` (step list not available yet; job result `failure`)", body)
         self.assertIn("Failed-step logs were not available", body)
-        self.assertGreaterEqual(sum(1 for call in calls if call[:3] == ["run", "view", "4242"] and "--log-failed" in call), 2)
+        self.assertFalse(any("--log-failed" in call for call in calls))
+
+    def test_job_log_retries_and_fallback_when_api_keeps_failing(self):
+        """Verify per-job log API retries and falls back gracefully if every attempt fails."""
+        completed, saved, calls = self.run_alert(
+            {"gate": "success", "tests": "failure", "build": "skipped", "publish": "skipped", "gate_build": "true"},
+            blank_state(run=FAILED_TESTS_JOBS, log_failures_remaining=3, log="unreached\n"),
+            {"NIGHTLY_ALERT_LOG_RETRIES": "2"},
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        body = saved["issues"][0]["body"]
+        self.assertIn("`tests` / P25 core tests", body)
+        self.assertIn("Failed-step logs were not available", body)
+        job_log_calls = [
+            call
+            for call in calls
+            if call[0] == "api"
+            and "--allow-escape-sequences" in call
+            and "repos/hardcoreerik/OrcSDR/actions/jobs/1001/logs" in call
+        ]
+        self.assertEqual(len(job_log_calls), 2)
+        self.assertFalse(any("--log-failed" in call for call in calls))
+
+    def test_job_log_retry_recovers_on_second_attempt(self):
+        """Verify transient per-job log API errors recover on retry."""
+        completed, saved, calls = self.run_alert(
+            {"gate": "success", "tests": "failure", "build": "skipped", "publish": "skipped", "gate_build": "true"},
+            blank_state(run=FAILED_TESTS_JOBS, log_failures_remaining=1, log="second try worked\n"),
+            {"NIGHTLY_ALERT_LOG_RETRIES": "2"},
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        body = saved["issues"][0]["body"]
+        self.assertIn("second try worked", body)
+        job_log_calls = [
+            call for call in calls if call[0] == "api" and "repos/hardcoreerik/OrcSDR/actions/jobs/1001/logs" in call
+        ]
+        self.assertEqual(len(job_log_calls), 2)
+
+    def test_never_uses_run_log_failed_and_passes_attempt(self):
+        """Verify --log-failed is never called and NIGHTLY_ATTEMPT is passed to run view."""
+        completed, _saved, calls = self.run_alert(
+            {"gate": "success", "tests": "failure", "build": "skipped", "publish": "skipped", "gate_build": "true"},
+            blank_state(run=FAILED_TESTS_JOBS, log="ok\n"),
+            {"NIGHTLY_ATTEMPT": "2"},
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        self.assertFalse(any("--log-failed" in call for call in calls))
+        run_views = [call for call in calls if call[:2] == ["run", "view"]]
+        self.assertEqual(len(run_views), 1)
+        self.assertIn("--attempt", run_views[0])
+        self.assertEqual(run_views[0][run_views[0].index("--attempt") + 1], "2")
+
+    def test_authorization_redacts_non_github_tokens(self):
+        """Verify Authorization headers and Bearer credentials without ghp_ prefixes are scrubbed."""
+        secrets = [
+            "eyJ.fake.jwt.payload",
+            "dXNlcjpwYXNz",
+            "opaque_secret_999",
+            "inline_secret_123",
+            "standalone_secret_456",
+        ]
+        log = "\n".join(
+            [
+                f"Authorization: Bearer {secrets[0]}",
+                f"Authorization: Basic {secrets[1]}",
+                f"Authorization: Token {secrets[2]}",
+                f'curl -H "Authorization: Bearer {secrets[3]}" https://example.com',
+                f"Bearer {secrets[4]}",
+            ]
+        )
+        completed, saved, _calls = self.run_alert(
+            {"gate": "success", "tests": "failure", "build": "skipped", "publish": "skipped", "gate_build": "true"},
+            blank_state(run=FAILED_TESTS_JOBS, log=log),
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        body = saved["issues"][0]["body"]
+        for secret in secrets:
+            self.assertNotIn(secret, body)
+        self.assertIn("https://example.com", body)
+        self.assertGreaterEqual(body.count("[redacted]"), 5)
+
+    def test_post_job_cleanup_is_trimmed_from_job_log_tail(self):
+        """Verify trailing Post job cleanup teardown lines do not crowd out build errors."""
+        cleanup = ["2026-11-10T17:58:33.3447831Z Post job cleanup."] + [
+            f"2026-11-10T17:58:34.{i:07d}Z docker rm -f container_{i:02d}_" + ("x" * 120)
+            for i in range(35)
+        ]
+        log = "\n".join(
+            [
+                "2026-11-10T17:58:32.0000000Z Building firmware...",
+                "2026-11-10T17:58:33.2141318Z CMake Error: Missing required kconfig option",
+                "2026-11-10T17:58:33.3315437Z ##[error]Process completed with exit code 2.",
+                *cleanup,
+            ]
+        )
+        completed, saved, _calls = self.run_alert(
+            {"gate": "success", "tests": "failure", "build": "skipped", "publish": "skipped", "gate_build": "true"},
+            blank_state(run=FAILED_TESTS_JOBS, log=log),
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        body = saved["issues"][0]["body"]
+        self.assertIn("CMake Error: Missing required kconfig option", body)
+        self.assertIn("##[error]Process completed with exit code 2.", body)
+        self.assertNotIn("Post job cleanup.", body)
+        self.assertNotIn("docker rm", body)
 
     def test_assignee_failure_still_opens_an_issue_that_mentions_the_owner(self):
+        """Verify fallback create without assignee still opens and @mentions the owner."""
         completed, saved, calls = self.run_alert(
             {"gate": "failure", "tests": "skipped", "build": "skipped", "publish": "skipped"},
-            blank_state(fail_assignee_on_create=True, log="gate exploded\n"),
+            blank_state(
+                fail_assignee_on_create=True,
+                run={"jobs": [{"databaseId": 2001, "name": "gate", "conclusion": "failure", "steps": []}]},
+                log="gate exploded\n",
+            ),
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         issue = saved["issues"][0]
@@ -512,9 +663,15 @@ class NightlyFailureIssueTest(unittest.TestCase):
         self.assertTrue(any(call[:2] == ["issue", "edit"] for call in calls))
 
     def test_assignment_failure_does_not_drop_the_mention(self):
+        """Verify issue remains @mentioned even when both create and edit assignment fail."""
         completed, saved, _calls = self.run_alert(
             {"gate": "failure", "tests": "skipped", "build": "skipped", "publish": "skipped"},
-            blank_state(fail_assignee_on_create=True, fail_assignee_on_edit=True, log="gate exploded\n"),
+            blank_state(
+                fail_assignee_on_create=True,
+                fail_assignee_on_edit=True,
+                run={"jobs": [{"databaseId": 2001, "name": "gate", "conclusion": "failure", "steps": []}]},
+                log="gate exploded\n",
+            ),
         )
         self.assertEqual(completed.returncode, 0, completed.stderr)
         issue = saved["issues"][0]
@@ -523,6 +680,7 @@ class NightlyFailureIssueTest(unittest.TestCase):
         self.assertIn("Could not assign hardcoreerik", completed.stderr + completed.stdout)
 
     def test_label_lookup_error_fails_the_alert(self):
+        """Verify non-404 API errors during label lookup exit non-zero without creating issues."""
         completed, saved, calls = self.run_alert(
             {"gate": "failure", "tests": "skipped", "build": "skipped", "publish": "skipped"},
             blank_state(label_http_error="gh: Internal Server Error (HTTP 500)"),
@@ -532,6 +690,7 @@ class NightlyFailureIssueTest(unittest.TestCase):
         self.assertFalse(any(call[:2] == ["issue", "create"] for call in calls))
 
     def test_workflow_wires_the_alert_without_changing_the_build(self):
+        """Verify firmware-nightly.yml adds the alert job without modifying build/publish jobs."""
         text = WORKFLOW.read_text(encoding="utf-8")
         self.assertEqual(text.count("bash tools/ci/build-tab5.sh"), 1)
         self.assertEqual(text.count("bash tools/ci/build-hosted-c6.sh"), 1)

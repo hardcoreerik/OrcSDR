@@ -1,0 +1,35 @@
+name: Nightly failure issue tests
+
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/firmware-nightly.yml'
+      - '.github/scripts/nightly-failure-issue.sh'
+      - '.github/scripts/nightly-failure-issue_test.py'
+      - '.github/workflows/nightly-failure-issue-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - '.github/workflows/firmware-nightly.yml'
+      - '.github/scripts/nightly-failure-issue.sh'
+      - '.github/scripts/nightly-failure-issue_test.py'
+      - '.github/workflows/nightly-failure-issue-tests.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Check bash syntax and run alert tests
+        run: |
+          bash -n .github/scripts/nightly-failure-issue.sh
+          python3 .github/scripts/nightly-failure-issue_test.py -v
