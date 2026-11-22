@@ -359,6 +359,30 @@ No behaviour change intended. Host-tested and built; not flashed.
 - **Scan:** none of these commands needs sign-in, as before. `RTL_TOOL` names are case-sensitive except all-lower and all-upper (`Radio` is rejected), as before; noted, not changed.
 - **Measured:** `process_command` complexity 496 to 486, 1,051 to 1,017 lines; `main.cpp` 22,987 lines. Firmware image 4,522,688 bytes.
 
+## Unreleased — Home waterfall scroll back on the CPU — 2026-11-14
+
+- **Home's waterfall scroll uses M5GFX again** (`M5.Display.scroll`). The owner does not accept a lower Home frame rate, and the two-pass PPA scroll cost about 15% of it. The spectrum copy and clear stay on the PPA. `screen_blit::scroll_up` stays available and tested. Flashed to COM17 and measured on Home, WFM 96.1 MHz, three steady 20 s windows: about **24 frames/s** (was 20.6 before any PPA work), frame 28 to 29.5 ms (was 36 ms), DSP load **56%** (was 64%; 46% with no drawing).
+- **Context from the owner:** Home was meant to run at 60 frames/s. For scale, one 60 frames/s frame is 16.7 ms, and the spectrum copy alone takes 12 to 19 ms.
+
+## Unreleased — Home spectrum clear and waterfall scroll on the PPA — 2026-11-13
+
+Tab5. Flashed to one Tab5 (COM17) and measured. The owner saw no visible difference on Home with the PPA spectrum copy (previous entry); the clear and scroll are not yet looked at.
+
+- **`screen_blit::scroll_up`:** moves a screen rectangle up as `M5.Display.scroll(0, -rows)` does, with the PPA through an aligned scratch copy (source and destination overlap), then fills the freed rows as M5GFX does. **`screen_blit::DmaSprite`:** a sprite in a PPA-aligned buffer that the PPA clears to black. Home's spectrum picture and waterfall use them; everything else falls back to M5GFX.
+- **Checked:** `RTL_DISPLAY_BENCH` compares the scroll with M5GFX's pixel by pixel for both landscape rotations (exact) and checks the clear leaves no non-black pixel. On Home: 1,328 copies, scrolls and clears each by the PPA, 0 fallbacks.
+- **Bench (continuous, 2 s each):** CPU scroll 7.6 ms with DSP 98%; PPA scroll 23.7 ms with DSP 49%. CPU clear 4.6 ms with DSP 97%; PPA clear 1.5 ms with DSP 46%.
+- **Measured on Home:** DSP load **49%** (64% before any PPA work, 60% with the PPA copy alone; 46% with no drawing). But each frame now takes 44.6 ms (was 31 ms) because the PPA scroll waits about 25 ms for two passes over the waterfall, so Home draws about 17.7 frames/s (20.6 before any PPA work, 24 with the copy alone). The waterfall's speed is set by time, not frames, so it moves at the same speed in slightly larger steps.
+- **Open:** a ring-buffer waterfall would need one pass instead of two; the main loop's lowest free stack fell to 4,264 bytes during the benchmark run (6,336 to 6,468 before).
+
+## Unreleased — Home spectrum copied by the PPA — 2026-11-13
+
+Tab5. Flashed to one Tab5 (COM17) and measured; the owner's visual check of Home is still to do.
+
+- **New `apps/orcsdr-tab5/ui/screen_blit.{hpp,cpp}`:** copies a finished 16-bit sprite to the rotated screen with the P4's PPA engine instead of M5GFX's per-pixel rotated copy. It first writes the target framebuffer rows back from the CPU cache (the PPA driver discards them), and falls back to `pushSprite` for any other rotation, colour depth, an off-screen rectangle or a PPA error. Only the Home spectrum uses it.
+- **Checked:** `RTL_DISPLAY_BENCH` now also copies with screen_blit's angle for both landscape rotations (Settings can turn the screen over): pixel-exact for rotation 1 (270 degrees) and rotation 3 (90 degrees). On Home, 1,529 copies by the PPA, 0 fallbacks.
+- **Measured on Home:** spectrum copy 12.7 to 13.1 ms (was 19 ms), whole frame 31 ms (was 36 ms), about 24 frames/s (was 20.6). DSP load 60% (was 64%); the FM dashboard and the no-drawing baseline are 45 to 46%.
+- **What is left:** the remaining Home load comes from CPU work that still runs every frame in PSRAM: drawing the spectrum picture (8.6 to 9.2 ms, including clearing 333 KB) and scrolling the waterfall (9.4 to 9.7 ms, a CPU copy of the whole waterfall area). Home also draws more frames now, which adds to it. Correction to the earlier description: M5GFX's rotated copy writes each framebuffer row in order and reads the source picture one pixel per row; the panel itself does not rotate (only a colour-order bit is sent).
+
 ## Unreleased — DSP load measured by screen; screen-copy benchmark — 2026-11-13
 
 Measurement only, Tab5. Nothing on screen changes.

@@ -50,6 +50,17 @@ inline Rect panel_rect(const Geometry& g, int x0, int y0, int w, int h) {
 
 inline uint16_t swap16(uint16_t v) { return static_cast<uint16_t>((v >> 8) | (v << 8)); }
 
+// The counter-clockwise rotation the P4's PPA must apply to a logical picture to land it as to_panel() does, for
+// the two landscape rotations; -1 for any other (the caller then uses M5GFX). Rotation 3 measured pixel-exact on a
+// Tab5 with RTL_DISPLAY_BENCH; rotation 1 is the mirror case and is checked by the same bench.
+inline int ppa_ccw_degrees(uint8_t rotation) {
+  switch (rotation & 7u) {
+    case 3: return 90;   // (x, y) -> (y, w - 1 - x)
+    case 1: return 270;  // (x, y) -> (h - 1 - y, x)
+    default: return -1;
+  }
+}
+
 // Copies src (w x h logical pixels, row stride src_stride pixels) to the framebuffer at logical (x0, y0).
 // swap_bytes converts M5GFX sprite pixels (byte-swapped RGB565) to the framebuffer's native RGB565.
 // The caller keeps the rectangle inside the screen.
