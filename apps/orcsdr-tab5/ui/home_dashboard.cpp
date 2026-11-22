@@ -1414,7 +1414,8 @@ bool self_check() {
          tap_action(kStepperSize + 5, kControlY + 8).kind == ActionKind::step_size_down &&
          tap_action(1223, 13).kind == ActionKind::open_device_settings &&
          tap_action(kHeaderStatusX+kHeaderStatusW-20,kHeaderStatusY+20).kind == ActionKind::open_clock &&
-         tap_action(1100, 13).kind == ActionKind::sound_toggle &&
+         // Speaker button, header x 1138..1191 since the header was re-spaced (2026-11-11); this tapped 1100 before.
+         tap_action(1164, 38).kind == ActionKind::sound_toggle &&
          std::abs(home_spectrum_floor(levels, std::size(levels), 10.0f) - 62.0f) < 0.01f;
 }
 
