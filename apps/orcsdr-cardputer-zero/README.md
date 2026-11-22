@@ -1,6 +1,8 @@
 # OrcSDR Cardputer Zero / Linux bring-up (experimental)
 
-This independent target is the first Linux receiver experiment for OrcSDR, **not** a port of the ESP32-P4 firmware. It does not require ESP-IDF or M5GFX. The initial executable is a headless, receive-only RTL-SDR diagnostic with synthetic IQ tests and unsigned 8-bit IQ-file analysis. **No Cardputer Zero GUI, audio or physical-device validation exists yet.**
+This independent target is the first Linux receiver experiment for OrcSDR, **not** a port of the ESP32-P4 firmware. It does not require ESP-IDF or M5GFX. It began as a headless, receive-only RTL-SDR diagnostic with synthetic IQ tests and unsigned 8-bit IQ-file analysis, and now also runs a native 320x170 graphical receiver on the device: FM/NFM, FT8/FT4, P25 Phase I, LoRa, ACARS, ADS-B, weather/marine, POCSAG, SSTV, RF Lab, WiFi survey and Dead Air, each with ALSA audio and evdev keyboard input.
+
+Firmware-level claims in this file are qualified by what was actually observed. Where a screen says "verified", it means the named input was applied on a real Zero and the named output was captured or logged; it does not mean every mode was received off the air. Live decodes that never happened are called out as such in each section.
 
 ## Native Linux build / test
 
@@ -47,7 +49,7 @@ Details: [research and bring-up](../../../docs/hardware/cardputer-zero/RESEARCH_
 
 ## Native OrcSDR decoder integration (2026-11-06)
 
-The Cardputer Linux target now compiles **the original OrcSDR source files** `acars_core.cpp`, `acars_selftest.cpp` and `adsb_decoder.cpp` from `apps/orcsdr-tab5/ui` directly. No copied decoder fork and no ESP-IDF firmware modifications. The host CTest suite covers ten ACARS simulated RF blocks, CRC/repairs, chunked replay, stream reset, ADS-B known frames/CRC and bounded CU8 queue/drop accounting. Actual Cardputer hardware is **not yet tested**.
+The Cardputer Linux target now compiles **the original OrcSDR source files** `acars_core.cpp`, `acars_selftest.cpp` and `adsb_decoder.cpp` from `apps/orcsdr-tab5/ui` directly. No copied decoder fork and no ESP-IDF firmware modifications. The host CTest suite covers ten ACARS simulated RF blocks, CRC/repairs, chunked replay, stream reset, ADS-B known frames/CRC and bounded CU8 queue/drop accounting. The application now runs on the device and tunes the shared frontends, but a live off-air ACARS message or ADS-B frame has not been decoded there; the ACARS and ADS-B dashboard sections state exactly what a device run did and did not produce.
 
 Additional CLI modes:
 
@@ -115,9 +117,9 @@ ctest --test-dir build/cardputer-zero --output-on-failure
 ```
 
 The demo generates explicitly labeled synthetic visuals and emits **no**
-unlabelled radio reception. The physical GUI is not yet tested on a Zero;
-check real framebuffer, keyboard, ALSA speaker/headphone routing, USB
-reconnect and controlled exit before product claims. Read
+unlabelled radio reception. The GUI has since been exercised on a Zero: real
+framebuffer, the internal `tca8418c` keyboard, ALSA speaker routing, USB
+reconnect and controlled exit have all been driven on hardware. Read
 [the architecture and device handoff](../../../docs/hardware/cardputer-zero/UI_AUDIO_CONTROLS_IMPLEMENTATION.md).
 
 ## Capture the running LCD over SSH
@@ -433,3 +435,58 @@ never transmitted. Device input selected FT4/7.0475 MHz, completed a UTC-aligned
 7.5-second slot, opened the map, and returned to FT8/7.074 MHz. That live RF slot
 contained zero decoded messages; live over-the-air FT4 decoding remains
 unverified. These results do not replace RF antenna/band acceptance.
+
+## Screen conventions
+
+### Key hints
+
+Every compact footer states the available keys as `KEY action` pairs, with the
+key cap in amber and its action in grey:
+
+```
+Z/C BAND   G MODE   M MAP   T UTC   SPACE DASH
+```
+
+`CompactRenderer::keys()` draws the pair list and returns the next x, so a row
+that must also carry an attribution (the FT8 map's Natural Earth credit) can
+print it in muted grey first. Actions are spelled out rather than implied, and
+`SPACE` is labelled with what it does — it opens the dashboard selector.
+
+### Display ownership, and the launcher's status bar
+
+OrcSDR renders into `/dev/fb0` directly. The vendor launcher
+(`M5CardputerZero-APPLaunch`, `APPLaunch.service`) keeps `/dev/fb0` open too and
+redraws its home screen and status bar over whatever is on the panel. Measured on
+a Zero, the launcher rewrites the top rows about 1.8 times per second and OrcSDR's
+next paint restores them roughly 80 ms later, so the visible effect is a flicker
+of the launcher's clock and battery figure rather than a stuck overlay. Reading
+`/dev/fb0` alone never shows the artifact: a capture almost always lands on an
+OrcSDR frame, which is why this is worth measuring rather than screenshotting.
+
+Stopping the launcher removes the flicker and leaves OrcSDR the only writer:
+
+```sh
+systemctl --user stop APPLaunch.service     # start it again to get the home screen back
+```
+
+That is only safe when OrcSDR was *not* started from the launcher, because a
+launcher-spawned child sits in the same service cgroup and stopping the unit kills
+it. No automatic parking is implemented; starting OrcSDR from a shell leaves the
+launcher running and the flicker present.
+
+### Keyboard capabilities
+
+The internal keyboard is the `tca8418c` controller at
+`/dev/input/cardputer-zero-internal`. It reports the four arrow codes and
+`KEY_HOME`. It does **not** report `KEY_FN`, so a binding built on an `EV_KEY`
+`KEY_FN` modifier can never fire on this hardware even though it compiles. Dump
+the capability bitmap before trusting a scancode.
+
+### Screen timeout
+
+The launcher blanks and locks the panel after `dark_time` seconds of idle, which
+also hides a running OrcSDR. Set `"dark_time": 0` in
+`~/.config/cardputerzero/config.json` to keep the panel on during bring-up, then
+restart the service. The setting is persistent, and the screen-off path is worth
+disabling on a device under test regardless: the one unclean reset observed on
+this unit was preceded by a burst of backlight writes from that path.
