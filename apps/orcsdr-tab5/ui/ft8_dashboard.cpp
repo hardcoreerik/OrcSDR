@@ -594,6 +594,12 @@ void draw_live() {
   } else if (g_snapshot.decoder_state == DecoderState::unbound) {
     text("DECODER NOT BOUND", 466, 305, kAmber, 3);
     text("UI/model sandbox is live; DSP samples are not being decoded yet.", 466, 340, kMuted, 1);
+  } else if (g_snapshot.pluto_out_of_range) {
+    char line[96];
+    text("OUT OF PLUTO RANGE", 466, 290, kAmber, 3);
+    std::snprintf(line, sizeof(line), "%.3f MHz is below what the PlutoSDR can tune (70 MHz to 6 GHz).", static_cast<double>(g_snapshot.dial_hz) / 1e6);
+    text(line, 466, 330, kMuted, 1);
+    text("FT8, FT4 and JS8 on HF need an RTL-SDR dongle with HF support.", 466, 354, kMuted, 1);
   } else if (!g_snapshot.clock_valid) {
     text("UTC CLOCK REQUIRED", 466, 305, kAmber, 3);
     text(g_snapshot.mode == DigitalMode::ft4 ? "FT4 receive slots need accurate 7.5 second UTC boundaries."
@@ -1203,7 +1209,7 @@ void draw_setup() {
 
 // Live screen: what a decoder-status, candidate-count or decode change touches. Everything else (dial, mode, waterfall panel) stays as drawn.
 int waterfall_state(const Snapshot& v) {
-  return v.decoder_state == DecoderState::unbound || v.decoder_state == DecoderState::no_memory ? 0 : !v.clock_valid ? 1 : 2;
+  return v.decoder_state == DecoderState::unbound || v.decoder_state == DecoderState::no_memory ? 0 : v.pluto_out_of_range ? 3 : !v.clock_valid ? 1 : 2;
 }
 
 bool live_layout_same(const Snapshot& a, const Snapshot& b) {
@@ -1686,7 +1692,7 @@ bool same_content(const Snapshot& a, const Snapshot& b) {
   // Everything the body draws, except the running clock (utc_ms), which has its own partial updates.
   return a.mode == b.mode && a.decoder_capabilities == b.decoder_capabilities && a.clock_valid == b.clock_valid &&
          clock_chip_key(a) == clock_chip_key(b) &&
-         a.receiver_running == b.receiver_running && a.gain_auto == b.gain_auto &&
+         a.receiver_running == b.receiver_running && a.pluto_out_of_range == b.pluto_out_of_range && a.gain_auto == b.gain_auto &&
          a.gain_tenth_db == b.gain_tenth_db && a.rtl_agc == b.rtl_agc && a.rtl_agc_available == b.rtl_agc_available &&
          a.candidate_count == b.candidate_count &&
          a.last_slot_decodes == b.last_slot_decodes && a.selected_band == b.selected_band &&
@@ -1823,7 +1829,7 @@ void update(const Snapshot& snapshot_value) {
   }
   if (overlay_open()) return;   // never draw the waterfall or dial under a panel
   if (g_tab == Tab::live && g_snapshot.wf_sequence != g_drawn_waterfall && g_snapshot.decoder_state != DecoderState::unbound && g_snapshot.decoder_state != DecoderState::no_memory &&
-      g_snapshot.clock_valid) {
+      g_snapshot.clock_valid && !g_snapshot.pluto_out_of_range) {
     paced_waterfall_step();
   }
   if (g_tab == Tab::live) {
@@ -2030,7 +2036,7 @@ bool dashboard_self_check() {
 
 // Called from the main loop between full updates: new waterfall rows scroll in without waiting for the next snapshot.
 void pump_waterfall(uint32_t sequence) {
-  if (!g_active || overlay_open() || g_tab != Tab::live || g_snapshot.decoder_state == DecoderState::unbound || g_snapshot.decoder_state == DecoderState::no_memory || !g_snapshot.clock_valid) return;
+  if (!g_active || overlay_open() || g_tab != Tab::live || g_snapshot.decoder_state == DecoderState::unbound || g_snapshot.decoder_state == DecoderState::no_memory || !g_snapshot.clock_valid || g_snapshot.pluto_out_of_range) return;
   g_snapshot.wf_sequence = sequence;
   paced_waterfall_step();
 }

@@ -14862,6 +14862,7 @@ void ft8_dashboard_fill_snapshot(orcsdr::ft8::Snapshot& snapshot) {
   snapshot.expert_tuning = g_ft8_expert;
   snapshot.dial_custom = g_ft8_dial_override_hz != 0;
   snapshot.dial_hz = ft8_dial_hz(snapshot.selected_band, g_ft8_mode);
+  snapshot.pluto_out_of_range = orcsdr::pluto_home::applies(rtl_usb_device_ready()) && !rtl_frequency_supported(snapshot.dial_hz);
   snapshot.mode = g_ft8_mode;
   snapshot.decoder_capabilities = g_ft8_capabilities;
   snapshot.hunter = g_ft8_hunter.snapshot();

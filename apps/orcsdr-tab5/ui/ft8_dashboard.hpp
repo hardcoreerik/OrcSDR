@@ -45,6 +45,9 @@ struct Snapshot {
   uint8_t clock_sync_level = 0;
   uint32_t clock_sync_age_s = 0;
   bool receiver_running = false;
+  // A PlutoSDR is the receiver and the selected dial is outside its tuning range (every HF band is: it starts at 70 MHz). The Live tab says so
+  // instead of showing an empty waterfall. Sits beside the other bools so it costs no struct space.
+  bool pluto_out_of_range = false;
   bool gain_auto = true;
   int16_t gain_tenth_db = 0;
   // Receiver gain control (Live GAIN chip). The step table comes from the driver; the level and clipping are measured on the raw IQ.
