@@ -9,6 +9,7 @@ on:
       - 'apps/orcsdr-tab5/ui/serial_help.cpp'
       - 'tests/serial_support_tests.cpp'
       - 'tools/test_support_report.py'
+      - 'tools/test_support_report_device.py'
       - '.github/workflows/support-report-tests.yml'
   push:
     branches: [main]
@@ -19,6 +20,7 @@ on:
       - 'apps/orcsdr-tab5/ui/serial_help.cpp'
       - 'tests/serial_support_tests.cpp'
       - 'tools/test_support_report.py'
+      - 'tools/test_support_report_device.py'
 
 permissions:
   contents: read
@@ -31,4 +33,6 @@ jobs:
         with:
           persist-credentials: false
       - name: Compile and test support report
-        run: python3 tools/test_support_report.py
+        run: |
+          python3 tools/test_support_report.py
+          python3 tools/test_support_report_device.py --self-check
