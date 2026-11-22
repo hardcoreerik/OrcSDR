@@ -75,7 +75,11 @@ class DashboardSession {
     ft8_drawn_=false;
     clock_open_=clock_entry_=false;clock_digits_.clear();clock_tick_=0;
     if(mode==15){clock_.start();ft8_visual_.clear();ft8_map_.clear();ft8_map_open_=false;ft8_log_offset_=0;ft8_visual_painted_=ft8_map_painted_=~uint64_t{0};ft8_visual_palette_=~0u;}
-    if(mode==16)p25_=P25Screen{};
+    if(mode==16){
+      p25_=P25Screen{};
+      const uint32_t profile_channel=rf_center;
+      p25_.configure_profile(&profile_channel,1);
+    }
     if(mode==17){
       lora_=LoraScreen{};UserSettings saved{};
       if(load_settings(settings_path(),saved))lora_.set_plan(saved.lora_region,uint16_t(saved.lora_slot));
@@ -798,6 +802,13 @@ class DashboardSession {
         if(mode==16){
           uint32_t control;bool enabled,hold;orcsdr::p25core::Modulation modulation;
           {std::lock_guard<std::mutex> lock(mutex_);control=p25_.requested;modulation=p25_.modulation;enabled=p25_.auto_follow;hold=p25_.hold;}
+          uint32_t survey_target=0;
+          {std::lock_guard<std::mutex> lock(mutex_);if(p25_.survey_active)survey_target=p25_.service_survey(uint32_t(now()/1000));}
+          if(survey_target&&survey_target!=meta.frequency_hz){
+            radio.retune(survey_target);meta.frequency_hz=radio.frequency_hz();
+            std::lock_guard<std::mutex> lock(mutex_);p25_.applied=meta.frequency_hz;p25_.state={};++p25_.revision;
+          }
+          {std::lock_guard<std::mutex> lock(mutex_);control=p25_.requested;}
           const uint32_t target=p25_follow.update(control,enabled,hold,orcsdr::p25core::snapshot(),uint32_t(now()/1000000));
           {
             std::lock_guard<std::mutex> lock(mutex_);

@@ -2,6 +2,7 @@
 #include "compact_renderer.hpp"
 #include "p25_decoder_core.hpp"
 #include "ft8_tuning.hpp"
+#include "p25_profile_scan.hpp"
 namespace orc::zero {
 struct P25Screen {
   CompactRenderer frame;
@@ -16,6 +17,8 @@ struct P25Screen {
   orcsdr::p25core::Snapshot state{};
   uint64_t revision=0,painted=~uint64_t{0};
   uint32_t voice_pcm=0,blocked_voice=0;
+  P25ProfileScan profile_scan;
+  bool survey_active=false;
   std::string entry,error;
   inline static constexpr uint32_t steps[]={12500,100000,1000000,5000000};
   bool input(Key key,char digit){
@@ -45,6 +48,17 @@ struct P25Screen {
       if(key==Key::mute)muted=!muted;
     }
     ++revision;return true;
+  }
+  void configure_profile(const uint32_t* channels,size_t count){
+    profile_scan.set_channels(channels,count);
+    if(profile_scan.count)requested=profile_scan.channels[profile_scan.selected];++revision;
+  }
+  void start_survey(uint32_t now_ms){survey_active=true;profile_scan.start(now_ms);++revision;}
+  uint32_t service_survey(uint32_t now_ms){
+    const uint32_t target=profile_scan.service(now_ms,state.frame_sync,float(state.tsbk_good));
+    if(target){requested=target;++revision;}
+    if(survey_active&&!profile_scan.running()){survey_active=false;++revision;}
+    return target;
   }
   const auto& render(){
     if(!layout){
