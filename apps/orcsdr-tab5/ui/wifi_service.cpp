@@ -456,7 +456,7 @@ bool hosted_deinit_bounded(int* result) {
   while (g_deinit_state.load(std::memory_order_acquire) != kDeinitDone) {
     if (xTaskGetTickCount() - start >= wait) {
       ESP_LOGE("orcsdr_wifi", "RTL_WIFI_LINK_WEDGED reason=hosted_deinit_timeout wait_ms=%u (restart the Tab5 to restore Wi-Fi)",
-               static_cast<unsigned>(kDeinitTimeoutMs));
+               static_cast<unsigned>(fresh ? kDeinitTimeoutMs : 0u));
       return false;
     }
     vTaskDelay(pdMS_TO_TICKS(20));

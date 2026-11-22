@@ -1,6 +1,7 @@
 #pragma once
 // Writes one file to the SD card from a background task, in pieces, so the caller (the main loop: screen, touch,
-// serial) never waits on the card.
+// serial) never waits on the card. Exception: if the background task cannot be created (PSRAM exhausted), the job is
+// written inline by the caller as before rather than lost (sd_writer_device.cpp wake()).
 //
 // Why: an RDS multiplex capture (3.84 MB) written inline from the main loop stalled it for 10 to 12 seconds, and the
 // receiver's input fell to about a tenth of its rate while the card was busy, which the owner heard as stuttering
