@@ -2,7 +2,6 @@
 
 #include <algorithm>
 #include <cstring>
-#include <iterator>
 
 #include "nvs_store.hpp"
 
@@ -12,21 +11,6 @@ namespace {
 // Meshtastic geographic regions whose current default/allowed profile includes
 // LongFast (SF11/BW250). Specialty narrow, amateur, and 2.4 GHz plans are omitted
 // because OrcSDR's native decoder or RTL-SDR hardware cannot receive them.
-constexpr Region kRegions[] = {
-    {"US", 902000000, 928000000},       {"EU_433", 433000000, 434000000},
-    {"EU_868", 869400000, 869650000},   {"CN", 470000000, 510000000},
-    {"JP", 920500000, 923500000},       {"ANZ", 915000000, 928000000},
-    {"ANZ_433", 433050000, 434790000},  {"RU", 868700000, 869200000},
-    {"KR", 920000000, 923000000},       {"TW", 920000000, 925000000},
-    {"IN", 865000000, 867000000},       {"NZ_865", 864000000, 868000000},
-    {"TH", 920000000, 925000000},       {"UA_433", 433000000, 434700000},
-    {"MY_433", 433000000, 435000000},   {"MY_919", 919000000, 924000000},
-    {"SG_923", 917000000, 925000000},   {"PH_433", 433000000, 434700000},
-    {"PH_868", 868000000, 869400000},   {"PH_915", 915000000, 918000000},
-    {"KZ_433", 433075000, 434775000},   {"KZ_863", 863000000, 868000000},
-    {"NP_865", 865000000, 868000000},   {"BR_902", 902000000, 907500000},
-};
-
 Selection current{};
 bool scanning = false;
 uint8_t survey_next_span = 0;
@@ -47,12 +31,6 @@ void retain_survey_result(uint32_t frequency_hz, float level_dbfs) {
   }
 }
 
-uint32_t longfast_hash() {
-  uint32_t hash = 5381;
-  for (const char c : {'L', 'o', 'n', 'g', 'F', 'a', 's', 't'}) hash = hash * 33u + c;
-  return hash;
-}
-
 void set_selection(size_t region_index, uint16_t slot) {
   current.region_index = static_cast<uint8_t>(region_index);
   current.slot = slot == 0 ? default_slot(region_index) : slot;
@@ -61,34 +39,29 @@ void set_selection(size_t region_index, uint16_t slot) {
 
 }  // namespace
 
-size_t region_count() { return std::size(kRegions); }
+size_t region_count() { return lora_plan::kRegions.size(); }
 
 const Region& region(size_t index) {
-  return kRegions[std::min(index, std::size(kRegions) - 1)];
+  return lora_plan::kRegions[std::min(index, lora_plan::kRegions.size() - 1)];
 }
 
 int find_region(const char* code) {
   if (code == nullptr) return -1;
-  for (size_t i = 0; i < std::size(kRegions); ++i)
-    if (std::strcmp(kRegions[i].code, code) == 0) return static_cast<int>(i);
+  for (size_t i = 0; i < lora_plan::kRegions.size(); ++i)
+    if (std::strcmp(lora_plan::kRegions[i].code, code) == 0) return static_cast<int>(i);
   return -1;
 }
 
 uint16_t slot_count(size_t region_index) {
-  const Region& plan = region(region_index);
-  return static_cast<uint16_t>((plan.end_hz - plan.start_hz) / kLongFastBandwidthHz);
+  return lora_plan::slot_count(region_index);
 }
 
 uint16_t default_slot(size_t region_index) {
-  const uint16_t count = slot_count(region_index);
-  return count == 0 ? 0 : static_cast<uint16_t>(longfast_hash() % count + 1u);
+  return lora_plan::default_slot(region_index);
 }
 
 uint32_t frequency_hz(size_t region_index, uint16_t slot) {
-  const Region& plan = region(region_index);
-  slot = std::clamp<uint16_t>(slot, 1, slot_count(region_index));
-  return plan.start_hz + kLongFastBandwidthHz / 2u +
-         static_cast<uint32_t>(slot - 1u) * kLongFastBandwidthHz;
+  return lora_plan::frequency_hz(region_index,slot);
 }
 
 uint16_t slot_for_frequency(size_t region_index, uint32_t frequency) {

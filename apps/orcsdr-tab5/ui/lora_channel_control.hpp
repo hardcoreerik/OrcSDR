@@ -2,6 +2,7 @@
 
 #include <cstddef>
 #include <cstdint>
+#include "lora_region_plan.hpp"
 
 namespace orcsdr {
 class NvsStore;
@@ -9,11 +10,7 @@ class NvsStore;
 
 namespace orcsdr::lora_channel {
 
-struct Region {
-  const char* code;
-  uint32_t start_hz;
-  uint32_t end_hz;
-};
+using Region = lora_plan::Region;
 
 struct Selection {
   uint8_t region_index = 0;
