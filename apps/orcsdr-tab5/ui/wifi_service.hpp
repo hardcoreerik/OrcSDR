@@ -26,6 +26,12 @@ struct C6UpdateStatus {
 };
 
 bool start();
+void apply_max_tx_power();                 // re-applies the cap below (called on every start)
+// C6 transmit cap, 0.25 dBm units (8..84); 0 = full power. apply_now=false only stores it: the next start() applies it
+// (use that while the link is down, where a command to the C6 would only time out).
+void set_max_tx_power_qdbm(int8_t cap, bool apply_now = true);
+uint32_t c6_init_count();                  // C6 boots announced over ESP-Hosted (CP_INIT events) since P4 boot
+int32_t c6_last_reset_reason();            // esp_reset_reason_t of the latest C6 boot, -1 before the first
 void stop();
 bool begin_scan();
 int scan_results(ScanResult* results, size_t capacity);
@@ -47,6 +53,9 @@ void note_start_failure();
 // power-cycles the C6 in between); end_link_recovery() re-enables failure
 // detection once start() has returned.
 bool begin_link_recovery();
+// True when an ESP-Hosted teardown timed out and is still blocked: Wi-Fi cannot be re-initialised until the Tab5
+// restarts. begin_link_recovery() then returns false within its wait instead of freezing the caller.
+bool link_wedged();
 void end_link_recovery();
 bool connect_failed();
 const char* ssid();

@@ -47,12 +47,12 @@ bool bounded(std::string_view text) {
     if(quoted)continue;
     if(c=='{'||c=='['){if(++depth>16)return false;}
     if(c=='}'||c==']'){if(!depth)return false;--depth;}
-    if(c=='{'||c=='['||c==':'||c==',')if(++delimiters>8192)return false;
+    if(c=='{'||c=='['||c==':'||c==',')if(++delimiters>16384)return false;
   }
   return !quoted&&depth==0;
 }
 bool unique_tree(const cJSON* node,size_t& count) {
-  if(++count>4096)return false;
+  if(++count>8192)return false;
   size_t fields=0;
   for(const cJSON* child=node->child;child;child=child->next) {
     if(cJSON_IsObject(node)) {
@@ -143,7 +143,7 @@ Error parse(std::string_view payload,const Policy& policy,const uint8_t digest[3
       out.sha256!=policy.accepted_sha256))return Error::rollback;
   const cJSON* packs=get(root.get(),"packs");
   const int size=cJSON_GetArraySize(packs);
-  if(!cJSON_IsArray(packs)||size<1||size>32)return Error::schema;
+  if(!cJSON_IsArray(packs)||size<1||size>static_cast<int>(kMaximumPacks))return Error::schema;
   out.packs.reserve(size);
   for(const cJSON* entry=packs->child;entry;entry=entry->next) {
     if(!shape(entry,{"product_id","manifest","archive"}))return Error::schema;

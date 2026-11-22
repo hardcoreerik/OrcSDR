@@ -77,10 +77,11 @@ stability. Never erase or reflash just to collect a support report.
 
 ## Maintenance
 
-- Implementation: `apps/orcsdr-tab5/ui/support_report.hpp` (pure formatter)
-  and the existing Tab5 serial command dispatcher.
-- Sanity test: `python tools/test_support_report.py` (requires a C++17 host
-  compiler; no ESP-IDF required).
+- Implementation: `apps/orcsdr-tab5/ui/support_report.hpp` (pure formatter),
+  `apps/orcsdr-tab5/ui/serial_support.{hpp,cpp}` (serial command module), and
+  the Tab5 snapshot hook in `apps/orcsdr-tab5/ui/main.cpp`.
+- Sanity tests: `tests/serial_support_tests.cpp` and `python tools/test_support_report.py`
+  (requires a C++17 host compiler; no ESP-IDF required).
 - Format: schema 1, line-oriented, bounded output and explicit BEGIN/END.
 - Extension rule: add new **known-safe** fields only. Do not print generic
   Settings, NVS, Wi-Fi, RTC/location, device serial, or arbitrary log dumps.

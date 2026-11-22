@@ -42,26 +42,33 @@ struct Snapshot {
 // data or USB device serial number is included.
 using WriteLine = void (*)(const char* line);
 
+namespace detail {
+inline const char* safe(const char* value) { return value != nullptr ? value : ""; }
+}  // namespace detail
+
 inline void emit(const Snapshot& s, WriteLine write) {
   if (!write) return;
   char line[320];
   write("ORC_SUPPORT_BEGIN schema=1 read_only=1 private_fields=excluded");
   std::snprintf(line, sizeof(line),
                 "ORC_SUPPORT_BUILD firmware=\"%.32s\" build=\"%.40s\" driver=\"%.24s\"",
-                s.firmware, s.build, s.driver);
+                detail::safe(s.firmware), detail::safe(s.build), detail::safe(s.driver));
   write(line);
   std::snprintf(line, sizeof(line),
                 "ORC_SUPPORT_USB receiver_ready=%u vid=%04x pid=%04x speed=\"%.12s\"",
                 s.receiver_ready ? 1u : 0u,
-                static_cast<unsigned>(s.vid), static_cast<unsigned>(s.pid), s.usb_speed);
+                static_cast<unsigned>(s.vid), static_cast<unsigned>(s.pid),
+                detail::safe(s.usb_speed));
   write(line);
   std::snprintf(line, sizeof(line),
                 "ORC_SUPPORT_RECEIVER installed=%u profile=\"%.48s\" state=\"%.24s\" last_error=\"%.60s\"",
-                s.driver_installed ? 1u : 0u, s.profile, s.driver_state, s.last_error);
+                s.driver_installed ? 1u : 0u, detail::safe(s.profile),
+                detail::safe(s.driver_state), detail::safe(s.last_error));
   write(line);
   std::snprintf(line, sizeof(line),
                 "ORC_SUPPORT_RADIO capture=\"%.24s\" band=\"%.16s\" frequency_hz=%lu",
-                s.capture_state, s.band, static_cast<unsigned long>(s.frequency_hz));
+                detail::safe(s.capture_state), detail::safe(s.band),
+                static_cast<unsigned long>(s.frequency_hz));
   write(line);
   std::snprintf(line, sizeof(line),
                 "ORC_SUPPORT_STREAM metrics_ok=%u target_sps=%lu effective_sps=%lu "

@@ -21,9 +21,9 @@
 
 namespace orcsdr::maps::downloads {
 namespace {
-constexpr uint32_t kRecover=1,kCheck=2,kInstall=256;
+constexpr uint32_t kRecover=1,kCheck=2,kReset=3,kInstall=256;
 EXT_RAM_BSS_ATTR Snapshot g_snapshot;
-EXT_RAM_BSS_ATTR Entry g_entries[32];
+EXT_RAM_BSS_ATTR Entry g_entries[catalog::kMaximumPacks];
 EXT_RAM_BSS_ATTR catalog::Catalog g_catalog;
 portMUX_TYPE g_lock=portMUX_INITIALIZER_UNLOCKED;
 std::atomic<uint32_t> g_command{0},g_last_command{kRecover};
@@ -91,7 +91,7 @@ bool catalog_entries(storage::FileSystem* fs,delivery::Store& store) {
   delivery::State state;if(delivery::load(store,&state)!=delivery::Error::none)return false;
   const auto location=receiver_location::snapshot();
   const double lat=location.latitude_e7/1e7,lon=location.longitude_e7/1e7;
-  const size_t count=g_catalog.packs.size()<32?g_catalog.packs.size():32;
+  const size_t count=g_catalog.packs.size()<catalog::kMaximumPacks?g_catalog.packs.size():catalog::kMaximumPacks;
   for(size_t i=0;i<count;++i) {
     const auto& pack=g_catalog.packs[i];const auto& m=pack.manifest;
     Entry e;
@@ -181,7 +181,7 @@ void result(const install::Result& outcome,delivery::Store& store,bool recoverin
   const bool stopped=outcome.transfer==transfer::Error::cancelled||outcome.activation==activation::Error::cancelled;
   finish(stopped?Phase::cancelled:Phase::failed,pending,
       stopped?"Transfer paused. Retry to resume; existing maps retained.":
-      outcome.transfer==transfer::Error::space?"Not enough SD space. Existing maps retained.":
+      outcome.transfer==transfer::Error::space?"Not enough SD space. Free space or use a larger card.":
       "Map installation failed. Existing files retained; retry when ready.");
   std::printf("ORCMAPS_INSTALL error=%u state=%u transfer=%u activation=%u\n",
       static_cast<unsigned>(outcome.error),static_cast<unsigned>(outcome.state),
@@ -227,6 +227,10 @@ bool retry() {
 bool retry_recovery() {
   Snapshot s;snapshot(&s);return s.pending&&queue(kRecover,Phase::verifying,"Recovering saved map installation...");
 }
+bool reset_pending() {
+  Snapshot s;snapshot(&s);
+  return can_reset(s)&&queue(kReset,Phase::verifying,"Clearing the saved install...");
+}
 void cancel(){g_cancel.store(true);}
 bool take_time_sync_request(){return g_time_sync_requested.exchange(false);}
 bool work_pending(){return g_command.load(std::memory_order_acquire)!=0;}
@@ -244,6 +248,20 @@ bool service(storage::FileSystem* fs) {
     delivery::NvsStateStore store;delivery::State state;
     if(delivery::load(store,&state)!=delivery::Error::none) {
       finish(Phase::failed,true,"Map state unreadable; files retained.");return true;
+    }
+    if(command==kReset) {
+      const auto reset=install::reset_pending(fs,store);
+      if(reset.error==install::Error::none) {
+        invalidate_catalog();
+        finish(Phase::idle,false,"Saved install cleared. Check the catalog to download again.");
+      } else {
+        delivery::State durable;const auto loaded=delivery::load(store,&durable);
+        const bool pending=loaded!=delivery::Error::none||!durable.pending.product.empty();
+        if(!pending)invalidate_catalog();
+        finish(Phase::failed,pending,pending?"Reset blocked. Insert original SD card and retry recovery.":
+            "Saved install cleared. Check the catalog to download again.");
+      }
+      return true;
     }
     const bool pending=!state.pending.product.empty();
     if(command==kRecover&&!fs) {
@@ -272,7 +290,10 @@ bool service(storage::FileSystem* fs) {
     g_snapshot.completed_bytes=0;g_snapshot.total_bytes=g_catalog.packs[index].manifest.size_bytes;
     portEXIT_CRITICAL(&g_lock);
     publish(Phase::downloading,pending,"Downloading map to SD. You can stop and resume.");
-    const auto available=storage::free_bytes();
+    uint64_t available=0;
+    if(!storage::query_free_bytes(&available)) {
+      finish(Phase::failed,pending,"Cannot check SD space. Check the card and retry.");return true;
+    }
     const auto clock=time_service::now();transfer::HttpStream stream;install::Result outcome;
     for(size_t mirror=0;mirror<g_catalog.packs[index].urls.size();++mirror) {
       outcome=install::run(*fs,store,g_catalog,index,mirror,stream,available,
