@@ -208,12 +208,18 @@ RTL_MAP DOWNLOAD LIST
 RTL_MAP DOWNLOAD INSTALL <index>
 RTL_MAP DOWNLOAD CANCEL
 RTL_MAP DOWNLOAD RETRY
+RTL_MAP DOWNLOAD RESET
 ```
 
 Use a zero-based index from the current download list. Check, install, cancel
 and retry use the same installer APIs and eligibility checks as the UI. Already
 installed entries are not reinstalled through this command. Nothing bypasses
 catalog trust, archive verification, activation/recovery or storage checks.
+
+RESET requires authentication and clears a stuck saved install request, not map
+files. Insert the original SD card first; reset is refused if a recovery journal
+or backup is present or the card cannot be checked. `RTL_MAP DOWNLOAD LIST`
+includes a message explaining download failures, including insufficient SD space.
 
 Verification feedback adds `verified`, `verify_total` and
 `verify_pass` to the read-only `RTL_MAP DOWNLOAD LIST` status line. These are

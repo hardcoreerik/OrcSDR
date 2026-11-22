@@ -424,9 +424,39 @@ int main(int argc,char** argv){
   check(delivery::load(wiped,&state)==delivery::Error::none&&
         delivery::plan_install(state,accepted.packs[0].product_id,target,false)==delivery::Error::none&&
         delivery::save(wiped,state)==delivery::Error::none,"pending intent saved before the card is wiped");
-  check(install::resume(fs,wiped,buffer.data(),buffer.size(),{}).error==install::Error::none&&
+  check(install::resume(fs,wiped,buffer.data(),buffer.size(),{}).error!=install::Error::none&&
+        delivery::load(wiped,&state)==delivery::Error::none&&!state.pending.product.empty(),
+        "missing files preserve pending intent for an original or swapped card");
+  check(install::reset_pending(nullptr,wiped).error!=install::Error::none&&
+        delivery::load(wiped,&state)==delivery::Error::none&&!state.pending.product.empty(),
+        "reset without SD retains pending intent");
+  testfs::fail_status=true;
+  check(install::reset_pending(&fs,wiped).error!=install::Error::none&&
+        delivery::load(wiped,&state)==delivery::Error::none&&!state.pending.product.empty(),
+        "reset on storage error retains pending intent");
+  testfs::fail_status=false;
+  std::filesystem::create_directories(testfs::path(paths.directory.c_str()));
+  {std::ofstream(testfs::path((paths.directory+"/activation.pending").c_str()))<<"journal";}
+  check(install::reset_pending(&fs,wiped).error!=install::Error::none&&
+        delivery::load(wiped,&state)==delivery::Error::none&&!state.pending.product.empty(),
+        "reset refuses active journal and retains intent");
+  fs.remove((paths.directory+"/activation.pending").c_str());
+  {std::ofstream(testfs::path((paths.directory+"/previous.bak").c_str()))<<"backup";}
+  check(install::reset_pending(&fs,wiped).error!=install::Error::none&&
+        delivery::load(wiped,&state)==delivery::Error::none&&!state.pending.product.empty(),
+        "reset refuses retained activation backup");
+  fs.remove((paths.directory+"/previous.bak").c_str());
+  wiped.fail_at=wiped.writes+1;
+  check(install::reset_pending(&fs,wiped).error!=install::Error::none&&
+        delivery::load(wiped,&state)==delivery::Error::none&&!state.pending.product.empty(),
+        "failed reset save retains intent");
+  wiped.fail_at=0;
+  check(install::reset_pending(&fs,wiped).error==install::Error::none&&
         delivery::load(wiped,&state)==delivery::Error::none&&state.pending.product.empty(),
-        "pending install with every file deleted is abandoned, not an eternal error");
+        "reset clears intent after journal check");
+  Stream after_reset;
+  check(install_pack(wiped,after_reset).error==install::Error::none&&fs.exists(target.c_str()),
+        "new install succeeds after reset");
   for(int point=1;point<=4;++point) {
     reset();DeliveryStore powered;trusted(powered);Stream prepared;
     check(run(prepared)==t::Error::none,"installer power fixture staged");

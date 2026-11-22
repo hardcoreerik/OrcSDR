@@ -5,7 +5,7 @@ This is the **project-level release and current-source index**. It links the aut
 ## Unreleased — Map install recovery (stuck MAP ERROR) — 2026-11-12
 
 - **Bug:** an interrupted map download left a saved-install record in NVS. If the SD files were then deleted, boot recovery failed on every start, the Maps header showed MAP ERROR, and Check catalog and Download stayed blocked. Only a reflash or NVS erase cleared it.
-- **Fix:** recovery now drops a saved install whose files are all gone. Maps > Downloads shows RESET STUCK (and `RTL_MAP DOWNLOAD RESET`) for any other stuck install; it forgets the saved intent only and never deletes map files.
+- **Fix:** missing files retain the saved install for recovery with the original SD card. Maps > Downloads offers RESET STUCK (and `RTL_MAP DOWNLOAD RESET`) to clear the saved intent without deleting map files. Insufficient SD space now suggests freeing space or using a larger card, and download status includes the message over serial.
 - **Verified:** host tests `map_transfer` (new missing-files case) and `map_download_actions`. Not yet flashed. The first-install failure that started this was not reproduced on COM39 (a clean install worked), so its cause is unknown.
 
 ## Unreleased — Host UI stub gains TFT_RED — 2026-11-22

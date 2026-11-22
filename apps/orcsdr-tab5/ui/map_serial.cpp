@@ -71,6 +71,7 @@ bool handle(const char* command,bool authenticated,void (*write)(const char*)) {
         static_cast<unsigned long long>(status.completed_bytes),static_cast<unsigned long long>(status.total_bytes),
         static_cast<unsigned long long>(status.verified_bytes),static_cast<unsigned long long>(status.verify_total_bytes),
         static_cast<unsigned long>(status.verify_pass));write(line);
+    std::snprintf(line,sizeof(line),"RTL_MAP_DOWNLOAD_MESSAGE text=\"%s\"\n",status.message);write(line);
     for(unsigned i=0;i<status.count;++i) {
       downloads::Entry entry;if(!downloads::entry(i,&entry))continue;
       std::snprintf(line,sizeof(line),"RTL_MAP_DOWNLOAD_ENTRY index=%u installed=%u recommended=%u product=%s bytes=%llu title=\"%s\"\n",

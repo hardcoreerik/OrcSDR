@@ -65,6 +65,21 @@ Result complete(storage::FileSystem& fs,delivery::Store& store,delivery::State& 
   return finished==activation::Error::none?Result{}:activation_error(finished);
 }
 }
+Result reset_pending(storage::FileSystem* fs,delivery::Store& store) {
+  try {
+    delivery::State state;const auto loaded=delivery::load(store,&state);
+    if(loaded!=delivery::Error::none)return state_error(loaded);
+    if(!fs||state.pending.product.empty())return {Error::input};
+    const auto dir=directory(state.pending.manifest);
+    if(dir.empty())return {Error::input};
+    for(const auto* artifact:{"/activation.pending","/previous.bak"})
+      if(fs->status((dir+artifact).c_str())!=storage::EntryStatus::missing)
+        return activation_error(activation::Error::storage);
+    state.pending={};
+    const auto saved=delivery::save(store,state);
+    return saved==delivery::Error::none?Result{}:state_error(saved);
+  }catch(const std::bad_alloc&){return {Error::allocation};}
+}
 Result resume(storage::FileSystem& fs,delivery::Store& store,uint8_t* buffer,size_t size,const transfer::Hooks& hooks) {
   try {
     delivery::State state;const auto loaded=delivery::load(store,&state);
@@ -73,18 +88,6 @@ Result resume(storage::FileSystem& fs,delivery::Store& store,uint8_t* buffer,siz
     if(finalized.error!=Error::none||state.pending.product.empty())return finalized;
     const auto dir=directory(state.pending.manifest);
     if(dir.empty())return {Error::input};
-    {
-      // The user (or a reformat) removed everything the interrupted install had
-      // written. Nothing is left to finish, so drop the stale intent instead of
-      // failing recovery on every boot. A fresh download can then start.
-      const auto active=fs.status((dir+"/activation.manifest").c_str());
-      const auto staged=fs.status((dir+"/pack.manifest.json").c_str());
-      if(active==storage::EntryStatus::missing&&staged==storage::EntryStatus::missing) {
-        state.pending={};
-        const auto saved=delivery::save(store,state);
-        return saved==delivery::Error::none?Result{}:state_error(saved);
-      }
-    }
     const auto recovered=activation::recover(fs,dir);
     if(recovered!=activation::Error::none)return activation_error(recovered);
     auto source=dir+"/activation.manifest";

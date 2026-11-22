@@ -181,7 +181,7 @@ void result(const install::Result& outcome,delivery::Store& store,bool recoverin
   const bool stopped=outcome.transfer==transfer::Error::cancelled||outcome.activation==activation::Error::cancelled;
   finish(stopped?Phase::cancelled:Phase::failed,pending,
       stopped?"Transfer paused. Retry to resume; existing maps retained.":
-      outcome.transfer==transfer::Error::space?"Not enough SD space. Existing maps retained.":
+      outcome.transfer==transfer::Error::space?"Not enough SD space. Free space or use a larger card.":
       "Map installation failed. Existing files retained; retry when ready.");
   std::printf("ORCMAPS_INSTALL error=%u state=%u transfer=%u activation=%u\n",
       static_cast<unsigned>(outcome.error),static_cast<unsigned>(outcome.state),
@@ -250,13 +250,11 @@ bool service(storage::FileSystem* fs) {
       finish(Phase::failed,true,"Map state unreadable; files retained.");return true;
     }
     if(command==kReset) {
-      // Escape hatch for any stuck install: forget only the saved intent. Map
-      // files on the SD card and installed ownership are left untouched.
-      state.pending={};
-      if(delivery::save(store,state)==delivery::Error::none) {
+      const auto reset=install::reset_pending(fs,store);
+      if(reset.error==install::Error::none) {
         invalidate_catalog();
         finish(Phase::idle,false,"Saved install cleared. Check the catalog to download again.");
-      } else finish(Phase::failed,true,"Could not clear the saved install. Try again.");
+      } else finish(Phase::failed,true,"Reset blocked. Insert original SD card and retry recovery.");
       return true;
     }
     const bool pending=!state.pending.product.empty();
@@ -286,7 +284,10 @@ bool service(storage::FileSystem* fs) {
     g_snapshot.completed_bytes=0;g_snapshot.total_bytes=g_catalog.packs[index].manifest.size_bytes;
     portEXIT_CRITICAL(&g_lock);
     publish(Phase::downloading,pending,"Downloading map to SD. You can stop and resume.");
-    const auto available=storage::free_bytes();
+    uint64_t available=0;
+    if(!storage::query_free_bytes(&available)) {
+      finish(Phase::failed,pending,"Cannot check SD space. Check the card and retry.");return true;
+    }
     const auto clock=time_service::now();transfer::HttpStream stream;install::Result outcome;
     for(size_t mirror=0;mirror<g_catalog.packs[index].urls.size();++mirror) {
       outcome=install::run(*fs,store,g_catalog,index,mirror,stream,available,
