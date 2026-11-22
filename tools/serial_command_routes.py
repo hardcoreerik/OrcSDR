@@ -89,6 +89,7 @@ FAMILIES = {
     "orcsdr::serial_status": "apps/orcsdr-tab5/ui/serial_status.cpp",
     "orcsdr::serial_scope": "apps/orcsdr-tab5/ui/serial_scope.cpp",
     "orcsdr::serial_verbosity": "apps/orcsdr-tab5/ui/serial_verbosity.cpp",
+    "orcsdr::serial_support": "apps/orcsdr-tab5/ui/serial_support.cpp",
     "orcsdr::serial_health": "apps/orcsdr-tab5/ui/serial_health.cpp",
     "orcsdr::serial_bench": "apps/orcsdr-tab5/ui/serial_bench.cpp",
 }

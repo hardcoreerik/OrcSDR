@@ -10,6 +10,7 @@ namespace {
 // One entry per output line, in order. The text is part of the serial API: scripts and the documentation quote it.
 constexpr const char* kBeforeOrcDial[] = {
     "RTL_HELP_BEGIN",
+    "RTL_SUPPORT REPORT            - read-only, copy/paste support report (no auth)",
     "RTL_STATUS                    - device connection info",
     "RTL_HOTPLUG_STATUS            - receiver replacement and resume state",
     "RTL_ADSB STATUS               - ADS-B stream, queue and decoder counters",

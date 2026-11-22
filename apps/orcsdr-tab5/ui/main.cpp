@@ -137,6 +137,7 @@
 #include "serial_p25.hpp"
 #include "serial_rtc.hpp"
 #include "serial_wifi.hpp"
+#include "serial_support.hpp"
 #include "serial_health.hpp"
 #include "serial_verbosity.hpp"
 #include "serial_scope.hpp"
@@ -19555,6 +19556,61 @@ static constexpr orcsdr::serial_verbosity::Hooks kSerialVerbosityHooks{
     },
 };
 
+// Read-only diagnostic for users to paste into support threads. Unlike
+// RTL_STATUS, intentionally omits the USB serial number and network identity.
+// Marked noinline so GCC does not inline its locals into process_command().
+static __attribute__((noinline)) orcsdr::support_report::Snapshot collect_rtl_support_snapshot() {
+  orcsdr::support_report::Snapshot s{};
+  const esp_app_desc_t* app = esp_app_get_description();
+  s.firmware = (app != nullptr && app->version[0] != '\0') ? app->version : "unknown";
+  s.build = ORCSDR_BUILD_ID[0] ? ORCSDR_BUILD_ID : __DATE__ " " __TIME__;
+  s.driver = esp_rtl_sdr_get_version_string();
+  s.receiver_ready = rtl_device_ready();
+  s.vid = rtl_sdr_vid;
+  s.pid = rtl_sdr_pid;
+  s.usb_speed = rtl_sdr_speed;
+  s.capture_state = rtl_capture_state_name(rtl_capture_state.load(std::memory_order_acquire));
+  s.band = rtl_band_name(rtl_ui_band);
+  s.frequency_hz = rtl_ui_frequency_hz;
+  const uint32_t active_sps = rtl_active_sample_rate_sps.load(std::memory_order_acquire);
+  s.target_sps = active_sps != 0 ? active_sps : kRtlSampleRateSps;
+  s.uptime_ms = millis();
+  s.reset_reason = static_cast<int>(esp_reset_reason());
+  s.heap_free = esp_get_free_heap_size();
+  constexpr uint32_t kDmaCaps = MALLOC_CAP_INTERNAL | MALLOC_CAP_DMA;
+  s.dma_free = heap_caps_get_free_size(kDmaCaps);
+  s.dma_largest = heap_caps_get_largest_free_block(kDmaCaps);
+  s.psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+  if (g_rtl != nullptr) {
+    s.driver_installed = true;
+    const auto profile = g_rtl_profile.load(std::memory_order_acquire);
+    s.profile = esp_rtl_sdr_profile_to_name(profile);
+    s.driver_state = esp_rtl_sdr_state_to_name(esp_rtl_sdr_get_state(g_rtl));
+    s.last_error = esp_rtl_sdr_err_to_name(esp_rtl_sdr_get_last_error(g_rtl));
+    esp_rtl_sdr_metrics_t metrics{};
+    s.metrics_ok = esp_rtl_sdr_get_metrics(g_rtl, &metrics) == ESP_OK;
+    if (s.metrics_ok) {
+      if (metrics.sample_rate_sps != 0 && !rtl_remote_tuning_selected()) s.target_sps = metrics.sample_rate_sps;
+      s.effective_sps = metrics.effective_sps;
+      s.bytes_total = metrics.bytes_total;
+      s.short_transfers = metrics.short_transfers;
+      s.usb_overruns = metrics.overruns;
+      s.consumer_drops = metrics.consumer_drops;
+    }
+  } else {
+    s.profile = "none";
+    s.driver_state = "uninstalled";
+    s.last_error = "none";
+  }
+  return s;
+}
+
+// The RTL_SUPPORT REPORT command lives in serial_support.cpp.
+static constexpr orcsdr::serial_support::Hooks kSerialSupportHooks{
+    [](const char* text) { Serial.println(text); },
+    collect_rtl_support_snapshot,
+};
+
 // The RTL_HEALTH command lives in serial_health.cpp; the snapshot reads the figures in the order the reply prints them.
 static constexpr orcsdr::serial_health::Hooks kSerialHealthHooks{
     [](const char* text) { Serial.print(text); },
@@ -19993,6 +20049,7 @@ void process_command(char* command) {
   }
   if(orcsdr::lora::handle_map_command(command,authenticated,[](const char* line){Serial.print(line);}))return;
   if(orcsdr::maps::serial_control::handle(command,authenticated,[](const char* line){Serial.print(line);}))return;
+  if (orcsdr::serial_support::handle_command(command, authenticated, kSerialSupportHooks)) return;
   if (orcsdr::serial_health::handle_command(command, authenticated, kSerialHealthHooks)) return;
   if (orcsdr::serial_dead_air::handle_command(command, authenticated, kSerialDeadAirHooks)) return;
   if (orcsdr::serial_decoder_diag::handle_command(command, authenticated, kSerialDecoderDiagHooks)) return;

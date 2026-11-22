@@ -48,6 +48,7 @@ on:
       - 'tests/serial_preset_tests.cpp'
       - 'tests/serial_scope_tests.cpp'
       - 'tests/serial_verbosity_tests.cpp'
+      - 'tests/serial_support_tests.cpp'
       - 'tests/serial_health_tests.cpp'
       - 'tests/serial_lora_status_tests.cpp'
       - 'tests/serial_lora_tests.cpp'
