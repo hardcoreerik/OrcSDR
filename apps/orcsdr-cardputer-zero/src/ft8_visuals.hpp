@@ -5,6 +5,7 @@
 #include "ft8_world_data.hpp"
 #include "ft8_world_projection.hpp"
 #include <cstring>
+#include <ctime>
 namespace orc::zero {
 class Ft8Visuals {
  public:
@@ -124,8 +125,24 @@ class Ft8WorldMap {
     frame.text(width+5,top+2,"LAST HEARD",CompactRenderer::cyan);
     for(size_t k=0;k<heard_count_;++k){
       const auto& d=heard_[k];const int y=top+14+int(k)*18;
-      frame.text(width+5,y,std::string(d.callsign,strnlen(d.callsign,sizeof(d.callsign))),CompactRenderer::white,1,16);
-      frame.text(width+5,y+8,orcsdr::ft8::maidenhead_valid(d.grid)?d.grid:"NO GRID",CompactRenderer::muted,1,10);
+      // Callsign on the left, the UTC time of the decode on the right. Length is
+      // capped so a long call cannot run into the clock column.
+      frame.text(width+5,y,std::string(d.callsign,strnlen(d.callsign,sizeof(d.callsign))),CompactRenderer::white,1,9);
+      char clock[8]="-:--";
+      if(d.utc_epoch){
+        const std::time_t when=std::time_t(d.utc_epoch);
+        std::tm utc{};
+        if(gmtime_r(&when,&utc))std::snprintf(clock,sizeof(clock),"%02d:%02d",utc.tm_hour,utc.tm_min);
+      }
+      // The sidebar is 104px wide: the clock starts far enough left that five
+      // characters land inside the panel instead of being clipped by it.
+      frame.text(width+71,y,clock,CompactRenderer::muted,1,5);
+      // Second line: grid, then what the message was. CQ and QSO are the two
+      // things worth telling apart at a glance, so they are coloured.
+      const char* kind=d.kind==orcsdr::ft8::DecodeKind::cq?"CQ":d.kind==orcsdr::ft8::DecodeKind::qso?"QSO":d.kind==orcsdr::ft8::DecodeKind::free_text?"TXT":"";
+      const uint16_t kind_colour=d.kind==orcsdr::ft8::DecodeKind::cq?CompactRenderer::green:d.kind==orcsdr::ft8::DecodeKind::qso?CompactRenderer::cyan:CompactRenderer::muted;
+      frame.text(width+5,y+8,orcsdr::ft8::maidenhead_valid(d.grid)?d.grid:"NO GRID",CompactRenderer::muted,1,7);
+      if(*kind)frame.text(width+55,y+8,kind,kind_colour,1,3);
     }
     if(!heard_count_)frame.text(width+5,top+20,"WAITING",CompactRenderer::muted);
     frame.rect(0,139,320,7,CompactRenderer::bg);
