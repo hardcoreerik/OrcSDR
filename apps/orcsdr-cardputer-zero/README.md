@@ -471,8 +471,23 @@ systemctl --user stop APPLaunch.service     # start it again to get the home scr
 
 That is only safe when OrcSDR was *not* started from the launcher, because a
 launcher-spawned child sits in the same service cgroup and stopping the unit kills
-it. No automatic parking is implemented; starting OrcSDR from a shell leaves the
-launcher running and the flicker present.
+it.
+
+`tools/zero-run.sh` avoids that hazard. It freezes the launcher with `SIGSTOP`
+for the lifetime of the GUI and resumes it with `SIGCONT` on exit: a stopped
+process does not take its children with it, so this is safe however the app was
+started, and the launcher redraws itself when OrcSDR closes.
+
+```sh
+apps/orcsdr-cardputer-zero/tools/zero-run.sh --display fb --dashboard ft8 \
+  --input /dev/input/cardputer-zero-internal --audio plughw:ES8389Audio,0
+```
+
+Measured on a Zero: 266 top-row changes in 150s with the launcher running, 0 in
+90s with it stopped, and 0 in 60s with it frozen by this script while FT8 kept
+decoding. If the script itself is killed with `SIGKILL` the launcher stays frozen;
+`kill -CONT $(pgrep -f M5CardputerZero-APPLaunch)` or
+`systemctl --user restart APPLaunch.service` recovers it.
 
 ### Keyboard capabilities
 
