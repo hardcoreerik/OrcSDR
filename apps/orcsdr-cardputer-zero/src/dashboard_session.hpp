@@ -336,7 +336,7 @@ class DashboardSession {
             ft8_screen_.text(4,118,clock.message,CompactRenderer::yellow,1,51);
             ft8_screen_.text(4,133,"MANUAL ENTRY DISABLES NETWORK SYNC",CompactRenderer::muted);
           }
-          ft8_screen_.text(4,160,"ESC BACK   SPACE DASHBOARDS",CompactRenderer::cyan);
+          ft8_screen_.keys(4,160,{{"ESC","BACK"},{"SPACE","DASH"}});
           clock_tick_=ui_tick;
         }
         return ft8_screen_.pixels;
@@ -346,7 +346,8 @@ class DashboardSession {
 
 
 
-        ft8_screen_.text(4,160,ft8_map_open_?"NATURAL EARTH  M RX T UTC SPACE DASH":"Z/C BAND G MODE M MAP T UTC SPACE",CompactRenderer::cyan);
+        if(ft8_map_open_){ft8_screen_.text(4,160,"NATURAL EARTH",CompactRenderer::muted);ft8_screen_.keys(94,160,{{"M","RX"},{"T","UTC"},{"SPACE","DASH"}});}
+        else ft8_screen_.keys(4,160,{{"Z/C","BAND"},{"G","MODE"},{"M","MAP"},{"T","UTC"},{"SPACE","DASH"}});
       }
       if(!ft8_drawn_||ft8_header_dirty_){
         const auto* preset=orcsdr::ft8::band(ft8_band_.index);
@@ -391,7 +392,8 @@ class DashboardSession {
         ft8_screen_.text(4,147,label,clock.synced?CompactRenderer::green:CompactRenderer::yellow);
         clock_tick_=ui_tick;
         ft8_screen_.rect(0,160,320,10,CompactRenderer::bg);
-        ft8_screen_.text(4,160,ft8_map_open_?"NATURAL EARTH  M RX T UTC SPACE DASH":"Z/C BAND G MODE M MAP T UTC SPACE",CompactRenderer::cyan);
+        if(ft8_map_open_){ft8_screen_.text(4,160,"NATURAL EARTH",CompactRenderer::muted);ft8_screen_.keys(94,160,{{"M","RX"},{"T","UTC"},{"SPACE","DASH"}});}
+        else ft8_screen_.keys(4,160,{{"Z/C","BAND"},{"G","MODE"},{"M","MAP"},{"T","UTC"},{"SPACE","DASH"}});
       }
       return ft8_screen_.pixels;
     }
@@ -404,7 +406,7 @@ class DashboardSession {
         wifi_render_.badge(1,1,28);wifi_render_.text(33,4,"OrcSDR 2.4 GHZ WIFI",CompactRenderer::green,2);
 
         wifi_render_.text(4,42,"CH  SIGNAL   NETWORK",CompactRenderer::cyan);
-        wifi_render_.text(4,160,"SPACE DASHBOARDS   ESC BACK",CompactRenderer::cyan);
+        wifi_render_.keys(4,160,{{"SPACE","DASH"},{"ESC","BACK"}});
         wifi_drawn_=true;
       }
       if(rows!=wifi_displayed_ || ready!=wifi_display_ready_ || !wifi_list_drawn_){
@@ -429,8 +431,8 @@ class DashboardSession {
         weather_render_.badge(1,1,28);weather_render_.text(33,4,mode_==8?"OrcSDR MARINE":"OrcSDR WEATHER",CompactRenderer::green,2);
 
         weather_render_.text(4,39,mode_==8?"VHF MARINE  NFM  RX ONLY":"NOAA WEATHER RADIO  NFM",CompactRenderer::cyan);
-        weather_render_.text(4,144,"Z/C CHANNEL   S/D VOLUME   M MUTE",CompactRenderer::cyan);
-        weather_render_.text(4,160,"SPACE DASHBOARDS   ESC BACK",CompactRenderer::cyan);
+        weather_render_.keys(4,144,{{"Z/C","CHANNEL"},{"S/D","VOLUME"},{"M","MUTE"}});
+        weather_render_.keys(4,160,{{"SPACE","DASH"},{"ESC","BACK"}});
         weather_drawn_=true;
       }
       weather_render_.rect(0,55,320,77,CompactRenderer::bg);
@@ -448,7 +450,7 @@ class DashboardSession {
         sstv_render_.fill(CompactRenderer::bg);
         sstv_render_.text(33,3,"OrcSDR SSTV",CompactRenderer::green,2);
 
-        sstv_render_.text(4,159,"Z/C TUNE   UP/DOWN GALLERY   SPACE DASH",CompactRenderer::cyan);
+        sstv_render_.keys(4,159,{{"Z/C","TUNE"},{"UP/DOWN","GALLERY"},{"SPACE","DASH"}});
         sstv_drawn_=true;
       }
       if(sstv_rendered_!=sstv_revision_){
@@ -477,8 +479,8 @@ class DashboardSession {
         pager_render_.fill(CompactRenderer::bg);
         pager_render_.badge(1,1,28);pager_render_.text(33,4,"OrcSDR POCSAG",CompactRenderer::green,2);
 
-        pager_render_.text(4,145,"Z/C TUNE 12.5K  T BAND  UP/DOWN LOG",CompactRenderer::cyan);
-        pager_render_.text(4,160,"SPACE DASHBOARDS   ESC BACK",CompactRenderer::cyan);
+        pager_render_.keys(4,145,{{"Z/C","TUNE 12.5K"},{"T","BAND"},{"UP/DOWN","LOG"}});
+        pager_render_.keys(4,160,{{"SPACE","DASH"},{"ESC","BACK"}});
         pager_drawn_=true;
       }
       if(revision!=pager_rendered_){
@@ -507,7 +509,7 @@ class DashboardSession {
           lab_render_.badge(1,1,28);lab_render_.text(33,4,"OrcSDR RF LAB",CompactRenderer::green,2);
 
           lab_render_.text(4,149,"RELATIVE TO ADC FULL SCALE",CompactRenderer::muted);
-          lab_render_.text(4,161,"Z/C TUNE 100K  SPACE DASH  ESC BACK",CompactRenderer::cyan);
+          lab_render_.keys(4,161,{{"Z/C","TUNE 100K"},{"SPACE","DASH"},{"ESC","BACK"}});
           lab_drawn_=true;
         }
         lab_render_.rect(0,40,320,99,CompactRenderer::bg);

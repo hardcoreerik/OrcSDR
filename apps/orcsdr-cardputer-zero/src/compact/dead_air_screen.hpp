@@ -46,7 +46,7 @@ class DeadAirScreen {
       frame_.fill(R::bg);
       frame_.badge(1,1,28);frame_.text(33,3,"OrcSDR DEAD AIR",R::green,2);
 
-      frame_.text(4,160,"ENTER MARK   SPACE DASHBOARDS",R::cyan);
+      frame_.keys(4,160,{{"ENTER","MARK"},{"SPACE","DASH"}});
       drawn_=true;
     }
     frame_.rect(0,35,320,119,R::bg);

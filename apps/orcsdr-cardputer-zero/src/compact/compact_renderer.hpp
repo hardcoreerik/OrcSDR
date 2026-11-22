@@ -8,8 +8,11 @@
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <cstring>
 #include <fstream>
+#include <initializer_list>
 #include <string>
+#include <utility>
 #include <vector>
 
 namespace orc::zero {
@@ -64,6 +67,27 @@ struct CompactRenderer {
     const int maxchars=limit<0?int(s.size()):std::min<int>(limit,s.size());
     for(int n=0;n<maxchars;++n){auto rows=glyph(char(std::toupper(static_cast<unsigned char>(s[n]))));for(int ry=0;ry<7;++ry)for(int rx=0;rx<5;++rx)if(rows[ry]&(1<<(4-rx)))rect(x+n*6*scale+rx*scale,y+ry*scale,scale,scale,color);}
   }
+  // Key hints for the footer: each key cap is drawn in `key_color`, its action
+  // in `action_color`, so "press this, it does that" is readable at a glance.
+  // Groups sit two character cells apart; returns the x just past the last one.
+  int keys(int x,int y,std::initializer_list<std::pair<const char*,const char*>> items,
+           int scale=1,uint16_t key_color=yellow,uint16_t action_color=muted){
+    const int cell=6*scale;
+    int cx=x;
+    bool first=true;
+    for(const auto& item:items){
+      if(!first)cx+=2*cell;
+      first=false;
+      text(cx,y,item.first,key_color,scale);
+      cx+=int(std::strlen(item.first))*cell;
+      if(item.second&&*item.second){
+        cx+=cell;
+        text(cx,y,item.second,action_color,scale);
+        cx+=int(std::strlen(item.second))*cell;
+      }
+    }
+    return cx;
+  }
   void badge(int x,int y,int size){
     const auto* icon=size==28?kOrcMascot28:size==11?kOrcMascot11:kOrcMascot21;
     const int side=size==28?28:size==11?11:21;
@@ -76,7 +100,7 @@ struct CompactRenderer {
     const bool layout_changed=!initialized||previous_page!=s.page;
     if(layout_changed){fill(bg);initialized=true;previous_page=s.page;
       rect(footer.x,footer.y,footer.w,footer.h,panel);
-      text(4,162,"SPACE DASH  F FREQ  S/D VOL  P COLOR  TAB MENU",cyan,1);
+      keys(4,162,{{"SPACE","DASH"},{"F","FREQ"},{"S/D","VOL"},{"P","COLOR"},{"TAB","MENU"}});
     }
     // Clear only the widgets being updated; framebuffer output skips identical pixels.
     rect(0,0,320,40,panel);
