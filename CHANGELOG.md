@@ -2,6 +2,11 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Map catalog holds up to 64 packs — 2026-11-12
+
+- **Maps:** signed catalogs can list up to 64 packs, including a 51-archive US catalog. The catalog size remains limited to 128 KiB and owned packs to 16.
+- **Verified:** signed host cases accept 51 and 64 packs and reject 65; hardware validation remains open.
+
 ## Unreleased — Map install recovery (stuck MAP ERROR) — 2026-11-12
 
 - **Bug:** an interrupted map download left a saved-install record in NVS. If the SD files were then deleted, boot recovery failed on every start, the Maps header showed MAP ERROR, and Check catalog and Download stayed blocked. Only a reflash or NVS erase cleared it.
