@@ -2,6 +2,12 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Map install recovery (stuck MAP ERROR) — 2026-11-12
+
+- **Bug:** an interrupted map download left a saved-install record in NVS. If the SD files were then deleted, boot recovery failed on every start, the Maps header showed MAP ERROR, and Check catalog and Download stayed blocked. Only a reflash or NVS erase cleared it.
+- **Fix:** missing files retain the saved install for recovery with the original SD card. Maps > Downloads offers RESET STUCK (and `RTL_MAP DOWNLOAD RESET`) to clear the saved intent without deleting map files. Insufficient SD space now suggests freeing space or using a larger card, and download status includes the message over serial.
+- **Verified:** host tests `map_transfer` (new missing-files case) and `map_download_actions`. Not yet flashed. The first-install failure that started this was not reproduced on COM39 (a clean install worked), so its cause is unknown.
+
 ## Unreleased — Host UI stub gains TFT_RED — 2026-11-22
 
 CI `host-rtl-tcp` failed on PR 261: `settings_app.cpp` (FORGET COMPUTER, armed) uses `TFT_RED`, which the host M5Unified stub (`apps/orcsdr-tab5/tests/maps/ui_stubs/M5Unified.h`) did not define. Added it; `tools/test-rtl-tcp.sh` passes. Test-only change, firmware unaffected.
