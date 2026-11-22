@@ -569,10 +569,17 @@ void draw_system_power() {
   value_row("USB / VBUS", value, 325, g_state.vbus_mv >= 0 ? kGreen : kMuted);
 }
 
+// FORGET COMPUTER: clears the serial pairing key, so a lost key file never needs a full flash erase. Touching the
+// screen twice is the proof that someone is at the device; any other tap disarms it.
+constexpr int kForgetX = 460, kForgetY = 100, kForgetW = 230, kForgetH = 46;
+static bool g_forget_computer_armed = false;
+
 void draw_system() {
   text("SYSTEM", 330, 115, kBlue, 3);
   button("SET CLOCK", 1000, 100, 218, 46, TFT_DARKCYAN);
   button("RUN SETUP",720,100,240,46,TFT_NAVY);
+  button(g_forget_computer_armed ? "TAP TO CONFIRM" : "FORGET COMPUTER", kForgetX, kForgetY, kForgetW, kForgetH,
+         !g_state.host_paired ? TFT_DARKGREY : g_forget_computer_armed ? TFT_RED : TFT_MAROON);
   char value[48];
   draw_system_power();
   const bool local_known = g_state.rtc_valid && g_state.rtc_local[0];
@@ -586,6 +593,10 @@ void draw_system() {
   value_row("UPTIME", value, 535);
   value_row("NETWORK", g_state.wifi_connected ? "CONNECTED" : "OFFLINE", 575);
   value_row("SD", g_state.sd_ready ? "READY" : "UNAVAILABLE", 615);
+  if (g_forget_computer_armed) {
+    text("Forget the paired computer's key? Any computer can then pair again.", 330, 660, TFT_ORANGE, 2);
+    return;
+  }
   text(g_state.rtc_valid ? "The hardware clock holds UTC; the time zone is only an offset."
                          : "Tap SET CLOCK, or USB: python tools/sync_tab5_rtc.py COMx",
        330, 660, g_state.rtc_valid ? TFT_LIGHTGREY : TFT_ORANGE, 2);
@@ -929,6 +940,7 @@ void enter(const State& state_value, Section section) {
   g_location_edit = false;
   g_remote_target = false;
   g_clock_edit = false;
+  g_forget_computer_armed = false;
   g_catalog_cursor.armed = -1;
   g_catalog_cursor.page = 0;
   g_active = true;
@@ -939,6 +951,7 @@ void enter(const State& state_value, Section section) {
 
 void leave() {
   accessory_forget_confirmation=false;
+  g_forget_computer_armed = false;
   g_active = false;
   g_edit = EditField::none;
   g_wifi_edit = WifiEdit::none;
@@ -1004,7 +1017,10 @@ void update(const State& state_value) {
                              (g_state.rtc_valid != state_value.rtc_valid ||
                               strcmp(g_state.rtc_utc, state_value.rtc_utc) != 0 ||
                               strcmp(g_state.rtc_local, state_value.rtc_local) != 0 ||
-                              g_state.utc_offset_minutes != state_value.utc_offset_minutes);
+                              g_state.utc_offset_minutes != state_value.utc_offset_minutes ||
+                              g_state.host_paired != state_value.host_paired);
+  // Paired or forgotten from elsewhere (serial PAIR) while armed: start over rather than confirm a stale question.
+  if (g_state.host_paired != state_value.host_paired) g_forget_computer_armed = false;
   const bool ntp_changed = g_state.ntp_state != state_value.ntp_state;
   if (ntp_changed) g_ntp_tapped = false;
   const bool rtc_flipped = g_state.rtc_valid != state_value.rtc_valid;
@@ -1137,7 +1153,21 @@ Action handle_touch(int32_t x, int32_t y) {
     const int index = g_rail_top + (y - kRailY) / kRailRowH;
     if ((y - kRailY) / kRailRowH < kRailVisible && index >= 0 && index < static_cast<int>(Section::count)) {
       g_section = static_cast<Section>(index);
+      g_forget_computer_armed = false;
       draw_rail();
+      draw_content();
+    }
+    return {};
+  }
+  if (g_section == Section::system && g_forget_computer_armed) {
+    g_forget_computer_armed = false;
+    if (hit(x, y, kForgetX, kForgetY, kForgetW, kForgetH)) return {ActionKind::forget_paired_computer, 0};
+    draw_content();   // any other tap cancels and is not passed on
+    return {};
+  }
+  if (g_section == Section::system && hit(x, y, kForgetX, kForgetY, kForgetW, kForgetH)) {
+    if (g_state.host_paired) {
+      g_forget_computer_armed = true;
       draw_content();
     }
     return {};

@@ -136,6 +136,18 @@ compliant nonce/proof pair from a plain script without replicating the
 HMAC-SHA256 handshake — treat the authenticated commands as requiring a
 proper pairing client, not something to hand-roll casually.
 
+**Lost key (`PAIR_LOCKED` for every key you have).** After `PAIR_LOCKED` the
+device prints a `PAIR_HINT` line saying where the key file lives and how to
+clear it. Read-only commands keep working without sign-in. To clear the stored
+key, open **Settings > System > FORGET COMPUTER** on the device and tap it
+again to confirm (two taps on the screen prove someone is at the device). The
+Tab5 prints `PAIR_FORGOTTEN`, ends any open session, and keeps every other
+setting; the next `PAIR` is a first pairing again. There is no serial command
+for this on purpose. As a last resort the Tab5 can always be reflashed over
+USB (this firmware does not enable secure boot or lock the ROM download mode);
+a full flash erase also clears the key, together with every other setting.
+`ROTATE_KEY` changes the key only from inside a signed-in session.
+
 ## Hardware clock
 
 The Tab5 hardware RTC (an RX8130CE; M5Unified addresses it at I2C 0x32 and it keeps a two-digit
@@ -274,9 +286,9 @@ and RadioText remains open.
 | Command | Auth | Reply |
 |---|---|---|
 | `RTL_RDS_STATUS` | no | see below |
-| `RTL_RDS_CAPTURE_START` | no | starts an 8-second, 240 kS/s MPX capture in PSRAM |
-| `RTL_RDS_CAPTURE_STOP` / `RTL_RDS_CAPTURE_SAVE` | no | stops and exports `.s16` plus `.json` metadata to SD |
-| `RTL_RDS_CAPTURE_STATUS` | no | capture progress, frequency, SD state, and last path |
+| `RTL_RDS_CAPTURE_START` | no | starts an 8-second, 240 kS/s MPX capture in PSRAM; `RTL_RDS_CAPTURE_ERROR saving` while the previous capture is still being written to SD |
+| `RTL_RDS_CAPTURE_STOP` / `RTL_RDS_CAPTURE_SAVE` | no | stops and exports `.s16` plus `.json` metadata to SD. Answers at once with `RTL_RDS_CAPTURE_STOP samples=<n> seconds=<s>`; the card is written in the background and `RTL_RDS_CAPTURE_SAVED ...` (or an error line and `RTL_RDS_CAPTURE_PSRAM_HOLD`) follows when it ends, about 2 s for a full capture. A repeat stop meanwhile answers `RTL_RDS_CAPTURE_STOP busy=saving` |
+| `RTL_RDS_CAPTURE_STATUS` | no | capture progress, frequency, SD state, and last path. The 3.84 MB buffer is given back on a memory reclaim once the capture is saved (holder `RDS capture`); the line then shows `ready=false samples=0` and keeps `last_path` |
 | `RTL_RDS_REPLAY <path.s16>` | no | resets and replays an MPX capture through the same RDS processor; live radio must be stopped |
 
 ```text
@@ -350,8 +362,8 @@ RTL_RDS_STATUS
 
 | Command | Auth | Reply |
 |---|---|---|
-| `RTL_REC_START` | no | (switches to Capture tool, starts recording) |
-| `RTL_REC_STOP` | no | (stops and exports WAV to SD) |
+| `RTL_REC_START` | no | (switches to Capture tool, starts recording); `RTL_REC_ERROR saving` while the previous recording is still being written to SD |
+| `RTL_REC_STOP` | no | (stops and exports WAV to SD). Answers at once with `RTL_REC_STOP samples=...`; the card is written in the background and `RTL_REC_WAV ok path=...` (or an error and `RTL_REC_PSRAM_HOLD`) follows when it ends, under 1 s for a full 12 s clip. A full buffer is saved the same way without a command. A repeat stop meanwhile answers `RTL_REC_STOP busy=saving` |
 | `RTL_REC_STATUS` | no | multi-line status (buffered seconds, sample count, last file path — see `audio_rec_status_print()`) |
 | `RTL_REC_SAVE` | no | re-exports the currently-held PCM buffer, useful after inserting an SD card mid-session |
 
@@ -361,7 +373,7 @@ written under `/orcsdr/rec_NNN_<BAND>_<HZ>.wav`.
 ## SD card file transfer
 
 Chunked binary protocol (`SD_LIST`, `SD_GET_BEGIN`/`_CHUNK`/`_ABORT`,
-`SD_PUT_BEGIN`/`_DATA`/`_ABORT`, `SD_REMOVE`) with SHA-256 verification and
+`SD_PUT_BEGIN`/`_CHUNK`/`_ABORT`, `SD_REMOVE`) with SHA-256 verification and
 staged-write rollback on failure. All paths must be under `/orcsdr/`.
 
 Use `tools/copy_to_tab5_sd.ps1` and `tools/copy_from_tab5_sd.ps1` rather than
@@ -414,7 +426,9 @@ Features that keep PSRAM after the user leaves them (the SSTV picture gallery an
 |---|---|---|---|
 | `RTL_MEM STATUS` | no | `RTL_MEM psram_free=<n> psram_largest=<n> internal_free=<n> internal_largest=<n>`, one `RTL_MEM_HOLDER <name> bytes=<n>` per registered holder (largest first), and `RTL_MEM_FT8 active=<0\|1> last_failure=none\|memory\|backend needed=<bytes> failures=<n>` | Read-only. `needed` is the allocation that could not be satisfied. |
 | `RTL_MEM STATUS` (more lines) | no | `RTL_MEM_DMA dma_free=<n> dma_largest=<n>` (internal RAM that DMA can use: Wi-Fi/C6 link, USB host, SD card, I2S; the firmware warns below 20,480 in `RTL_DRAM_BUDGET`) and, in builds with the OrcDial bridge, `RTL_MEM_ORCDIAL bridge=<0\|1> secure_stack_free_min=<bytes>` (the smallest part of the `orcdial_secure` task's 12,288-byte stack that has been unused; 0 while the bridge is not running) | Read-only. |
-| `RTL_MEM RECLAIM` | yes | `ORC_MEMORY_RECLAIM total=<n>` and one line per holder that gave something back, then `RTL_MEM_OK psram_free=<n> psram_largest=<n>` | Releases every registered holder, then lets the FT8 screen retry at once. Nothing is released from a screen that is open (SSTV keeps its pictures while its screen is showing). |
+| `RTL_MEM BUFFERS` | no | One `RTL_MEM_BUF <name> bytes=<n> place=none\|psram\|internal` line for each of `audio_rec`, `rds_capture`, `iq_capture`, `lora_decode` and `lora_pre_roll`, then `RTL_MEM_BUF_TOTAL allocated=<n> psram_bytes=<n> internal_bytes=<n>` and `RTL_MEM_MIN psram_min=<n> internal_min=<n> dma_min=<n>` | Read-only. `place=none` with `bytes=0` means the buffer is not allocated now. `RTL_MEM_MIN` is the lowest free memory since boot. Builds; not yet run on a device. |
+| `RTL_MEM RECLAIM` | yes | `ORC_MEMORY_RECLAIM total=<n>` and one line per holder that gave something back, then `RTL_MEM_OK psram_free=<n> psram_largest=<n>` | Releases every registered holder, then lets the FT8 screen retry at once. Nothing is released from a screen that is open (SSTV keeps its pictures while its screen is showing). Holders include `RDS capture` and `Audio recording`; neither gives up a capture or recording that is running or not yet saved to the SD card. |
+| `RTL_DISPLAY_BENCH [1-10]` | yes | `RTL_DISPLAY_BENCH_BEGIN ...`, then for each of `idle`, `m5gfx`, `tiled` and `ppa`: `RTL_DISPLAY_BENCH method=<m> frames=<n> avg_us=<n> max_us=<n>` and `RTL_DISPLAY_BENCH_DSP method=<m> <RTL_DSP STATS fields>`, `RTL_DISPLAY_BENCH_CHECK method=<m> ... mismatches=<n>`, then `RTL_DISPLAY_BENCH_END` | Measurement only: copies a Home-sized 904 x 184 picture onto the rotated framebuffer each way for the given seconds (default 2) into the hidden second framebuffer, nothing changes on screen. Holds the main loop for about 4 x seconds (touch and drawing pause; radio and audio keep running). Refuses with `RTL_DISPLAY_BENCH_ERROR busy=visualizer` while the RF visualizer page-flips. |
 | `RTL_MEM HOG <KiB>` | yes | `RTL_MEM_OK held=<n> psram_free=<n> psram_largest=<n>` | Bench aid: allocates PSRAM in 256 KiB blocks until about that many KiB remain, registered as the holder `Test allocation`. `RTL_MEM RECLAIM` or the FREE MEMORY button gives it back. |
 
 ### OrcDial bridge
