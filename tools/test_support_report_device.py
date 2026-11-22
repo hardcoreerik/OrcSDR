@@ -220,12 +220,30 @@ def run_device_check(
     if int(parsed2["uptime_ms"]) < int(parsed1["uptime_ms"]):
         raise ValueError(f"uptime_ms regressed: {parsed1['uptime_ms']} -> {parsed2['uptime_ms']}")
 
+    for field in (
+        "receiver_ready",
+        "installed",
+        "profile",
+        "state",
+        "capture",
+        "band",
+        "frequency_hz",
+        "target_sps",
+    ):
+        if parsed2[field] != parsed1[field]:
+            raise ValueError(
+                f"read-only query changed {field}: {parsed1[field]!r} -> {parsed2[field]!r}"
+            )
+
     was_streaming = parsed1["capture"] == "running" and parsed1["state"] == "STREAMING"
     if was_streaming:
         if parsed1["receiver_ready"] != 1 or parsed1["installed"] != 1:
             raise ValueError("streaming report must show receiver_ready=1 and installed=1")
-        if int(parsed1["effective_sps"]) <= 0:
-            raise ValueError(f"expected positive effective_sps while streaming, got {parsed1['effective_sps']}")
+        if int(parsed1["effective_sps"]) <= 0 or int(parsed2["effective_sps"]) <= 0:
+            raise ValueError(
+                f"expected positive effective_sps across streaming reports, "
+                f"got {parsed1['effective_sps']} -> {parsed2['effective_sps']}"
+            )
         if int(parsed2["bytes"]) <= int(parsed1["bytes"]):
             raise ValueError(
                 f"expected bytes counter to advance while streaming ({parsed1['bytes']} -> {parsed2['bytes']})"
@@ -238,11 +256,12 @@ def run_device_check(
         orig_band = str(parsed1["band"])
         orig_freq = int(parsed1["frequency_hz"])
         authenticate(port, pairing_key, timeout)
-        send_command(port, "RTL_STOP")
-        stop_reply = wait_for_prefixes(port, ("RTL_STOPPING", "RTL_STOP_RESULT"), timeout)
-        if not (stop_reply == "RTL_STOPPING" or stop_reply.startswith("RTL_STOP_RESULT")):
-            raise RuntimeError(f"unexpected RTL_STOP reply: {stop_reply}")
+        body_exc = False
         try:
+            send_command(port, "RTL_STOP")
+            stop_reply = wait_for_prefixes(port, ("RTL_STOPPING", "RTL_STOP_RESULT"), timeout)
+            if not (stop_reply == "RTL_STOPPING" or stop_reply.startswith("RTL_STOP_RESULT")):
+                raise RuntimeError(f"unexpected RTL_STOP reply: {stop_reply}")
             stop_deadline = time.monotonic() + max(timeout, 6.0)
             while time.monotonic() < stop_deadline:
                 s_lines, s_parsed = query_report(port, timeout)
@@ -254,24 +273,39 @@ def run_device_check(
                 raise TimeoutError("receiver did not leave STREAMING/running after RTL_STOP")
             if stopped_report[1]["receiver_ready"] != 1:
                 raise ValueError("stopped report lost receiver_ready=1")
+        except BaseException:
+            body_exc = True
+            raise
         finally:
-            send_command(port, f"RTL_TUNE {orig_band} {orig_freq}")
-            tune_reply = wait_for_prefixes(port, ("RTL_TUNE_OK", "RTL_TUNE_INVALID", "RTL_TUNE_UNAVAILABLE"), timeout)
-            if not tune_reply.startswith("RTL_TUNE_OK"):
-                raise RuntimeError(f"failed to restore receiver tuning ({orig_band} {orig_freq}): {tune_reply}")
-            restore_deadline = time.monotonic() + max(timeout, 10.0)
-            while time.monotonic() < restore_deadline:
-                r_lines, r_parsed = query_report(port, timeout)
-                if (
-                    r_parsed["capture"] == "running"
-                    and r_parsed["state"] == "STREAMING"
-                    and int(r_parsed["effective_sps"]) > 0
-                ):
-                    restored_report = (r_lines, r_parsed)
-                    break
-                time.sleep(0.35)
-            if restored_report is None:
-                raise TimeoutError("receiver did not return to STREAMING/running after RTL_TUNE")
+            try:
+                send_command(port, f"RTL_TUNE {orig_band} {orig_freq}")
+                tune_reply = wait_for_prefixes(
+                    port, ("RTL_TUNE_OK", "RTL_TUNE_INVALID", "RTL_TUNE_UNAVAILABLE"), timeout
+                )
+                if not tune_reply.startswith("RTL_TUNE_OK"):
+                    raise RuntimeError(f"failed to restore receiver tuning ({orig_band} {orig_freq}): {tune_reply}")
+                restore_deadline = time.monotonic() + max(timeout, 10.0)
+                while time.monotonic() < restore_deadline:
+                    r_lines, r_parsed = query_report(port, timeout)
+                    if (
+                        r_parsed["capture"] == "running"
+                        and r_parsed["state"] == "STREAMING"
+                        and int(r_parsed["effective_sps"]) > 0
+                        and str(r_parsed["band"]) == orig_band
+                        and int(r_parsed["frequency_hz"]) == orig_freq
+                    ):
+                        restored_report = (r_lines, r_parsed)
+                        break
+                    time.sleep(0.35)
+                if restored_report is None:
+                    raise TimeoutError(
+                        "receiver did not return to STREAMING/running at original tuning after RTL_TUNE"
+                    )
+            except Exception as restore_exc:
+                if body_exc:
+                    print(f"WARN: receiver restoration also failed: {restore_exc}", file=sys.stderr)
+                else:
+                    raise
 
     return {
         "help_lines": len(help_lines),
@@ -319,6 +353,8 @@ def self_check() -> None:
         *,
         state: str = "STREAMING",
         capture: str = "running",
+        band: str = "SHORTWAVE",
+        frequency_hz: int = 7100000,
         effective_sps: int = 2399788,
         total_bytes: int = 1024,
         uptime_ms: int = 10000,
@@ -331,7 +367,7 @@ def self_check() -> None:
             'ORC_SUPPORT_BUILD firmware="v0.6.0" build="test" driver="0.9.6"\n',
             f'ORC_SUPPORT_USB receiver_ready=1 vid=0bda pid=2838 speed="high"{extra}\n',
             f'ORC_SUPPORT_RECEIVER installed=1 profile="blog_v4l_r828s" state="{state}" last_error="ESP_OK"\n',
-            f'ORC_SUPPORT_RADIO capture="{capture}" band="SHORTWAVE" frequency_hz=7100000\n',
+            f'ORC_SUPPORT_RADIO capture="{capture}" band="{band}" frequency_hz={frequency_hz}\n',
             f"ORC_SUPPORT_STREAM metrics_ok=1 target_sps=2400000 effective_sps={effective_sps} "
             f"bytes={total_bytes} short_transfers=0 overruns=0 consumer_drops=0\n",
             f"ORC_SUPPORT_SYSTEM uptime_ms={uptime_ms} reset_reason=11 heap_free=21468564 "
@@ -375,6 +411,89 @@ def self_check() -> None:
         res = run_device_check(FakePort(full_handler), timeout=0.5, pairing_key=key_file, dwell=0.0)
         assert res["stopped"] is not None and res["stopped"][1]["capture"] == "ready"
         assert res["restored"] is not None and res["restored"][1]["state"] == "STREAMING"
+
+        # Frequency or state drift between two unauthenticated queries must fail.
+        drift_calls = {"n": 0}
+
+        def drift_handler(cmd: str) -> list[bytes]:
+            if cmd == "RTL_HELP":
+                return [b"RTL_HELP_BEGIN\n", f"{HELP_LINE}\n".encode("ascii"), b"RTL_HELP_END\n"]
+            if cmd == "RTL_SUPPORT REPORT":
+                drift_calls["n"] += 1
+                freq = 7100000 if drift_calls["n"] == 1 else 7200000
+                return make_report(frequency_hz=freq, total_bytes=1024 * drift_calls["n"], uptime_ms=10000 + drift_calls["n"])
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        try:
+            run_device_check(FakePort(drift_handler), timeout=0.3, dwell=0.0)
+        except ValueError:
+            pass
+        else:
+            raise AssertionError("frequency drift across repeated reports must fail")
+
+        # Lost RTL_STOP reply must still invoke RTL_TUNE restoration in finally.
+        lost_stop_sent: list[str] = []
+
+        def lost_stop_handler(cmd: str) -> list[bytes]:
+            lost_stop_sent.append(cmd)
+            if cmd == "RTL_HELP":
+                return [b"RTL_HELP_BEGIN\n", f"{HELP_LINE}\n".encode("ascii"), b"RTL_HELP_END\n"]
+            if cmd.startswith("PAIR "):
+                return [b"PAIR_OK\n"]
+            if cmd.startswith("AUTH "):
+                nonce = bytes.fromhex(cmd.split()[1])
+                dev = hmac.new(key, b"device" + nonce, hashlib.sha256).hexdigest()
+                return [f"AUTH_OK {dev}\n".encode("ascii")]
+            if cmd == "RTL_STOP":
+                return []  # simulate lost reply -> TimeoutError before stop loop
+            if cmd == "RTL_TUNE SHORTWAVE 7100000":
+                return [b"RTL_TUNE_OK band=SHORTWAVE frequency_hz=7100000\n"]
+            if cmd == "RTL_SUPPORT REPORT":
+                return make_report(total_bytes=1024 * len(lost_stop_sent), uptime_ms=10000 + len(lost_stop_sent))
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        try:
+            run_device_check(FakePort(lost_stop_handler), timeout=0.05, pairing_key=key_file, dwell=0.0)
+        except TimeoutError:
+            pass
+        else:
+            raise AssertionError("missing RTL_STOP reply must raise TimeoutError")
+        assert "RTL_TUNE SHORTWAVE 7100000" in lost_stop_sent, "RTL_TUNE restore must run even when RTL_STOP ack is lost"
+
+        # Restoration to wrong frequency must fail rather than pass.
+        wrong_restore_mode = {"stopped": False, "reports": 0}
+
+        def wrong_restore_handler(cmd: str) -> list[bytes]:
+            if cmd == "RTL_HELP":
+                return [b"RTL_HELP_BEGIN\n", f"{HELP_LINE}\n".encode("ascii"), b"RTL_HELP_END\n"]
+            if cmd.startswith("PAIR "):
+                return [b"PAIR_OK\n"]
+            if cmd.startswith("AUTH "):
+                nonce = bytes.fromhex(cmd.split()[1])
+                dev = hmac.new(key, b"device" + nonce, hashlib.sha256).hexdigest()
+                return [f"AUTH_OK {dev}\n".encode("ascii")]
+            if cmd == "RTL_STOP":
+                wrong_restore_mode["stopped"] = True
+                return [b"RTL_STOPPING\n"]
+            if cmd == "RTL_TUNE SHORTWAVE 7100000":
+                wrong_restore_mode["stopped"] = False
+                return [b"RTL_TUNE_OK band=SHORTWAVE frequency_hz=7100000\n"]
+            if cmd == "RTL_SUPPORT REPORT":
+                wrong_restore_mode["reports"] += 1
+                if wrong_restore_mode["stopped"]:
+                    return make_report(state="READY", capture="ready", effective_sps=0, total_bytes=4096,
+                                       uptime_ms=10000 + wrong_restore_mode["reports"])
+                freq = 7100000 if wrong_restore_mode["reports"] <= 2 else 99100000
+                return make_report(frequency_hz=freq, total_bytes=1024 * wrong_restore_mode["reports"],
+                                   uptime_ms=10000 + wrong_restore_mode["reports"])
+            raise AssertionError(f"unexpected command: {cmd}")
+
+        try:
+            run_device_check(FakePort(wrong_restore_handler), timeout=0.05, pairing_key=key_file, dwell=0.0)
+        except TimeoutError:
+            pass
+        else:
+            raise AssertionError("restored report on wrong frequency must fail")
 
     # Missing RTL_SUPPORT REPORT in RTL_HELP must fail.
     try:

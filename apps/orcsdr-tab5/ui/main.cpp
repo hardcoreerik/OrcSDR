@@ -19590,7 +19590,7 @@ static __attribute__((noinline)) orcsdr::support_report::Snapshot collect_rtl_su
     esp_rtl_sdr_metrics_t metrics{};
     s.metrics_ok = esp_rtl_sdr_get_metrics(g_rtl, &metrics) == ESP_OK;
     if (s.metrics_ok) {
-      if (metrics.sample_rate_sps != 0) s.target_sps = metrics.sample_rate_sps;
+      if (metrics.sample_rate_sps != 0 && !rtl_remote_tuning_selected()) s.target_sps = metrics.sample_rate_sps;
       s.effective_sps = metrics.effective_sps;
       s.bytes_total = metrics.bytes_total;
       s.short_transfers = metrics.short_transfers;
