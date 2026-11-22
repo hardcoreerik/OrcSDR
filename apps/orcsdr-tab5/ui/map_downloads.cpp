@@ -254,7 +254,13 @@ bool service(storage::FileSystem* fs) {
       if(reset.error==install::Error::none) {
         invalidate_catalog();
         finish(Phase::idle,false,"Saved install cleared. Check the catalog to download again.");
-      } else finish(Phase::failed,true,"Reset blocked. Insert original SD card and retry recovery.");
+      } else {
+        delivery::State durable;const auto loaded=delivery::load(store,&durable);
+        const bool pending=loaded!=delivery::Error::none||!durable.pending.product.empty();
+        if(!pending)invalidate_catalog();
+        finish(Phase::failed,pending,pending?"Reset blocked. Insert original SD card and retry recovery.":
+            "Saved install cleared. Check the catalog to download again.");
+      }
       return true;
     }
     const bool pending=!state.pending.product.empty();
