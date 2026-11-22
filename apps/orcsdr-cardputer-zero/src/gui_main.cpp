@@ -165,6 +165,7 @@ bool translate_sdl(SDL_Keycode code,Key& key,char& digit){
   case SDLK_UP:key=Key::up;break;case SDLK_DOWN:key=Key::down;break;
   case SDLK_RETURN:key=Key::enter;break;
   case SDLK_ESCAPE:key=Key::escape;break;
+  case SDLK_HOME:key=Key::home;break;
   case SDLK_BACKSPACE:key=Key::backspace;break;
   case SDLK_PERIOD:key=Key::point;break;
   case SDLK_TAB:key=Key::menu;break;
@@ -224,7 +225,7 @@ Key translate_evdev(unsigned code,char& digit){
  switch(code){
   case KEY_LEFT:case KEY_Z:return Key::left;case KEY_RIGHT:case KEY_C:return Key::right;
   case KEY_UP:return Key::up;case KEY_DOWN:return Key::down;
-  case KEY_ENTER:return Key::enter;case KEY_ESC:return Key::escape;
+  case KEY_ENTER:return Key::enter;case KEY_ESC:return Key::escape;case KEY_HOME:return Key::home;
   case KEY_BACKSPACE:return Key::backspace;case KEY_DOT:return Key::point;
   case KEY_TAB:return Key::menu;case KEY_F:return Key::frequency;
   case KEY_SPACE:return Key::dashboards;case KEY_P:return Key::palette;case KEY_M:return Key::mute;case KEY_S:case KEY_MINUS:return Key::volume_down;
@@ -278,6 +279,16 @@ int run_fb(const Options& a,ControlModel& model,FmSession* session){
    model.s.page=orc::zero::Page::receive;
  };
  auto input=[&](Key key,char digit=0){
+   if(key==Key::home){
+     // Global shortcut: leave any dashboard and return to the receive page.
+     // Only restart the FM session when a dashboard actually owned the radio,
+     // so pressing HOME on the receive page does not disturb a running receiver.
+     if(dashboards->mode()){
+       dashboards->stop();
+       if(session){session->start(a.device,model.s.requested_hz,a.audio,a.null_audio);session->set_volume(unsigned(model.s.volume));session->set_mute(model.s.muted);}
+     }
+     model.s.page=orc::zero::Page::receive;return;
+   }
    if(model.s.page==orc::zero::Page::dashboards){
      auto& selection=model.s.dashboard_selection;
      if(key==Key::up)selection=(selection+18)%19;
@@ -323,6 +334,7 @@ int run_fb(const Options& a,ControlModel& model,FmSession* session){
      const unsigned c=event.code;
      if(c!=KEY_LEFT&&c!=KEY_Z&&c!=KEY_RIGHT&&c!=KEY_C&&c!=KEY_UP&&c!=KEY_DOWN&&
       c!=KEY_ENTER&&c!=KEY_ESC&&c!=KEY_BACKSPACE&&c!=KEY_DOT&&c!=KEY_TAB&&c!=KEY_F&&
+      c!=KEY_HOME&&
       c!=KEY_SPACE&&c!=KEY_P&&c!=KEY_M&&c!=KEY_S&&c!=KEY_MINUS&&c!=KEY_D&&c!=KEY_EQUAL&&c!=KEY_G&&c!=KEY_T&&
       c!=KEY_B&&c!=KEY_R&&c!=KEY_H&&c!=KEY_Q&&!(c>=KEY_1&&c<=KEY_9)&&c!=KEY_0)continue;
      key=translate_evdev(c,digit);input(key,digit);

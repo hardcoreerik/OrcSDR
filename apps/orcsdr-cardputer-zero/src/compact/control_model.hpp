@@ -12,7 +12,7 @@ constexpr uint32_t kDefaultSpanHz=2560000;
 constexpr uint32_t kFmMinHz=87500000, kFmMaxHz=108000000;
 constexpr std::array<uint32_t,5> kSteps{{10000,50000,100000,200000,1000000}};
 enum class Page { receive, dashboards, settings, entry, menu, gain, audio, receiver, help, error };
-enum class Key { bias_tee, dashboards, left, right, up, down, enter, escape, backspace, menu, frequency, mute, palette, volume_up, volume_down, gain, step, reconnect, digit, point, help, quit };
+enum class Key { bias_tee, dashboards, left, right, up, down, enter, escape, home, backspace, menu, frequency, mute, palette, volume_up, volume_down, gain, step, reconnect, digit, point, help, quit };
 enum class Connection { disconnected, connecting, ready, error };
 struct Snapshot {
   uint32_t requested_hz=96100000,applied_hz=0,requested_rate=2560000,applied_rate=0;
