@@ -13,7 +13,7 @@ class Ft8Visuals {
     ready_=orcsdr::ftx::spectral_fft::make_plan(&plan_,n);
     for(size_t j=0;j<n;++j)window_[j]=float(.5-.5*std::cos(6.283185307179586*j/(n-1)));
   }
-  void clear(){used_=averages_=rows_=0;history_={};++revision_;}
+  void clear(){used_=averages_=rows_=0;history_={};floor_ready_=false;++revision_;}
   void consume(const int16_t* pcm,size_t count,bool reset){
     if(reset){used_=averages_=0;}
     if(!ready_||!pcm)return;
@@ -27,14 +27,33 @@ class Ft8Visuals {
       used_=0;
       if(++averages_<2)continue;
       averages_=0;
-      auto sorted=sum_;std::nth_element(sorted.begin(),sorted.begin()+bins/5,sorted.end());
-      const float floor=10*std::log10(std::max(1e-12f,sorted[bins/5]/2147483648.f));
+      // One row is the mean of the two spectra (320 ms of audio), not their sum,
+      // so the dB values below are independent of the averaging depth.
+      for(size_t j=0;j<bins;++j)sum_[j]*=0.5f;
+      // Noise floor from the lower fifth of the band, ignoring the audio filter
+      // roll-off near DC. A per-row floor made whole rows jump in brightness as
+      // the percentile moved; an EMA keeps the display steady, which is what
+      // makes weak traces readable.
+      std::copy(sum_.begin()+kFloorFrom,sum_.end(),sorted_.begin());
+      const size_t span=bins-kFloorFrom;
+      std::nth_element(sorted_.begin(),sorted_.begin()+span/5,sorted_.begin()+span);
+      const float floor_now=10*std::log10(std::max(1e-12f,sorted_[span/5]/2147483648.f));
+      if(!floor_ready_){floor_db_=floor_now;floor_ready_=true;}
+      else floor_db_=floor_db_*0.75f+floor_now*0.25f;
       auto& row=history_[rows_%height];
       for(size_t x=0;x<width;++x){
         const size_t lo=x*(bins-1)/width,hi=std::min(bins-1,(x+1)*(bins-1)/width);
+        // Peak within the pixel rather than the mean: one FT8 tone is 6.25 Hz and
+        // a pixel is 9.4 Hz, so averaging would dilute a real tone with its
+        // neighbours.
         float peak=0;for(size_t b=lo;b<=hi;++b)peak=std::max(peak,sum_[b]);
         const float db=10*std::log10(std::max(1e-12f,peak/2147483648.f));
-        row[x]=uint8_t(std::clamp((db-floor+6)*255/48,0.f,255.f));
+        // 38 dB above the floor fills the palette. The previous 48 dB spent most
+        // of the ramp on levels this receiver never produces, which is why traces
+        // never left the dark end; a gentle gamma lifts the weak half without
+        // flattening the strong signals.
+        const float level=std::clamp((db-floor_db_+6.f)/38.f,0.f,1.f);
+        row[x]=uint8_t(std::lround(std::pow(level,0.85f)*255.f));
       }
       ++rows_;++revision_;
     }
@@ -51,13 +70,17 @@ class Ft8Visuals {
   size_t rows()const{return rows_;}
   const auto& newest()const{return history_[(rows_?rows_-1:0)%height];}
  private:
+  // Lowest bin used to estimate the noise floor: 24 x 6.25 Hz = 150 Hz, above
+  // the audio filter roll-off that would otherwise drag the estimate down.
+  static constexpr size_t kFloorFrom=24;
   orcsdr::ftx::spectral_fft::Plan plan_;
   orcsdr::ftx::spectral_fft::Scratch scratch_;
   std::array<float,n> window_{};
   std::array<int16_t,n> samples_{},weighted_{};
-  std::array<float,bins> power_{},sum_{};
+  std::array<float,bins> power_{},sum_{},sorted_{};
   std::array<std::array<uint8_t,width>,height> history_{};
   size_t used_=0,averages_=0,rows_=0;uint64_t revision_=0;bool ready_=false;
+  float floor_db_=0;bool floor_ready_=false;
 };
 class Ft8WorldMap {
  public:
