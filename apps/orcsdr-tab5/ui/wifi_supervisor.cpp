@@ -36,9 +36,9 @@ bool service(State& state, const Vars& vars, const Hooks& hooks) {
     ++*vars.scan_revision;
     hooks.draw_state();
   }
-  // Budget spent and the link still down (lost, or a recovery that did not bring the station back): schedule one slow
-  // retry instead of waiting for a reboot. The recovery it runs counts as one attempt (the counter is set one short of the
-  // maximum), so if it fails this schedules the next, longer pause.
+  // Budget spent and the link still down (lost, or a recovery that did not bring the station back): schedule one more
+  // recovery kRetryEveryMs later instead of waiting for a reboot. It counts as one attempt (the counter is set one short of
+  // the maximum, which the caller sets to kWifiLinkRecoveryMax, never 0), so if it fails this schedules the next, same pause.
   if (*vars.link_recoveries >= vars.link_recovery_max && *vars.link_recovery_due_ms == 0 &&
       (hooks.link_failed() || !*vars.station_ready)) {
     const uint32_t delay = slow_retry_delay_ms(state.slow_retries);
