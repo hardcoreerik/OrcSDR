@@ -4,8 +4,14 @@ This is the **project-level release and current-source index**. It links the aut
 
 ## Unreleased — Map catalog holds up to 64 packs — 2026-11-12
 
-- **Maps:** the signed catalog may now list up to 64 packs (was 32), so a 50-state catalog (51 archives, Alaska is two) is accepted. One shared constant, `catalog::kMaximumPacks`, drives the schema check and the Downloads list; the JSON node limit is 8192 and the delimiter limit 16384 (was 4096/8192) to leave room for larger manifests. The 128 KiB catalog size limit is unchanged (about 1.5 KB per pack, so 64 packs is roughly 95 KB). Owned packs stay capped at 16.
-- **Verified:** signed host cases `catalog-51-packs`, `catalog-64-packs` (accepted) and `catalog-65-packs` (rejected as schema); 48 catalog cases pass. Not flashed. The Downloads list still scrolls one row at a time, which is slow for 51 rows; a faster state picker is a follow-up.
+- **Maps:** signed catalogs can list up to 64 packs, including a 51-archive US catalog. The catalog size remains limited to 128 KiB and owned packs to 16.
+- **Verified:** signed host cases accept 51 and 64 packs and reject 65; hardware validation remains open.
+
+## Unreleased — Map install recovery (stuck MAP ERROR) — 2026-11-12
+
+- **Bug:** an interrupted map download left a saved-install record in NVS. If the SD files were then deleted, boot recovery failed on every start, the Maps header showed MAP ERROR, and Check catalog and Download stayed blocked. Only a reflash or NVS erase cleared it.
+- **Fix:** missing files retain the saved install for recovery with the original SD card. Maps > Downloads offers RESET STUCK (and `RTL_MAP DOWNLOAD RESET`) to clear the saved intent without deleting map files. Insufficient SD space now suggests freeing space or using a larger card, and download status includes the message over serial.
+- **Verified:** host tests `map_transfer` (new missing-files case) and `map_download_actions`. Not yet flashed. The first-install failure that started this was not reproduced on COM39 (a clean install worked), so its cause is unknown.
 
 ## Unreleased — Host UI stub gains TFT_RED — 2026-11-22
 
