@@ -278,6 +278,20 @@ if(BUILD_TESTING)
   add_test(NAME zero_lora_native_linux COMMAND orc_zero_lora_test)
 endif()
 
+# Meshtastic application layer: the 16-byte MeshPacket header, AES-128-CTR with
+# the channel key, and the Data protobuf (portnum + payload). The LoRa PHY -
+# symbols, whitening, CRC - stays where it is, in the shared native decoder.
+add_library(orc_zero_meshtastic STATIC src/mesh/meshtastic_packet.cpp)
+target_include_directories(orc_zero_meshtastic PUBLIC src "${ORC_MBEDTLS_INCLUDE_DIR}")
+target_link_libraries(orc_zero_meshtastic PUBLIC "${ORC_MBEDCRYPTO_LIBRARY}" Threads::Threads)
+
+if(BUILD_TESTING)
+  add_executable(orc_zero_meshtastic_test tests/meshtastic_decode_test.cpp)
+  target_link_libraries(orc_zero_meshtastic_test PRIVATE orc_zero_meshtastic)
+  target_compile_options(orc_zero_meshtastic_test PRIVATE -UNDEBUG)
+  add_test(NAME zero_meshtastic_decode COMMAND orc_zero_meshtastic_test)
+endif()
+
 install(FILES src/lora_linux/LICENSE src/lora_linux/PROVENANCE.md DESTINATION share/doc/orcsdr-cardputer-zero/esp-dsp)
 
 install(PROGRAMS tools/orcsdr-clock DESTINATION libexec)
