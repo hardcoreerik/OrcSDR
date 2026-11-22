@@ -2,6 +2,10 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Host UI stub gains TFT_RED — 2026-11-22
+
+CI `host-rtl-tcp` failed on PR 261: `settings_app.cpp` (FORGET COMPUTER, armed) uses `TFT_RED`, which the host M5Unified stub (`apps/orcsdr-tab5/tests/maps/ui_stubs/M5Unified.h`) did not define. Added it; `tools/test-rtl-tcp.sh` passes. Test-only change, firmware unaffected.
+
 ## Unreleased — Wi-Fi antenna choice is saved again — 2026-11-22
 
 Settings > Connectivity > antenna (internal / external MMCX) was stored under `set_wifi_ext_ant`, 16 characters; NVS keys are 15 at most, so every save failed and every boot fell back to the internal antenna. The key is now `set_wifi_extant` (save and both reads). Nothing was ever stored under the old key, so there is nothing to migrate; a unit that wants the external antenna needs it chosen once more. A search of `apps/orcsdr-tab5` found no other Preferences key over 15 characters. Built with the refactor PR; not checked on a device.
