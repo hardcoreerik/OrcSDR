@@ -1603,6 +1603,8 @@ static bool rtl_session_continuous = true;
 static uint32_t rtl_session_started_ms = 0;
 static std::atomic<uint32_t> rtl_session_frequency_hz{kRtlFmDefaultHz};
 static std::atomic<uint32_t> rtl_rate_override_sps{0};
+static std::atomic<bool> rtl_pending_restore_tuner_bw{false};
+static std::atomic<uint32_t> rtl_pending_restore_tuner_bw_hz{0};
 // Hardware correction is selected by driver capability. The delivered IQ
 // already has its requested center; no additional software mixer is added.
 static std::atomic<bool> rtl_offset_tuning_enabled{true};
@@ -6496,6 +6498,7 @@ void service_rf_lab() {
                                touch.isPressed() || touch.wasPressed(), now);
   orcsdr::rf_lab::service_ui(now);
   orcsdr::rf_lab::Action action{};
+  bool rate_restart_queued = false;
   while (orcsdr::rf_lab::take_action(&action)) {
     esp_err_t result = ESP_OK;
     using Kind = orcsdr::rf_lab::ActionKind;
@@ -6516,11 +6519,14 @@ void service_rf_lab() {
       const uint32_t rate = static_cast<uint32_t>(action.value);
       if (!esp_rtl_sdr_is_rate_supported(rate)) result = ESP_ERR_INVALID_ARG;
       else {
+        rtl_pending_restore_tuner_bw.store(false, std::memory_order_release);
         rtl_rate_override_sps.store(rate, std::memory_order_release);
         uint32_t current_rate = 0;
         if (esp_rtl_sdr_get_sample_rate(g_rtl, &current_rate) != ESP_OK ||
-            current_rate != rate)
+            current_rate != rate) {
           queue_local_rtl_listen(rtl_ui_band, rtl_ui_frequency_hz, false);
+          rate_restart_queued = true;
+        }
       }
     } else if (action.kind == Kind::ppm) {
       result = esp_rtl_sdr_set_freq_correction(g_rtl, action.value);
@@ -6551,9 +6557,25 @@ void service_rf_lab() {
     } else if (action.kind == Kind::tuner_bandwidth_hz) {
       // Asynchronous in the driver: ESP_OK means queued. RF Lab displays the
       // requested/applied shadow, never this result, as the hardware state.
-      result = rtl_has_device_capability(ESP_RTL_SDR_CAP_TUNER_BANDWIDTH)
-                   ? esp_rtl_sdr_set_tuner_bandwidth(g_rtl, static_cast<uint32_t>(action.value))
-                   : ESP_RTL_SDR_ERR_UNSUPPORTED;
+      if (!rtl_has_device_capability(ESP_RTL_SDR_CAP_TUNER_BANDWIDTH)) {
+        result = ESP_RTL_SDR_ERR_UNSUPPORTED;
+      } else {
+        const bool restarting_to_2400k =
+            (rate_restart_queued ||
+             rtl_restart_requested.load(std::memory_order_acquire) ||
+             rtl_capture_requested.load(std::memory_order_acquire) ||
+             rtl_capture_state.load(std::memory_order_acquire) != RtlCaptureState::running ||
+             rtl_active_sample_rate_sps.load(std::memory_order_acquire) != 2400000u) &&
+            rtl_rate_override_sps.load(std::memory_order_acquire) == 2400000u;
+        if (restarting_to_2400k) {
+          rtl_pending_restore_tuner_bw_hz.store(static_cast<uint32_t>(action.value),
+                                                std::memory_order_release);
+          rtl_pending_restore_tuner_bw.store(true, std::memory_order_release);
+          result = ESP_OK;
+        } else {
+          result = esp_rtl_sdr_set_tuner_bandwidth(g_rtl, static_cast<uint32_t>(action.value));
+        }
+      }
     }
     Serial.printf("RTL_LAB_ACTION kind=%u value=%ld accepted=%d result=%s\n",
                   static_cast<unsigned>(action.kind), static_cast<long>(action.value),
@@ -8557,6 +8579,7 @@ __attribute__((noinline)) static void rtl_session_restart_if_requested() {
 
 // Step 3c: a stream did not start: roll the session state back, honour a newer request, report why.
 __attribute__((noinline)) static void rtl_session_start_failed(bool remote, esp_err_t err) {
+  rtl_pending_restore_tuner_bw.store(false, std::memory_order_release);
   rtl_active_sample_rate_sps.store(0, std::memory_order_release);
   rtl_capture_state.store(RtlCaptureState::failed, std::memory_order_release);
   // A band change made while this stream was still connecting cancelled the wait (restart + stop were set by
@@ -8717,6 +8740,15 @@ __attribute__((noinline)) static esp_err_t rtl_session_start(RtlBand band, uint3
     err = esp_rtl_sdr_start(g_rtl, &st);
     Serial.printf("RTL_START_RETRY %s rate=%u frequency_hz=%u\n",
                   esp_rtl_sdr_err_to_name(err), st.sample_rate_sps, frequency_hz);
+  }
+  if (err == ESP_OK &&
+      rtl_pending_restore_tuner_bw.exchange(false, std::memory_order_acq_rel) &&
+      !remote && g_rtl != nullptr && st.sample_rate_sps == 2400000u &&
+      rtl_has_device_capability(ESP_RTL_SDR_CAP_TUNER_BANDWIDTH)) {
+    const uint32_t bw_hz = rtl_pending_restore_tuner_bw_hz.load(std::memory_order_acquire);
+    const esp_err_t bw_err = esp_rtl_sdr_set_tuner_bandwidth(g_rtl, bw_hz);
+    Serial.printf("RTL_LAB_RESTORE_BW hz=%lu result=%s\n",
+                  static_cast<unsigned long>(bw_hz), esp_rtl_sdr_err_to_name(bw_err));
   }
   if (err == ESP_OK && band == RtlBand::fm) {
     Serial.printf("RTL_WBFM_DSP rate=%u filter_hz=%u iq_lpf_k=%.2f audio_lpf_k=%.2f "
