@@ -48,6 +48,7 @@ constexpr NamedTarget kTargets[] = {
     {"MARINE", Target::marine},
     {"SATELLITE", Target::satellite},
     {"UTILITIES", Target::utilities},
+    {"DIGITAL_VOICE", Target::digital_voice},
 };
 
 }  // namespace

@@ -35,6 +35,7 @@ enum class Target : uint8_t {
   marine,
   satellite,
   utilities,
+  digital_voice,
 };
 
 // Every pointer must be set.

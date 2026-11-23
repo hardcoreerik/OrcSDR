@@ -1,4 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
+# ESP-IDF auto-discovers every directory under components/. These are host-only
+# today (their suites build standalone); register an empty component so the
+# firmware configure step succeeds. Sources are added when firmware wiring lands.
+if(COMMAND idf_component_register)
+    idf_component_register()
+    return()
+endif()
 project(orcsdr_nxdn_host LANGUAGES CXX)
 option(ORC_NXDN_SANITIZERS "Host NXDN ASan/UBSan (GCC/Clang)" OFF)
 add_library(orcsdr_nxdn STATIC src/decoder.cpp src/frontend.cpp)

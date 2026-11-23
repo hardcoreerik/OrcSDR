@@ -200,6 +200,7 @@ idf_component_register(
         "../ui/cb_dashboard.cpp"
         "../ui/cb_scanner.cpp"
         "../ui/dashboard_audio_control.cpp"
+        "../ui/digital_voice_app.cpp"
         "../ui/digital_voice_dashboard.cpp"
         "../ui/digital_voice_dashboard_model.cpp"
         "../ui/digital_voice_dashboard_surface.cpp"

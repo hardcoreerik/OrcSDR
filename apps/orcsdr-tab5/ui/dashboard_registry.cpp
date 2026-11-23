@@ -23,7 +23,7 @@ constexpr Descriptor kEntries[] = {
     {Id::satellite, "SATELLITE", "Satellite receive workspace", Category::digital, true},
     {Id::sstv, "SSTV", "Live slow-scan image receiver and picture gallery", Category::digital, true},
     {Id::dead_air, "DEAD AIR", "RF anomaly investigation and session evidence", Category::utility, true},
-    {Id::digital_voice, "DIGITAL VOICE", "Scanner-first digital modes (UI preview)", Category::digital, false},
+    {Id::digital_voice, "DIGITAL VOICE", "Scanner-first digital modes (view only: scanner not wired)", Category::digital, true},
     {Id::rf_lab, "RF LAB", "Live measurements and driver tests", Category::utility, true},
     {Id::wifi_analysis, "2.4 GHz WIFI", "Real Wi-Fi access-point survey", Category::utility, true},
     {Id::settings, "SETTINGS", "Global device settings", Category::system, true},

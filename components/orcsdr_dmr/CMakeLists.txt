@@ -1,4 +1,11 @@
 cmake_minimum_required(VERSION 3.16)
+# ESP-IDF auto-discovers every directory under components/. These are host-only
+# today (their suites build standalone); register an empty component so the
+# firmware configure step succeeds. Sources are added when firmware wiring lands.
+if(COMMAND idf_component_register)
+    idf_component_register()
+    return()
+endif()
 project(orcsdr_dmr_d0 LANGUAGES CXX)
 
 # Deliberately host-only. Not registered with ESP-IDF or linked into firmware.
