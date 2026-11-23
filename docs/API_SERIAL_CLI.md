@@ -638,6 +638,7 @@ Use `-WifiEvery 1` for a focused Wi-Fi cycle on every pass.
 |---|---|---|
 | `RTL_SERIAL VERBOSITY` | `RTL_SERIAL_VERBOSITY mode=...` | Query without authentication. |
 | `RTL_SERIAL VERBOSITY QUIET\|NORMAL\|DEBUG\|TRACE` | `RTL_SERIAL_VERBOSITY_OK mode=...` | Authenticated, persistent setting. `NORMAL` is the default. |
+| `RTL_SUPPORT REPORT` | `ORC_SUPPORT_BEGIN ... ORC_SUPPORT_END` | Read-only, unauthenticated 8-line support snapshot (schema 1); excludes USB serial, Wi-Fi/network, location, and secrets. |
 | `RTL_HEALTH` | `RTL_HEALTH_STATUS ...` | Heap, internal DMA, task count, uptime, and boot reset reason. |
 | `RTL_RESET` | `RTL_RESETTING` | Authenticated. Restarts through a full system reset (RTC watchdog) so the SD card and SDMMC bus start clean. Use this for every software restart. See issue #127. |
 | `RTL_RESET CPU` | `RTL_RESETTING cpu` | Authenticated diagnostic. Plain `esp_restart()` CPU-level reset; the next boot detects it and converts it to a clean system reset (`RTL_RESET_NORMALIZE` / `RTL_RESET_NORMALIZED` in the boot log). |

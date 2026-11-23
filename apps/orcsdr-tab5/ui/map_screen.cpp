@@ -201,6 +201,7 @@ void draw_downloads() {
   (void)maps::downloads::snapshot(&g_downloads);
   text("Get offline maps",32,92,3);
   const char* hint=g_downloads.busy?"Back to the device: downloads continue. Stop Transfer pauses the download.":
+      g_downloads.pending?"Use original SD. RESET STUCK forgets the saved install.":
       !g_downloads.configured?"Map source is not configured. Installed maps remain available.":
       !g_downloads.connected?"Offline. Return to Network to connect; saved transfers can still be resumed.":
       !g_downloads.sd_available?"Insert an SD card for downloads. The firmware world map remains available.":
@@ -226,6 +227,8 @@ void draw_downloads() {
   button("INSTALLED",32,520,270,56);
   if(maps::downloads::can_check(g_downloads))
     button("CHECK CATALOG",320,520,310,56);
+  else if(maps::downloads::can_reset(g_downloads))
+    button("RESET STUCK",320,520,310,56);
   if(download_busy())button("STOP TRANSFER",930,520,320,56);
   else if(maps::downloads::can_install(g_downloads,g_download_index)) {
     maps::downloads::Entry pack;
@@ -574,6 +577,7 @@ void touch(int x,int y,bool pressed,bool new_press) {
         if(hit(x,y,930,520,320,56)){maps::downloads::cancel();acted=true;}
       } else {
         if(hit(x,y,320,520,310,56)&&maps::downloads::can_check(g_downloads)){(void)maps::downloads::check_catalog();acted=true;}
+        else if(hit(x,y,320,520,310,56)&&maps::downloads::can_reset(g_downloads)){button("CLEARING...",320,520,310,56);(void)maps::downloads::reset_pending();acted=true;}
         else if(hit(x,y,1038,520,210,56)&&maps::downloads::can_retry(g_downloads))
           {(void)maps::downloads::retry();acted=true;}
         else if(hit(x,y,650,520,370,56)&&maps::downloads::can_install(g_downloads,g_download_index)) {

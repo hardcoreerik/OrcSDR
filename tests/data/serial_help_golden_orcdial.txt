@@ -1,4 +1,5 @@
 RTL_HELP_BEGIN
+RTL_SUPPORT REPORT            - read-only, copy/paste support report (no auth)
 RTL_STATUS                    - device connection info
 RTL_HOTPLUG_STATUS            - receiver replacement and resume state
 RTL_ADSB STATUS               - ADS-B stream, queue and decoder counters
