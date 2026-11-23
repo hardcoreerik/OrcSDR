@@ -5,6 +5,7 @@
 #include "lora_native_decoder.hpp"
 #include "lora_preamble_detector.hpp"
 #include "lora_region_plan.hpp"
+#include "mesh/lora_model.hpp"
 namespace orc::zero {
 
 // LoRa / mesh workspace.
@@ -19,8 +20,8 @@ namespace orc::zero {
 //   NODES     peers heard, with packet counts
 //   RADIO     preamble/CRC/decode telemetry and the hardware ceiling
 struct LoraScreen {
-  enum class Page { traffic, channels, nodes, radio };
-  static constexpr size_t kPageCount = 4;
+  enum class Page { traffic, channels, nodes, map, radio };
+  static constexpr size_t kPageCount = 5;
 
   struct NodeEntry {
     uint32_t address = 0;
@@ -40,6 +41,9 @@ struct LoraScreen {
   orcsdr::lora_preamble::Status preamble{};
   std::vector<std::string> lines;
   Page page = Page::traffic;
+  // Protocol-neutral peer table shared with the future adapters. Positions only
+  // appear once a decoder supplies them, so the map is honest when it is empty.
+  mesh::Model model;
   std::array<NodeEntry, 16> nodes{};
   size_t node_count = 0;
 
@@ -60,6 +64,7 @@ struct LoraScreen {
       case Page::traffic: return "TRAFFIC";
       case Page::channels: return "CHANNELS";
       case Page::nodes: return "NODES";
+      case Page::map: return "MAP";
       case Page::radio: return "RADIO";
     }
     return "?";
@@ -173,6 +178,7 @@ struct LoraScreen {
     lines.insert(lines.begin(), b);
     if (lines.size() > 32) lines.resize(32);
     note_node(packet);
+    mesh::Traffic traffic;traffic.from=packet.sender;traffic.to=packet.destination;traffic.portnum=packet.port;traffic.hops=0;traffic.protocol=mesh::Protocol::meshtastic;traffic.text.assign(packet.text,strnlen(packet.text,sizeof(packet.text)));model.observe(traffic);
     offset = 0;
     ++revision;
   }
@@ -201,6 +207,7 @@ struct LoraScreen {
                             {"V", "MHZ"}, {"SPACE", "DASH"}});
         break;
       case Page::nodes:
+      case Page::map:
       case Page::radio:
         frame.keys(4, 160, {{"Z/C", "PAGE"}, {"F/X", "SCROLL"}, {"SPACE", "DASH"}});
         break;
@@ -283,6 +290,57 @@ struct LoraScreen {
     frame.text(4, 132, "RTL   NOT USABLE AT 868/915", frame.muted, 1, 34);
   }
 
+  void draw_map() {
+    char b[64];
+    const auto positioned = model.nodes();
+    size_t with_position = 0;
+    for (const auto& node : positioned) if (node.has_position) ++with_position;
+    frame.text(4, 40, "MESH MAP", frame.muted);
+    std::snprintf(b, sizeof(b), "%u NODES  %u POSITIONED", unsigned(model.size()), unsigned(with_position));
+    frame.text(120, 40, b, frame.cyan, 1, 20);
+    // Grid over the body; the centre is the first positioned node, so the view
+    // frames local traffic rather than a fixed coordinate nobody recognises.
+    const int left = 4, top = 52, right = 315, bottom = 142;
+    frame.rect(left, top, right - left, bottom - top, frame.bg);
+    for (int x = left; x <= right; x += 39) frame.line(x, top, x, bottom, frame.grid);
+    for (int y = top; y <= bottom; y += 22) frame.line(left, y, right, y, frame.grid);
+    if (!with_position) {
+      frame.text(4, 78, "NO POSITIONED NODES YET", frame.muted);
+      frame.text(4, 90, "POSITIONS ARRIVE WITH THE", frame.muted, 1, 24);
+      frame.text(4, 101, "CAP RADIO AND ITS DECODER.", frame.muted, 1, 25);
+      return;
+    }
+    double lat = 0, lon = 0;
+    for (const auto& node : positioned) if (node.has_position) { lat = node.latitude(); lon = node.longitude(); break; }
+    double span = 0.02;  // start ~2 km and grow until every node fits
+    for (;;) {
+      bool fits = true;
+      for (const auto& node : positioned)
+        if (node.has_position &&
+            (std::fabs(node.latitude() - lat) > span || std::fabs(node.longitude() - lon) > span))
+          fits = false;
+      if (fits || span > 4.0) break;
+      span *= 1.6;
+    }
+    const auto plot = [&](const mesh::Node& node) {
+      const int x = (right + left) / 2 + int((node.longitude() - lon) / span * (right - left) / 2);
+      const int y = (bottom + top) / 2 - int((node.latitude() - lat) / span * (bottom - top) / 2);
+      return std::pair<int, int>{x, y};
+    };
+    for (const auto& link : model.links(50.0)) {
+      const auto a = plot(positioned[link.a]);
+      const auto bpt = plot(positioned[link.b]);
+      frame.line(a.first, a.second, bpt.first, bpt.second, frame.grid);
+    }
+    for (const auto& node : positioned) {
+      if (!node.has_position) continue;
+      const auto p = plot(node);
+      frame.rect(p.first - 1, p.second - 1, 4, 4, frame.green);
+      frame.text(p.first + 4, p.second - 3, node.name, frame.white, 1, 6);
+    }
+    std::snprintf(b, sizeof(b), "SPAN %.2f DEG", span);
+    frame.text(4, 146, b, frame.muted, 1, 13);
+  }
   const auto& render() {
     if (!layout) {
       draw_header();
@@ -311,6 +369,7 @@ struct LoraScreen {
         case Page::traffic: draw_traffic(); break;
         case Page::channels: draw_channels(); break;
         case Page::nodes: draw_nodes(); break;
+        case Page::map: draw_map(); break;
         case Page::radio: draw_radio(); break;
       }
     }
