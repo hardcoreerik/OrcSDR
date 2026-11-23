@@ -1,0 +1,161 @@
+{
+  "schema": "orcsdr-nxdn-test-assets-v1",
+  "status": "SOURCE-METADATA VERIFIED; DOWNLOAD AND ORCSDR REPLAY PENDING",
+  "assets": [
+    {
+      "id": "waveshark-nxdn48-12s",
+      "name": "nxdn48_453M_48k.cs16",
+      "format": "cs16-le",
+      "rate": 48000,
+      "bytes": 2304000,
+      "sha256": "2496c07730c6385c68dd9f54d723f4b6ff0bc7b49c5408c2fcf14dfb1afbb626",
+      "url": "https://nostr.download/2496c07730c6385c68dd9f54d723f4b6ff0bc7b49c5408c2fcf14dfb1afbb626.xz",
+      "compression": "xz",
+      "kind": "actual off-air, Signal Identification Wiki"
+    },
+    {
+      "id": "waveshark-nxdn96-15s",
+      "name": "nxdn96_453M_48k.cs16",
+      "format": "cs16-le",
+      "rate": 48000,
+      "bytes": 2880000,
+      "sha256": "48bba222129a43da7aae1c41aa2872b7adf9a3ea2d7bcbdcce5dd0ae3ad22af3",
+      "url": "https://nostr.download/48bba222129a43da7aae1c41aa2872b7adf9a3ea2d7bcbdcce5dd0ae3ad22af3.xz",
+      "compression": "xz",
+      "kind": "actual off-air, Signal Identification Wiki"
+    },
+    {
+      "id": "dsd-nxdn48-iq",
+      "name": "nxdn48.iq",
+      "format": "cu8",
+      "rate": 48000,
+      "bytes": 576000,
+      "git_blob_sha1": "c6e759f0ae2c35dc67cbe875058545ae6803610c",
+      "url": "https://raw.githubusercontent.com/arancormonk/dsd-neo/56cc1378a27d4f89f3bb309232b731e7d533ad4c/tests/fixtures/iq/nxdn48.iq",
+      "compression": "none",
+      "kind": "offair-derived"
+    },
+    {
+      "id": "dsd-nxdn96-iq",
+      "name": "nxdn96.iq",
+      "format": "cu8",
+      "rate": 48000,
+      "bytes": 192000,
+      "git_blob_sha1": "ca399a8ff15dd2d47b6af989ce15b42b27288744",
+      "url": "https://raw.githubusercontent.com/arancormonk/dsd-neo/56cc1378a27d4f89f3bb309232b731e7d533ad4c/tests/fixtures/iq/nxdn96.iq",
+      "compression": "none",
+      "kind": "offair-derived"
+    },
+    {
+      "id": "dsd-nxdn48-attenuated-iq",
+      "name": "nxdn48_attenuated.iq",
+      "format": "cu8",
+      "rate": 48000,
+      "bytes": 576000,
+      "git_blob_sha1": "39469ae8937b905a8918cb68aa0ec41a1bc807be",
+      "url": "https://raw.githubusercontent.com/arancormonk/dsd-neo/56cc1378a27d4f89f3bb309232b731e7d533ad4c/tests/fixtures/iq/nxdn48_attenuated.iq",
+      "compression": "none",
+      "kind": "derived-impairment"
+    },
+    {
+      "id": "dsd-nxdn96-weak-iq",
+      "name": "nxdn96_weak.iq",
+      "format": "cu8",
+      "rate": 48000,
+      "bytes": 192000,
+      "git_blob_sha1": "bfff31596c0c79e831f828f479dcfebcb93a9c1d",
+      "url": "https://raw.githubusercontent.com/arancormonk/dsd-neo/56cc1378a27d4f89f3bb309232b731e7d533ad4c/tests/fixtures/iq/nxdn96_weak.iq",
+      "compression": "none",
+      "kind": "derived-impairment"
+    },
+    {
+      "id": "dsd-nxdn96-weak-0db-iq",
+      "name": "nxdn96_weak_0db.iq",
+      "format": "cu8",
+      "rate": 48000,
+      "bytes": 192000,
+      "git_blob_sha1": "39b5463d55ae7486ccb769eced4d9943d1918167",
+      "url": "https://raw.githubusercontent.com/arancormonk/dsd-neo/56cc1378a27d4f89f3bb309232b731e7d533ad4c/tests/fixtures/iq/nxdn96_weak_0db.iq",
+      "compression": "none",
+      "kind": "derived-impairment"
+    },
+    {
+      "id": "dsd-nxdn48-after-retune-iq",
+      "name": "nxdn48_after_retune.iq",
+      "format": "cu8",
+      "rate": 48000,
+      "bytes": 1296000,
+      "git_blob_sha1": "1e064423d02d054e2b581b191a86c984704e5d74",
+      "url": "https://raw.githubusercontent.com/arancormonk/dsd-neo/56cc1378a27d4f89f3bb309232b731e7d533ad4c/tests/fixtures/iq/nxdn48_after_retune.iq",
+      "compression": "none",
+      "kind": "derived-retune"
+    },
+    {
+      "id": "dsd-nxdn96-after-retune-iq",
+      "name": "nxdn96_after_retune.iq",
+      "format": "cu8",
+      "rate": 48000,
+      "bytes": 166684,
+      "git_blob_sha1": "042d5b24cc21a47d2425015eab954f775146fe98",
+      "url": "https://raw.githubusercontent.com/arancormonk/dsd-neo/56cc1378a27d4f89f3bb309232b731e7d533ad4c/tests/fixtures/iq/nxdn96_after_retune.iq",
+      "compression": "none",
+      "kind": "derived-retune"
+    },
+    {
+      "id": "dsd-nxdn48-synth-iq",
+      "name": "nxdn48_synth.iq",
+      "format": "cu8",
+      "rate": 48000,
+      "bytes": 384000,
+      "git_blob_sha1": "3f0d603606d936f3a28f44af18e9e11c68d112d0",
+      "url": "https://raw.githubusercontent.com/arancormonk/dsd-neo/56cc1378a27d4f89f3bb309232b731e7d533ad4c/tests/fixtures/iq/nxdn48_synth.iq",
+      "compression": "none",
+      "kind": "synthetic"
+    },
+    {
+      "id": "dsd-nxdn96-synth-iq",
+      "name": "nxdn96_synth.iq",
+      "format": "cu8",
+      "rate": 48000,
+      "bytes": 192000,
+      "git_blob_sha1": "db5d7f11d704995cf7499d4a35c01014a4319629",
+      "url": "https://raw.githubusercontent.com/arancormonk/dsd-neo/56cc1378a27d4f89f3bb309232b731e7d533ad4c/tests/fixtures/iq/nxdn96_synth.iq",
+      "compression": "none",
+      "kind": "synthetic"
+    }
+  ],
+  "provenance": [
+    {
+      "source": "v0l/waveshark",
+      "commit": "83109e5d1ce2b50e03d6b76e0b66ee5e19fcf37f",
+      "manifest": "testdata/fixture.toml",
+      "note": "12s NXDN48 (source 901/group 0/RAN 1) and 15s NXDN96 (source 2/group 0/RAN 0) are upstream reported results; 453 MHz in filename is NOT measured frequency."
+    },
+    {
+      "source": "arancormonk/dsd-neo",
+      "commit": "56cc1378a27d4f89f3bb309232b731e7d533ad4c",
+      "manifest": "tests/fixtures/iq",
+      "generator": "tools/build_iq_fixtures.py",
+      "note": "Related to same SigIDWiki RF origin, plus weak/retune/synthetic derivatives. CU8 is NOT CS16; do not count as independent RF capture."
+    },
+    {
+      "source": "hardcoreerik/REA-Results",
+      "ref": "research/nxdn48-nxdn96-foundation-20261119",
+      "manifest": "inbox/fixtures/digital-voice/manifest.json",
+      "note": "Three separate GopherTrunk originals already stored privately; do not copy into public OrcSDR."
+    }
+  ],
+  "trunk_type_c": {
+    "source_issue": "https://github.com/TrunkRecorder/trunk-recorder-pro/issues/170",
+    "listing": "https://trunkrecorder.pro/corpus/api/v1/submissions",
+    "blob_pattern": "https://iq.trunkrecorder.pro/blobs/<FILE_SHA256_FROM_LISTING>",
+    "receipts": [
+      "5058ca3675e74a6027ace45caf155882427f439f88fc1a8e",
+      "96d69fc77d1113b7364da6e1fcc3bd8796a24b0f268009d1",
+      "3fe17558979699a579c604d73e9926fefd9ab1ce5bf609f1",
+      "99597093a43340f544c4166fefbac910a5ab30d2041c075b"
+    ],
+    "note": "Receipts are not file SHA-256. API record/file identity and availability need network verification before adding downloads. No Type-D sample confirmed."
+  },
+  "copyright": "Sample authors' captured RF redistribution rights are not established. Download privately and locally only; do not commit captures, upload IQ to public CI or release."
+}
