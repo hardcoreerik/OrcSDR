@@ -239,7 +239,12 @@ Key translate_evdev(unsigned code,char& digit){
  }
 }
 int choose_input(const std::string& explicit_path){
- if(!explicit_path.empty())return ::open(explicit_path.c_str(),O_RDONLY|O_NONBLOCK|O_CLOEXEC);
+ if(!explicit_path.empty()){
+  const int fd=::open(explicit_path.c_str(),O_RDONLY|O_NONBLOCK|O_CLOEXEC);
+  // An explicit path that no longer exists (an injector that exited, a renamed
+  // device) must not leave the panel silently deaf; fall through to detection.
+  if(fd>=0)return fd;
+ }
  for(int i=0;i<32;++i){const std::string path="/dev/input/event"+std::to_string(i);
   const int fd=::open(path.c_str(),O_RDONLY|O_NONBLOCK|O_CLOEXEC);if(fd<0)continue;
   unsigned long bits[(KEY_MAX+sizeof(unsigned long)*8)/(sizeof(unsigned long)*8)]{};
@@ -263,7 +268,7 @@ int run_fb(const Options& a,ControlModel& model,FmSession* session){
     (size_t(v.yoffset)+170)*f.line_length>bytes){
     munmap(mapped,bytes);::close(fd);throw std::runtime_error("Unsupported framebuffer color/stride configuration");
  }
- const int keys=choose_input(a.input);
+ int keys=choose_input(a.input);
  if(keys<0)std::cerr<<"No matching evdev keyboard. Use --input /dev/input/eventN and check device permissions.\n";
  CompactRenderer renderer, dashboard_error;
  auto dashboards=std::make_unique<orc::zero::DashboardSession>();
@@ -343,7 +348,9 @@ int run_fb(const Options& a,ControlModel& model,FmSession* session){
  auto stats_from=std::chrono::steady_clock::now();
  unsigned ticks=0;
  while(!model.exit_requested&&!g_quit_signal){
-  if(keys>=0){pollfd pfd{keys,POLLIN,0};if(poll(&pfd,1,0)>0&&(pfd.revents&POLLIN)){
+  if(keys>=0){pollfd pfd{keys,POLLIN,0};const int ready=::poll(&pfd,1,0);
+    if(ready>0&&(pfd.revents&(POLLHUP|POLLERR|POLLNVAL))){::close(keys);keys=choose_input("");}
+    else if(ready>0&&(pfd.revents&POLLIN)){
     input_event event{};
     while(::read(keys,&event,sizeof(event))==sizeof(event)){
      if(event.type!=EV_KEY||(event.value!=1&&event.value!=2))continue;
