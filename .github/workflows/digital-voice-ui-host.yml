@@ -1,0 +1,39 @@
+name: Digital Voice scanner-first M5GFX host contracts
+on:
+  push:
+    branches:
+      - feature/dmr-digital-voice-foundation
+    paths:
+      - 'apps/orcsdr-tab5/ui/digital_voice_dashboard*'
+      - 'apps/orcsdr-tab5/ui/screen_controller.*'
+      - 'apps/orcsdr-tab5/ui/dashboard_registry.*'
+      - 'tests/digital_voice_dashboard_preview/**'
+      - '.github/workflows/digital-voice-ui-host.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  ui-host:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [Release, Sanitizers]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test 6 native-page layouts and owner contract
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.variant }}" = Sanitizers ]; then
+            cmake -S tests/digital_voice_dashboard_preview -B build/dv-ui-host -DCMAKE_BUILD_TYPE=Debug -DORC_DV_UI_SANITIZERS=ON
+          else
+            cmake -S tests/digital_voice_dashboard_preview -B build/dv-ui-host -DCMAKE_BUILD_TYPE=Release
+          fi
+          cmake --build build/dv-ui-host --parallel 2
+          ctest --test-dir build/dv-ui-host --output-on-failure -V
+      - name: State native acceptance boundary
+        if: always()
+        run: |
+          echo "These are M5GFX command-recording host tests, NOT Tab5 pixel or RF acceptance." >> "$GITHUB_STEP_SUMMARY"

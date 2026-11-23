@@ -49,10 +49,12 @@ struct Paint {
 };
 
 void freq(char (&out)[32], const Snapshot& s) {
-  if (!s.has_frequency) {std::snprintf(out,sizeof(out),"FREQUENCY UNKNOWN");return;}
+  const bool current_scan=s.can_scan && s.scan.current_frequency_valid;
+  if (!s.has_frequency && !current_scan) {std::snprintf(out,sizeof(out),"FREQUENCY UNKNOWN");return;}
+  const uint32_t hz=s.has_frequency?s.frequency_hz:s.scan.current_frequency_hz;
   std::snprintf(out,sizeof(out),"%lu.%06lu MHz",
-    static_cast<unsigned long>(s.frequency_hz/1000000u),
-    static_cast<unsigned long>(s.frequency_hz%1000000u));
+    static_cast<unsigned long>(hz/1000000u),
+    static_cast<unsigned long>(hz%1000000u));
 }
 void number(char (&out)[36],uint32_t n) {std::snprintf(out,sizeof(out),"%lu",static_cast<unsigned long>(n));}
 void call_identity(Paint& p,const Snapshot& s,Rect card,int x,int y) {
@@ -84,9 +86,17 @@ void protocol_facts(Paint& p,const Snapshot& s,Rect card,int x,int y) {
     else p.fact("NAC","UNKNOWN",x,y+52,card,kAmber);
     if(s.protocol==Protocol::p25_phase2)p.fact("PHASE II","VOICE UNSUPPORTED",x,y+92,card,kAmber);
   } else if (s.protocol==Protocol::nxdn48 || s.protocol==Protocol::nxdn96) {
-    if(s.ran_valid){std::snprintf(v,sizeof(v),"%u",s.ran);p.fact("RAN",v,x,y+52,card,kGreen);}
+    const bool ran=s.ran_valid && s.evidence>=Evidence::integrity_valid;
+    if(ran){std::snprintf(v,sizeof(v),"%u",s.ran);p.fact("RAN",v,x,y+52,card,kGreen);}
     else p.fact("RAN","UNKNOWN",x,y+52,card,kAmber);
-    p.fact("TRUNKING","NOT INTEGRATED",x,y+92,card,kAmber);
+    p.fact("CHANNEL",s.nxdn.channel_valid && s.evidence>=Evidence::integrity_valid?
+           nxdn_channel_name(s.nxdn.channel):"UNKNOWN",x,y+92,card,kAmber);
+    p.fact("SYSTEM",s.nxdn.topology_valid && s.evidence>=Evidence::integrity_valid?
+           nxdn_topology_name(s.nxdn.topology):"UNKNOWN",x,y+132,card,kAmber);
+    if(s.nxdn.channel_number_valid && s.evidence>=Evidence::integrity_valid) {
+      std::snprintf(v,sizeof(v),"%u",s.nxdn.channel_number);
+      p.fact("CHANNEL #",v,x,y+172,card,kGreen);
+    }
   } else if(s.protocol==Protocol::dstar) {
     p.fact("MY CALL",s.dstar_header_valid&&s.dstar_my[0]?s.dstar_my:"UNKNOWN",x,y+52,card,kAmber);
     p.fact("UR CALL",s.dstar_header_valid&&s.dstar_ur[0]?s.dstar_ur:"UNKNOWN",x,y+92,card,kAmber);
@@ -115,7 +125,29 @@ void nav(Paint& p,const UiState& state) {
 bool scan_enabled(const Snapshot& s) {
   return s.can_scan && (s.receiver==Receiver::ready || s.receiver==Receiver::receiving);
 }
-void explore_discovery(Paint& p,const Snapshot& s) {
+void scan_hits(Paint& p,const Snapshot& s,const UiState& u,Rect b) {
+  p.title("DETECTED / RECENT SIGNALS",b.x+18,b.y+32,b);
+  if (!s.scan_hit_count) {
+    p.text("NO VERIFIED SCAN HITS",b.x+18,b.y+90,kMuted,2,b);
+  }
+  const unsigned count=std::min<unsigned>(s.scan_hit_count,kScanHits);
+  for(unsigned i=0;i<count;++i) {
+    const auto& h=s.scan_hits[i];
+    const int yy=b.y+87+static_cast<int>(i)*72;
+    if(i==u.selected_scan_hit)p.g.fillRoundRect(b.x+10,yy-15,b.w-20,65,4,kSelected);
+    p.text(protocol_name(h.protocol),b.x+18,yy,
+           h.evidence>=Evidence::integrity_valid?kGreen:kAmber,2,b);
+    char f[42];
+    if(h.has_frequency)
+      std::snprintf(f,sizeof(f),"%lu.%06lu MHz",static_cast<unsigned long>(h.frequency_hz/1000000),
+                    static_cast<unsigned long>(h.frequency_hz%1000000));
+    else std::snprintf(f,sizeof(f),"FREQUENCY UNKNOWN");
+    p.label(f,b.x+18,yy+27,b);
+    p.hr(b.x+18,yy+46,b.w-36);
+  }
+  p.label("Candidate != decoded identity",b.x+18,b.y+421,b);
+}
+void explore_discovery(Paint& p,const Snapshot& s,const UiState& u) {
   const auto a=layout::kBasicHero,b=layout::kBasicFacts;
   p.card(a);p.card(b);
   p.title("SCAN / DISCOVER",a.x+18,a.y+32,a);
@@ -139,18 +171,12 @@ void explore_discovery(Paint& p,const Snapshot& s) {
     p.label(progress,a.x+395,a.y+382,a);
   }
   p.button(scan_ok && s.scan.phase==ScanPhase::scanning?"STOP SCAN":"START SCAN",
-           {a.x+24,a.y+419,178,44},scan_ok);
-  p.button("SAVE CHANNEL",{a.x+218,a.y+419,218,44},s.can_save_channel);
+           {a.x+24,a.y+419,170,44},scan_ok);
+  p.button(s.scan_on_hold?"RESUME":"HOLD",{a.x+202,a.y+419,132,44},scan_ok&&s.can_hold);
+  p.button("SKIP",{a.x+342,a.y+419,106,44},scan_ok&&s.can_skip);
+  p.button("SAVE",{a.x+456,a.y+419,112,44},s.can_save_channel);
 
-  p.title("OBSERVATION",b.x+18,b.y+32,b);
-  p.text(protocol_name(s.protocol),b.x+18,b.y+76,kWhite,2,b);
-  p.text(integration_name(s.protocol),b.x+18,b.y+113,kAmber,2,b);
-  p.hr(b.x+18,b.y+151,b.w-36);
-  p.label("SOURCE / VALIDATION",b.x+18,b.y+188,b);
-  p.text(origin_name(s.origin),b.x+18,b.y+224,s.origin==Origin::live?kGreen:kAmber,2,b);
-  p.label("EVIDENCE",b.x+18,b.y+270,b);
-  p.text(evidence_name(s.evidence),b.x+18,b.y+309,kCyan,2,b);
-  p.label("No directory identity promoted to RF fact",b.x+18,b.y+404,b);
+  scan_hits(p,s,u,b);
 }
 void explore_analysis(Paint& p,const Snapshot& s) {
   const auto a=layout::kAdvancedMain,b=layout::kAdvancedFacts;
@@ -164,7 +190,18 @@ void explore_analysis(Paint& p,const Snapshot& s) {
   p.fact("PROTOCOL",protocol_name(s.protocol),a.x+18,a.y+241,a);
   p.hr(a.x+18,a.y+282,a.w-36);
   p.fact("SCANNER",scan_enabled(s)?scan_phase_name(s.scan.phase):"NOT CONNECTED",a.x+18,a.y+328,a);
-  p.label("One receiver owner / no automatic retune",a.x+18,a.y+414,a);
+  if (s.scan.progress_valid && s.scan.planned) {
+    char progress[48];std::snprintf(progress,sizeof(progress),"%u / %u  HITS %lu",
+        static_cast<unsigned>(s.scan.visited),static_cast<unsigned>(s.scan.planned),
+        static_cast<unsigned long>(s.scan.validated_hits));
+    p.label(progress,a.x+18,a.y+375,a);
+  }
+  const bool ok=scan_enabled(s);
+  p.button(ok&&s.scan.phase==ScanPhase::scanning?"STOP SCAN":"START SCAN",
+           {a.x+18,a.y+396,170,44},ok);
+  p.button(s.scan_on_hold?"RESUME":"HOLD",{a.x+196,a.y+396,122,44},ok&&s.can_hold);
+  p.button("SKIP",{a.x+326,a.y+396,98,44},ok&&s.can_skip);
+  p.button("SAVE",{a.x+432,a.y+396,110,44},s.can_save_channel);
 
   p.title("EVIDENCE / SERVICE STATUS",b.x+18,b.y+32,b);
   p.text(integration_name(s.protocol),b.x+18,b.y+78,kAmber,2,b);
@@ -213,7 +250,8 @@ void live_analysis(Paint& p,const Snapshot& s) {
   p.fact("IDENTITY GATE",trusted_identity(s)?"PASSED":"NOT MET",b.x+18,b.y+302,b,
          trusted_identity(s)?kGreen:kAmber);
   p.fact("TAB5",integration_name(s.protocol),b.x+18,b.y+348,b,kAmber);
-  p.label("Time slot unknown unless independently proven",b.x+18,b.y+424,b);
+  p.label(s.protocol==Protocol::nxdn48||s.protocol==Protocol::nxdn96?
+          "RAN alone is not proof of a site":"Unknown slot/identity stays unknown",b.x+18,b.y+424,b);
 }
 void last_heard(Paint& p,const Snapshot& s,Density mode,uint8_t offset,uint8_t selected) {
   const auto a=mode==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
@@ -252,21 +290,55 @@ void last_heard(Paint& p,const Snapshot& s,Density mode,uint8_t offset,uint8_t s
       number(v,h.destination_id);p.fact("DEST",v,b.x+18,b.y+252,b,kGreen);
     } else p.fact("DEST","UNKNOWN",b.x+18,b.y+252,b,kAmber);
     p.fact("EVIDENCE",evidence_name(h.evidence),b.x+18,b.y+301,b);
+    if ((h.protocol==Protocol::nxdn48 || h.protocol==Protocol::nxdn96) &&
+        h.ran_valid && h.evidence>=Evidence::integrity_valid) {
+      std::snprintf(v,sizeof(v),"%u",h.ran);
+      p.fact("RAN",v,b.x+18,b.y+352,b,kGreen);
+    }
+  }
+  if(s.history_count>6 && s.last_heard_available) {
+    p.button("PREV",{a.x+18,a.y+418,94,42},offset>0);
+    p.button("NEXT",{a.x+124,a.y+418,94,42},static_cast<size_t>(offset)+6<s.history_count);
   }
   p.label("No guessed times / aliases / IDs",b.x+18,b.y+421,b);
 }
-void systems(Paint& p,const Snapshot& s,Density mode) {
+void systems(Paint& p,const Snapshot& s,const UiState& u) {
+  const auto mode=u.density;
   const auto a=mode==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
   const auto b=mode==Density::discovery_first?layout::kBasicFacts:layout::kAdvancedFacts;
   p.card(a);p.card(b);
   p.title("OBSERVED SYSTEMS",a.x+18,a.y+32,a);
-  p.text(s.systems_available?"NO SAVED SYSTEMS IN SNAPSHOT":"SYSTEM LEARNING NOT INTEGRATED",
-         a.x+18,a.y+140,s.systems_available?kMuted:kAmber,2,a);
-  p.label("Received facts and directory candidates stay separate",a.x+18,a.y+211,a);
+  const unsigned count=s.systems_available?std::min<unsigned>(s.observed_system_count,kObservedSystems):0;
+  if (!s.systems_available) p.text("SYSTEM LEARNING NOT INTEGRATED",a.x+18,a.y+117,kAmber,2,a);
+  else if (count==0) p.text("NO SYSTEMS OBSERVED",a.x+18,a.y+117,kMuted,2,a);
+  for(unsigned i=0;i<count;++i) {
+    const auto& sys=s.observed_systems[i];
+    const int yy=a.y+93+static_cast<int>(i)*76;
+    if(i==u.selected_system)p.g.fillRoundRect(a.x+11,yy-17,a.w-22,70,4,kSelected);
+    p.text(protocol_name(sys.protocol),a.x+18,yy,
+           sys.evidence>=Evidence::integrity_valid?kGreen:kAmber,2,a);
+    const bool verified=sys.evidence>=Evidence::integrity_valid;
+    const char* top=sys.topology_valid&&verified?nxdn_topology_name(sys.topology):"SYSTEM TYPE UNKNOWN";
+    p.label(top,a.x+240,yy,a);
+    char val[44];
+    if(sys.has_frequency)std::snprintf(val,sizeof(val),"%lu.%06lu MHz",
+        static_cast<unsigned long>(sys.frequency_hz/1000000),static_cast<unsigned long>(sys.frequency_hz%1000000));
+    else std::snprintf(val,sizeof(val),"FREQUENCY UNKNOWN");
+    p.label(val,a.x+18,yy+31,a);
+    p.hr(a.x+18,yy+51,a.w-36);
+  }
+  p.label("Directory matches never become RF evidence",a.x+18,a.y+432,a);
   p.title("SAVE / DISCOVERY",b.x+18,b.y+32,b);
   p.fact("RF LOCK",evidence_name(s.evidence),b.x+18,b.y+110,b);
   p.fact("DIRECTORY","NOT LINKED",b.x+18,b.y+156,b,kAmber);
   p.fact("PROFILE","PREVIEW NOT INTEGRATED",b.x+18,b.y+202,b,kAmber);
+  if(count) {
+    const auto& sys=s.observed_systems[std::min<unsigned>(u.selected_system,count-1)];
+    if(sys.ran_valid && sys.evidence>=Evidence::integrity_valid) {
+      char value[20];std::snprintf(value,sizeof(value),"%u",sys.ran);
+      p.fact("OBSERVED RAN",value,b.x+18,b.y+258,b,kGreen);
+    }
+  }
   p.button("SAVE CHANNEL",{b.x+18,b.y+334,242,48},s.can_save_channel);
   p.label("No guessed repeater locations",b.x+18,b.y+422,b);
 }
@@ -298,6 +370,10 @@ void signal(Paint& p,const Snapshot& s,Density mode) {
   p.hr(b.x+18,b.y+200,b.w-36);
   p.label("No synthetic waterfall",b.x+18,b.y+250,b);
   p.label("Unknown values remain unknown",b.x+18,b.y+293,b);
+  if((s.protocol==Protocol::nxdn48||s.protocol==Protocol::nxdn96) && s.nxdn.cac_metrics_valid) {
+    char v[36];number(v,s.nxdn.cac_crc_valid);
+    p.fact("CAC CRC OK",v,b.x+18,b.y+354,b,kGreen);
+  }
   p.label(origin_name(s.origin),b.x+18,b.y+420,b);
 }
 void setup(Paint& p,const Snapshot& s,Density mode) {
@@ -309,20 +385,24 @@ void setup(Paint& p,const Snapshot& s,Density mode) {
   p.fact("PROTOCOL","SELECTOR NOT INTEGRATED",a.x+18,a.y+155,a,kAmber);
   p.fact("SCAN PLAN",s.can_scan?"AVAILABLE":"NOT AVAILABLE",a.x+18,a.y+208,a,s.can_scan?kGreen:kAmber);
   p.fact("HOLD / FILTER",s.can_filter?"AVAILABLE":"NOT AVAILABLE",a.x+18,a.y+261,a,s.can_filter?kGreen:kAmber);
-  p.label("No new USB/tuning or audio owner",a.x+18,a.y+418,a);
+  p.button(s.can_scan?"SCAN PLAN: READY":"SCAN PLAN: NOT CONNECTED",
+           {a.x+18,a.y+322,370,44},false);
+  p.button(mode==Density::discovery_first?"DENSITY: DISCOVERY":"DENSITY: ANALYSIS",
+           {a.x+18,a.y+376,370,44},true);
+  p.label("No new USB/tuning or audio owner",a.x+408,a.y+398,a);
   p.title("FEATURE READINESS",b.x+18,b.y+32,b);
   p.label("P25-I: native receive and voice",b.x+18,b.y+98,b);
   p.label("DMR: host data / no Tab5 IQ",b.x+18,b.y+140,b);
   p.label("D-STAR / YSF: host bits only",b.x+18,b.y+182,b);
   p.label("P25-II: no voice",b.x+18,b.y+224,b);
-  p.label("NXDN48/96: planned",b.x+18,b.y+266,b);
+  p.label("NXDN48/96: host synthetic IQ",b.x+18,b.y+266,b);
   p.label("Shared speaker / volume via header",b.x+18,b.y+340,b);
   p.text("RX ONLY  /  NO TX",b.x+18,b.y+420,kCyan,2,b);
 }
 void page(Paint& p,const Snapshot& s,const UiState& u) {
   switch(u.view) {
     case View::explore:
-      if(u.density==Density::discovery_first)explore_discovery(p,s);
+      if(u.density==Density::discovery_first)explore_discovery(p,s,u);
       else explore_analysis(p,s);
       break;
     case View::live:
@@ -330,7 +410,7 @@ void page(Paint& p,const Snapshot& s,const UiState& u) {
       else live_analysis(p,s);
       break;
     case View::last_heard:last_heard(p,s,u.density,u.history_offset,u.selected_history);break;
-    case View::systems:systems(p,s,u.density);break;
+    case View::systems:systems(p,s,u);break;
     case View::signal:signal(p,s,u.density);break;
     case View::setup:setup(p,s,u.density);break;
     default:break;
@@ -343,7 +423,8 @@ bool Dashboard::present(lgfx::LovyanGFX& display,const Snapshot& s,
   if(!owns_screen||overlay_open||state.view>=View::count)return false;
   const bool entry = !ready_ || last_state_.view!=state.view || last_state_.density!=state.density;
   if(!entry && old_.revision==s.revision &&
-     last_state_.history_offset==state.history_offset && last_state_.selected_history==state.selected_history)
+     last_state_.history_offset==state.history_offset && last_state_.selected_history==state.selected_history &&
+     last_state_.selected_scan_hit==state.selected_scan_hit && last_state_.selected_system==state.selected_system)
     return true; // idle means zero drawing
   Paint p{display};
   if(entry) {
@@ -366,17 +447,47 @@ Action Dashboard::handle_touch(int32_t x,int32_t y,const Snapshot& s,
     if(layout::tab(i).contains(x,y))return {ActionKind::switch_view,static_cast<uint8_t>(i)};
   if(state.view==View::explore || state.view==View::systems) {
     const auto b=state.density==Density::discovery_first?layout::kBasicFacts:layout::kAdvancedFacts;
+    if(state.view==View::explore && state.density==Density::analysis_first) {
+      const auto a=layout::kAdvancedMain;
+      if(Rect{a.x+18,a.y+396,170,44}.contains(x,y) && scan_enabled(s))return {ActionKind::scan};
+      if(Rect{a.x+196,a.y+396,122,44}.contains(x,y) && scan_enabled(s) && s.can_hold)return {ActionKind::toggle_hold};
+      if(Rect{a.x+326,a.y+396,98,44}.contains(x,y) && scan_enabled(s) && s.can_skip)return {ActionKind::skip_frequency};
+      if(Rect{a.x+432,a.y+396,110,44}.contains(x,y) && s.can_save_channel)return {ActionKind::save_channel};
+    }
     if(state.view==View::explore && state.density==Density::discovery_first) {
-      if(Rect{44,577,178,44}.contains(x,y) && scan_enabled(s))
-        return {ActionKind::scan};
-      if(Rect{238,577,218,44}.contains(x,y) && s.can_save_channel)
-        return {ActionKind::save_channel};
+      if(Rect{44,577,170,44}.contains(x,y) && scan_enabled(s))return {ActionKind::scan};
+      if(Rect{222,577,132,44}.contains(x,y) && scan_enabled(s) && s.can_hold)return {ActionKind::toggle_hold};
+      if(Rect{362,577,106,44}.contains(x,y) && scan_enabled(s) && s.can_skip)return {ActionKind::skip_frequency};
+      if(Rect{476,577,112,44}.contains(x,y) && s.can_save_channel)return {ActionKind::save_channel};
+      const Rect b=layout::kBasicFacts;
+      const unsigned n=std::min<unsigned>(s.scan_hit_count,kScanHits);
+      for(unsigned i=0;i<n;++i)
+        if(Rect{b.x+12,b.y+61+static_cast<int>(i)*72,b.w-24,62}.contains(x,y))
+          return {ActionKind::select_scan_hit,static_cast<uint8_t>(i)};
     }
     if(state.view==View::systems&&Rect{b.x+18,b.y+334,242,48}.contains(x,y)&&s.can_save_channel)
       return {ActionKind::save_channel};
   }
+  if(state.view==View::setup) {
+    const auto a=state.density==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
+    if(Rect{a.x+18,a.y+376,370,44}.contains(x,y))return {ActionKind::toggle_density};
+  }
+  if(state.view==View::systems && s.systems_available) {
+    const auto a=state.density==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
+    const unsigned n=std::min<unsigned>(s.observed_system_count,kObservedSystems);
+    for(unsigned i=0;i<n;++i)
+      if(Rect{a.x+12,a.y+66+static_cast<int>(i)*76,a.w-24,68}.contains(x,y))
+        return {ActionKind::select_system,static_cast<uint8_t>(i)};
+  }
   if(state.view==View::last_heard && s.last_heard_available) {
     const Rect a=state.density==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
+    if (s.history_count>6) {
+      if(Rect{a.x+18,a.y+418,94,42}.contains(x,y) && state.history_offset>0)
+        return {ActionKind::page_history,0};
+      if(Rect{a.x+124,a.y+418,94,42}.contains(x,y) &&
+         static_cast<size_t>(state.history_offset)+6<s.history_count)
+        return {ActionKind::page_history,1};
+    }
     for(int i=0;i<6;++i) {
       if(static_cast<int>(state.history_offset)+i>=s.history_count)break;
       if(Rect{a.x+12,a.y+96+i*52,a.w-24,46}.contains(x,y))
