@@ -17166,7 +17166,8 @@ __attribute__((noinline)) void ui_doc_show_lora(orcsdr::lora::View view) {
 /* noinline: inlined into process_command it put its frame on every serial command's stack (see ui_doc_enter). */
 __attribute__((noinline)) bool ui_doc_render(const char* screen_id, bool demo) {
   if (!ui_doc_screen_exists(screen_id, demo ? "demo" : "live")) return false;
-  ui_doc_leave_surfaces();
+  // A second Digital Voice view request keeps the open dashboard (its events, Last Heard and replay) and only switches view.
+  if (!(strncmp(screen_id, "digital_voice.", 14) == 0 && orcsdr::digital_voice_app::active())) ui_doc_leave_surfaces();
 
   if (strncmp(screen_id, "pocsag.", 7) == 0) {
     rtl_ui_active.store(true, std::memory_order_release);
@@ -17183,12 +17184,20 @@ __attribute__((noinline)) bool ui_doc_render(const char* screen_id, bool demo) {
   } else if (strncmp(screen_id, "digital_voice.", 14) == 0) {
     // Real renderer and real receiver state (no injected data); tabs are chosen by tapping the same hit areas.
     static constexpr const char* names[] = {"scan", "live", "heard", "systems", "signal", "setup"};
-    open_digital_voice_dashboard();
+    // Already open: keep its receiver state (events, Last Heard, replay) and only switch view and repaint.
+    if (!orcsdr::digital_voice_app::active()) {
+      open_digital_voice_dashboard();
+    } else {
+      // The previous documentation request handed screen ownership to the documentation screen; take it back so the
+      // touch and the repaint below are honoured (the dashboard ignores both while it does not own the screen).
+      orcsdr::screens::begin_transition(orcsdr::screens::Id::digital_voice, millis());
+      orcsdr::screens::finish_transition();
+    }
     for (size_t i = 0; i < std::size(names); ++i)
       if (strcmp(screen_id + 14, names[i]) == 0 && i != 0) {
         orcsdr::digital_voice_app::touch(static_cast<int32_t>(i * 213 + 106), 675);
-        orcsdr::digital_voice_app::tick();
       }
+    orcsdr::digital_voice_app::tick();
   } else if (strcmp(screen_id, "home") == 0) {
     rtl_ui_active.store(false, std::memory_order_release);
     show_home(demo);

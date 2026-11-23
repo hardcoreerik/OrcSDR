@@ -1,0 +1,1843 @@
+ ██████╗  ██████╗██████╗     ███████╗███╗   ███╗███████╗
+ ██╔══██╗██╔════╝██╔══██╗    ██╔════╝████╗ ████║██╔════╝
+ ██║  ██║╚█████╗ ██║  ██║    █████╗  ██╔████╔██║█████╗  
+ ██║  ██║ ╚═══██╗██║  ██║    ██╔══╝  ██║╚██╔╝██║██╔══╝  
+ ██████╔╝██████╔╝██████╔╝    ██║     ██║ ╚═╝ ██║███████╗
+ ╚═════╝ ╚═════╝ ╚═════╝     ╚═╝     ╚═╝     ╚═╝╚══════╝
+Build Version: AW 2026-34-g69d3115 (CYGWIN)
+MBElib Version: 1.3.4
+CODEC2 Support Enabled
+Decoding AUTO P25, YSF, DSTAR, X2-TDMA, and DMR
+Logging Frame Payload to console
+Audio In Device: C:\Users\hardc\AppData\Local\Temp\claude\d15739b94789b7e4\f1e7b073-d808-4cda-94b9-310faed44d50\scratchpad\t451.wav
+14:33:02 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+14:33:02 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+14:33:02 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:02 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:02 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A0][00][00][C4][12][4E][41][FF][FE][C6][C3][9F]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:03 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:03 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:04 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:04 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:05 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:05 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][76][C0][13][C0][03][C4][BB][6C]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][00][F6][C0][13][C0][00][C0][D9][25]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+ SLC_C_SYS_PARMS: Huge; Net ID: 1; Site ID: 1.5; Reg Req: 1; CSC: 0; SYS: 3004;
+ SLCO Completed Block [2C][01][20][0D][C0]
+
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][36][01][B6][C0][13][C0][00][96][59][D8]
+14:33:06 Sync: +DMR   slot1  [slot2] | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][09][00][F6][C0][11][00][00][00][6A][20]
+14:33:06 Sync: +DMR  [slot1]  slot2  | Color Code=09 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][09][00][F6][C0][13][00][00][00][7C][4B]
+
+End of C:\Users\hardc\AppData\Local\Temp\claude\d15739b94789b7e4\f1e7b073-d808-4cda-94b9-310faed44d50\scratchpad\t451.wav
+
+Total audio errors: 0
+Total header errors: 0
+Total irrecoverable header errors: 0
+Exiting.

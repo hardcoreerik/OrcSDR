@@ -45,3 +45,19 @@ every 400 ms. DSP task: channelizer ~20 % of its core, no resets, no lost IQ.
 On-device replay of the real Terra capture: events accumulate, 0 ring drops. Live scan of a 5-channel Lane County plan:
 3+ passes, 17 retunes all accepted, 0 drops, 0 IQ loss, worker 35 %, NXDN48 frame sync on real on-air control channels.
 NOT yet shown on the Tab5 itself: a live DMR event or any SACCH-valid NXDN event (antenna/bias; see RISKS).
+
+## 2026-11-23 live DMR calls on Fleetnet Terra (Lane County)
+
+Unattended hunter (`rf/hunt.py`, PC RTL-SDR Blog V4 + LNA, 14 s captures cycling known channels) recorded two real group calls:
+
+| Time (PST) | Channel | CC | Slot | Source | Destination | Evidence |
+|---|---|---|---|---|---|---|
+| 14:56 | 152.1575 MHz | 13 | 2 | 4106011, 4106019 | TG 6011885 | Voice LC header + terminators, RS(12,9) validated (production D1 decoder) |
+| 14:57 | 152.685 MHz | 8 | 2 | 4106019 | TG 6011885 | same |
+
+- Independent cross-check: DSD-FME 20260715 decodes the first capture as `SLOT 2 TGT=6011885 SRC=4106011 FLCO=0x00 Group Call` (log: `rf/crosscheck/dsdfme_live_call_152p1575.txt`) plus a `TV_GRANT` on the control channel. TG 6011885 is also in RadioReference's published Fleetnet Terra talkgroup list.
+- Capture kept: `rf/live_call_152p1575_2026-11-23_1456.cu8` (gitignored, 6.7 MB).
+- Tab5 (COM17, firmware with the doc-mode fix) replays that capture from SD through its own chain: 186 events, 11 identity-valid, same as the PC chain; Last Heard 3 rows (2 ID VERIFIED), Systems 1 row (DMR 152.157500 MHz). Screenshots `captures/dv_real_call_{heard,systems,live}.png`, labelled RECORDED IQ REPLAY.
+- Not live on the Tab5's own antenna (V4L + 140/440 antenna did not decode off-air yet); the calls were received by the PC dongle.
+- Known gaps: LIVE view shows the newest event (a control burst, identity unknown) instead of the last verified call; Last Heard rows show "ID VERIFIED" but not the numbers (selected-event panel could not be tapped over serial in doc mode).
+- Capacity Max control (451.9125 MHz) fails CSBK CRC in both our decoder and DSD-FME (cause unconfirmed). Terra control messages (system parameters, grants) are decoded by DSD-FME but our decoder only CRC-checks CSBKs.

@@ -1,0 +1,26 @@
+gain 30 dB, floor(median) -32.7 dB, bins 11481
+    431.998 MHz  + 16.8 dB
+    437.212 MHz  + 15.9 dB
+    437.226 MHz  + 14.6 dB
+    437.199 MHz  + 14.3 dB
+    425.216 MHz  + 13.4 dB
+    433.340 MHz  + 12.6 dB
+    425.203 MHz  + 12.0 dB
+    437.239 MHz  + 11.8 dB
+    437.186 MHz  + 11.6 dB
+    425.229 MHz  + 11.5 dB
+    437.252 MHz  + 10.3 dB
+    441.744 MHz  + 10.3 dB
+    425.190 MHz  + 10.2 dB
+    437.953 MHz  +  9.7 dB
+    441.050 MHz  +  9.6 dB
+    437.173 MHz  +  9.5 dB
+    438.026 MHz  +  9.4 dB
+    441.676 MHz  +  9.4 dB
+    438.039 MHz  +  9.3 dB
+    425.242 MHz  +  9.3 dB
+    441.100 MHz  +  9.3 dB
+    438.000 MHz  +  9.2 dB
+    438.086 MHz  +  9.2 dB
+    437.976 MHz  +  9.2 dB
+    437.932 MHz  +  9.2 dB

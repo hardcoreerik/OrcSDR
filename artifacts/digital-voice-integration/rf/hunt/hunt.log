@@ -1,0 +1,1392 @@
+07:38:45 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+07:39:04 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+07:39:23 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+07:39:41 152.1575 Terra T3 ctrl: events=158 dmr_ev=433 id=0 level=199 kept=True
+07:40:00 152.3450 Terra Oakridge: events=104 dmr_ev=280 id=0 level=136 kept=True
+07:40:19 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+07:40:38 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+07:40:56 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+07:41:15 152.1575 Terra T3 ctrl: events=174 dmr_ev=458 id=0 level=190 kept=False
+07:41:34 152.3450 Terra Oakridge: events=100 dmr_ev=263 id=0 level=135 kept=False
+07:41:53 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=7 kept=False
+07:42:11 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+07:42:30 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=7 kept=False
+07:42:49 152.1575 Terra T3 ctrl: events=173 dmr_ev=463 id=0 level=194 kept=False
+07:43:08 152.3450 Terra Oakridge: events=87 dmr_ev=250 id=0 level=136 kept=False
+07:43:26 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+07:43:45 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+07:44:04 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+07:44:22 152.1575 Terra T3 ctrl: events=174 dmr_ev=463 id=0 level=214 kept=False
+07:44:41 152.3450 Terra Oakridge: events=67 dmr_ev=224 id=0 level=128 kept=False
+07:44:59 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+07:45:17 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+07:45:36 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+07:45:54 152.1575 Terra T3 ctrl: events=173 dmr_ev=465 id=0 level=197 kept=False
+07:46:12 152.3450 Terra Oakridge: events=118 dmr_ev=299 id=0 level=131 kept=False
+07:46:30 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=7 kept=False
+07:46:49 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+07:47:07 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+07:47:25 152.1575 Terra T3 ctrl: events=176 dmr_ev=463 id=0 level=173 kept=False
+07:47:43 152.3450 Terra Oakridge: events=72 dmr_ev=219 id=0 level=131 kept=False
+07:48:02 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+07:48:20 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+07:48:38 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+07:48:56 152.1575 Terra T3 ctrl: events=174 dmr_ev=464 id=0 level=189 kept=False
+07:49:15 152.3450 Terra Oakridge: events=106 dmr_ev=253 id=0 level=179 kept=False
+07:49:33 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+07:49:52 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+07:50:10 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+07:50:28 152.1575 Terra T3 ctrl: events=171 dmr_ev=457 id=0 level=173 kept=False
+07:50:47 152.3450 Terra Oakridge: events=93 dmr_ev=234 id=0 level=142 kept=False
+07:51:05 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+07:51:24 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+07:51:42 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+07:52:00 152.1575 Terra T3 ctrl: events=175 dmr_ev=465 id=0 level=216 kept=False
+07:52:19 152.3450 Terra Oakridge: events=64 dmr_ev=201 id=0 level=130 kept=False
+07:52:37 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+07:52:55 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+07:53:14 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+07:53:32 152.1575 Terra T3 ctrl: events=177 dmr_ev=465 id=0 level=194 kept=False
+07:53:50 152.3450 Terra Oakridge: events=166 dmr_ev=361 id=0 level=131 kept=False
+07:54:08 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=7 kept=False
+07:54:26 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+07:54:44 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+07:55:03 152.1575 Terra T3 ctrl: events=172 dmr_ev=464 id=0 level=193 kept=False
+07:55:21 152.3450 Terra Oakridge: events=132 dmr_ev=328 id=0 level=127 kept=False
+07:55:39 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=7 kept=False
+07:55:57 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+07:56:15 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+07:56:33 152.1575 Terra T3 ctrl: events=165 dmr_ev=438 id=0 level=167 kept=False
+07:56:51 152.3450 Terra Oakridge: events=137 dmr_ev=339 id=0 level=129 kept=False
+07:57:09 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=7 kept=False
+07:57:28 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+07:57:46 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+07:58:04 152.1575 Terra T3 ctrl: events=168 dmr_ev=446 id=0 level=198 kept=False
+07:58:22 152.3450 Terra Oakridge: events=119 dmr_ev=274 id=0 level=136 kept=False
+07:58:40 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+07:58:58 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+07:59:17 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+07:59:35 152.1575 Terra T3 ctrl: events=167 dmr_ev=442 id=0 level=161 kept=False
+07:59:53 152.3450 Terra Oakridge: events=154 dmr_ev=344 id=0 level=125 kept=False
+08:00:11 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+08:00:29 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+08:00:47 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+08:01:05 152.1575 Terra T3 ctrl: events=175 dmr_ev=465 id=0 level=191 kept=False
+08:01:23 152.3450 Terra Oakridge: events=104 dmr_ev=284 id=0 level=127 kept=False
+08:01:42 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+08:02:00 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:02:18 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=7 kept=False
+08:02:36 152.1575 Terra T3 ctrl: events=171 dmr_ev=449 id=0 level=178 kept=False
+08:02:54 152.3450 Terra Oakridge: events=102 dmr_ev=301 id=0 level=131 kept=False
+08:03:12 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+08:03:30 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:03:49 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+08:04:07 152.1575 Terra T3 ctrl: events=156 dmr_ev=407 id=0 level=153 kept=False
+08:04:25 152.3450 Terra Oakridge: events=104 dmr_ev=285 id=0 level=31 kept=False
+08:04:43 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+08:05:01 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+08:05:19 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:05:19 stopped
+08:05:42 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+08:06:01 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:06:19 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=8 kept=False
+08:06:37 152.1575 Terra T3 ctrl: events=171 dmr_ev=459 id=0 level=177 kept=True
+08:06:55 152.3450 Terra Oakridge: events=111 dmr_ev=315 id=0 level=135 kept=True
+08:07:13 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=143 kept=False
+08:07:31 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=23 kept=False
+08:07:49 152.6850 candidate 152.685: events=126 dmr_ev=356 id=0 level=175 kept=True
+08:08:07 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=108 kept=False
+08:08:25 153.0680 candidate 153.068: events=0 dmr_ev=453 id=0 level=25 kept=False
+08:08:43 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+08:09:02 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:09:20 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+08:09:38 152.1575 Terra T3 ctrl: events=175 dmr_ev=463 id=0 level=195 kept=False
+08:09:56 152.3450 Terra Oakridge: events=65 dmr_ev=225 id=0 level=113 kept=False
+08:10:14 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=164 kept=False
+08:10:32 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=91 kept=False
+08:10:50 152.6850 candidate 152.685: events=120 dmr_ev=356 id=0 level=144 kept=False
+08:11:08 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=119 kept=False
+08:11:27 153.0680 candidate 153.068: events=0 dmr_ev=440 id=0 level=229 kept=False
+08:11:45 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+08:12:03 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:12:21 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+08:12:39 152.1575 Terra T3 ctrl: events=170 dmr_ev=457 id=0 level=170 kept=False
+08:12:57 152.3450 Terra Oakridge: events=107 dmr_ev=324 id=0 level=145 kept=False
+08:13:15 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=129 kept=False
+08:13:33 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=91 kept=False
+08:13:51 152.6850 candidate 152.685: events=125 dmr_ev=362 id=0 level=163 kept=False
+08:14:09 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=91 kept=False
+08:14:27 153.0680 candidate 153.068: events=0 dmr_ev=446 id=0 level=224 kept=False
+08:14:45 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=7 kept=False
+08:15:04 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:15:22 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:15:40 152.1575 Terra T3 ctrl: events=162 dmr_ev=431 id=0 level=168 kept=False
+08:15:58 152.3450 Terra Oakridge: events=78 dmr_ev=234 id=0 level=129 kept=False
+08:16:16 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=108 kept=False
+08:16:34 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=84 kept=False
+08:16:52 152.6850 candidate 152.685: events=134 dmr_ev=370 id=0 level=166 kept=False
+08:17:10 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=86 kept=False
+08:17:28 153.0680 candidate 153.068: events=0 dmr_ev=462 id=0 level=209 kept=False
+08:17:46 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+08:18:04 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:18:22 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:18:40 152.1575 Terra T3 ctrl: events=173 dmr_ev=459 id=0 level=177 kept=False
+08:18:58 152.3450 Terra Oakridge: events=97 dmr_ev=291 id=0 level=125 kept=False
+08:19:16 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=169 kept=False
+08:19:35 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=82 kept=False
+08:19:53 152.6850 candidate 152.685: events=129 dmr_ev=336 id=0 level=152 kept=False
+08:20:11 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=111 kept=False
+08:20:29 153.0680 candidate 153.068: events=0 dmr_ev=410 id=0 level=208 kept=False
+08:20:47 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=7 kept=False
+08:21:05 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+08:21:23 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+08:21:41 152.1575 Terra T3 ctrl: events=173 dmr_ev=458 id=0 level=185 kept=False
+08:21:59 152.3450 Terra Oakridge: events=146 dmr_ev=388 id=0 level=129 kept=False
+08:22:17 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=135 kept=False
+08:22:35 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=89 kept=False
+08:22:53 152.6850 candidate 152.685: events=89 dmr_ev=289 id=0 level=54 kept=False
+08:23:12 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=93 kept=False
+08:23:30 153.0680 candidate 153.068: events=0 dmr_ev=419 id=0 level=207 kept=False
+08:23:48 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+08:24:06 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+08:24:24 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:24:42 152.1575 Terra T3 ctrl: events=171 dmr_ev=460 id=0 level=175 kept=False
+08:25:00 152.3450 Terra Oakridge: events=122 dmr_ev=334 id=0 level=125 kept=False
+08:25:18 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=128 kept=False
+08:25:36 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=85 kept=False
+08:25:54 152.6850 candidate 152.685: events=128 dmr_ev=340 id=0 level=137 kept=False
+08:26:12 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=104 kept=False
+08:26:30 153.0680 candidate 153.068: events=0 dmr_ev=435 id=0 level=211 kept=False
+08:26:48 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=7 kept=False
+08:27:06 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:27:25 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+08:27:43 152.1575 Terra T3 ctrl: events=168 dmr_ev=448 id=0 level=171 kept=False
+08:28:01 152.3450 Terra Oakridge: events=96 dmr_ev=276 id=0 level=128 kept=False
+08:28:19 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=137 kept=False
+08:28:37 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=76 kept=False
+08:28:55 152.6850 candidate 152.685: events=127 dmr_ev=340 id=0 level=155 kept=False
+08:29:13 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=95 kept=False
+08:29:31 153.0680 candidate 153.068: events=0 dmr_ev=440 id=0 level=199 kept=False
+08:29:50 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+08:30:08 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:30:26 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+08:30:44 152.1575 Terra T3 ctrl: events=169 dmr_ev=452 id=0 level=178 kept=False
+08:31:02 152.3450 Terra Oakridge: events=64 dmr_ev=235 id=0 level=140 kept=False
+08:31:21 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=50 kept=False
+08:31:39 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=85 kept=False
+08:31:57 152.6850 candidate 152.685: events=144 dmr_ev=393 id=0 level=56 kept=False
+08:32:15 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=118 kept=False
+08:32:33 153.0680 candidate 153.068: events=0 dmr_ev=272 id=0 level=202 kept=False
+08:32:52 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=1143 kept=False
+08:33:10 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+08:33:28 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:33:46 152.1575 Terra T3 ctrl: events=128 dmr_ev=346 id=0 level=172 kept=False
+08:34:04 152.3450 Terra Oakridge: events=48 dmr_ev=174 id=0 level=180 kept=False
+08:34:22 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=127 kept=False
+08:34:41 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=84 kept=False
+08:34:59 152.6850 candidate 152.685: events=86 dmr_ev=245 id=0 level=167 kept=False
+08:35:17 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=111 kept=False
+08:35:35 153.0680 candidate 153.068: events=0 dmr_ev=445 id=0 level=94 kept=False
+08:35:53 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+08:36:12 444.4250 ham CC1: events=0 dmr_ev=3 id=0 level=6 kept=False
+08:36:30 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+08:36:48 152.1575 Terra T3 ctrl: events=175 dmr_ev=461 id=0 level=178 kept=False
+08:37:06 152.3450 Terra Oakridge: events=91 dmr_ev=264 id=0 level=126 kept=False
+08:37:25 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=119 kept=False
+08:37:43 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=81 kept=False
+08:38:01 152.6850 candidate 152.685: events=138 dmr_ev=376 id=0 level=151 kept=False
+08:38:19 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=121 kept=False
+08:38:37 153.0680 candidate 153.068: events=0 dmr_ev=425 id=0 level=216 kept=False
+08:38:56 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+08:39:14 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:39:32 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+08:39:50 152.1575 Terra T3 ctrl: events=167 dmr_ev=443 id=0 level=160 kept=False
+08:40:08 152.3450 Terra Oakridge: events=143 dmr_ev=364 id=0 level=144 kept=False
+08:40:26 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=136 kept=False
+08:40:44 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=82 kept=False
+08:41:03 152.6850 candidate 152.685: events=133 dmr_ev=371 id=0 level=166 kept=False
+08:41:21 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=106 kept=False
+08:41:39 153.0680 candidate 153.068: events=0 dmr_ev=426 id=0 level=199 kept=False
+08:41:58 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+08:42:16 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+08:42:34 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+08:42:52 152.1575 Terra T3 ctrl: events=170 dmr_ev=449 id=0 level=163 kept=False
+08:43:10 152.3450 Terra Oakridge: events=115 dmr_ev=312 id=0 level=126 kept=False
+08:43:29 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=175 kept=False
+08:43:47 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=24 kept=False
+08:44:05 152.6850 candidate 152.685: events=142 dmr_ev=395 id=0 level=167 kept=False
+08:44:24 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=108 kept=False
+08:44:42 153.0680 candidate 153.068: events=0 dmr_ev=438 id=0 level=29 kept=False
+08:45:00 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+08:45:19 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:45:37 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+08:45:55 152.1575 Terra T3 ctrl: events=171 dmr_ev=446 id=0 level=152 kept=False
+08:46:14 152.3450 Terra Oakridge: events=107 dmr_ev=306 id=0 level=122 kept=False
+08:46:32 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=172 kept=False
+08:46:50 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=84 kept=False
+08:47:08 152.6850 candidate 152.685: events=89 dmr_ev=239 id=0 level=155 kept=False
+08:47:27 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=95 kept=False
+08:47:45 153.0680 candidate 153.068: events=0 dmr_ev=447 id=0 level=208 kept=False
+08:48:04 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+08:48:22 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+08:48:40 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:48:59 152.1575 Terra T3 ctrl: events=172 dmr_ev=457 id=0 level=170 kept=False
+08:49:17 152.3450 Terra Oakridge: events=47 dmr_ev=178 id=0 level=132 kept=False
+08:49:35 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=152 kept=False
+08:49:53 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=80 kept=False
+08:50:11 152.6850 candidate 152.685: events=123 dmr_ev=326 id=0 level=159 kept=False
+08:50:29 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=111 kept=False
+08:50:47 153.0680 candidate 153.068: events=0 dmr_ev=433 id=0 level=208 kept=False
+08:51:06 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+08:51:24 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:51:42 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:52:00 152.1575 Terra T3 ctrl: events=170 dmr_ev=454 id=0 level=186 kept=False
+08:52:19 152.3450 Terra Oakridge: events=60 dmr_ev=226 id=0 level=122 kept=False
+08:52:37 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=144 kept=False
+08:52:55 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=88 kept=False
+08:53:13 152.6850 candidate 152.685: events=135 dmr_ev=356 id=0 level=165 kept=False
+08:53:31 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=105 kept=False
+08:53:50 153.0680 candidate 153.068: events=0 dmr_ev=432 id=0 level=209 kept=False
+08:54:08 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+08:54:27 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:54:45 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:55:03 152.1575 Terra T3 ctrl: events=175 dmr_ev=464 id=0 level=184 kept=False
+08:55:22 152.3450 Terra Oakridge: events=37 dmr_ev=152 id=0 level=192 kept=False
+08:55:40 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=128 kept=False
+08:55:58 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=76 kept=False
+08:56:17 152.6850 candidate 152.685: events=117 dmr_ev=320 id=0 level=171 kept=False
+08:56:35 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=115 kept=False
+08:56:53 153.0680 candidate 153.068: events=0 dmr_ev=438 id=0 level=24 kept=False
+08:57:12 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+08:57:30 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:57:48 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+08:58:06 152.1575 Terra T3 ctrl: events=177 dmr_ev=464 id=0 level=208 kept=False
+08:58:24 152.3450 Terra Oakridge: events=111 dmr_ev=285 id=0 level=117 kept=False
+08:58:43 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=155 kept=False
+08:59:01 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=83 kept=False
+08:59:20 152.6850 candidate 152.685: events=122 dmr_ev=335 id=0 level=109 kept=False
+08:59:38 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=98 kept=False
+08:59:56 153.0680 candidate 153.068: events=0 dmr_ev=415 id=0 level=197 kept=False
+09:00:14 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=7 kept=False
+09:00:33 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:00:51 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:01:09 152.1575 Terra T3 ctrl: events=172 dmr_ev=463 id=0 level=177 kept=False
+09:01:27 152.3450 Terra Oakridge: events=92 dmr_ev=265 id=0 level=126 kept=False
+09:01:46 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=160 kept=False
+09:02:04 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=79 kept=False
+09:02:22 152.6850 candidate 152.685: events=120 dmr_ev=359 id=0 level=162 kept=False
+09:02:40 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=91 kept=False
+09:02:59 153.0680 candidate 153.068: events=0 dmr_ev=445 id=0 level=205 kept=False
+09:03:17 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=7 kept=False
+09:03:35 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+09:03:54 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:04:12 152.1575 Terra T3 ctrl: events=175 dmr_ev=465 id=0 level=195 kept=False
+09:04:30 152.3450 Terra Oakridge: events=107 dmr_ev=294 id=0 level=26 kept=False
+09:04:49 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=119 kept=False
+09:05:07 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=99 kept=False
+09:05:26 152.6850 candidate 152.685: events=126 dmr_ev=345 id=0 level=171 kept=False
+09:05:44 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=117 kept=False
+09:06:02 153.0680 candidate 153.068: events=0 dmr_ev=435 id=0 level=221 kept=False
+09:06:21 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=7 kept=False
+09:06:39 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:06:57 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:07:16 152.1575 Terra T3 ctrl: events=172 dmr_ev=451 id=0 level=159 kept=True
+09:07:34 152.3450 Terra Oakridge: events=113 dmr_ev=309 id=0 level=137 kept=True
+09:07:52 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=150 kept=False
+09:08:10 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=87 kept=False
+09:08:29 152.6850 candidate 152.685: events=155 dmr_ev=394 id=0 level=154 kept=True
+09:08:47 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=19 kept=False
+09:09:05 153.0680 candidate 153.068: events=0 dmr_ev=449 id=0 level=27 kept=False
+09:09:24 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+09:09:42 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:10:00 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:10:19 152.1575 Terra T3 ctrl: events=158 dmr_ev=422 id=0 level=176 kept=False
+09:10:37 152.3450 Terra Oakridge: events=110 dmr_ev=314 id=0 level=122 kept=False
+09:10:55 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=65 kept=False
+09:11:14 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=82 kept=False
+09:11:32 152.6850 candidate 152.685: events=72 dmr_ev=247 id=0 level=125 kept=False
+09:11:50 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=101 kept=False
+09:12:09 153.0680 candidate 153.068: events=0 dmr_ev=457 id=0 level=191 kept=False
+09:12:27 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=7 kept=False
+09:12:45 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+09:13:04 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+09:13:22 152.1575 Terra T3 ctrl: events=175 dmr_ev=458 id=0 level=182 kept=False
+09:13:40 152.3450 Terra Oakridge: events=138 dmr_ev=364 id=0 level=123 kept=False
+09:13:59 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=142 kept=False
+09:14:17 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=81 kept=False
+09:14:35 152.6850 candidate 152.685: events=144 dmr_ev=390 id=0 level=153 kept=False
+09:14:54 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=119 kept=False
+09:15:12 153.0680 candidate 153.068: events=0 dmr_ev=397 id=0 level=205 kept=False
+09:15:30 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+09:15:48 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:16:07 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:16:25 152.1575 Terra T3 ctrl: events=171 dmr_ev=448 id=0 level=154 kept=False
+09:16:44 152.3450 Terra Oakridge: events=98 dmr_ev=282 id=0 level=136 kept=False
+09:17:02 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=111 kept=False
+09:17:20 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=84 kept=False
+09:17:38 152.6850 candidate 152.685: events=87 dmr_ev=237 id=0 level=19 kept=False
+09:17:57 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=110 kept=False
+09:18:15 153.0680 candidate 153.068: events=0 dmr_ev=371 id=0 level=208 kept=False
+09:18:33 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+09:18:52 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=11 kept=False
+09:19:10 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:19:28 152.1575 Terra T3 ctrl: events=176 dmr_ev=459 id=0 level=171 kept=False
+09:19:47 152.3450 Terra Oakridge: events=81 dmr_ev=260 id=0 level=138 kept=False
+09:20:05 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=128 kept=False
+09:20:23 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=78 kept=False
+09:20:41 152.6850 candidate 152.685: events=122 dmr_ev=329 id=0 level=59 kept=False
+09:21:00 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=104 kept=False
+09:21:18 153.0680 candidate 153.068: events=0 dmr_ev=363 id=0 level=210 kept=False
+09:21:36 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+09:21:55 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+09:22:13 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+09:22:31 152.1575 Terra T3 ctrl: events=164 dmr_ev=433 id=0 level=133 kept=False
+09:22:50 152.3450 Terra Oakridge: events=103 dmr_ev=296 id=0 level=127 kept=False
+09:23:08 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=155 kept=False
+09:23:26 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=77 kept=False
+09:23:44 152.6850 candidate 152.685: events=118 dmr_ev=320 id=0 level=149 kept=False
+09:24:03 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=121 kept=False
+09:24:21 153.0680 candidate 153.068: events=0 dmr_ev=349 id=0 level=215 kept=False
+09:24:39 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+09:24:58 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=4 kept=False
+09:25:16 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=7 kept=False
+09:25:34 152.1575 Terra T3 ctrl: events=170 dmr_ev=445 id=0 level=146 kept=False
+09:25:53 152.3450 Terra Oakridge: events=70 dmr_ev=207 id=0 level=131 kept=False
+09:26:11 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=92 kept=False
+09:26:29 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=81 kept=False
+09:26:48 152.6850 candidate 152.685: events=77 dmr_ev=233 id=0 level=139 kept=False
+09:27:06 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=128 kept=False
+09:27:24 153.0680 candidate 153.068: events=0 dmr_ev=428 id=0 level=216 kept=False
+09:27:42 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+09:28:01 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:28:19 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+09:28:37 152.1575 Terra T3 ctrl: events=173 dmr_ev=459 id=0 level=191 kept=False
+09:28:56 152.3450 Terra Oakridge: events=17 dmr_ev=126 id=0 level=161 kept=False
+09:29:14 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=141 kept=False
+09:29:32 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=86 kept=False
+09:29:51 152.6850 candidate 152.685: events=106 dmr_ev=308 id=0 level=145 kept=False
+09:30:09 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=119 kept=False
+09:30:28 153.0680 candidate 153.068: events=0 dmr_ev=415 id=0 level=235 kept=False
+09:30:46 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=10 kept=False
+09:31:05 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+09:31:23 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+09:31:41 152.1575 Terra T3 ctrl: events=173 dmr_ev=460 id=0 level=162 kept=False
+09:32:00 152.3450 Terra Oakridge: events=41 dmr_ev=202 id=0 level=123 kept=False
+09:32:18 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=147 kept=False
+09:32:37 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=84 kept=False
+09:32:55 152.6850 candidate 152.685: events=138 dmr_ev=346 id=0 level=135 kept=False
+09:33:13 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=103 kept=False
+09:33:32 153.0680 candidate 153.068: events=0 dmr_ev=408 id=0 level=182 kept=False
+09:33:50 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+09:34:08 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+09:34:27 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:34:45 152.1575 Terra T3 ctrl: events=153 dmr_ev=400 id=0 level=140 kept=False
+09:35:03 152.3450 Terra Oakridge: events=76 dmr_ev=232 id=0 level=116 kept=False
+09:35:21 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=139 kept=False
+09:35:40 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=80 kept=False
+09:35:58 152.6850 candidate 152.685: events=104 dmr_ev=299 id=0 level=158 kept=False
+09:36:17 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=18 kept=False
+09:36:35 153.0680 candidate 153.068: events=0 dmr_ev=440 id=0 level=219 kept=False
+09:36:53 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+09:37:12 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:37:30 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:37:48 152.1575 Terra T3 ctrl: events=166 dmr_ev=444 id=0 level=158 kept=False
+09:38:07 152.3450 Terra Oakridge: events=101 dmr_ev=282 id=0 level=118 kept=False
+09:38:25 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=138 kept=False
+09:38:43 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=82 kept=False
+09:39:02 152.6850 candidate 152.685: events=102 dmr_ev=294 id=0 level=147 kept=False
+09:39:20 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=107 kept=False
+09:39:39 153.0680 candidate 153.068: events=0 dmr_ev=463 id=0 level=225 kept=False
+09:39:57 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+09:40:16 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=7 kept=False
+09:40:34 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+09:40:53 152.1575 Terra T3 ctrl: events=165 dmr_ev=414 id=0 level=154 kept=False
+09:41:11 152.3450 Terra Oakridge: events=11 dmr_ev=93 id=0 level=130 kept=False
+09:41:29 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=137 kept=False
+09:41:48 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=22 kept=False
+09:42:06 152.6850 candidate 152.685: events=115 dmr_ev=355 id=0 level=158 kept=False
+09:42:25 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=103 kept=False
+09:42:44 153.0680 candidate 153.068: events=0 dmr_ev=420 id=0 level=210 kept=False
+09:43:02 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+09:43:21 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:43:39 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:43:58 152.1575 Terra T3 ctrl: events=164 dmr_ev=444 id=0 level=150 kept=False
+09:44:16 152.3450 Terra Oakridge: events=59 dmr_ev=216 id=0 level=139 kept=False
+09:44:35 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=119 kept=False
+09:44:54 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=84 kept=False
+09:45:12 152.6850 candidate 152.685: events=93 dmr_ev=247 id=0 level=150 kept=False
+09:45:31 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=53 kept=False
+09:45:49 153.0680 candidate 153.068: events=0 dmr_ev=32 id=0 level=217 kept=False
+09:46:08 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+09:46:26 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:46:45 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+09:47:04 152.1575 Terra T3 ctrl: events=163 dmr_ev=429 id=0 level=139 kept=False
+09:47:22 152.3450 Terra Oakridge: events=61 dmr_ev=219 id=0 level=118 kept=False
+09:47:40 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=142 kept=False
+09:47:59 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=84 kept=False
+09:48:18 152.6850 candidate 152.685: events=116 dmr_ev=328 id=0 level=152 kept=False
+09:48:36 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=106 kept=False
+09:48:55 153.0680 candidate 153.068: events=0 dmr_ev=416 id=0 level=201 kept=False
+09:49:13 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+09:49:32 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:49:51 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=4 kept=False
+09:50:09 152.1575 Terra T3 ctrl: events=176 dmr_ev=463 id=0 level=178 kept=False
+09:50:28 152.3450 Terra Oakridge: events=4 dmr_ev=64 id=0 level=156 kept=False
+09:50:46 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=149 kept=False
+09:51:05 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=75 kept=False
+09:51:23 152.6850 candidate 152.685: events=132 dmr_ev=356 id=0 level=151 kept=False
+09:51:42 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=98 kept=False
+09:52:01 153.0680 candidate 153.068: events=0 dmr_ev=420 id=0 level=198 kept=False
+09:52:19 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+09:52:38 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:52:56 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:53:15 152.1575 Terra T3 ctrl: events=175 dmr_ev=462 id=0 level=159 kept=False
+09:53:33 152.3450 Terra Oakridge: events=78 dmr_ev=244 id=0 level=122 kept=False
+09:53:52 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=133 kept=False
+09:54:11 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=97 kept=False
+09:54:29 152.6850 candidate 152.685: events=123 dmr_ev=340 id=0 level=139 kept=False
+09:54:48 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=115 kept=False
+09:55:06 153.0680 candidate 153.068: events=0 dmr_ev=415 id=0 level=208 kept=False
+09:55:25 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=10 kept=False
+09:55:44 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:56:02 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:56:21 152.1575 Terra T3 ctrl: events=165 dmr_ev=445 id=0 level=149 kept=False
+09:56:39 152.3450 Terra Oakridge: events=32 dmr_ev=160 id=0 level=137 kept=False
+09:56:58 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=91 kept=False
+09:57:17 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=83 kept=False
+09:57:35 152.6850 candidate 152.685: events=113 dmr_ev=331 id=0 level=140 kept=False
+09:57:54 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=103 kept=False
+09:58:13 153.0680 candidate 153.068: events=0 dmr_ev=415 id=0 level=197 kept=False
+09:58:31 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+09:58:50 444.4250 ham CC1: events=0 dmr_ev=5 id=0 level=5 kept=False
+09:59:09 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+09:59:27 152.1575 Terra T3 ctrl: events=53 dmr_ev=201 id=0 level=145 kept=False
+09:59:46 152.3450 Terra Oakridge: events=80 dmr_ev=233 id=0 level=109 kept=False
+10:00:04 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=105 kept=False
+10:00:23 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=83 kept=False
+10:00:42 152.6850 candidate 152.685: events=89 dmr_ev=264 id=0 level=151 kept=False
+10:01:00 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=134 kept=False
+10:01:19 153.0680 candidate 153.068: events=0 dmr_ev=440 id=0 level=228 kept=False
+10:01:37 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+10:01:56 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=4 kept=False
+10:02:15 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+10:02:33 152.1575 Terra T3 ctrl: events=168 dmr_ev=445 id=0 level=165 kept=False
+10:02:52 152.3450 Terra Oakridge: events=36 dmr_ev=163 id=0 level=116 kept=False
+10:03:10 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=137 kept=False
+10:03:29 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=83 kept=False
+10:03:48 152.6850 candidate 152.685: events=132 dmr_ev=367 id=0 level=162 kept=False
+10:04:06 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=91 kept=False
+10:04:25 153.0680 candidate 153.068: events=0 dmr_ev=429 id=0 level=216 kept=False
+10:04:43 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+10:05:02 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+10:05:21 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+10:05:39 152.1575 Terra T3 ctrl: events=140 dmr_ev=371 id=0 level=171 kept=False
+10:05:58 152.3450 Terra Oakridge: events=31 dmr_ev=155 id=0 level=117 kept=False
+10:06:16 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=135 kept=False
+10:06:35 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=83 kept=False
+10:06:54 152.6850 candidate 152.685: events=126 dmr_ev=331 id=0 level=53 kept=False
+10:07:12 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=99 kept=False
+10:07:31 153.0680 candidate 153.068: events=0 dmr_ev=430 id=0 level=203 kept=False
+10:07:49 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=7 kept=False
+10:08:08 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+10:08:27 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+10:08:45 152.1575 Terra T3 ctrl: events=173 dmr_ev=460 id=0 level=161 kept=True
+10:09:04 152.3450 Terra Oakridge: events=72 dmr_ev=222 id=0 level=123 kept=True
+10:09:23 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=114 kept=False
+10:09:41 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=81 kept=False
+10:10:00 152.6850 candidate 152.685: events=135 dmr_ev=349 id=0 level=53 kept=True
+10:10:18 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=112 kept=False
+10:10:18 stopped
+10:11:24 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+10:11:43 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+10:12:02 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+10:12:20 152.1575 Terra T3 ctrl: events=106 dmr_ev=274 id=0 level=150 kept=True
+10:12:39 152.3450 Terra Oakridge: events=58 dmr_ev=211 id=0 level=112 kept=True
+10:12:57 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=122 kept=False
+10:13:16 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=85 kept=False
+10:13:35 152.6850 candidate 152.685: events=107 dmr_ev=310 id=0 level=147 kept=True
+10:13:53 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=103 kept=False
+10:14:12 153.0680 candidate 153.068: events=0 dmr_ev=437 id=0 level=219 kept=False
+10:14:31 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=19 kept=False
+10:14:49 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=19 kept=False
+10:15:08 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=18 kept=False
+10:15:26 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=26 kept=False
+10:15:54 438.0260 sweep 438.026: events=-1 dmr_ev=0 id=0 level=None kept=False
+10:16:30 442.4250 ham CC1: events=-1 dmr_ev=0 id=0 level=None kept=False
+10:40:30 442.4250 ham CC1: events=-1 dmr_ev=0 id=0 level=None kept=False
+10:42:47 444425000 error TimeoutExpired: Command '['wsl', '-e', '/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-rev
+10:42:52 stopped
+10:45:58 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+10:46:17 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+10:46:35 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+10:46:54 152.1575 Terra T3 ctrl: events=168 dmr_ev=446 id=0 level=147 kept=True
+10:47:12 152.3450 Terra Oakridge: events=38 dmr_ev=146 id=0 level=155 kept=True
+10:47:31 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=146 kept=False
+10:47:50 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=80 kept=False
+10:48:08 152.6850 candidate 152.685: events=120 dmr_ev=320 id=0 level=162 kept=True
+10:48:27 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=109 kept=False
+10:48:45 153.0680 candidate 153.068: events=0 dmr_ev=422 id=0 level=214 kept=False
+10:49:04 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=22 kept=False
+10:49:23 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=19 kept=False
+10:49:41 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=19 kept=False
+10:50:00 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=24 kept=False
+10:50:18 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=20 kept=False
+10:50:37 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=10 kept=False
+10:50:56 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+10:51:15 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+10:51:33 152.1575 Terra T3 ctrl: events=167 dmr_ev=433 id=0 level=166 kept=False
+10:51:52 152.3450 Terra Oakridge: events=25 dmr_ev=149 id=0 level=152 kept=False
+10:52:11 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=174 kept=False
+10:52:29 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=80 kept=False
+10:52:48 152.6850 candidate 152.685: events=63 dmr_ev=233 id=0 level=54 kept=False
+10:53:07 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=109 kept=False
+10:53:25 153.0680 candidate 153.068: events=0 dmr_ev=406 id=0 level=225 kept=False
+10:53:44 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=19 kept=False
+10:54:03 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=22 kept=False
+10:54:22 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=22 kept=False
+10:54:41 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=23 kept=False
+10:54:59 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=18 kept=False
+10:55:18 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+10:55:37 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+10:55:56 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+10:56:14 152.1575 Terra T3 ctrl: events=172 dmr_ev=456 id=0 level=183 kept=False
+10:56:33 152.3450 Terra Oakridge: events=51 dmr_ev=169 id=0 level=116 kept=False
+10:56:52 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=163 kept=False
+10:57:11 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=86 kept=False
+10:57:29 152.6850 candidate 152.685: events=124 dmr_ev=350 id=0 level=135 kept=False
+10:57:48 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=109 kept=False
+10:58:07 153.0680 candidate 153.068: events=0 dmr_ev=412 id=0 level=219 kept=False
+10:58:26 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=18 kept=False
+10:58:45 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=22 kept=False
+10:59:03 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=21 kept=False
+10:59:22 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=23 kept=False
+10:59:41 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=19 kept=False
+11:00:00 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=11 kept=False
+11:00:19 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+11:00:37 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+11:00:56 152.1575 Terra T3 ctrl: events=171 dmr_ev=436 id=0 level=169 kept=False
+11:01:15 152.3450 Terra Oakridge: events=81 dmr_ev=263 id=0 level=124 kept=False
+11:01:34 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=153 kept=False
+11:01:52 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=83 kept=False
+11:02:11 152.6850 candidate 152.685: events=131 dmr_ev=354 id=0 level=157 kept=False
+11:02:30 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=122 kept=False
+11:02:49 153.0680 candidate 153.068: events=0 dmr_ev=412 id=0 level=204 kept=False
+11:03:07 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=18 kept=False
+11:03:27 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=21 kept=False
+11:03:46 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=22 kept=False
+11:04:04 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=22 kept=False
+11:04:23 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=20 kept=False
+11:04:42 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+11:05:01 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+11:05:20 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=7 kept=False
+11:05:38 152.1575 Terra T3 ctrl: events=170 dmr_ev=433 id=0 level=173 kept=False
+11:05:57 152.3450 Terra Oakridge: events=67 dmr_ev=207 id=0 level=118 kept=False
+11:06:16 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=180 kept=False
+11:06:35 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=91 kept=False
+11:06:53 152.6850 candidate 152.685: events=107 dmr_ev=310 id=0 level=155 kept=False
+11:07:12 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=121 kept=False
+11:07:31 153.0680 candidate 153.068: events=0 dmr_ev=461 id=0 level=25 kept=False
+11:07:50 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=19 kept=False
+11:08:08 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=21 kept=False
+11:08:27 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=18 kept=False
+11:08:46 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=19 kept=False
+11:09:05 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=19 kept=False
+11:09:24 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+11:09:43 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+11:10:01 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+11:10:20 152.1575 Terra T3 ctrl: events=172 dmr_ev=452 id=0 level=174 kept=False
+11:10:39 152.3450 Terra Oakridge: events=70 dmr_ev=231 id=0 level=118 kept=False
+11:10:58 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=157 kept=False
+11:11:16 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=86 kept=False
+11:11:35 152.6850 candidate 152.685: events=136 dmr_ev=356 id=0 level=171 kept=False
+11:11:54 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=127 kept=False
+11:12:13 153.0680 candidate 153.068: events=0 dmr_ev=420 id=0 level=195 kept=False
+11:12:31 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=17 kept=False
+11:12:50 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=19 kept=False
+11:13:09 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=21 kept=False
+11:13:28 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=21 kept=False
+11:13:46 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=18 kept=False
+11:14:05 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+11:14:24 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+11:14:43 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+11:15:02 152.1575 Terra T3 ctrl: events=177 dmr_ev=465 id=0 level=191 kept=False
+11:15:20 152.3450 Terra Oakridge: events=84 dmr_ev=244 id=0 level=141 kept=False
+11:15:39 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=137 kept=False
+11:15:58 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=84 kept=False
+11:16:17 152.6850 candidate 152.685: events=146 dmr_ev=399 id=0 level=167 kept=False
+11:16:36 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=24 kept=False
+11:16:55 153.0680 candidate 153.068: events=0 dmr_ev=443 id=0 level=230 kept=False
+11:17:14 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=24 kept=False
+11:17:33 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=11 kept=False
+11:17:52 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=19 kept=False
+11:18:11 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=20 kept=False
+11:18:30 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=17 kept=False
+11:18:48 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+11:19:07 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=4 kept=False
+11:19:26 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+11:19:46 152.1575 Terra T3 ctrl: events=172 dmr_ev=465 id=0 level=179 kept=False
+11:20:04 152.3450 Terra Oakridge: events=71 dmr_ev=211 id=0 level=141 kept=False
+11:20:23 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=128 kept=False
+11:20:42 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=82 kept=False
+11:21:02 152.6850 candidate 152.685: events=134 dmr_ev=377 id=0 level=157 kept=False
+11:21:21 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=100 kept=False
+11:21:39 153.0680 candidate 153.068: events=0 dmr_ev=457 id=0 level=218 kept=False
+11:21:58 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=21 kept=False
+11:22:17 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=23 kept=False
+11:22:36 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=18 kept=False
+11:22:55 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=25 kept=False
+11:23:14 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=19 kept=False
+11:23:33 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+11:23:52 444.4250 ham CC1: events=0 dmr_ev=1 id=0 level=4 kept=False
+11:24:11 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+11:24:29 152.1575 Terra T3 ctrl: events=174 dmr_ev=464 id=0 level=203 kept=False
+11:24:48 152.3450 Terra Oakridge: events=49 dmr_ev=156 id=0 level=176 kept=False
+11:25:07 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=150 kept=False
+11:25:26 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=89 kept=False
+11:25:45 152.6850 candidate 152.685: events=95 dmr_ev=299 id=0 level=155 kept=False
+11:26:04 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=104 kept=False
+11:26:23 153.0680 candidate 153.068: events=0 dmr_ev=425 id=0 level=197 kept=False
+11:26:42 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=23 kept=False
+11:27:01 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=8 kept=False
+11:27:20 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=21 kept=False
+11:27:39 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=19 kept=False
+11:27:58 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=17 kept=False
+11:28:17 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+11:28:36 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=4 kept=False
+11:28:55 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+11:29:14 152.1575 Terra T3 ctrl: events=173 dmr_ev=464 id=0 level=180 kept=False
+11:29:32 152.3450 Terra Oakridge: events=57 dmr_ev=184 id=0 level=110 kept=False
+11:29:52 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=155 kept=False
+11:30:11 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=88 kept=False
+11:30:29 152.6850 candidate 152.685: events=138 dmr_ev=391 id=0 level=55 kept=False
+11:30:48 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=113 kept=False
+11:31:08 153.0680 candidate 153.068: events=0 dmr_ev=405 id=0 level=223 kept=False
+11:31:26 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=17 kept=False
+11:31:45 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=19 kept=False
+11:32:04 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=21 kept=False
+11:32:23 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=19 kept=False
+11:32:42 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=17 kept=False
+11:33:01 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+11:33:20 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+11:33:40 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+11:33:58 152.1575 Terra T3 ctrl: events=171 dmr_ev=464 id=0 level=192 kept=False
+11:34:17 152.3450 Terra Oakridge: events=35 dmr_ev=131 id=0 level=108 kept=False
+11:34:36 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=163 kept=False
+11:34:56 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=92 kept=False
+11:35:14 152.6850 candidate 152.685: events=129 dmr_ev=329 id=0 level=167 kept=False
+11:35:33 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=114 kept=False
+11:35:52 153.0680 candidate 153.068: events=0 dmr_ev=445 id=0 level=25 kept=False
+11:36:11 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=17 kept=False
+11:36:30 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=17 kept=False
+11:36:49 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=21 kept=False
+11:37:08 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=22 kept=False
+11:37:27 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=19 kept=False
+11:37:46 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+11:38:04 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+11:38:23 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+11:38:43 152.1575 Terra T3 ctrl: events=175 dmr_ev=466 id=0 level=204 kept=False
+11:39:01 152.3450 Terra Oakridge: events=17 dmr_ev=84 id=0 level=105 kept=False
+11:39:20 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=163 kept=False
+11:39:39 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=89 kept=False
+11:39:58 152.6850 candidate 152.685: events=120 dmr_ev=338 id=0 level=163 kept=False
+11:40:17 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=106 kept=False
+11:40:36 153.0680 candidate 153.068: events=0 dmr_ev=443 id=0 level=210 kept=False
+11:40:55 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=19 kept=False
+11:41:14 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=18 kept=False
+11:41:33 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=18 kept=False
+11:41:52 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=21 kept=False
+11:42:11 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=20 kept=False
+11:42:31 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=10 kept=False
+11:42:49 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+11:43:08 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+11:43:27 152.1575 Terra T3 ctrl: events=177 dmr_ev=465 id=0 level=199 kept=False
+11:43:46 152.3450 Terra Oakridge: events=48 dmr_ev=167 id=0 level=159 kept=False
+11:44:05 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=157 kept=False
+11:44:24 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=84 kept=False
+11:44:43 152.6850 candidate 152.685: events=105 dmr_ev=324 id=0 level=164 kept=False
+11:45:02 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=108 kept=False
+11:45:21 153.0680 candidate 153.068: events=0 dmr_ev=406 id=0 level=206 kept=False
+11:45:40 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=18 kept=False
+11:45:59 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=18 kept=False
+11:46:18 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=21 kept=False
+11:46:37 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=24 kept=False
+11:46:56 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=18 kept=False
+11:47:15 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+11:47:35 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+11:47:53 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+11:48:12 152.1575 Terra T3 ctrl: events=171 dmr_ev=442 id=0 level=51 kept=True
+11:48:31 152.3450 Terra Oakridge: events=36 dmr_ev=140 id=0 level=113 kept=True
+11:48:50 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=156 kept=False
+11:49:09 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=87 kept=False
+11:49:28 152.6850 candidate 152.685: events=139 dmr_ev=387 id=0 level=62 kept=True
+11:49:47 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=109 kept=False
+11:50:06 153.0680 candidate 153.068: events=0 dmr_ev=413 id=0 level=217 kept=False
+11:50:25 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=17 kept=False
+11:50:44 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=20 kept=False
+11:51:03 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=23 kept=False
+11:51:22 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=21 kept=False
+11:51:41 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=16 kept=False
+11:52:00 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=8 kept=False
+11:52:19 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+11:52:38 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+11:52:57 152.1575 Terra T3 ctrl: events=174 dmr_ev=464 id=0 level=210 kept=False
+11:53:16 152.3450 Terra Oakridge: events=8 dmr_ev=54 id=0 level=107 kept=False
+11:53:35 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=163 kept=False
+11:53:54 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=105 kept=False
+11:54:13 152.6850 candidate 152.685: events=77 dmr_ev=261 id=0 level=173 kept=False
+11:54:32 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=108 kept=False
+11:54:51 153.0680 candidate 153.068: events=0 dmr_ev=440 id=0 level=28 kept=False
+11:55:10 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=20 kept=False
+11:55:29 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=8 kept=False
+11:55:48 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=20 kept=False
+11:56:07 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=23 kept=False
+11:56:26 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=17 kept=False
+11:56:45 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=10 kept=False
+11:57:04 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+11:57:23 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+11:57:42 152.1575 Terra T3 ctrl: events=175 dmr_ev=466 id=0 level=205 kept=False
+11:58:01 152.3450 Terra Oakridge: events=24 dmr_ev=128 id=0 level=109 kept=False
+11:58:20 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=149 kept=False
+11:58:39 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=83 kept=False
+11:58:58 152.6850 candidate 152.685: events=133 dmr_ev=382 id=0 level=153 kept=False
+11:59:17 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=121 kept=False
+11:59:36 153.0680 candidate 153.068: events=0 dmr_ev=421 id=0 level=217 kept=False
+11:59:55 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=18 kept=False
+12:00:14 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=18 kept=False
+12:00:33 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=20 kept=False
+12:00:52 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=21 kept=False
+12:01:11 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=17 kept=False
+12:01:30 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=11 kept=False
+12:01:49 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:02:08 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:02:27 152.1575 Terra T3 ctrl: events=175 dmr_ev=460 id=0 level=210 kept=False
+12:02:46 152.3450 Terra Oakridge: events=0 dmr_ev=18 id=0 level=110 kept=False
+12:03:04 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=166 kept=False
+12:03:23 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=86 kept=False
+12:03:42 152.6850 candidate 152.685: events=128 dmr_ev=338 id=0 level=173 kept=False
+12:04:02 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=131 kept=False
+12:04:20 153.0680 candidate 153.068: events=0 dmr_ev=411 id=0 level=230 kept=False
+12:04:39 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=17 kept=False
+12:04:58 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=19 kept=False
+12:05:17 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=20 kept=False
+12:05:36 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=17 kept=False
+12:05:55 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=20 kept=False
+12:06:14 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+12:06:33 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:06:52 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:07:10 152.1575 Terra T3 ctrl: events=173 dmr_ev=458 id=0 level=202 kept=False
+12:07:29 152.3450 Terra Oakridge: events=11 dmr_ev=62 id=0 level=362 kept=False
+12:07:49 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=165 kept=False
+12:08:08 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=89 kept=False
+12:08:27 152.6850 candidate 152.685: events=150 dmr_ev=411 id=0 level=62 kept=False
+12:08:46 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=107 kept=False
+12:09:05 153.0680 candidate 153.068: events=0 dmr_ev=435 id=0 level=226 kept=False
+12:09:24 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=17 kept=False
+12:09:42 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=20 kept=False
+12:10:01 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=22 kept=False
+12:10:20 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=18 kept=False
+12:10:39 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=16 kept=False
+12:10:58 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+12:11:17 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:11:36 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:11:55 152.1575 Terra T3 ctrl: events=175 dmr_ev=464 id=0 level=202 kept=False
+12:12:14 152.3450 Terra Oakridge: events=15 dmr_ev=94 id=0 level=105 kept=False
+12:12:33 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=168 kept=False
+12:12:52 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=96 kept=False
+12:13:11 152.6850 candidate 152.685: events=127 dmr_ev=362 id=0 level=168 kept=False
+12:13:30 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=116 kept=False
+12:13:49 153.0680 candidate 153.068: events=0 dmr_ev=462 id=0 level=221 kept=False
+12:14:08 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=22 kept=False
+12:14:27 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=21 kept=False
+12:14:46 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=20 kept=False
+12:15:05 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=20 kept=False
+12:15:24 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=17 kept=False
+12:15:43 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+12:16:02 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:16:20 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:16:39 152.1575 Terra T3 ctrl: events=175 dmr_ev=465 id=0 level=207 kept=False
+12:16:58 152.3450 Terra Oakridge: events=1 dmr_ev=41 id=0 level=107 kept=False
+12:17:17 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=169 kept=False
+12:17:36 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=92 kept=False
+12:17:55 152.6850 candidate 152.685: events=135 dmr_ev=355 id=0 level=170 kept=False
+12:18:14 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=121 kept=False
+12:18:33 153.0680 candidate 153.068: events=0 dmr_ev=427 id=0 level=225 kept=False
+12:18:52 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=18 kept=False
+12:19:11 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=19 kept=False
+12:19:29 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=23 kept=False
+12:19:48 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=18 kept=False
+12:20:07 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=18 kept=False
+12:20:26 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+12:20:45 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:21:04 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:21:23 152.1575 Terra T3 ctrl: events=159 dmr_ev=424 id=0 level=219 kept=False
+12:21:42 152.3450 Terra Oakridge: events=28 dmr_ev=105 id=0 level=110 kept=False
+12:22:01 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=159 kept=False
+12:22:20 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=88 kept=False
+12:22:39 152.6850 candidate 152.685: events=146 dmr_ev=381 id=0 level=186 kept=False
+12:22:58 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=118 kept=False
+12:23:17 153.0680 candidate 153.068: events=0 dmr_ev=413 id=0 level=227 kept=False
+12:23:36 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=18 kept=False
+12:23:55 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=19 kept=False
+12:24:14 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=21 kept=False
+12:24:33 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=19 kept=False
+12:24:51 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=17 kept=False
+12:25:10 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=11 kept=False
+12:25:29 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:25:48 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:26:07 152.1575 Terra T3 ctrl: events=175 dmr_ev=465 id=0 level=216 kept=False
+12:26:26 152.3450 Terra Oakridge: events=17 dmr_ev=71 id=0 level=99 kept=False
+12:26:45 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=147 kept=False
+12:27:04 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=88 kept=False
+12:27:23 152.6850 candidate 152.685: events=144 dmr_ev=385 id=0 level=192 kept=False
+12:27:42 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=123 kept=False
+12:28:01 153.0680 candidate 153.068: events=0 dmr_ev=447 id=0 level=29 kept=False
+12:28:19 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=18 kept=False
+12:28:38 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=20 kept=False
+12:28:57 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=23 kept=False
+12:29:17 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=21 kept=False
+12:29:36 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=17 kept=False
+12:29:55 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+12:30:14 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:30:33 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:30:52 152.1575 Terra T3 ctrl: events=173 dmr_ev=465 id=0 level=211 kept=False
+12:31:11 152.3450 Terra Oakridge: events=10 dmr_ev=73 id=0 level=100 kept=False
+12:31:30 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=155 kept=False
+12:31:49 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=81 kept=False
+12:32:08 152.6850 candidate 152.685: events=139 dmr_ev=389 id=0 level=162 kept=False
+12:32:27 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=135 kept=False
+12:32:46 153.0680 candidate 153.068: events=0 dmr_ev=434 id=0 level=204 kept=False
+12:33:05 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=18 kept=False
+12:33:24 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=20 kept=False
+12:33:43 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=23 kept=False
+12:34:02 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=22 kept=False
+12:34:21 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=17 kept=False
+12:34:40 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+12:34:59 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:35:18 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=7 kept=False
+12:35:37 152.1575 Terra T3 ctrl: events=176 dmr_ev=462 id=0 level=214 kept=False
+12:35:56 152.3450 Terra Oakridge: events=3 dmr_ev=30 id=0 level=111 kept=False
+12:36:14 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=175 kept=False
+12:36:33 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=86 kept=False
+12:36:53 152.6850 candidate 152.685: events=140 dmr_ev=383 id=0 level=178 kept=False
+12:37:11 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=116 kept=False
+12:37:30 153.0680 candidate 153.068: events=0 dmr_ev=426 id=0 level=212 kept=False
+12:37:49 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=18 kept=False
+12:38:08 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=19 kept=False
+12:38:27 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=21 kept=False
+12:38:46 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=21 kept=False
+12:39:05 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=17 kept=False
+12:39:24 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+12:39:43 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:40:01 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:40:18 152.1575 Terra T3 ctrl: events=173 dmr_ev=466 id=0 level=208 kept=False
+12:40:38 152.3450 Terra Oakridge: events=2 dmr_ev=25 id=0 level=111 kept=False
+12:40:57 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=173 kept=False
+12:41:16 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=85 kept=False
+12:41:35 152.6850 candidate 152.685: events=167 dmr_ev=451 id=0 level=192 kept=False
+12:41:54 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=19 kept=False
+12:42:12 153.0680 candidate 153.068: events=0 dmr_ev=409 id=0 level=208 kept=False
+12:42:31 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=18 kept=False
+12:42:50 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=19 kept=False
+12:43:09 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=19 kept=False
+12:43:28 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=21 kept=False
+12:43:47 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=15 kept=False
+12:44:06 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+12:44:25 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:44:44 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+12:45:03 152.1575 Terra T3 ctrl: events=174 dmr_ev=465 id=0 level=233 kept=False
+12:45:21 152.3450 Terra Oakridge: events=4 dmr_ev=54 id=0 level=96 kept=False
+12:45:41 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=176 kept=False
+12:46:00 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=86 kept=False
+12:46:19 152.6850 candidate 152.685: events=159 dmr_ev=414 id=0 level=187 kept=False
+12:46:38 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=125 kept=False
+12:46:57 153.0680 candidate 153.068: events=0 dmr_ev=431 id=0 level=236 kept=False
+12:47:16 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=16 kept=False
+12:47:35 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=20 kept=False
+12:47:53 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=20 kept=False
+12:48:13 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=22 kept=False
+12:48:32 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=15 kept=False
+12:48:50 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+12:49:09 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=4 kept=False
+12:49:29 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:49:48 152.1575 Terra T3 ctrl: events=173 dmr_ev=465 id=0 level=230 kept=True
+12:50:06 152.3450 Terra Oakridge: events=3 dmr_ev=19 id=0 level=157 kept=True
+12:50:25 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=188 kept=False
+12:50:44 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=94 kept=False
+12:51:03 152.6850 candidate 152.685: events=161 dmr_ev=428 id=0 level=182 kept=True
+12:51:22 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=141 kept=False
+12:51:41 153.0680 candidate 153.068: events=0 dmr_ev=420 id=0 level=214 kept=False
+12:52:00 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=19 kept=False
+12:52:19 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=19 kept=False
+12:52:38 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=21 kept=False
+12:52:57 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=20 kept=False
+12:53:16 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=17 kept=False
+12:53:35 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=10 kept=False
+12:53:54 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:54:13 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:54:32 152.1575 Terra T3 ctrl: events=175 dmr_ev=466 id=0 level=230 kept=False
+12:54:51 152.3450 Terra Oakridge: events=0 dmr_ev=4 id=0 level=92 kept=False
+12:55:10 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=174 kept=False
+12:55:29 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=97 kept=False
+12:55:49 152.6850 candidate 152.685: events=128 dmr_ev=357 id=0 level=171 kept=False
+12:56:07 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=126 kept=False
+12:56:26 153.0680 candidate 153.068: events=0 dmr_ev=434 id=0 level=226 kept=False
+12:56:45 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=17 kept=False
+12:57:04 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=19 kept=False
+12:57:23 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=20 kept=False
+12:57:42 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=21 kept=False
+12:58:01 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=17 kept=False
+12:58:21 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+12:58:40 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:58:59 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+12:59:17 152.1575 Terra T3 ctrl: events=175 dmr_ev=466 id=0 level=219 kept=False
+12:59:37 152.3450 Terra Oakridge: events=0 dmr_ev=20 id=0 level=114 kept=False
+12:59:56 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=175 kept=False
+13:00:15 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=90 kept=False
+13:00:34 152.6850 candidate 152.685: events=159 dmr_ev=424 id=0 level=170 kept=False
+13:00:53 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=19 kept=False
+13:01:12 153.0680 candidate 153.068: events=0 dmr_ev=438 id=0 level=205 kept=False
+13:01:31 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=18 kept=False
+13:01:50 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=17 kept=False
+13:02:09 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=19 kept=False
+13:02:28 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=22 kept=False
+13:02:47 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=16 kept=False
+13:03:06 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+13:03:25 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=7 kept=False
+13:03:44 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+13:04:03 152.1575 Terra T3 ctrl: events=174 dmr_ev=466 id=0 level=211 kept=False
+13:04:22 152.3450 Terra Oakridge: events=0 dmr_ev=14 id=0 level=98 kept=False
+13:04:41 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=169 kept=False
+13:05:00 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=88 kept=False
+13:05:19 152.6850 candidate 152.685: events=39 dmr_ev=174 id=0 level=181 kept=False
+13:05:38 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=149 kept=False
+13:05:58 153.0680 candidate 153.068: events=0 dmr_ev=465 id=0 level=207 kept=False
+13:06:17 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=16 kept=False
+13:06:36 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=18 kept=False
+13:06:55 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=19 kept=False
+13:07:14 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=25 kept=False
+13:07:33 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=15 kept=False
+13:07:52 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+13:08:11 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+13:08:30 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+13:08:49 152.1575 Terra T3 ctrl: events=174 dmr_ev=464 id=0 level=213 kept=False
+13:09:08 152.3450 Terra Oakridge: events=1 dmr_ev=27 id=0 level=127 kept=False
+13:09:27 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=169 kept=False
+13:09:46 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=85 kept=False
+13:10:05 152.6850 candidate 152.685: events=60 dmr_ev=195 id=0 level=194 kept=False
+13:10:24 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=117 kept=False
+13:10:43 153.0680 candidate 153.068: events=0 dmr_ev=429 id=0 level=198 kept=False
+13:11:02 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=17 kept=False
+13:11:21 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=18 kept=False
+13:11:40 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=19 kept=False
+13:11:59 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=22 kept=False
+13:12:19 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=16 kept=False
+13:12:38 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=9 kept=False
+13:12:57 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+13:13:16 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+13:13:35 152.1575 Terra T3 ctrl: events=174 dmr_ev=464 id=0 level=203 kept=False
+13:13:54 152.3450 Terra Oakridge: events=0 dmr_ev=20 id=0 level=92 kept=False
+13:14:13 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=162 kept=False
+13:14:32 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=95 kept=False
+13:14:51 152.6850 candidate 152.685: events=82 dmr_ev=246 id=0 level=161 kept=False
+13:15:10 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=121 kept=False
+13:15:29 153.0680 candidate 153.068: events=0 dmr_ev=422 id=0 level=226 kept=False
+13:15:48 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=17 kept=False
+13:16:07 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=19 kept=False
+13:16:26 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=20 kept=False
+13:16:45 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=24 kept=False
+13:17:04 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=16 kept=False
+13:17:23 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=4 kept=False
+13:17:42 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+13:18:01 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+13:18:20 152.1575 Terra T3 ctrl: events=173 dmr_ev=466 id=0 level=74 kept=False
+13:18:40 152.3450 Terra Oakridge: events=0 dmr_ev=18 id=0 level=93 kept=False
+13:18:59 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=165 kept=False
+13:19:18 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=92 kept=False
+13:19:36 152.6850 candidate 152.685: events=23 dmr_ev=80 id=0 level=178 kept=False
+13:19:56 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=131 kept=False
+13:20:15 153.0680 candidate 153.068: events=0 dmr_ev=424 id=0 level=223 kept=False
+13:20:34 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=22 kept=False
+13:20:53 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=18 kept=False
+13:21:12 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=20 kept=False
+13:21:31 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=23 kept=False
+13:21:50 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=15 kept=False
+13:22:09 442.4250 ham CC1: events=0 dmr_ev=0 id=0 level=4 kept=False
+13:22:28 444.4250 ham CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+13:22:47 444.2375 ham CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+13:23:06 152.1575 Terra T3 ctrl: events=172 dmr_ev=465 id=0 level=202 kept=False
+13:23:25 152.3450 Terra Oakridge: events=5 dmr_ev=51 id=0 level=90 kept=False
+13:23:44 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=175 kept=False
+13:24:03 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=83 kept=False
+13:24:22 152.6850 candidate 152.685: events=56 dmr_ev=183 id=0 level=162 kept=False
+13:24:40 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=29 kept=False
+13:25:00 153.0680 candidate 153.068: events=0 dmr_ev=439 id=0 level=195 kept=False
+13:25:00 stopped
+13:25:19 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=5 kept=False
+13:25:38 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=4 kept=False
+13:25:57 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+13:26:16 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+13:26:35 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+13:26:54 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=466 id=0 level=345 kept=False
+13:27:11 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=10 kept=False
+13:27:30 152.1575 Terra T3 ctrl: events=175 dmr_ev=466 id=0 level=203 kept=True
+13:27:47 152.3450 Terra Oakridge: events=1 dmr_ev=17 id=0 level=96 kept=True
+13:28:06 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=172 kept=False
+13:28:25 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=89 kept=False
+13:28:44 152.6850 candidate 152.685: events=50 dmr_ev=200 id=0 level=180 kept=True
+13:29:03 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=157 kept=False
+13:29:22 153.0680 candidate 153.068: events=0 dmr_ev=420 id=0 level=233 kept=False
+13:29:41 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=18 kept=False
+13:30:00 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=12 kept=False
+13:30:19 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=19 kept=False
+13:30:38 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=22 kept=False
+13:30:57 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=16 kept=False
+13:31:17 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=6 kept=False
+13:31:36 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+13:31:55 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+13:32:14 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+13:32:33 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+13:32:52 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=466 id=0 level=341 kept=False
+13:33:11 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=4 kept=False
+13:33:30 152.1575 Terra T3 ctrl: events=177 dmr_ev=465 id=0 level=226 kept=False
+13:33:49 152.3450 Terra Oakridge: events=0 dmr_ev=15 id=0 level=94 kept=False
+13:34:08 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=161 kept=False
+13:34:27 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=87 kept=False
+13:34:46 152.6850 candidate 152.685: events=13 dmr_ev=119 id=0 level=186 kept=False
+13:35:05 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=136 kept=False
+13:35:24 153.0680 candidate 153.068: events=0 dmr_ev=437 id=0 level=223 kept=False
+13:35:43 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=17 kept=False
+13:36:02 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=60 kept=False
+13:36:21 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=20 kept=False
+13:36:40 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=24 kept=False
+13:36:59 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=16 kept=False
+13:37:18 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=5 kept=False
+13:37:37 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+13:37:56 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+13:38:15 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+13:38:34 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+13:38:53 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=466 id=0 level=346 kept=False
+13:39:12 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=9 kept=False
+13:39:31 152.1575 Terra T3 ctrl: events=56 dmr_ev=146 id=0 level=102 kept=False
+13:39:50 152.3450 Terra Oakridge: events=0 dmr_ev=30 id=0 level=124 kept=False
+13:40:09 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=171 kept=False
+13:40:28 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=91 kept=False
+13:40:28 stopped
+13:41:38 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=6 kept=False
+13:41:57 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+13:42:16 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+13:42:35 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+13:42:54 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=4 kept=False
+13:43:13 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=466 id=0 level=315 kept=False
+13:43:32 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=10 kept=False
+13:43:51 152.1575 Terra T3 ctrl: events=175 dmr_ev=466 id=0 level=227 kept=True
+13:44:10 152.3450 Terra Oakridge: events=10 dmr_ev=66 id=0 level=100 kept=True
+13:44:29 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=177 kept=False
+13:44:48 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=89 kept=False
+13:45:07 152.6850 candidate 152.685: events=142 dmr_ev=388 id=0 level=170 kept=True
+13:45:27 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=121 kept=False
+13:45:45 153.0680 candidate 153.068: events=0 dmr_ev=432 id=0 level=221 kept=False
+13:46:04 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=19 kept=False
+13:46:23 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=18 kept=False
+13:46:42 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=20 kept=False
+13:47:01 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=23 kept=False
+13:47:20 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=16 kept=False
+13:47:40 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=5 kept=False
+13:47:59 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+13:48:18 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+13:48:37 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+13:48:56 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+13:49:14 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=466 id=0 level=115 kept=False
+13:49:33 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=9 kept=False
+13:49:52 152.1575 Terra T3 ctrl: events=177 dmr_ev=466 id=0 level=217 kept=False
+13:50:12 152.3450 Terra Oakridge: events=2 dmr_ev=55 id=0 level=97 kept=False
+13:50:31 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=163 kept=False
+13:50:50 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=86 kept=False
+13:51:09 152.6850 candidate 152.685: events=141 dmr_ev=397 id=0 level=153 kept=False
+13:51:28 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=119 kept=False
+13:51:47 153.0680 candidate 153.068: events=0 dmr_ev=404 id=0 level=218 kept=False
+13:52:06 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=19 kept=False
+13:52:25 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=19 kept=False
+13:52:44 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=19 kept=False
+13:53:03 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=24 kept=False
+13:53:22 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=16 kept=False
+13:53:41 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=5 kept=False
+13:54:00 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+13:54:19 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+13:54:38 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+13:54:57 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+13:55:17 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=466 id=0 level=315 kept=False
+13:55:35 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=10 kept=False
+13:55:54 152.1575 Terra T3 ctrl: events=175 dmr_ev=465 id=0 level=228 kept=False
+13:56:13 152.3450 Terra Oakridge: events=4 dmr_ev=48 id=0 level=97 kept=False
+13:56:32 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=171 kept=False
+13:56:52 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=82 kept=False
+13:57:10 152.6850 candidate 152.685: events=144 dmr_ev=389 id=0 level=154 kept=False
+13:57:29 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=108 kept=False
+13:57:48 153.0680 candidate 153.068: events=0 dmr_ev=464 id=0 level=207 kept=False
+13:58:07 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=18 kept=False
+13:58:27 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=20 kept=False
+13:58:45 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=19 kept=False
+13:59:05 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=24 kept=False
+13:59:24 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=15 kept=False
+13:59:43 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=5 kept=False
+14:00:02 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+14:00:21 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+14:00:40 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+14:00:59 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+14:01:18 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=466 id=0 level=316 kept=False
+14:01:37 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=9 kept=False
+14:01:56 152.1575 Terra T3 ctrl: events=173 dmr_ev=466 id=0 level=227 kept=False
+14:02:15 152.3450 Terra Oakridge: events=0 dmr_ev=47 id=0 level=109 kept=False
+14:02:34 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=162 kept=False
+14:02:53 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=27 kept=False
+14:03:12 152.6850 candidate 152.685: events=161 dmr_ev=421 id=0 level=63 kept=False
+14:03:31 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=110 kept=False
+14:03:50 153.0680 candidate 153.068: events=0 dmr_ev=441 id=0 level=219 kept=False
+14:04:09 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=18 kept=False
+14:04:28 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=20 kept=False
+14:04:47 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=19 kept=False
+14:05:06 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=22 kept=False
+14:05:25 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=16 kept=False
+14:05:45 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=5 kept=False
+14:06:03 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+14:06:22 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+14:06:41 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+14:07:00 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+14:07:19 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=465 id=0 level=329 kept=False
+14:07:38 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=9 kept=False
+14:07:57 152.1575 Terra T3 ctrl: events=175 dmr_ev=466 id=0 level=216 kept=False
+14:08:16 152.3450 Terra Oakridge: events=1 dmr_ev=32 id=0 level=129 kept=False
+14:08:35 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=152 kept=False
+14:08:54 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=78 kept=False
+14:09:13 152.6850 candidate 152.685: events=137 dmr_ev=373 id=0 level=174 kept=False
+14:09:32 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=122 kept=False
+14:09:51 153.0680 candidate 153.068: events=0 dmr_ev=438 id=0 level=223 kept=False
+14:10:10 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=18 kept=False
+14:10:29 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=18 kept=False
+14:10:48 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=20 kept=False
+14:11:07 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=24 kept=False
+14:11:26 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=17 kept=False
+14:11:45 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=5 kept=False
+14:12:04 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+14:12:23 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+14:12:42 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+14:13:01 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+14:13:20 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=466 id=0 level=345 kept=False
+14:13:38 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=9 kept=False
+14:13:57 152.1575 Terra T3 ctrl: events=172 dmr_ev=464 id=0 level=212 kept=False
+14:14:16 152.3450 Terra Oakridge: events=1 dmr_ev=29 id=0 level=170 kept=False
+14:14:35 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=120 kept=False
+14:14:54 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=82 kept=False
+14:15:13 152.6850 candidate 152.685: events=128 dmr_ev=358 id=0 level=165 kept=False
+14:15:32 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=121 kept=False
+14:15:51 153.0680 candidate 153.068: events=0 dmr_ev=429 id=0 level=213 kept=False
+14:16:10 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=18 kept=False
+14:16:29 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=19 kept=False
+14:16:48 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=19 kept=False
+14:17:07 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=25 kept=False
+14:17:26 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=18 kept=False
+14:17:45 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=6 kept=False
+14:18:04 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+14:18:23 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+14:18:42 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+14:19:01 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+14:19:20 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=465 id=0 level=354 kept=False
+14:19:39 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=8 kept=False
+14:19:58 152.1575 Terra T3 ctrl: events=176 dmr_ev=466 id=0 level=223 kept=False
+14:20:17 152.3450 Terra Oakridge: events=0 dmr_ev=25 id=0 level=99 kept=False
+14:20:36 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=172 kept=False
+14:20:55 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=81 kept=False
+14:21:14 152.6850 candidate 152.685: events=145 dmr_ev=379 id=0 level=163 kept=False
+14:21:33 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=98 kept=False
+14:21:52 153.0680 candidate 153.068: events=0 dmr_ev=444 id=0 level=229 kept=False
+14:22:11 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=20 kept=False
+14:22:30 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=18 kept=False
+14:22:49 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=20 kept=False
+14:23:08 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=25 kept=False
+14:23:27 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=18 kept=False
+14:23:46 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=6 kept=False
+14:24:05 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+14:24:24 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+14:24:43 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+14:25:02 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+14:25:21 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=466 id=0 level=371 kept=False
+14:25:40 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=9 kept=False
+14:25:59 152.1575 Terra T3 ctrl: events=175 dmr_ev=466 id=0 level=227 kept=False
+14:26:18 152.3450 Terra Oakridge: events=1 dmr_ev=40 id=0 level=111 kept=False
+14:26:37 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=179 kept=False
+14:26:57 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=92 kept=False
+14:27:15 152.6850 candidate 152.685: events=146 dmr_ev=397 id=0 level=159 kept=False
+14:27:34 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=20 kept=False
+14:27:53 153.0680 candidate 153.068: events=0 dmr_ev=409 id=0 level=229 kept=False
+14:28:13 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=17 kept=False
+14:28:32 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=17 kept=False
+14:28:50 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=19 kept=False
+14:29:09 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=24 kept=False
+14:29:29 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=18 kept=False
+14:29:47 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=5 kept=False
+14:30:07 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+14:30:26 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+14:30:45 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+14:31:04 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=6 kept=False
+14:31:23 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=466 id=0 level=342 kept=False
+14:31:42 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=8 kept=False
+14:31:59 152.1575 Terra T3 ctrl: events=173 dmr_ev=466 id=0 level=209 kept=False
+14:32:18 152.3450 Terra Oakridge: events=0 dmr_ev=2 id=0 level=141 kept=False
+14:32:37 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=142 kept=False
+14:32:56 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=27 kept=False
+14:33:15 152.6850 candidate 152.685: events=144 dmr_ev=394 id=0 level=58 kept=False
+14:33:34 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=98 kept=False
+14:33:53 153.0680 candidate 153.068: events=0 dmr_ev=422 id=0 level=221 kept=False
+14:34:12 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=17 kept=False
+14:34:31 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=19 kept=False
+14:34:50 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=19 kept=False
+14:35:09 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=24 kept=False
+14:35:28 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=16 kept=False
+14:35:47 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=5 kept=False
+14:36:06 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+14:36:25 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=6 kept=False
+14:36:44 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=5 kept=False
+14:37:03 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=5 kept=False
+14:37:22 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=466 id=0 level=342 kept=False
+14:37:41 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=9 kept=False
+14:38:00 152.1575 Terra T3 ctrl: events=173 dmr_ev=465 id=0 level=243 kept=False
+14:38:19 152.3450 Terra Oakridge: events=0 dmr_ev=2 id=0 level=102 kept=False
+14:38:38 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=118 kept=False
+14:38:57 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=84 kept=False
+14:39:16 152.6850 candidate 152.685: events=151 dmr_ev=415 id=0 level=170 kept=False
+14:39:35 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=95 kept=False
+14:39:54 153.0680 candidate 153.068: events=0 dmr_ev=447 id=0 level=228 kept=False
+14:40:13 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=19 kept=False
+14:40:32 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=18 kept=False
+14:40:32 stopped
+14:41:06 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+14:41:25 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+14:41:44 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+14:42:03 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+14:42:22 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+14:42:44 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=466 id=0 level=357 dsd=-1 kept=False
+14:43:03 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=10 dsd=-2 kept=False
+14:43:24 152.1575 Terra T3 ctrl: events=176 dmr_ev=465 id=0 level=228 dsd=-1 kept=True
+14:43:46 152.3450 Terra Oakridge: events=0 dmr_ev=9 id=0 level=169 dsd=-1 kept=False
+14:44:07 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=145 dsd=-1 kept=False
+14:44:28 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=84 dsd=-1 kept=False
+14:44:50 152.6850 candidate 152.685: events=119 dmr_ev=350 id=0 level=151 dsd=-1 kept=True
+14:45:11 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=109 dsd=-1 kept=False
+14:45:32 153.0680 candidate 153.068: events=0 dmr_ev=437 id=0 level=213 dsd=-1 kept=False
+14:45:51 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+14:46:10 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+14:46:29 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+14:46:48 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+14:47:07 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=16 dsd=-2 kept=False
+14:47:26 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+14:47:45 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+14:48:05 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+14:48:23 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+14:48:42 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+14:49:04 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=465 id=0 level=340 dsd=-1 kept=False
+14:49:23 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+14:49:44 152.1575 Terra T3 ctrl: events=173 dmr_ev=466 id=0 level=213 dsd=-1 kept=False
+14:50:06 152.3450 Terra Oakridge: events=3 dmr_ev=23 id=0 level=97 dsd=-1 kept=True
+14:50:27 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=147 dsd=-1 kept=False
+14:50:49 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=96 dsd=-1 kept=False
+14:51:10 152.6850 candidate 152.685: events=145 dmr_ev=390 id=0 level=173 dsd=-1 kept=False
+14:51:31 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=107 dsd=-1 kept=False
+14:51:53 153.0680 candidate 153.068: events=0 dmr_ev=429 id=0 level=218 dsd=-1 kept=False
+14:52:12 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+14:52:31 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=16 dsd=-2 kept=False
+14:52:50 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+14:53:09 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+14:53:28 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+14:53:47 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+14:54:06 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+14:54:25 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+14:54:44 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+14:55:03 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+14:55:25 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=466 id=0 level=329 dsd=-1 kept=False
+14:55:44 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+14:56:06 152.1575 Terra T3 ctrl: events=186 dmr_ev=331 id=11 level=199 dsd=-1 kept=True
+14:56:27 152.3450 Terra Oakridge: events=3 dmr_ev=22 id=0 level=102 dsd=-1 kept=False
+14:56:49 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=61 dsd=-1 kept=False
+14:57:10 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=92 dsd=-1 kept=False
+14:57:30 152.6850 candidate 152.685: events=136 dmr_ev=315 id=13 level=171 dsd=-1 kept=True
+14:57:51 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=93 dsd=-1 kept=False
+14:57:51 stopped
+14:58:12 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=4 dsd=-2 kept=False
+14:58:31 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+14:58:50 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+14:59:09 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+14:59:28 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+14:59:50 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=466 id=0 level=284 dsd=0 kept=False
+15:00:09 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+15:00:31 152157500 error UnicodeEncodeError: 'charmap' codec can't encode characters in position 1-7: character maps to <unde
+15:00:55 152.3450 Terra Oakridge: events=0 dmr_ev=14 id=0 level=25 dsd=-2 kept=False
+15:01:16 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=126 dsd=0 kept=False
+15:01:38 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=78 dsd=0 kept=False
+15:01:59 152.6850 candidate 152.685: events=150 dmr_ev=403 id=0 level=110 dsd=0 kept=True
+15:02:20 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=109 dsd=0 kept=False
+15:02:42 153.0680 candidate 153.068: events=0 dmr_ev=440 id=0 level=216 dsd=0 kept=False
+15:03:01 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+15:03:20 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+15:03:39 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+15:03:58 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+15:04:17 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+15:04:36 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+15:04:54 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+15:05:13 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+15:05:32 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+15:05:52 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+15:06:13 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=466 id=0 level=341 dsd=0 kept=False
+15:06:32 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+15:06:54 152157500 error UnicodeEncodeError: 'charmap' codec can't encode characters in position 1-7: character maps to <unde
+15:07:21 152.3450 Terra Oakridge: events=1 dmr_ev=13 id=0 level=170 dsd=0 kept=True
+15:07:42 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=167 dsd=0 kept=False
+15:08:04 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=83 dsd=0 kept=False
+15:08:25 152.6850 candidate 152.685: events=157 dmr_ev=431 id=0 level=168 dsd=0 kept=False
+15:08:47 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=97 dsd=0 kept=False
+15:09:08 153.0680 candidate 153.068: events=0 dmr_ev=423 id=0 level=209 dsd=0 kept=False
+15:09:27 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+15:09:46 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+15:10:05 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+15:10:24 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+15:10:43 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+15:11:02 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+15:11:21 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+15:11:40 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+15:11:59 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+15:12:16 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+15:12:39 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=465 id=0 level=333 dsd=0 kept=False
+15:12:58 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+15:13:20 152157500 error UnicodeEncodeError: 'charmap' codec can't encode characters in position 1-7: character maps to <unde
+15:13:46 152.3450 Terra Oakridge: events=1 dmr_ev=31 id=0 level=119 dsd=0 kept=False
+15:14:07 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=158 dsd=0 kept=False
+15:14:29 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=90 dsd=0 kept=False
+15:14:50 152.6850 candidate 152.685: events=120 dmr_ev=335 id=0 level=157 dsd=0 kept=False
+15:15:12 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=99 dsd=0 kept=False
+15:15:33 153.0680 candidate 153.068: events=0 dmr_ev=427 id=0 level=197 dsd=0 kept=False
+15:15:52 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+15:16:11 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+15:16:30 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+15:16:49 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+15:17:08 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=16 dsd=-2 kept=False
+15:17:27 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+15:17:46 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+15:18:05 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+15:18:24 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+15:18:43 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+15:19:05 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=466 id=0 level=365 dsd=0 kept=False
+15:19:24 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+15:19:46 152157500 error UnicodeEncodeError: 'charmap' codec can't encode characters in position 1-7: character maps to <unde
+15:20:12 152345000 error UnicodeEncodeError: 'charmap' codec can't encode characters in position 1-7: character maps to <unde
+15:20:38 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=65 dsd=0 kept=False
+15:21:00 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=92 dsd=0 kept=False
+15:21:21 152.6850 candidate 152.685: events=136 dmr_ev=365 id=0 level=151 dsd=0 kept=False
+15:21:42 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=101 dsd=0 kept=False
+15:22:03 153.0680 candidate 153.068: events=0 dmr_ev=414 id=0 level=189 dsd=0 kept=False
+15:22:22 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+15:22:41 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+15:23:00 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+15:23:19 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+15:23:38 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+15:23:57 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+15:24:16 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
