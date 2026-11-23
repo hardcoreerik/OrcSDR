@@ -75,8 +75,15 @@ bool sd_put_commit(const Hooks& hooks) {
   }
   mbedtls_sha256_free(&g_sd_put.sha);
   g_sd_put.active = false;
-  g_sd_put.file.flush();
-  g_sd_put.file.close();
+  const bool flushed = g_sd_put.file.flush();
+  const bool closed = g_sd_put.file.close();
+  if (!flushed || !closed) {
+    fs->remove(g_sd_put.temporary);
+    hooks.write_line(flushed ? "SD_PUT_ERROR close_failed" : "SD_PUT_ERROR flush_failed");
+    reset_sd_put_state();
+    g_sd_transfer_active.store(false, std::memory_order_release);
+    return false;
+  }
 
   uint8_t difference = 0;
   for (size_t i = 0; i < sizeof(digest); ++i) {
@@ -102,9 +109,10 @@ bool sd_put_commit(const Hooks& hooks) {
     return false;
   }
   if (!fs->rename(g_sd_put.temporary, g_sd_put.target)) {
-    if (had_target) (void)fs->rename(backup, g_sd_put.target);
+    const bool restored = !had_target || fs->rename(backup, g_sd_put.target);
     fs->remove(g_sd_put.temporary);
-    hooks.write_line("SD_PUT_ERROR rename_failed");
+    hooks.write_line(restored ? "SD_PUT_ERROR rename_failed"
+                              : "SD_PUT_ERROR rename_and_restore_failed");
     reset_sd_put_state();
     g_sd_transfer_active.store(false, std::memory_order_release);
     return false;
@@ -129,7 +137,7 @@ void list(const Hooks& hooks) {
     hooks.write_line("SD_LIST_ERROR radio_busy");
     return;
   }
-  if (g_sd_put.active || g_sd_get.active) {
+  if (g_sd_put.active || g_sd_get.active || g_sd_transfer_active.load(std::memory_order_acquire)) {
     hooks.write_line("SD_LIST_ERROR transfer_busy");
     return;
   }
@@ -144,25 +152,52 @@ void list(const Hooks& hooks) {
     return;
   }
   size_t count = 0;
+  size_t skipped = 0;
+  size_t visited = 0;
+  bool truncated = false;
   for (File entry = directory.openNextFile(); entry; entry = directory.openNextFile()) {
+    if (visited >= kMaxListEntries) {
+      truncated = true;
+      entry.close();
+      break;
+    }
+    ++visited;
     if (!entry.isDirectory()) {
-      char path[128];
+      char path[sd_paths::kMaxPath];
       const char* name = entry.name();
-      if (name[0] == '/') strlcpy(path, name, sizeof(path));
-      else snprintf(path, sizeof(path), "/orcsdr/%s", name);
-      if (strlen(path) < sizeof(path) - 1) {
+      bool fits = false;
+      if (name[0] == '/') {
+        fits = strlen(name) < sizeof(path);
+        if (fits) strlcpy(path, name, sizeof(path));
+      } else {
+        const int written = snprintf(path, sizeof(path), "/orcsdr/%s", name);
+        fits = written > 0 && static_cast<size_t>(written) < sizeof(path);
+      }
+      if (fits) {
         say(hooks, "SD_LIST_ENTRY bytes=%llu modified=%llu pathhex=",
             static_cast<unsigned long long>(entry.size()),
             static_cast<unsigned long long>(entry.getLastWrite()));
         hooks.write_hex(reinterpret_cast<const uint8_t*>(path), strlen(path));
         hooks.write("\n");   // Serial.println()
         ++count;
+      } else {
+        ++skipped;
       }
     }
     entry.close();
   }
   directory.close();
-  say(hooks, "SD_LIST_DONE count=%u\n", static_cast<unsigned>(count));
+  if (skipped > 0 && truncated) {
+    say(hooks, "SD_LIST_DONE count=%u skipped=%u truncated=1\n",
+        static_cast<unsigned>(count), static_cast<unsigned>(skipped));
+  } else if (skipped > 0) {
+    say(hooks, "SD_LIST_DONE count=%u skipped=%u\n",
+        static_cast<unsigned>(count), static_cast<unsigned>(skipped));
+  } else if (truncated) {
+    say(hooks, "SD_LIST_DONE count=%u truncated=1\n", static_cast<unsigned>(count));
+  } else {
+    say(hooks, "SD_LIST_DONE count=%u\n", static_cast<unsigned>(count));
+  }
 }
 
 void get_abort(const Hooks& hooks, const char* reason) {
@@ -181,8 +216,8 @@ void get_begin(const Hooks& hooks, const char* path_hex) {
   g_sd_transfer_active.store(true, std::memory_order_release);
   char path[sizeof(g_sd_get.path)];
   const bool path_ok = hooks.decode_hex_text(path_hex, path, sizeof(path)) && sd_paths::transfer_allowed(path);
-  // The ACARS log is only appended to, so reading it while the receiver runs is safe: the read stops at the size seen here.
-  const bool acars_log = path_ok && strncmp(path, "/orcsdr/acars/", 14) == 0 && !strstr(path, "..");
+  // Active ACARS archive logs are append-only, so reading one while the receiver runs is safe: the read stops at the size seen here.
+  const bool acars_log = path_ok && sd_paths::is_acars_log(path);
   if (hooks.radio_busy() && !acars_log) {
     hooks.write_line("SD_GET_ERROR radio_busy");
     g_sd_transfer_active.store(false, std::memory_order_release);
@@ -237,8 +272,12 @@ void get_chunk(const Hooks& hooks) {
   const size_t wanted = static_cast<size_t>(
       remaining < kGetChunkBytes ? remaining : kGetChunkBytes);
   const size_t got = g_sd_get.file.read(g_sd_put_chunk, wanted);
-  if (got != wanted || mbedtls_sha256_update(&g_sd_get.sha, g_sd_put_chunk, got) != 0) {
+  if (got != wanted) {
     get_abort(hooks, "read_failed");
+    return;
+  }
+  if (mbedtls_sha256_update(&g_sd_get.sha, g_sd_put_chunk, got) != 0) {
+    get_abort(hooks, "sha_update");
     return;
   }
   say(hooks, "SD_GET_DATA bytes=%u\n", static_cast<unsigned>(got));
@@ -267,6 +306,10 @@ void get_chunk(const Hooks& hooks) {
 void remove(const Hooks& hooks, const char* path_hex) {
   if (hooks.radio_busy()) {
     hooks.write_line("SD_REMOVE_ERROR radio_busy");
+    return;
+  }
+  if (g_sd_put.active || g_sd_get.active || g_sd_transfer_active.load(std::memory_order_acquire)) {
+    hooks.write_line("SD_REMOVE_ERROR transfer_busy");
     return;
   }
   char path[sizeof(g_sd_put.target)];
@@ -379,9 +422,16 @@ void put_chunk(const Hooks& hooks, const char* length_text) {
   }
   say(hooks, "SD_PUT_DATA bytes=%u\n", static_cast<unsigned>(length));
   const size_t got = hooks.read_bytes(g_sd_put_chunk, length, 3000);
-  if (got != length || g_sd_put.file.write(g_sd_put_chunk, length) != length ||
-      mbedtls_sha256_update(&g_sd_put.sha, g_sd_put_chunk, length) != 0) {
-    put_abort(hooks, got != length ? "chunk_timeout" : "write_failed");
+  if (got != length) {
+    put_abort(hooks, "chunk_timeout");
+    return;
+  }
+  if (g_sd_put.file.write(g_sd_put_chunk, length) != length) {
+    put_abort(hooks, "write_failed");
+    return;
+  }
+  if (mbedtls_sha256_update(&g_sd_put.sha, g_sd_put_chunk, length) != 0) {
+    put_abort(hooks, "sha_update");
     return;
   }
   g_sd_put.received += length;

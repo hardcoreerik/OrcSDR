@@ -34,6 +34,8 @@ run serial_sd tests/serial_sd_tests.cpp "$ui/serial_sd.cpp"
 run serial_reset tests/serial_reset_tests.cpp "$ui/serial_reset.cpp"
 run serial_ui_doc tests/serial_ui_doc_tests.cpp "$ui/serial_ui_doc.cpp"
 run sd_paths tests/sd_paths_tests.cpp "$ui/sd_paths.cpp"
+run sd_transfer -Itests/sd_transfer_stubs tests/sd_transfer_tests.cpp "$ui/sd_transfer.cpp" "$ui/sd_paths.cpp" "$ui/hex_codec.cpp" tests/sd_transfer_stubs/fake_storage.cpp
+run iq_transfer_engine -Itests/sd_transfer_stubs tests/iq_transfer_engine_tests.cpp "$ui/iq_transfer_engine.cpp"
 run hex_codec tests/hex_codec_tests.cpp "$ui/hex_codec.cpp"
 run session_journal tests/session_journal_tests.cpp "$ui/session_journal.cpp"
 run session_identity tests/session_identity_tests.cpp "$ui/session_identity.cpp"
