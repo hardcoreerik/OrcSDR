@@ -15,6 +15,7 @@
 #include <stdexcept>
 #include <string>
 #include <thread>
+#include <vector>
 #ifdef ORC_HAVE_SDL
 #include <SDL2/SDL.h>
 #endif
@@ -325,6 +326,21 @@ int run_fb(const Options& a,ControlModel& model,FmSession* session){
    }else action(model,dashboards->mode()?nullptr:session,key,digit);
  };
  if(a.dashboard)select_dashboard(a.dashboard);
+ // RGB565 to device-pixel, precomputed once for all 65536 colours. Converting
+ // per pixel on every pass cost more than drawing and capped the panel at a few
+ // frames a second, which is what made the waterfall step instead of flow.
+ std::vector<std::uint32_t> lut(65536);
+ for(std::uint32_t c=0;c<65536u;++c){
+  const unsigned r=((c>>11)&31u)*255u/31u;
+  const unsigned g=((c>>5)&63u)*255u/63u;
+  const unsigned b=(c&31u)*255u/31u;
+  const auto quant=[](unsigned value,unsigned bits){return value*((1u<<bits)-1u)/255u;};
+  lut[c]=(quant(r,v.red.length)<<v.red.offset)|(quant(g,v.green.length)<<v.green.offset)|
+    (quant(b,v.blue.length)<<v.blue.offset);
+ }
+ const bool fb_stats=std::getenv("ORC_FB_STATS")!=nullptr;
+ std::uint32_t frames_drawn=0;
+ auto stats_from=std::chrono::steady_clock::now();
  unsigned ticks=0;
  while(!model.exit_requested&&!g_quit_signal){
   if(keys>=0){pollfd pfd{keys,POLLIN,0};if(poll(&pfd,1,0)>0&&(pfd.revents&POLLIN)){
@@ -348,25 +364,33 @@ int run_fb(const Options& a,ControlModel& model,FmSession* session){
   const bool show_dashboard=dashboards->mode()&&model.s.page==orc::zero::Page::receive;
   if(!show_dashboard)renderer.render(model.s);
   const auto& pixels=show_dashboard?dashboards->render(model.s.palette,dashboard_error):renderer.pixels;
+  // Per-pixel conversion through a table. The multiply-and-divide per pixel was
+  // costing more than the drawing and capping the panel at a few frames a second,
+  // which is what made the waterfall look like it stepped rather than flowed.
+  const int pixel_bytes=int(v.bits_per_pixel/8);
   for(int y=0;y<170;++y){
    const auto offset=(size_t(y)+v.yoffset)*f.line_length+size_t(v.xoffset)*(v.bits_per_pixel/8);
    if(offset+320*(v.bits_per_pixel/8)>bytes)continue;
    auto* row=mapped+offset;
    for(int x=0;x<320;++x){
-    const auto color=pixels[size_t(y)*320+x];
-    const unsigned r=((color>>11)&31u)*255u/31u;
-    const unsigned g=((color>>5)&63u)*255u/63u;
-    const unsigned b=(color&31u)*255u/31u;
-    const auto quant=[](unsigned value,unsigned bits){return value*((1u<<bits)-1u)/255u;};
-    const std::uint32_t encoded=(quant(r,v.red.length)<<v.red.offset)|
-      (quant(g,v.green.length)<<v.green.offset)|(quant(b,v.blue.length)<<v.blue.offset);
-    auto* target=row+x*(v.bits_per_pixel/8);
-    if(std::memcmp(target,&encoded,v.bits_per_pixel/8)!=0)
-      std::memcpy(target,&encoded,v.bits_per_pixel/8);
+    const std::uint32_t encoded=lut[pixels[size_t(y)*320+x]];
+    auto* target=row+x*pixel_bytes;
+    if(std::memcmp(target,&encoded,pixel_bytes)!=0)
+      std::memcpy(target,&encoded,pixel_bytes);
+   }
+  }
+  ++frames_drawn;
+
+  if(fb_stats){
+   const auto now=std::chrono::steady_clock::now();
+   const auto elapsed=std::chrono::duration_cast<std::chrono::milliseconds>(now-stats_from).count();
+   if(elapsed>=5000){
+    std::clog<<"fb "<<(frames_drawn*1000.0/double(elapsed))<<" fps"<<std::endl;
+    frames_drawn=0;stats_from=now;
    }
   }
   if(++ticks==a.frames&&a.frames)break;
-  std::this_thread::sleep_for(std::chrono::milliseconds(80));
+  std::this_thread::sleep_for(std::chrono::milliseconds(33));
  }
  if(!a.screenshot.empty()){
    if(dashboards->mode())renderer.pixels=dashboards->render(model.s.palette,dashboard_error);

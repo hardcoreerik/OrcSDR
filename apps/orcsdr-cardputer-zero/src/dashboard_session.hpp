@@ -70,7 +70,7 @@ class DashboardSession {
     ft8_band_=Ft8BandSelection{};
     ft8_applied_=0;
     ft8_header_dirty_=true;
-    ft8_lines_.clear();
+    ft8_lines_.clear();ft8_lines_epoch_=0;
     ft8_last_utc_=0;
     ft8_drawn_=false;
     clock_open_=clock_entry_=false;clock_digits_.clear();clock_tick_=0;
@@ -397,6 +397,12 @@ class DashboardSession {
           if(ft8_lines_.empty())ft8_screen_.text(4,120,!ft8_last_utc_?"WAITING FOR COMPLETE UTC SLOT":"NO MESSAGES IN LAST SLOT",CompactRenderer::cyan);
           else for(size_t n=ft8_log_offset_;n<std::min(ft8_lines_.size(),ft8_log_offset_+2);++n)
             ft8_screen_.text(4,117+int(n-ft8_log_offset_)*12,ft8_lines_[n],CompactRenderer::white,1,52);
+          if(ft8_lines_epoch_&&ft8_lines_epoch_!=ft8_last_utc_){
+            char age[40];const std::time_t when=std::time_t(ft8_lines_epoch_);std::tm t{};
+            if(gmtime_r(&when,&t))std::snprintf(age,sizeof(age),"NO NEW DECODES  LAST %02d:%02d",t.tm_hour,t.tm_min);
+            else std::snprintf(age,sizeof(age),"NO NEW DECODES");
+            ft8_screen_.text(4,137,age,CompactRenderer::muted,1,30);
+          }
           ft8_render_epoch_=ft8_last_utc_;
         }
       }
@@ -849,7 +855,7 @@ class DashboardSession {
             std::lock_guard<std::mutex> lock(mutex_);
             ft8_applied_=ft8_dial;ft8_applied_mode_=requested_mode;
             ft8_header_dirty_=true;
-            ft8_lines_.clear();ft8_last_utc_=0;ft8_visual_.clear();
+            ft8_lines_.clear();ft8_last_utc_=0;ft8_lines_epoch_=0;ft8_visual_.clear();
             std::clog<<orcsdr::ft8::mode_name(requested_mode)<<" band RF "<<ft8_dial<<std::endl;
           }
         }
@@ -1035,7 +1041,7 @@ class DashboardSession {
             [&](uint64_t epoch,const orcsdr::ft8::Decode* rows,size_t count){
               std::lock_guard<std::mutex> lock(mutex_);
               ft8_last_utc_=epoch;
-              ft8_lines_.clear();ft8_log_offset_=0;
+              if(count){ft8_lines_.clear();ft8_log_offset_=0;ft8_lines_epoch_=epoch;}
               for(size_t n=0;n<count;++n)ft8_map_.add(rows[n]);
               for(size_t n=0;n<std::min<size_t>(count,6);++n){
                 std::string line(rows[n].message,strnlen(rows[n].message,sizeof(rows[n].message)));
@@ -1154,7 +1160,7 @@ class DashboardSession {
   bool ft8_header_dirty_=true;
   CompactRenderer ft8_screen_;
   std::vector<std::string> ft8_lines_;
-  uint64_t ft8_last_utc_=0,ft8_render_epoch_=0;
+  uint64_t ft8_last_utc_=0,ft8_render_epoch_=0,ft8_lines_epoch_=0;
   bool ft8_drawn_=false;
   std::unique_ptr<DeadAirStorage> dead_air_storage_;
   DeadAirScreen dead_air_;
