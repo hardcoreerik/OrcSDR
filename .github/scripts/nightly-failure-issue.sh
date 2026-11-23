@@ -340,24 +340,50 @@ if [ -s "$failed_jobs_file" ]; then
     fi
   done
 
-  if python3 - "$failed_jobs_file" "$tmpdir" "$log_file" <<'PY'
-import os, re, sys
+  if python3 - "$failed_jobs_file" "$tmpdir" "$log_file" "$jobs_file" <<'PY'
+import json, os, re, sys
 
-failed_jobs_path, tmpdir, log_out = sys.argv[1], sys.argv[2], sys.argv[3]
+failed_jobs_path, tmpdir, log_out, jobs_path = sys.argv[1], sys.argv[2], sys.argv[3], sys.argv[4]
 cleanup_re = re.compile(r"^(?:\d{4}-\d{2}-\d{2}T\S+\s+)?Post job cleanup\.$")
+error_re = re.compile(r"^(?:\d{4}-\d{2}-\d{2}T\S+\s+)?##\[error\]", re.IGNORECASE)
 
-def strip_job_cleanup(text: str) -> str:
-    """Normalize one job log and trim it at its first Post job cleanup marker."""
+failed_post_jobs: set[str] = set()
+try:
+    with open(jobs_path, encoding="utf-8") as jdata_fh:
+        jobs_data = json.load(jdata_fh)
+except (OSError, json.JSONDecodeError):
+    jobs_data = {}
+for job in jobs_data.get("jobs") or []:
+    job_id = job.get("databaseId")
+    if job_id is None:
+        job_id = job.get("id")
+    if job_id is None:
+        continue
+    for step in job.get("steps") or []:
+        conclusion = step.get("conclusion") or ""
+        name = step.get("name") or ""
+        if conclusion in ("failure", "timed_out") and name.startswith("Post "):
+            failed_post_jobs.add(str(job_id))
+            break
+
+def strip_job_cleanup(text: str, has_failed_post_step: bool = False) -> str:
+    """Trim trailing successful Post job cleanup blocks while keeping failed post-action output."""
     text = text.lstrip("\ufeff")
     text = text.replace("\x00", "").replace("\r\n", "\n").replace("\r", "\n")
     text = re.sub(r"\x1b\[[0-9;?]*[ -/]*[@-~]", "", text)
     text = re.sub(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)", "", text)
     lines = text.splitlines()
-    for idx, line in enumerate(lines):
-        if cleanup_re.match(line):
-            if any(item.strip() for item in lines[:idx]):
-                lines = lines[:idx]
-            break
+    marker_idxs = [idx for idx, line in enumerate(lines) if cleanup_re.match(line)]
+    if marker_idxs and any(item.strip() for item in lines[:marker_idxs[0]]):
+        boundaries = marker_idxs + [len(lines)]
+        last_failed_end = None
+        for start, end in zip(boundaries, boundaries[1:]):
+            if any(error_re.match(item) for item in lines[start:end]):
+                last_failed_end = end
+        if last_failed_end is not None:
+            lines = lines[:last_failed_end]
+        elif not has_failed_post_step:
+            lines = lines[:marker_idxs[0]]
     while lines and lines[-1] == "":
         lines.pop()
     return "\n".join(lines)
@@ -373,7 +399,10 @@ with open(failed_jobs_path, encoding="utf-8") as fh:
         if not os.path.isfile(path) or os.path.getsize(path) == 0:
             continue
         with open(path, encoding="utf-8", errors="replace") as jfh:
-            cleaned = strip_job_cleanup(jfh.read())
+            cleaned = strip_job_cleanup(
+                jfh.read(),
+                has_failed_post_step=(job_id in failed_post_jobs),
+            )
         if cleaned.strip():
             entries.append((job_name or "unknown job", cleaned))
 

@@ -715,6 +715,74 @@ class NightlyFailureIssueTest(unittest.TestCase):
         self.assertNotIn("tests-cleanup-", body)
         self.assertNotIn("build-cleanup-", body)
 
+    def test_failed_post_action_error_between_cleanup_markers_is_preserved(self):
+        """Verify failed post-action error before a later successful cleanup block is kept."""
+        jobs = {
+            "jobs": [
+                {
+                    "databaseId": 1001,
+                    "name": "build",
+                    "conclusion": "failure",
+                    "steps": [
+                        {"name": "Build Tab5 firmware", "conclusion": "success"},
+                        {"name": "Post Restore world map", "conclusion": "failure"},
+                    ],
+                }
+            ]
+        }
+        first_cleanup = [
+            "2026-11-10T17:58:33.3447831Z Post job cleanup.",
+            "2026-11-10T17:58:33.5000000Z ##[error]Cache save failed: 503 Service Unavailable",
+        ]
+        second_cleanup = ["2026-11-10T17:58:40.0000000Z Post job cleanup."] + [
+            f"2026-11-10T17:58:41.{i:07d}Z checkout-cleanup-{i:02d}" for i in range(90)
+        ]
+        log = "\n".join(
+            [
+                "2026-11-10T17:58:32.0000000Z Build Tab5 firmware finished",
+                *first_cleanup,
+                *second_cleanup,
+            ]
+        )
+        completed, saved, _calls = self.run_alert(
+            {"gate": "success", "tests": "success", "build": "failure", "publish": "skipped", "gate_build": "true"},
+            blank_state(run=jobs, log=log),
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        body = saved["issues"][0]["body"]
+        self.assertIn("##[error]Cache save failed: 503 Service Unavailable", body)
+        self.assertNotIn("checkout-cleanup-", body)
+
+    def test_failed_post_step_without_error_marker_is_preserved(self):
+        """Verify failed Post step output without ##[error] prefix is kept via jobs JSON."""
+        jobs = {
+            "jobs": [
+                {
+                    "databaseId": 1001,
+                    "name": "build",
+                    "conclusion": "failure",
+                    "steps": [
+                        {"name": "Build Tab5 firmware", "conclusion": "success"},
+                        {"name": "Post Restore ESP-Hosted C6 image", "conclusion": "failure"},
+                    ],
+                }
+            ]
+        }
+        log = "\n".join(
+            [
+                "2026-11-10T17:58:32.0000000Z Build Tab5 firmware finished",
+                "2026-11-10T17:58:33.3447831Z Post job cleanup.",
+                "2026-11-10T17:58:34.0000000Z cache upload timed out",
+            ]
+        )
+        completed, saved, _calls = self.run_alert(
+            {"gate": "success", "tests": "success", "build": "failure", "publish": "skipped", "gate_build": "true"},
+            blank_state(run=jobs, log=log),
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        body = saved["issues"][0]["body"]
+        self.assertIn("cache upload timed out", body)
+
     def test_assignee_failure_still_opens_an_issue_that_mentions_the_owner(self):
         """Verify fallback create without assignee still opens and @mentions the owner."""
         completed, saved, calls = self.run_alert(
