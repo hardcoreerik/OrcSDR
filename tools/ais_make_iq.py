@@ -245,7 +245,7 @@ def moved(lat, lon, sog_kn, cog_deg, seconds):
     return lat + dlat, lon + dlon
 
 
-def build_schedule(seconds, origin=ORIGIN):
+def build_schedule(seconds, origin=ORIGIN, spread=1.0):
     """Returns transmissions sorted by time. Every station alternates between the two channels."""
     lat0, lon0 = origin
     tx = []
@@ -255,9 +255,9 @@ def build_schedule(seconds, origin=ORIGIN):
             tx.append({"t": t, "station": station, "type": msg_type, "payload": payload, "fields": fields})
 
     class_a = [  # mmsi, message type, start offset, period, lat, lon, sog, cog, nav status
-        (100000001, 1, 0.50, 6.0, lat0 + 0.020, lon0 - 0.060, 12.3, 90.0, 0),
-        (100000002, 3, 1.30, 10.0, lat0 - 0.030, lon0 + 0.020, 7.5, 315.0, 0),
-        (100000003, 2, 2.10, 10.0, lat0 + 0.050, lon0 + 0.070, 0.0, 0.0, 1),      # at anchor
+        (100000001, 1, 0.50, 6.0, lat0 + 0.020 * spread, lon0 - 0.060 * spread, 12.3, 90.0, 0),
+        (100000002, 3, 1.30, 10.0, lat0 - 0.030 * spread, lon0 + 0.020 * spread, 7.5, 315.0, 0),
+        (100000003, 2, 2.10, 10.0, lat0 + 0.050 * spread, lon0 + 0.070 * spread, 0.0, 0.0, 1),      # at anchor
     ]
     for mmsi, msg_type, start, period, lat, lon, sog, cog, nav in class_a:
         t = start
@@ -269,7 +269,7 @@ def build_schedule(seconds, origin=ORIGIN):
                 {"mmsi": mmsi, "lat": la, "lon": lo, "sog_kn": sog, "cog_deg": cog, "heading": heading, "nav_status": nav})
             t += period
     # Class B: positions, and static data in two parts.
-    b_mmsi, b_lat, b_lon, b_sog, b_cog = 100000011, lat0 - 0.010, lon0 - 0.020, 5.2, 200.0
+    b_mmsi, b_lat, b_lon, b_sog, b_cog = 100000011, lat0 - 0.010 * spread, lon0 - 0.020 * spread, 5.2, 200.0
     t = 3.30
     while t < seconds:
         la, lo = moved(b_lat, b_lon, b_sog, b_cog, t)
@@ -283,7 +283,7 @@ def build_schedule(seconds, origin=ORIGIN):
             {"mmsi": b_mmsi, "part": "B", "ship_type": 37, "callsign": "TESTB1", "vendor": "ORCTEST", "dims": [5, 7, 2, 2]})
     # Base station.
     base = 1000001      # 00 + MID 100 + 0001
-    base_lat, base_lon = lat_field(lat0 + 0.080) / 600000.0, lon_field(lon0 - 0.010) / 600000.0
+    base_lat, base_lon = lat_field(lat0 + 0.080 * spread) / 600000.0, lon_field(lon0 - 0.010 * spread) / 600000.0
     t = 4.10
     while t < seconds:
         add(t, base, 4, msg_base_station(base, base_lat, base_lon, int(t)), {"mmsi": base, "lat": base_lat, "lon": base_lon})
@@ -299,8 +299,8 @@ def build_schedule(seconds, origin=ORIGIN):
         {"mmsi": 100000001, "imo": 9100001, "callsign": "TESTA1", "name": "ORCSDR TEST A1", "ship_type": 70,
          "dims": [90, 30, 10, 10], "draught_m": 6.4, "destination": "TEST PORT"})
     # Aids to navigation: one physical, one virtual (99 + MID 100).
-    aids = [(991000001, 14, "TEST BUOY 1", lat0 + 0.010, lon0 + 0.030, False, (12.10, 42.10)),
-            (991000002, 30, "TEST VIRTUAL MARK", lat0 - 0.045, lon0 - 0.050, True, (20.10, 50.10))]
+    aids = [(991000001, 14, "TEST BUOY 1", lat0 + 0.010 * spread, lon0 + 0.030 * spread, False, (12.10, 42.10)),
+            (991000002, 30, "TEST VIRTUAL MARK", lat0 - 0.045 * spread, lon0 - 0.050 * spread, True, (20.10, 50.10))]
     for mmsi, aid_type, name, lat, lon, virtual, times in aids:
         la, lo = lat_field(lat) / 600000.0, lon_field(lon) / 600000.0
         for t in times:
@@ -354,10 +354,12 @@ def main():
                    help="multiplies every station's carrier offset (1 = up to +/-400 Hz); raise it to test offset tolerance")
     p.add_argument("--origin", default="%g,%g" % ORIGIN,
                    help="LAT,LON the synthetic tracks are laid out around (to put them on a map near a bench receiver)")
+    p.add_argument("--spread", type=float, default=1.0,
+                   help="multiplies every station's distance from --origin (1 = a few nautical miles; 6 = a coastal fleet tens of miles wide)")
     p.add_argument("--list", action="store_true", help="print each transmission and exit")
     a = p.parse_args()
     origin = tuple(float(v) for v in a.origin.split(","))
-    tx = build_schedule(a.seconds, origin)
+    tx = build_schedule(a.seconds, origin, a.spread)
     if a.list:
         for item in tx:
             print("%6.2f s ch%d type %2d mmsi %09d %s" % (item["t"], item["channel"], item["type"], item["station"],
@@ -384,7 +386,7 @@ def main():
         by_channel[item["channel"]] += 1
     manifest = {"generator": "tools/ais_make_iq.py", "profile": "fleet-v1", "synthetic": True, "center_hz": CENTER_HZ,
                 "sample_rate": RATE, "format": "cu8", "seconds": a.seconds, "noise_sigma": a.noise, "seed": a.seed,
-                "offset_scale": a.offset_scale, "origin": list(origin), "sha256": digest, "bytes": int(data.size),
+                "offset_scale": a.offset_scale, "origin": list(origin), "spread": a.spread, "sha256": digest, "bytes": int(data.size),
                 "transmissions": len(tx), "by_type": {str(k): v for k, v in sorted(by_type.items())},
                 "by_channel": {str(k): v for k, v in by_channel.items()},
                 "stations": sorted({item["station"] for item in tx}), "tx": manifest_tx}

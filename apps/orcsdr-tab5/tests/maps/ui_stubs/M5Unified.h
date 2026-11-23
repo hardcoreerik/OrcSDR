@@ -6,7 +6,7 @@
 #include <vector>
 enum textdatum_t {top_left,middle_left,middle_center,middle_right};
 enum {TFT_BLACK,TFT_WHITE,TFT_NAVY,TFT_LIGHTGREY,TFT_DARKGREY,TFT_MAROON,
-      TFT_DARKCYAN,TFT_DARKGREEN,TFT_ORANGE,TFT_YELLOW};
+      TFT_DARKCYAN,TFT_DARKGREEN,TFT_ORANGE,TFT_YELLOW,TFT_RED};
 inline size_t strlcpy(char* out,const char* in,size_t capacity) {
   const auto size=std::strlen(in);
   if(capacity) {const auto copied=std::min(size,capacity-1);std::memcpy(out,in,copied);out[copied]=0;}

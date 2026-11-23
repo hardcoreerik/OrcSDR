@@ -15,6 +15,8 @@ reproduces the decoded audio as intended.
 
 ## RTL-SDR offline
 
+On firmware builds that include this feature, send `RTL_SUPPORT REPORT` over the Tab5 PC serial port at 115200 to print a read-only report for copy/paste into support requests. See [one-command support report](support-report.md) for terminal and no-download Windows PowerShell instructions. If `RTL_HELP` does not list the command, the installed firmware predates it; this is not a symptom of a failed SDR.
+
 Cold-boot with stable power and the dongle disconnected, then attach it after the Tab5 reaches its normal startup state. If the device repeatedly resets, capture a high-speed serial log before changing firmware.
 
 ## Wi-Fi scan or connection fails

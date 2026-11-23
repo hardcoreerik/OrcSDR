@@ -27,22 +27,22 @@ The UI must accurately represent observed facts. A missing antenna, incomplete p
 | Host M5GFX render/bounds/selection/empty-state tests | `tests/ais_dashboard_render_tests.cpp` | **Implemented; GitHub Actions host test passing** |
 | Dedicated host CI workflow | `.github/workflows/ais-dashboard-host-tests.yml` | **Implemented** |
 | Portable original AIS protocol parser (header coverage 1–28, mapped position/AtoN fields) | `apps/orcsdr-tab5/ui/ais_protocol.{hpp,cpp}` | **Host-tested synthetic fixtures; not full 28-type field decoding** |
-| Bounded identity-safe AIS station store | `apps/orcsdr-tab5/ui/ais_station_store.{hpp,cpp}` | **Host-tested; not connected to receiver or UI** |
+| Bounded identity-safe AIS station store | `apps/orcsdr-tab5/ui/ais_station_store.{hpp,cpp}` | **Host-tested; connected to the receiver and the dashboard on the Tab5** |
 | Portable AIS parser/store sanitizer test + CI | `tests/ais_protocol_tests.cpp`, `.github/workflows/ais-protocol-host-tests.yml` | **Sandbox ASan/UBSan passed; CI pending** |
 | Original dual-channel AIS 240 kS/s CU8 GMSK/HDLC/FCS receiver | `apps/orcsdr-tab5/ui/ais_receiver.{hpp,cpp}` | **Synthetic IQ-to-CRC packet tests passed; no live IQ** |
-| Radio-session-generation-checked packet/parser/station pipeline | `apps/orcsdr-tab5/ui/ais_receive_pipeline.{hpp,cpp}` | **Host integrated synthetic-IQ test passed; not wired to DSP task** |
-| IQ receiver sanitizer tests, host benchmark and CI | `tests/ais_receiver_tests.cpp`, `tests/ais_receiver_bench.cpp` | **Host tests passed; physical P4 performance unknown** |
-| Actual home/menu/runtime navigation into AIS | `ais_app` / top-level UI dispatcher | **Not implemented** |
-| Actual RF IQ-to-AIS decoder and receiver callbacks | Native DSP and parser modules | **Not implemented** |
-| Real Tab5 flash and touch verification | Hardware test | **Not performed** |
+| Radio-session-generation-checked packet/parser/station pipeline | `apps/orcsdr-tab5/ui/ais_receive_pipeline.{hpp,cpp}` | **Host integrated synthetic-IQ test passed; wired to the DSP task (`ais_radio`) and verified on a Tab5 with replayed synthetic IQ** |
+| IQ receiver sanitizer tests, host benchmark and CI | `tests/ais_receiver_tests.cpp`, `tests/ais_receiver_bench.cpp` | **Host tests passed; Tab5 receiver load measured (`RTL_AIS BENCH`)** |
+| Home / menu / runtime navigation into AIS | `ais_app` / top-level UI dispatcher | **Implemented (Home > All Dashboards > AIS, `RTL_UI OPEN AIS`)** |
+| IQ-to-AIS decoder and receiver callbacks | `ais_radio` + native DSP and parser modules | **Implemented; decodes replayed synthetic IQ on a Tab5 (43 of 43 packets)** |
+| Tab5 flash and touch verification | Hardware test | **Performed with synthetic replay (see `docs/evidence/ais/`)** |
 | Genuine AIS vessel rendering on physical Tab5 | Real RF validation | **Not performed** |
 
-**Do not confuse a successful host compilation of the seven panels with a completed on-device radio feature.** The dashboard is presently compiled into the firmware component, but not yet reachable through the live home/menu dispatcher. Its `enter()` requires `screens::Id::ais` ownership to have been granted.
+**Do not confuse a successful host compilation of the seven panels with a completed on-device radio feature.** The dashboard is reachable from Home > All Dashboards and decodes synthetic replay on a physical Tab5; real-ship reception is still unproven. Its `enter()` requires `screens::Id::ais` ownership to have been granted.
 
 ## OrcSDR visual and ownership rules
 
 - **Physical panel:** M5Stack Tab5 in **1280 × 720 landscape**; all rendering by M5GFX / M5Unified, no browser or web stack.
-- **Native chrome:** `audio_header::draw_brand("AIS")` and native OrcSDR badge, battery, Home, Audio/VIS and Settings buttons. Never draw in the reserved status area (`x420..866, y12..66`).
+- **Native chrome:** `audio_header::draw_brand("AIS")` and native OrcSDR badge, battery, Home, Audio (speaker) and Settings buttons (the VIS button was removed; Visualizer is the last All Dashboards entry). Never draw in the reserved status area (`x420..866, y12..66`).
 - **Layout:** header through y104; context `x20..1260, y114..148`; content y158..636; seven tactile tab buttons at **y650..702**, x20 + 178 × index, 168 px wide.
 - **Color/palette:** black background; OrcSDR panel RGB565 `0x0841`; edge `0x2945`; cyan `0x2e7f`; green `0x6fe8`; amber `0xfd20`; red `0xf800`; muted text `0x8c71`. No unrelated theme.
 - **Screen ownership:** `screen_controller` remains the single framebuffer owner. `enter` requires active AIS screen; `update` / touches require ownership; never write framebuffer from radio/ISR callback.

@@ -65,6 +65,21 @@ Result complete(storage::FileSystem& fs,delivery::Store& store,delivery::State& 
   return finished==activation::Error::none?Result{}:activation_error(finished);
 }
 }
+Result reset_pending(storage::FileSystem* fs,delivery::Store& store) {
+  try {
+    delivery::State state;const auto loaded=delivery::load(store,&state);
+    if(loaded!=delivery::Error::none)return state_error(loaded);
+    if(!fs||state.pending.product.empty())return {Error::input};
+    const auto dir=directory(state.pending.manifest);
+    if(dir.empty())return {Error::input};
+    for(const auto* artifact:{"/activation.pending","/previous.bak"})
+      if(fs->status((dir+artifact).c_str())!=storage::EntryStatus::missing)
+        return activation_error(activation::Error::storage);
+    state.pending={};
+    const auto saved=delivery::save(store,state);
+    return saved==delivery::Error::none?Result{}:state_error(saved);
+  }catch(const std::bad_alloc&){return {Error::allocation};}
+}
 Result resume(storage::FileSystem& fs,delivery::Store& store,uint8_t* buffer,size_t size,const transfer::Hooks& hooks) {
   try {
     delivery::State state;const auto loaded=delivery::load(store,&state);
