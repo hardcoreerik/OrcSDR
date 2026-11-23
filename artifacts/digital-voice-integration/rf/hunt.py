@@ -3,12 +3,14 @@
 that produced integrity-valid DMR events. Stop: create hunt/STOP. Log: hunt/hunt.log, hunt/results.jsonl."""
 import subprocess, time, json, re, os, sys
 from pathlib import Path
+import shutil
+ARCH = Path(r"F:/Ai/OrcSDR-data/digital-voice")   # durable copy outside the worktree
 H = Path(__file__).parent / "hunt"; H.mkdir(exist_ok=True)
 CH = [(442962500,"PNW DMR Eugene CC1 (RRDB)"),(442887500,"PNW DMR Salem CC1"),(442750000,"PNW DMR Colton CC1"),(442812500,"PNW DMR Mt Hebo CC1"),(444025000,"PNW DMR Buxton CC9"),(451912500,"TRBOWest CapMax Blanton Ridge ctrl"),(442425000,"ham CC1 (unverified)"),(152157500,"Terra T3 ctrl"),(152345000,"Terra Oakridge"),(152106000,"candidate voice 152.106"),(152219000,"candidate voice 152.219"),(152685000,"candidate 152.685"),(152895000,"candidate 152.895"),(153068000,"candidate 153.068"),(441744000,"sweep 441.744"),(441676000,"sweep 441.676"),(441050000,"sweep 441.050"),(431998000,"sweep 431.998"),(438026000,"sweep 438.026")]
 SECS = 14
 WSL_BIN = "/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/dv-live-rel/dv_replay"
 DSD = Path(r'C:/Users/hardc/AppData/Local/Temp/claude/d15739b94789b7e4/f1e7b073-d808-4cda-94b9-310faed44d50/scratchpad/dsdfme/x/dsd-fme-portable')
-CALL = re.compile(r'SRC:|TGT:|Source:|Target:|VLC|TLC|Voice LC|GRANT|C_AHOY|_MOVE|UU_V|Group Voice|Private Voice|Group Call|Private Call')
+CALL = re.compile(r'TGT=|SRC=|Group Call|Private Call|_GRANT|VLC|TLC|Voice LC|C_AHOY|UU_V')
 def dsd_calls(f):
     """Third-party cross-check: DSD-FME call/grant keywords (control-only broadcasts do not match)."""
     w = f.with_suffix('.wav')
@@ -47,10 +49,19 @@ while not (H/"STOP").exists():
             if ev > 0 or (rec['level'] or 0) >= 50:
                 r2 = dsd_calls(f); dn = r2[0]
                 if dn > 0:
-                    keep = True; (H/(f.stem+'.dsd.txt')).write_text(r2[1])
+                    keep = True; (H/(f.stem+'.dsd.txt')).write_text(r2[1], encoding='utf-8')
             rec['dsd_call_lines'] = dn
             rec["kept"] = keep
             with open(H/"results.jsonl","a") as j: j.write(json.dumps(rec)+"\n")
+            try:
+                (ARCH/'hunt').mkdir(parents=True, exist_ok=True); (ARCH/'captures_iq').mkdir(parents=True, exist_ok=True); (ARCH/'crosscheck').mkdir(parents=True, exist_ok=True)
+                with open(ARCH/'hunt'/'results.jsonl','a') as j: j.write(json.dumps(rec)+"\n")
+                if keep:
+                    shutil.copy2(f, ARCH/'captures_iq'/f.name)
+                    d = H/(f.stem+'.dsd.txt')
+                    if d.exists(): shutil.copy2(d, ARCH/'crosscheck'/d.name)
+            except Exception as e:
+                log(f"archive error {type(e).__name__}: {str(e)[:60]}")
             log(f"{hz/1e6:.4f} {name}: events={ev} dmr_ev={dev} id={did} level={rec['level']} dsd={dn} kept={keep}")
             if not keep: f.unlink(missing_ok=True)
             pend = sorted(H.glob('cap_*.cu8'), key=lambda q: q.stat().st_mtime)

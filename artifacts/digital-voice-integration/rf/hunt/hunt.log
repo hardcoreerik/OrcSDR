@@ -1390,3 +1390,150 @@
 15:23:38 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
 15:23:57 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
 15:24:16 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+15:24:35 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+15:24:54 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+15:25:13 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+15:25:35 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=466 id=0 level=370 dsd=0 kept=False
+15:25:54 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=10 dsd=-2 kept=False
+15:26:15 152157500 error UnicodeEncodeError: 'charmap' codec can't encode characters in position 1-7: character maps to <unde
+15:26:42 152345000 error UnicodeEncodeError: 'charmap' codec can't encode characters in position 1-7: character maps to <unde
+15:27:08 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=160 dsd=0 kept=False
+15:27:29 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=85 dsd=0 kept=False
+15:27:51 152.6850 candidate 152.685: events=140 dmr_ev=370 id=0 level=143 dsd=0 kept=False
+15:28:12 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=95 dsd=0 kept=False
+15:28:31 153.0680 candidate 153.068: events=0 dmr_ev=450 id=0 level=29 dsd=-2 kept=False
+15:28:50 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+15:29:09 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+15:29:28 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+15:29:47 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+15:30:06 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=15 dsd=-2 kept=False
+15:30:25 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+15:30:44 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+15:31:03 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+15:31:22 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+15:31:41 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+15:32:02 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=466 id=0 level=361 dsd=0 kept=False
+15:32:21 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+15:32:43 152157500 error UnicodeEncodeError: 'charmap' codec can't encode characters in position 1-7: character maps to <unde
+15:33:10 152345000 error UnicodeEncodeError: 'charmap' codec can't encode characters in position 1-7: character maps to <unde
+15:33:36 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=150 dsd=0 kept=False
+15:33:58 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=81 dsd=0 kept=False
+15:34:19 152.6850 candidate 152.685: events=122 dmr_ev=357 id=0 level=169 dsd=0 kept=False
+15:34:40 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=123 dsd=0 kept=False
+15:35:02 153.0680 candidate 153.068: events=0 dmr_ev=445 id=0 level=199 dsd=0 kept=False
+15:35:21 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=15 dsd=-2 kept=False
+15:35:40 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+15:35:58 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+15:36:17 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+15:36:36 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=16 dsd=-2 kept=False
+15:36:55 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+15:37:14 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+15:37:34 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+15:37:53 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+15:38:12 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+15:38:33 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=465 id=0 level=342 dsd=0 kept=False
+15:38:53 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+15:39:14 152157500 error UnicodeEncodeError: 'charmap' codec can't encode characters in position 1-7: character maps to <unde
+15:39:41 152345000 error UnicodeEncodeError: 'charmap' codec can't encode characters in position 1-7: character maps to <unde
+15:40:07 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=172 dsd=0 kept=False
+15:40:07 stopped
+15:40:27 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+15:40:46 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+15:40:46 stopped
+15:41:06 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+15:41:25 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+15:41:25 stopped
+15:41:36 442962500 capture failed
+15:41:36 442887500 capture failed
+15:41:37 442750000 capture failed
+15:41:37 442812500 capture failed
+15:41:37 444025000 capture failed
+15:41:37 451912500 capture failed
+15:41:37 442425000 capture failed
+15:41:37 152157500 capture failed
+15:41:37 152345000 capture failed
+15:41:37 152106000 capture failed
+15:41:38 152219000 capture failed
+15:41:38 152685000 capture failed
+15:41:38 152895000 capture failed
+15:41:38 153068000 capture failed
+15:41:38 441744000 capture failed
+15:41:38 441676000 capture failed
+15:41:38 441050000 capture failed
+15:41:38 431998000 capture failed
+15:41:39 438026000 capture failed
+15:41:39 442962500 capture failed
+15:41:39 442887500 capture failed
+15:41:39 442750000 capture failed
+15:41:39 442812500 capture failed
+15:41:39 444025000 capture failed
+15:41:39 451912500 capture failed
+15:41:40 442425000 capture failed
+15:41:40 152157500 capture failed
+15:41:40 152345000 capture failed
+15:41:40 152106000 capture failed
+15:41:40 152219000 capture failed
+15:41:40 152685000 capture failed
+15:41:40 152895000 capture failed
+15:41:40 153068000 capture failed
+15:41:41 441744000 capture failed
+15:41:41 441676000 capture failed
+15:41:41 441050000 capture failed
+15:41:41 431998000 capture failed
+15:41:41 438026000 capture failed
+15:41:41 442962500 capture failed
+15:41:41 442887500 capture failed
+15:41:41 442750000 capture failed
+15:41:42 442812500 capture failed
+15:41:42 444025000 capture failed
+15:41:42 451912500 capture failed
+15:41:42 442425000 capture failed
+15:41:42 152157500 capture failed
+15:41:42 152345000 capture failed
+15:41:42 152106000 capture failed
+15:41:43 152219000 capture failed
+15:41:43 152685000 capture failed
+15:41:43 152895000 capture failed
+15:41:43 153068000 capture failed
+15:41:43 441744000 capture failed
+15:41:43 441676000 capture failed
+15:41:43 441050000 capture failed
+15:41:46 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+15:41:46 442887500 capture failed
+15:41:46 442750000 capture failed
+15:41:46 442812500 capture failed
+15:41:46 444025000 capture failed
+15:41:46 451912500 capture failed
+15:41:47 442425000 capture failed
+15:41:47 152157500 capture failed
+15:41:47 152345000 capture failed
+15:41:47 152106000 capture failed
+15:41:47 152219000 capture failed
+15:41:47 152685000 capture failed
+15:41:47 152895000 capture failed
+15:41:47 153068000 capture failed
+15:41:48 441744000 capture failed
+15:41:48 441676000 capture failed
+15:41:48 441050000 capture failed
+15:41:48 431998000 capture failed
+15:41:48 438026000 capture failed
+15:41:48 442962500 capture failed
+15:41:48 442887500 capture failed
+15:41:48 442750000 capture failed
+15:41:49 442812500 capture failed
+15:41:49 444025000 capture failed
+15:41:49 451912500 capture failed
+15:41:49 442425000 capture failed
+15:41:49 152157500 capture failed
+15:41:49 152345000 capture failed
+15:41:49 152106000 capture failed
+15:41:50 152219000 capture failed
+15:41:50 152685000 capture failed
+15:41:50 152895000 capture failed
+15:41:50 153068000 capture failed
+15:41:50 441744000 capture failed
+15:41:50 441676000 capture failed
+15:41:50 441050000 capture failed
+15:41:50 431998000 capture failed
+15:42:15 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
+15:42:34 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=5 dsd=-2 kept=False
