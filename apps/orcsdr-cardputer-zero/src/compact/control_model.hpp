@@ -11,6 +11,23 @@ constexpr int kWaterfallRows=72;
 constexpr uint32_t kDefaultSpanHz=2560000;
 constexpr uint32_t kFmMinHz=87500000, kFmMaxHz=108000000;
 constexpr std::array<uint32_t,5> kSteps{{10000,50000,100000,200000,1000000}};
+// Locations the STATIONS page can order by. The FCC table is national, so a
+// frequency window returns hundreds of records nationwide; distance is what
+// makes the list usable, and this is where the operator says where they are.
+struct FmCity { const char* label; int32_t latitude_e7; int32_t longitude_e7; };
+inline constexpr FmCity kFmCities[] = {
+  {"EUGENE OR",       440521000, -1230868000},
+  {"PORTLAND OR",     455152000, -1226784000},
+  {"SEATTLE WA",      476062000, -1223321000},
+  {"SPOKANE WA",      476588000, -1174260000},
+  {"BOISE ID",        436150000, -1162023000},
+  {"SACRAMENTO CA",   385816000, -1214944000},
+  {"SAN FRANCISCO CA",377749000, -1224194000},
+  {"LOS ANGELES CA",  340522000, -1182437000},
+  {"DENVER CO",       397392000, -1049903000},
+  {"PHOENIX AZ",      334484000, -1120740000},
+};
+inline constexpr size_t kFmCityCount = sizeof(kFmCities)/sizeof(kFmCities[0]);
 enum class Page { receive, dashboards, settings, entry, menu, gain, audio, receiver, help, error };
 enum class Key { bias_tee, dashboards, left, right, up, down, enter, escape, home, backspace, menu, frequency, mute, palette, volume_up, volume_down, gain, step, reconnect, digit, point, help, quit };
 enum class Connection { disconnected, connecting, ready, error };
@@ -28,6 +45,7 @@ struct Snapshot {
   std::array<uint8_t,256> spectrum{};
   std::array<std::array<uint8_t,256>,kWaterfallRows> waterfall{};
   int waterfall_rows=0,menu_selection=0,dashboard_selection=0;
+ uint8_t fm_page=0,fm_city=0;  // FM dashboard page and chosen location
 };
 class ControlModel {
  public:
@@ -98,9 +116,19 @@ class ControlModel {
       if(key==Key::reconnect&&(s.page==Page::error||s.page==Page::audio||s.page==Page::receiver)){s.connection=Connection::connecting;s.error.clear();s.page=Page::receive;}
       return;
     }
-    if(s.page==Page::receive&&(key==Key::left||key==Key::right)) {
-      const int64_t proposed=int64_t(s.requested_hz)+(key==Key::right?int64_t(s.step_hz):-int64_t(s.step_hz));
-      s.requested_hz=uint32_t(std::clamp<int64_t>(proposed,kFmMinHz,kFmMaxHz));dirty_settings=true;
+    if(s.page==Page::receive) {
+      // Left/right page through the dashboard, matching the LoRa workspace;
+      // tuning moved to up/down so a page turn can never move the dial.
+      if(key==Key::left){s.fm_page=s.fm_page?uint8_t(s.fm_page-1):3;return;}
+      if(key==Key::right){s.fm_page=uint8_t((s.fm_page+1)%4);return;}
+      if(s.fm_page==3&&(key==Key::up||key==Key::down)){
+        const int count=int(kFmCityCount);
+        s.fm_city=uint8_t((int(s.fm_city)+(key==Key::down?1:count-1))%count);dirty_settings=true;return;
+      }
+      if(key==Key::up||key==Key::down){
+        const int64_t proposed=int64_t(s.requested_hz)+(key==Key::up?int64_t(s.step_hz):-int64_t(s.step_hz));
+        s.requested_hz=uint32_t(std::clamp<int64_t>(proposed,kFmMinHz,kFmMaxHz));dirty_settings=true;return;
+      }
     }
   }
 };

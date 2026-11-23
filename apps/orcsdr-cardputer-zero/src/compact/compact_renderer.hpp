@@ -1,5 +1,6 @@
 #pragma once
 #include "control_model.hpp"
+#include "station_directory.hpp"
 #include "orc_badge.hpp"
 #include "orc_mascot.hpp"
 #include "waterfall_style.hpp"
@@ -147,8 +148,89 @@ struct CompactRenderer {
       centered(72,s.connection==Connection::ready?"AWAITING IQ":"NO RECEIVER",yellow,2);
       centered(109,s.connection==Connection::ready?"SPECTRUM IDLE":"R: RECONNECT",muted);
     }
+    if(s.page==Page::receive&&s.fm_page)draw_fm_page(s);
     if(s.page!=Page::receive)overlay(s);
     else if(!s.error.empty()){rect(5,127,310,20,0x3000);text(10,133,s.error.substr(0,45),yellow);}
+  }
+  // ---- FM dashboard pages ------------------------------------------------
+  // Loaded on first use and kept: the index is 1.19 MB, which is cheap to hold
+  // but not cheap to parse on every repaint.
+  const orc::zero::stations::Directory& station_db() const {
+    static orc::zero::stations::Directory db;
+    static bool tried=false;
+    if(!tried){
+      tried=true;
+      std::string error;
+      const char* candidates[]={"fm_am_stations.idx","apps/orcsdr-cardputer-zero/fm_am_stations.idx",
+                                "data/fm_am_stations.idx"};
+      for(const char* path:candidates)if(db.load(path,error))break;
+    }
+    return db;
+  }
+  static double station_km(const orc::zero::stations::Record& r,double lat,double lon){
+    const double dx=(r.longitude()-lon)*111.32*std::cos(lat*3.14159265358979323846/180.0);
+    const double dy=(r.latitude()-lat)*111.32;
+    return std::sqrt(dx*dx+dy*dy);
+  }
+  void draw_fm_page(const Snapshot& s){
+    char b[64];
+    const auto& city=kFmCities[std::min<size_t>(s.fm_city,kFmCityCount-1)];
+    const double lat=city.latitude_e7/1e7, lon=city.longitude_e7/1e7;
+    rect(0,40,320,120,bg);
+    rect(0,160,320,10,panel);  // keys() draws over the old footer otherwise
+    if(s.fm_page==1){
+      text(4,42,"STATIONS NEAR",muted,1,13);text(86,42,city.label,cyan,1,14);
+      const auto& db=station_db();
+      if(db.empty()){
+        text(4,60,"NO STATION INDEX",yellow);
+        text(4,74,"RUN TOOLS/BUILD_STATION_INDEX.PY",muted,1,33);
+      }else{
+        const auto found=db.nearest(lat,lon,orc::zero::stations::kServiceFm,7);
+        for(size_t n=0;n<found.size();++n){
+          const auto& r=db.at(found[n]);const int y=58+int(n)*13;
+          text(4,y,r.call,white,1,7);
+          std::snprintf(b,sizeof(b),"%u.%u",r.frequency_hz/1000000u,(r.frequency_hz/100000u)%10u);
+          text(52,y,b,green,1,5);
+          text(96,y,r.city,muted,1,10);
+          std::snprintf(b,sizeof(b),"%dKM",int(station_km(r,lat,lon)+0.5));
+          text(286,y,b,cyan,1,5);
+        }
+      }
+      keys(4,160,{{"Z/C","PAGE"},{"F/X","TUNE"},{"TAB","MENU"}});
+    }else if(s.fm_page==2){
+      text(4,42,"RF HEALTH",muted);
+      int peak=0;unsigned total=0;
+      for(int n=0;n<256;++n){const int v=s.spectrum[size_t(n)];peak=std::max(peak,v);total+=unsigned(v);}
+      std::snprintf(b,sizeof(b),"PEAK %d%%  AVG %d%%",peak*100/255,int(total/256)*100/255);
+      text(4,56,b,peak>200?yellow:white);
+      std::snprintf(b,sizeof(b),"GAIN %s",s.gain_auto?"AUTO":"");
+      if(!s.gain_auto)std::snprintf(b,sizeof(b),"GAIN %+.1f DB",s.gain_tenth_db/10.);
+      text(4,70,b,white);
+      std::snprintf(b,sizeof(b),"VOLUME %d%%%s",s.volume,s.muted?" MUTED":"");
+      text(4,82,b,white);
+      std::snprintf(b,sizeof(b),"SPAN %.3f MHZ",(s.applied_rate?s.applied_rate:kDefaultSpanHz)/1e6);
+      text(4,94,b,white);
+      std::snprintf(b,sizeof(b),"RATE %u KSPS",(s.applied_rate?s.applied_rate:0)/1000u);
+      text(4,106,b,white);
+      std::snprintf(b,sizeof(b),"DROPPED %llu",(unsigned long long)s.known_dropped_samples);
+      text(4,118,b,(s.known_dropped_samples?yellow:muted));
+      std::snprintf(b,sizeof(b),"STEP %u KHZ",s.step_hz/1000u);
+      text(4,130,b,white);
+      keys(4,160,{{"Z/C","PAGE"},{"F/X","TUNE"},{"TAB","MENU"}});
+    }else{
+      text(4,42,"SETTINGS",muted);
+      text(4,56,"LOCATION",muted,1,8);text(70,56,city.label,yellow,1,14);
+      std::snprintf(b,sizeof(b),"STEP %u KHZ",s.step_hz/1000u);text(4,72,b,white);
+      std::snprintf(b,sizeof(b),"VOLUME %d%%",s.volume);text(150,72,b,white);
+      if(s.gain_auto)text(4,84,"GAIN AUTO",white);
+      else{std::snprintf(b,sizeof(b),"GAIN %+.1f DB",s.gain_tenth_db/10.);text(4,84,b,white);}
+      text(150,84,orcsdr::waterfall_style::palette_name(s.palette),white,1,12);
+      std::snprintf(b,sizeof(b),"SPAN %.3f MHZ",(s.applied_rate?s.applied_rate:kDefaultSpanHz)/1e6);
+      text(4,96,b,white);
+      text(4,120,"F/X CHANGES LOCATION",muted,1,20);
+      text(4,132,"G GAIN   T STEP   S/D VOLUME",muted,1,26);
+      keys(4,160,{{"Z/C","PAGE"},{"F/X","CITY"},{"TAB","MENU"}});
+    }
   }
   void overlay(const Snapshot& s) {
     rect(27,30,266,113,panel);border(27,30,266,113,cyan);
