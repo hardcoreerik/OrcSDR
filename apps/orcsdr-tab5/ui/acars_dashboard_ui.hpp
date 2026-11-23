@@ -28,6 +28,9 @@ class Controller {
   void reset();
   View view() const { return view_; }
   bool detail_open() const { return detail_open_; }
+  bool target_lock_open() const { return target_lock_open_; }
+  const char* target_lock_tail() const { return target_lock_tail_; }
+  const char* target_lock_flight() const { return target_lock_flight_; }
   // Increases on every UI-state change that needs a repaint (tab, detail, scroll, selection, filters).
   uint32_t revision() const { return revision_; }
 
@@ -52,6 +55,7 @@ class Controller {
 
  private:
   void bump() { ++revision_; }
+  bool open_target_lock(const char* tail, const char* flight);
   Action touch_live(int32_t x, int32_t y, Model& model);
   Action touch_detail(int32_t x, int32_t y, Model& model);
   Action touch_aircraft(int32_t x, int32_t y, Model& model);
@@ -61,6 +65,9 @@ class Controller {
 
   View view_ = View::live;
   bool detail_open_ = false;
+  bool target_lock_open_ = false;           // read-only selection, never requests a receiver tune
+  char target_lock_tail_[8]{};
+  char target_lock_flight_[7]{};
   uint32_t revision_ = 1;
   MessageRecord detail_record_{};
   char detail_text_[kEscapedMaxChars]{};

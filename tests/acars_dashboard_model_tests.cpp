@@ -830,6 +830,39 @@ void test_setup_view_interaction() {
   CHECK(!ui->detail_open() && !m->demo());
 }
 
+void test_target_lock_read_only() {
+  auto m = new_model();
+  auto ui = new_ui();
+  CHECK(m->post_message(make_message("N123AB", "AX1234", "H1", "F99AAX1234#M1BPOSN44100W123100"), 1234, 0));
+  m->service();
+  CHECK(tap_action(*ui, *m, layout::live_row(0)).kind == ActionKind::changed);
+  CHECK(ui->detail_open() && !ui->target_lock_open());
+  CHECK(tap_action(*ui, *m, layout::kDetailTarget).kind == ActionKind::changed);
+  CHECK(ui->target_lock_open());
+  CHECK(std::strcmp(ui->target_lock_tail(), "N123AB") == 0);
+  CHECK(std::strcmp(ui->target_lock_flight(), "AX1234") == 0);
+  CHECK(tap_action(*ui, *m, layout::tab(2)).kind == ActionKind::none); // overlay cannot retune
+  CHECK(ui->view() == View::live);
+  CHECK(tap_action(*ui, *m, layout::kTargetClose).kind == ActionKind::changed);
+  CHECK(!ui->target_lock_open() && ui->detail_open());
+  tap(*ui, *m, layout::kDetailBack);
+  tap(*ui, *m, layout::tab(1));
+  tap(*ui, *m, layout::ac_row(0));
+  CHECK(tap_action(*ui, *m, layout::kAcTarget).kind == ActionKind::changed);
+  CHECK(ui->target_lock_open());
+  tap(*ui, *m, layout::kTargetClose);
+  CHECK(!ui->target_lock_open());
+
+  // An 'AV' raw VDL2 link address is not an aircraft registration.
+  CHECK(m->post_message(make_message("ABC1234", "", "AV", "2101000000"), 1235, 0));
+  m->service();
+  tap(*ui, *m, layout::tab(0));
+  tap(*ui, *m, layout::live_row(0));
+  CHECK(ui->detail_open());
+  CHECK(tap_action(*ui, *m, layout::kDetailTarget).kind == ActionKind::none);
+  CHECK(!ui->target_lock_open());
+}
+
 void test_filter_and_raw_toggle_have_effect() {
   auto m = new_model();
   auto ui = new_ui();
@@ -901,6 +934,7 @@ int main() {
   test_archive_view_interaction();
   test_setup_view_interaction();
   test_filter_and_raw_toggle_have_effect();
+  test_target_lock_read_only();
   std::puts("acars_dashboard_model_tests: all passed");
   return 0;
 }

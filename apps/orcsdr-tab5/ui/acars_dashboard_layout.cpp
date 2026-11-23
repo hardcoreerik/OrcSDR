@@ -16,9 +16,11 @@ struct Sink {
 size_t collect_rects(View view, bool detail, Rect* out, size_t capacity) {
   Sink s{out, capacity};
   s.add(kContext);
+  // The optional Target Lock modal is drawn over either detail or aircraft contents.
+  s.add(kTargetPanel); s.add(kTargetClose);
   for (int i = 0; i < kTabCount; ++i) s.add(tab(i));
   if (detail) {
-    s.add(kDetailBar); s.add(kDetailBack); s.add(kDetailNewer); s.add(kDetailOlder);
+    s.add(kDetailBar); s.add(kDetailBack); s.add(kDetailTarget); s.add(kDetailNewer); s.add(kDetailOlder);
     s.add(kDetailFields); s.add(kDetailRaw); s.add(kDetailRawUp); s.add(kDetailRawDown);
     s.add(kDetailRawText); s.add(kDetailInterp);
   } else {
@@ -30,7 +32,7 @@ size_t collect_rects(View view, bool detail, Rect* out, size_t capacity) {
         break;
       case View::aircraft:
         s.add(kAcList); s.add(kAcControls); s.add(kAcSort); s.add(kAcUp); s.add(kAcDown); s.add(kAcCount);
-        s.add(kAcDetail); s.add(kAcNote);
+        s.add(kAcDetail); s.add(kAcTarget); s.add(kAcNote);
         for (int i = 0; i < 8; ++i) s.add(ac_row(i));
         for (int j = 0; j < 6; ++j) s.add(ac_msg_row(j));
         break;

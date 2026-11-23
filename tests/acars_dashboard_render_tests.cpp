@@ -433,6 +433,30 @@ void test_app_lifecycle() {
 
 // A squitter and an FMC position report: the list shows the interpreted summary, the detail page shows the headline and decoded
 // lines, and an unknown free-text block keeps the raw text without an invented decode.
+void test_target_lock_overlay_drawn_without_tuning() {
+  Rig rig;
+  CHECK(rig.model->post_message(make_message("N55AB", "F63AAS0536#M1BPOSN44397W122192"), 1000, 0));
+  rig.model->service();
+  rig.ui->select_view(View::live);
+  rig.full_draw();
+  const auto& s = rig.model->snapshot();
+  CHECK(s.message_count == 1);
+  CHECK(rig.ui->open_detail(s.messages[0].seq, *rig.model));
+  const Rect target = layout::kDetailTarget;
+  const Action a = rig.ui->touch(target.x + 5, target.y + 5, *rig.model);
+  CHECK(a.kind == ActionKind::changed && rig.ui->target_lock_open());
+  rig.full_draw();
+  CHECK(has_text("AIRCRAFT TARGET LOCK"));
+  CHECK(has_text("READ-ONLY CORRELATION"));
+  CHECK(has_text("N55AB"));
+  check_prims(View::live, true);
+  CHECK(rig.ui->touch(450, layout::kTabsY + 10, *rig.model).kind == ActionKind::none);
+  CHECK(rig.ui->view() == View::live);
+  const Rect close = layout::kTargetClose;
+  CHECK(rig.ui->touch(close.x + 5, close.y + 5, *rig.model).kind == ActionKind::changed);
+  CHECK(!rig.ui->target_lock_open());
+}
+
 void test_interpretation_is_drawn() {
   Rig rig;
   orcsdr::acars::Message sq = make_message("", "02XAEUGKEUG14407N12313WV136975/ARINC");
@@ -468,6 +492,7 @@ void test_interpretation_is_drawn() {
 int main() {
   CHECK(screens::self_check());
   test_interpretation_is_drawn();
+  test_target_lock_overlay_drawn_without_tuning();
   test_every_view_every_state_obeys_header_rules();
   test_shared_header_font_contract();
   test_honest_text();

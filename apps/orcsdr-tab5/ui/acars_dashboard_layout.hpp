@@ -49,6 +49,7 @@ constexpr Rect kLiveNotice{836, 506, 424, 132};
 // ---- Message detail (replaces the LIVE content while open)
 constexpr Rect kDetailBar{20, 158, 1240, 48};
 constexpr Rect kDetailBack{28, 162, 130, 40};
+constexpr Rect kDetailTarget{784, 162, 186, 40};  // read-only aircraft correlation modal
 constexpr Rect kDetailNewer{988, 162, 124, 40};
 constexpr Rect kDetailOlder{1124, 162, 128, 40};
 constexpr Rect kDetailFields{20, 214, 400, 424};
@@ -70,8 +71,13 @@ constexpr Rect kAcUp{916, 164, 70, 48};
 constexpr Rect kAcDown{994, 164, 70, 48};
 constexpr Rect kAcCount{1072, 164, 180, 48};
 constexpr Rect kAcDetail{696, 226, 564, 412};
+constexpr Rect kAcTarget{1082, 232, 166, 42};
 constexpr Rect ac_msg_row(int j) { return {704, 276 + j * 56, 548, 56}; }
 constexpr Rect kAcNote{704, 612, 548, 24};
+
+// Target Lock is a read-only overlay, NOT a radio lock or a sweep scheduler.
+constexpr Rect kTargetPanel{310, 188, 660, 428};
+constexpr Rect kTargetClose{836, 202, 114, 44};
 
 // ---- CHANNELS
 constexpr Rect kChList{20, 158, 760, 480};

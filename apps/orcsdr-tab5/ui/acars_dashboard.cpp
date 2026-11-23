@@ -498,6 +498,8 @@ void draw_detail(const Snapshot& s) {
   const bool held = g_ui->detail_held(*g_model);
   card(layout::kDetailBar);
   button(layout::kDetailBack, "< BACK", false, true);
+  button(layout::kDetailTarget, "TARGET LOCK", false,
+         m.tail[0] && !(m.label[0] == 'A' && m.label[1] == 'V'));
   {
     Clip clip(layout::kDetailBar);
     char title[64];
@@ -645,6 +647,15 @@ void draw_aircraft(const Snapshot& s) {
     const bool sel = g_ui->selected_tail()[0] != '\0';
     std::snprintf(title, sizeof(title), sel ? "RECENT: %s" : "RECENT MESSAGES", g_ui->selected_tail());
     text(title, det.x + 16, det.y + 24, kCyan, f24);
+    bool target_eligible = false;
+    if (sel) {
+      for (size_t i = 0; i < s.aircraft_count; ++i) {
+        const AircraftRecord& a = s.aircraft[i];
+        if (std::strcmp(a.tail, g_ui->selected_tail()) == 0 &&
+            !(a.last_label[0] == 'A' && a.last_label[1] == 'V')) target_eligible = true;
+      }
+    }
+    button(layout::kAcTarget, "TARGET LOCK", false, target_eligible);
     if (!sel) {
       text("Select an aircraft to list its recent messages", det.x + det.w / 2, det.y + 170, kMuted, f18, middle_center);
     } else {
@@ -899,8 +910,32 @@ void draw_setup(const Snapshot& s) {
   setting(9, "MULTI-CHANNEL", "PLANNED", "single channel today", false);
 }
 
+// Read-only target overlay: no tuner changes, no scan claim and no inferred ADS-B match.
+void draw_target_lock() {
+  const Rect& p = layout::kTargetPanel;
+  card(p, kCyan);
+  Clip clip(p);
+  text("AIRCRAFT TARGET LOCK", p.x + 18, p.y + 32, kCyan, f24);
+  button(layout::kTargetClose, "CLOSE", false, true);
+  text("SELECTED ACARS IDENTIFIER", p.x + 18, p.y + 88, kMuted, f18);
+  fit(g_ui->target_lock_tail(), p.x + 18, p.y + 130, 380, TFT_WHITE, f40);
+  char flight[64];
+  std::snprintf(flight, sizeof(flight), "FLIGHT: %s", g_ui->target_lock_flight()[0] ? g_ui->target_lock_flight() : "NOT REPORTED");
+  text(flight, p.x + 18, p.y + 172, kMuted, f18);
+  const MessageRecord* recent[kAircraftRecentShown]{};
+  const size_t n = g_model->aircraft_messages(g_ui->target_lock_tail(), recent, kAircraftRecentShown);
+  char count[96];
+  std::snprintf(count, sizeof(count), "MATCHING RECENT ACARS RECORDS: %u", static_cast<unsigned>(n));
+  text(count, p.x + 18, p.y + 214, kGreen, f18);
+  text("CURRENT MODE: READ-ONLY CORRELATION", p.x + 18, p.y + 256, kAmber, f18);
+  paragraph("This selects an observed identifier. It does not scan frequencies, retune, claim an ADS-B match, or imply continuous tracking.",
+            {p.x + 18, p.y + 280, p.w - 36, 68}, kMuted, 3);
+  paragraph("Future RF scan requires a measured fast-retune driver, frequency dwell policy, and explicit interruption warnings. A second receiver can monitor ADS-B continuously.",
+            {p.x + 18, p.y + 350, p.w - 36, 60}, kMuted, 3);
+}
+
 void redraw_content(const Snapshot& s) {
-  if (g_ui->detail_open()) { draw_detail(s); return; }
+  if (g_ui->detail_open()) { draw_detail(s); if (g_ui->target_lock_open()) draw_target_lock(); return; }
   switch (g_ui->view()) {
     case View::live: draw_live(s); break;
     case View::aircraft: draw_aircraft(s); break;
@@ -910,6 +945,7 @@ void redraw_content(const Snapshot& s) {
     case View::setup: draw_setup(s); break;
     default: break;
   }
+  if (g_ui->target_lock_open()) draw_target_lock();
 }
 
 // Paints context strip, content and tab bar as one frame. With a sprite the display only ever receives the

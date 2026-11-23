@@ -1147,7 +1147,8 @@ bool interpret_arinc622(const Text& t, size_t at, Interpretation& r) {
     if (got != want) continue;
     char app[4] = {t.at(imi), t.at(imi + 1), t.at(imi + 2), '\0'};
     const char* app_name = nullptr;
-    if (app[0] == 'A' && app[1] == 'T') app_name = "ATC data";
+    if (std::strcmp(app, "AT1") == 0) app_name = "FANS CPDLC payload (not interpreted)";
+    else if (app[0] == 'A' && app[1] == 'T') app_name = "ATC data";
     else if (app[0] == 'C' && app[1] == 'R') app_name = "ATC connect request";
     else if (app[0] == 'C' && app[1] == 'C') app_name = "ATC connect confirm";
     else if (app[0] == 'D' && app[1] == 'R') app_name = "ATC disconnect";
@@ -1160,12 +1161,16 @@ bool interpret_arinc622(const Text& t, size_t at, Interpretation& r) {
     const char* reg = t.p + rest;
     size_t reg_n = reg_len;
     while (reg_n > 1 && *reg == '.') { ++reg; --reg_n; }
-    set_headline(r, "ATC DATA LINK MESSAGE (ARINC 622)");
+    const bool cpdlc = std::strcmp(app, "AT1") == 0;
+    set_headline(r, cpdlc ? "FANS CPDLC ENVELOPE (ARINC 622)" : "ATC DATA LINK MESSAGE (ARINC 622)");
     add_line(r, "%s   Ground address %.7s   %s", dir == 'B' ? "Downlink" : dir == 'A' ? "Uplink" : "Message", t.p + ga, app_name ? app_name : app);
     add_line(r, "Aircraft %.*s   %u data byte%s   checksum OK", static_cast<int>(reg_n), reg, static_cast<unsigned>((data_len + 1) / 2),
              (data_len + 1) / 2 == 1 ? "" : "s");
     add_line(r, "Content as received: %.*s (needs the ATC message table)", static_cast<int>(data_len), t.p + data_at);
-    set_summary(r, "ATC %s %s %.*s", app, dir == 'B' ? "down" : dir == 'A' ? "up" : "", static_cast<int>(reg_n), reg);
+    if (cpdlc)
+      set_summary(r, "CPDLC %s %.*s (payload not decoded)", dir == 'B' ? "down" : dir == 'A' ? "up" : "", static_cast<int>(reg_n), reg);
+    else
+      set_summary(r, "ATC %s %s %.*s", app, dir == 'B' ? "down" : dir == 'A' ? "up" : "", static_cast<int>(reg_n), reg);
     return true;
   }
   return false;

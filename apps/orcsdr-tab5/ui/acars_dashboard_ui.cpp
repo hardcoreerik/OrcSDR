@@ -21,6 +21,9 @@ T cycle(T value, int count) {
 void Controller::reset() {
   view_ = View::live;
   detail_open_ = false;
+  target_lock_open_ = false;
+  target_lock_tail_[0] = '\0';
+  target_lock_flight_[0] = '\0';
   detail_record_ = MessageRecord{};
   detail_text_[0] = '\0';
   detail_text_len_ = 0;
@@ -36,13 +39,24 @@ void Controller::select_view(View view) {
   if (view >= View::count) return;
   view_ = view;
   detail_open_ = false;
+  target_lock_open_ = false;
   bump();
 }
 
 void Controller::close_detail() {
   if (!detail_open_) return;
   detail_open_ = false;
+  target_lock_open_ = false;
   bump();
+}
+
+bool Controller::open_target_lock(const char* tail, const char* flight) {
+  if (!tail || !tail[0]) return false;
+  std::snprintf(target_lock_tail_, sizeof(target_lock_tail_), "%s", tail);
+  std::snprintf(target_lock_flight_, sizeof(target_lock_flight_), "%s", flight ? flight : "");
+  target_lock_open_ = true;
+  bump();
+  return true;
 }
 
 void Controller::refresh_detail_text(const Model& model) {
@@ -59,6 +73,7 @@ bool Controller::open_detail(uint32_t seq, const Model& model) {
   if (!m) return false;
   detail_record_ = *m;
   detail_open_ = true;
+  target_lock_open_ = false;
   detail_line_ = 0;
   refresh_detail_text(model);
   bump();
@@ -79,6 +94,14 @@ bool Controller::detail_line_at(size_t index, const char** start, size_t* length
 }
 
 Action Controller::touch(int32_t x, int32_t y, Model& model) {
+  if (target_lock_open_) {
+    if (in(layout::kTargetClose, x, y)) {
+      target_lock_open_ = false;
+      bump();
+      return {ActionKind::changed, 0};
+    }
+    return {};  // modal consumes touches; no tune request or tab navigation
+  }
   if (y < layout::kHeaderH) return {};            // shared header: Home / Mute / Visualizer / Settings
   if (y >= layout::kTabsY) {
     for (int i = 0; i < layout::kTabCount; ++i)
@@ -112,6 +135,9 @@ Action Controller::touch_live(int32_t x, int32_t y, Model& model) {
 }
 
 Action Controller::touch_detail(int32_t x, int32_t y, Model& model) {
+  // AV is an opaque VDL2 link address, NOT an aircraft registration.
+  if (in(layout::kDetailTarget, x, y) && !(detail_record_.label[0] == 'A' && detail_record_.label[1] == 'V') &&
+      open_target_lock(detail_record_.tail, detail_record_.flight)) return {ActionKind::changed, 0};
   if (in(layout::kDetailBack, x, y)) {
     close_detail();
     return {ActionKind::changed, 0};
@@ -138,6 +164,16 @@ Action Controller::touch_detail(int32_t x, int32_t y, Model& model) {
 
 Action Controller::touch_aircraft(int32_t x, int32_t y, Model& model) {
   const Snapshot& s = model.snapshot();
+  if (in(layout::kAcTarget, x, y) && tail_selected_) {
+    // Reject raw AVLC source IDs; these do not establish aircraft identity.
+    for (size_t i = 0; i < s.aircraft_count; ++i) {
+      const AircraftRecord& a = s.aircraft[i];
+      if (std::strcmp(a.tail, selected_tail_) != 0) continue;
+      if (a.last_label[0] == 'A' && a.last_label[1] == 'V') return {};
+      if (open_target_lock(a.tail, a.flight)) return {ActionKind::changed, 0};
+    }
+    return {};
+  }
   for (size_t i = 0; i < s.aircraft_count; ++i)
     if (in(layout::ac_row(static_cast<int>(i)), x, y)) {
       std::snprintf(selected_tail_, sizeof(selected_tail_), "%s", s.aircraft[i].tail);
@@ -256,6 +292,7 @@ Action Controller::touch_setup(int32_t x, int32_t y, Model& model) {
       archive_offset_ = 0;
       tail_selected_ = false;
       detail_open_ = false;
+      target_lock_open_ = false;
       bump();
       return {ActionKind::demo_changed, on ? 1u : 0u};
     }
