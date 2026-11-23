@@ -587,6 +587,12 @@ void job_cont() {
     }
     for (const Candidate ec : {Candidate::d2_q15_specialized, Candidate::e_pie_pp,
                                Candidate::e_pie_all}) {
+      Frontend probe;
+      if (!probe.init(rate, ec, PpKind::q15, 2048, true)) {
+        emitf("LAB_CONT_VS_D rate=%lu cand=%s status=init_failed",
+              (unsigned long)rate, candidate_name(ec));
+        continue;
+      }
       // D2/E must equal D + pp_q15 exactly (same Q15 integer sums).
       const size_t nd = run(rate, {Candidate::d_q15_sparse, PpKind::q15}, b.in, n, b.ref, b.cap);
       const size_t ne = run(rate, {ec, PpKind::q15}, b.in, n, b.y, b.cap);
@@ -801,7 +807,11 @@ void job_preempt(int seconds, int period_us) {
     generate(s, rate, b.in, n, 99u);
     for (const Cfg& v : victims) {
       Frontend fe;
-      if (!fe.init(rate, v.c, v.p, 2048, true)) continue;
+      if (!fe.init(rate, v.c, v.p, 2048, true)) {
+        emitf("LAB_PREEMPT cand=%s pp=%s status=init_failed",
+              candidate_name(v.c), pp_name(v.p));
+        continue;
+      }
       const size_t ng = fe.process(b.in, n, b.ref, b.cap);
       const uint32_t golden = fnv(b.ref, ng * sizeof(Cf32));
       const uint32_t runs0 = a->runs.load(), bad0 = a->bad.load();

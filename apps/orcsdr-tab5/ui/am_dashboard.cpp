@@ -1,6 +1,7 @@
 #include "focus_nav.hpp"
 #include "am_dashboard.hpp"
 
+#include "am_frequency_parse.hpp"
 #include "dashboard_audio_control.hpp"
 #include "freq_keypad.hpp"
 #include "orc_badge.hpp"
@@ -588,7 +589,7 @@ void update(const Snapshot& snapshot) {
   if (header_changed || audio_header::service_timeout(g_audio_control, now))
     audio_header::draw(g_audio_control, g_snapshot.volume, g_snapshot.sound_enabled,
                        g_snapshot.battery_percent);
-  if (g_scan_prompt) {
+  if (g_scan_prompt && !g_keypad) {
     if (g_scan_prompt_draw_pending.exchange(false)) draw_dynamic();
     return;
   }
@@ -656,7 +657,7 @@ Action gain_button_action(const Snapshot& snapshot) {
 
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
-  if (g_scan_prompt) {
+  if (g_scan_prompt && !g_keypad) {
     if (hit(x, y, 280, 425, 220, 70)) reset_scan_results();
     else if (hit(x, y, 530, 425, 220, 70)) {
       g_scan_prompt = false;
@@ -679,11 +680,8 @@ Action handle_touch(int32_t x, int32_t y) {
       return {};
     }
     if (result == freq_keypad::Result::submitted) {
-      char* end = nullptr;
-      const double khz = strtod(g_entry, &end);
-      const uint32_t hz = static_cast<uint32_t>(llround(khz * 1000.0));
-      if (end != g_entry && *end == '\0' && hz >= receiver_bands::kAmBroadcast.min_hz &&
-          hz <= receiver_bands::kAmBroadcast.max_hz) {
+      uint32_t hz = 0;
+      if (parse_frequency_khz(g_entry, &hz)) {
         g_keypad = false;
         g_entry[0] = '\0';
         draw();

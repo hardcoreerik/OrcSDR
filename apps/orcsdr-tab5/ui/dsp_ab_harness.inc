@@ -426,7 +426,8 @@ void dsp_ab_on_block(const RtlIqBlock& block) {
 }
 
 void dsp_ab_demod(bool ref, const uint8_t* iq, const DspAbBlockMeta& m) {
-  const bool am = m.band == RtlBand::am || (m.band == RtlBand::cb && m.cb_mode == CbMode::am);
+  const bool am = m.band == RtlBand::am || m.band == RtlBand::shortwave ||
+                  (m.band == RtlBand::cb && m.cb_mode == CbMode::am);
   if (am) {
     if (ref) demodulate_am_ref(iq, m.bytes, m.audio_scale, m.sample_rate_sps);
     else demodulate_am(iq, m.bytes, m.audio_scale, m.sample_rate_sps);

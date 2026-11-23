@@ -63,19 +63,25 @@ int main() {
   settings::enter(state, settings::Section::rtl_tcp);
   assert(visible("192.168.1.15:5000") && visible("REMOTE RTL_TCP"));
 
-  // 4. EDIT opens the editor prefilled; CANCEL leaves the server alone.
+  // 4. EDIT opens the editor prefilled; CANCEL closes it and restores header, rail, and content.
   action = settings::handle_touch(1070, 234);
   assert(action.kind == settings::ActionKind::none && text_editor::active());
   assert(std::strcmp(text_editor::value(), "192.168.1.15:5000") == 0);
+  M5.Display.strings.clear();
+  M5.Display.positions.clear();
   action = settings::handle_touch(180, 653);  // CANCEL
   assert(action.kind == settings::ActionKind::none && !text_editor::active());
+  assert(visible("CLOSE") && visible("RTL_TCP") && visible("RECEIVER SOURCE"));
   char taken[72]{};
   assert(!settings::take_remote_server(taken, sizeof(taken)));
 
-  // 5. EDIT then SAVE hands the text to the application exactly once.
+  // 5. EDIT then SAVE hands the text to the application once and restores header, rail, and content.
   settings::handle_touch(1070, 234);
+  M5.Display.strings.clear();
+  M5.Display.positions.clear();
   action = settings::handle_touch(1100, 653);  // SAVE
   assert(action.kind == settings::ActionKind::remote_server_changed);
+  assert(visible("CLOSE") && visible("RTL_TCP") && visible("RECEIVER SOURCE"));
   assert(settings::take_remote_server(taken, sizeof(taken)) && std::strcmp(taken, "192.168.1.15:5000") == 0);
   assert(!settings::take_remote_server(taken, sizeof(taken)));  // consumed
 

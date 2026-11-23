@@ -1117,15 +1117,21 @@ Action begin_location_method(int method) {
 
 Action handle_touch(int32_t x, int32_t y) {
   if (!g_active) return {};
-  // The full-width text editor covers the rail; repaint it once it closes.
+  // The full-width text editor covers the header strip (y >= 72) and rail; repaint both once it closes.
   if (g_location_edit) {
     const Action action = handle_location_keyboard(x, y);
-    if (!g_location_edit) draw_rail();
+    if (!g_location_edit) {
+      draw_header();
+      draw_rail();
+    }
     return action;
   }
   if (g_wifi_edit != WifiEdit::none) {
     const Action action = handle_wifi_keyboard(x, y);
-    if (g_wifi_edit == WifiEdit::none) draw_rail();
+    if (g_wifi_edit == WifiEdit::none) {
+      draw_header();
+      draw_rail();
+    }
     return action;
   }
   if (g_edit != EditField::none) return handle_keypad(x, y);
