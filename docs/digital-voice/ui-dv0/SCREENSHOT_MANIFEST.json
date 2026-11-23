@@ -1,0 +1,195 @@
+{
+  "schema_version": 1,
+  "task": "UI-DV0",
+  "capture_requirements": {
+    "width": 1280,
+    "height": 720,
+    "renderer": "Native OrcSDR C++ M5GFX drawing path",
+    "pixel_parity": "PENDING HARDWARE",
+    "main_sha": "3b98d82870df371a03473d0f4eed82265823a02f",
+    "digital_voice_sha": "3beddf68c04e6068c420f4fa892345e3a495d81b",
+    "navigation_label": "SCAN (View::explore internal compatibility name)",
+    "generated_concept_images": "illustrations only, not native framebuffer output",
+    "scan_integration": "not connected / not device-verified"
+  },
+  "planned_cases": [
+    {
+      "id": "DV-01",
+      "view": "explore",
+      "case": "disconnected",
+      "origin": "demo",
+      "note": "No receiver",
+      "density": "discovery_first"
+    },
+    {
+      "id": "DV-02",
+      "view": "explore",
+      "case": "tuned_no_signal",
+      "origin": "demo",
+      "note": "Frequency is synthetic illustration, not RF evidence",
+      "density": "discovery_first"
+    },
+    {
+      "id": "DV-03",
+      "view": "explore",
+      "case": "candidate",
+      "origin": "demo",
+      "note": "Candidate only",
+      "density": "discovery_first"
+    },
+    {
+      "id": "DV-04",
+      "view": "explore",
+      "case": "dmr_replay",
+      "origin": "real_iq_replay",
+      "note": "Pinned valid metadata, frequency unknown",
+      "density": "discovery_first"
+    },
+    {
+      "id": "DV-05",
+      "view": "live",
+      "case": "dmr_replay",
+      "origin": "real_iq_replay",
+      "note": "Source 3024109 / TG99 / CC1, slot unknown",
+      "density": "discovery_first"
+    },
+    {
+      "id": "DV-06",
+      "view": "live",
+      "case": "dmr_unknown_slot",
+      "origin": "real_iq_replay",
+      "note": "Slot intentionally unknown",
+      "density": "discovery_first"
+    },
+    {
+      "id": "DV-07",
+      "view": "live",
+      "case": "p25_phase1",
+      "origin": "demo",
+      "note": "No fabricated P25 identity",
+      "density": "discovery_first"
+    },
+    {
+      "id": "DV-08",
+      "view": "live",
+      "case": "dstar_bits",
+      "origin": "synthetic_bits",
+      "note": "No validated callsign injected in fixture",
+      "density": "discovery_first"
+    },
+    {
+      "id": "DV-09",
+      "view": "live",
+      "case": "ysf_bits",
+      "origin": "synthetic_bits",
+      "note": "FICH not populated until source-pinned fixture is available",
+      "density": "discovery_first"
+    },
+    {
+      "id": "DV-10",
+      "view": "live",
+      "case": "nxdn_planned",
+      "origin": "demo",
+      "note": "NXDN decoder absent",
+      "density": "discovery_first"
+    },
+    {
+      "id": "DV-11",
+      "view": "last_heard",
+      "case": "history_demo",
+      "origin": "real_iq_replay",
+      "note": "Two accepted recordings, identical IDs, times unknown",
+      "density": "discovery_first"
+    },
+    {
+      "id": "DV-12",
+      "view": "systems",
+      "case": "history_demo",
+      "origin": "real_iq_replay",
+      "note": "System learning not yet integrated",
+      "density": "discovery_first"
+    },
+    {
+      "id": "DV-13",
+      "view": "signal",
+      "case": "signal_empty",
+      "origin": "demo",
+      "note": "No measured IQ counters",
+      "density": "discovery_first"
+    },
+    {
+      "id": "DV-14",
+      "view": "setup",
+      "case": "nxdn_planned",
+      "origin": "demo",
+      "note": "All disabled controls truthful",
+      "density": "discovery_first"
+    },
+    {
+      "id": "DV-15",
+      "view": "signal",
+      "case": "discontinuity",
+      "origin": "demo",
+      "note": "Synthetic IQ loss event only; clearly demo-labeled",
+      "density": "discovery_first"
+    },
+    {
+      "id": "DV-16",
+      "view": "explore",
+      "case": "disconnected",
+      "origin": "demo",
+      "note": "Header and nav overlay interaction requires actual documentation build",
+      "density": "discovery_first"
+    },
+    {
+      "id": "DV-17",
+      "view": "explore",
+      "case": "dmr_replay",
+      "density": "analysis_first",
+      "origin": "real_iq_replay",
+      "note": "Option B: analysis-first, same C++ renderer and provenance constraints"
+    },
+    {
+      "id": "DV-18",
+      "view": "live",
+      "case": "dmr_replay",
+      "density": "analysis_first",
+      "origin": "real_iq_replay",
+      "note": "Option B: analysis-first, same C++ renderer and provenance constraints"
+    },
+    {
+      "id": "DV-19",
+      "view": "last_heard",
+      "case": "history_demo",
+      "density": "analysis_first",
+      "origin": "real_iq_replay",
+      "note": "Option B: analysis-first, same C++ renderer and provenance constraints"
+    },
+    {
+      "id": "DV-20",
+      "view": "systems",
+      "case": "history_demo",
+      "density": "analysis_first",
+      "origin": "real_iq_replay",
+      "note": "Option B: analysis-first, same C++ renderer and provenance constraints"
+    },
+    {
+      "id": "DV-21",
+      "view": "signal",
+      "case": "signal_empty",
+      "density": "analysis_first",
+      "origin": "demo",
+      "note": "Option B: analysis-first, same C++ renderer and provenance constraints"
+    },
+    {
+      "id": "DV-22",
+      "view": "setup",
+      "case": "nxdn_planned",
+      "density": "analysis_first",
+      "origin": "demo",
+      "note": "Option B: analysis-first, same C++ renderer and provenance constraints"
+    }
+  ],
+  "verified_images": [],
+  "approval_gate": "PENDING — zero device-backed images"
+}
