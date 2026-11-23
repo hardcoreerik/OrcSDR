@@ -319,11 +319,23 @@ void run(unsigned seconds, bool visualizer_active, Emit emit) {
     t.fb = fb;
     t.g = g;
     reset_dsp_window();
+    unsigned scroll_failures = 0;
+    esp_err_t scroll_err = ESP_OK;
     const Timing ppa_scroll = timed_loop(seconds, [&] {
-      (void)screen_blit::ppa_scroll_up(t, kWfX, kWfY, kWfW, kWfH, kRows);
+      const esp_err_t e = static_cast<esp_err_t>(screen_blit::ppa_scroll_up(t, kWfX, kWfY, kWfW, kWfH, kRows));
+      if (e != ESP_OK) {
+        ++scroll_failures;
+        scroll_err = e;
+      }
       target.fillRect(kWfX, kWfY + kWfH - kRows, kWfW, kRows, TFT_BLACK);
     });
-    report(emit, "ppa_scroll", ppa_scroll, seconds);
+    // A scroll that failed did not scroll: its time is not a PPA scroll time.
+    if (scroll_failures == 0) {
+      report(emit, "ppa_scroll", ppa_scroll, seconds);
+    } else {
+      say(emit, "RTL_DISPLAY_BENCH_ERROR method=ppa_scroll failed=%u of=%lu last_error=%s", scroll_failures,
+          static_cast<unsigned long>(ppa_scroll.frames), esp_err_to_name(scroll_err));
+    }
   } else {
     emit("RTL_DISPLAY_BENCH_ERROR scroll=no_memory");
   }
@@ -350,8 +362,19 @@ void run(unsigned seconds, bool visualizer_active, Emit emit) {
       });
       report(emit, "m5gfx_clear", cpu_clear, seconds);
       reset_dsp_window();
+      const screen_blit::Counters before = screen_blit::counters();
       const Timing ppa_clear = timed_loop(seconds, [&] { (void)dma.begin(kW, kH, 0); });
-      report(emit, "ppa_clear", ppa_clear, seconds);
+      const screen_blit::Counters after = screen_blit::counters();
+      const unsigned long ppa_n = after.clear_ppa - before.clear_ppa;
+      const unsigned long cpu_n = after.clear_fallback - before.clear_fallback;
+      // Without the PPA FILL client dma.begin() clears on the CPU and still returns a good canvas: report PPA only if
+      // every iteration went through the PPA.
+      if (cpu_n == 0 && ppa_n == ppa_clear.frames) {
+        report(emit, "ppa_clear", ppa_clear, seconds);
+      } else {
+        say(emit, "RTL_DISPLAY_BENCH_ERROR method=ppa_clear ppa=%lu cpu_fallback=%lu frames=%lu", ppa_n, cpu_n,
+            static_cast<unsigned long>(ppa_clear.frames));
+      }
     } else {
       emit("RTL_DISPLAY_BENCH_ERROR clear=no_memory");
     }

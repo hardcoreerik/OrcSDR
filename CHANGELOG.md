@@ -2,6 +2,13 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Home PPA review fixes (CodeRabbit, PR 262) — 2026-11-22
+
+- **`RTL_DISPLAY_BENCH` no longer times failed scrolls as PPA scrolls.** A `ppa_scroll_up` that returns an error did not scroll; any failure now replaces the `ppa_scroll` result with `RTL_DISPLAY_BENCH_ERROR method=ppa_scroll failed=N ...`.
+- **`ppa_clear` is reported only if every iteration used the PPA.** Without the FILL client `dma.begin()` clears on the CPU and still returns a good canvas; the bench now compares the clear counters around the timing and prints `RTL_DISPLAY_BENCH_ERROR method=ppa_clear ppa=.. cpu_fallback=..` otherwise.
+- **`screen_blit::push` respects the display's active clip.** M5GFX's `pushImage` honours the clip rectangle, the PPA copy did not; the PPA is now used only when the whole picture is inside the clip, otherwise the M5GFX path runs. Home sets no clip, so its behaviour is unchanged.
+- Built and host-tested; not flashed (another session was using COM17).
+
 ## Unreleased — Host UI stub gains TFT_RED — 2026-11-22
 
 CI `host-rtl-tcp` failed on PR 261: `settings_app.cpp` (FORGET COMPUTER, armed) uses `TFT_RED`, which the host M5Unified stub (`apps/orcsdr-tab5/tests/maps/ui_stubs/M5Unified.h`) did not define. Added it; `tools/test-rtl-tcp.sh` passes. Test-only change, firmware unaffected.

@@ -172,11 +172,20 @@ int ppa_clear(void* buffer, size_t bytes, int w, int h) {
   return ppa_do_fill(g_fill, &op);
 }
 
+// M5GFX's pushImage honours the display's active clip rectangle; the PPA copy checks only the screen. So the PPA is used
+// only when the whole picture is inside the clip (no clip set = the whole screen, the normal case).
+static bool inside_active_clip(int x, int y, int w, int h) {
+  int32_t cx = 0, cy = 0, cw = 0, ch = 0;
+  M5.Display.getClipRect(&cx, &cy, &cw, &ch);
+  return x >= cx && y >= cy && x + w <= cx + cw && y + h <= cy + ch;
+}
+
 void push(m5gfx::M5Canvas* sprite, int x, int y) {
   if (sprite == nullptr) return;
   Target t;
   int err = ESP_ERR_INVALID_ARG;
-  if (live_target(&t) && sprite->getColorDepth() == lgfx::rgb565_2Byte)
+  if (live_target(&t) && sprite->getColorDepth() == lgfx::rgb565_2Byte &&
+      inside_active_clip(x, y, sprite->width(), sprite->height()))
     err = ppa_push(t, sprite->getBuffer(), sprite->width(), sprite->height(), x, y);
   if (err == ESP_OK) {
     ++g_counters.push_ppa;
