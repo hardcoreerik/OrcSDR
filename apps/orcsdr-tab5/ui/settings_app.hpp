@@ -125,6 +125,7 @@ struct State {
   uint16_t rt_reconnects = 0;
 
   bool sd_ready = false;
+  bool host_paired = false;   // a computer's serial pairing key is stored (PAIR)
   uint64_t sd_total_bytes = 0;
   uint64_t sd_free_bytes = 0;
   bool catalog_ready = false;
@@ -202,6 +203,7 @@ enum class ActionKind : uint8_t {
   ,open_local_maps
   ,open_location_picker
   ,run_setup
+  ,forget_paired_computer  // clear the stored serial pairing key (after a second tap to confirm)
 };
 
 struct Action {

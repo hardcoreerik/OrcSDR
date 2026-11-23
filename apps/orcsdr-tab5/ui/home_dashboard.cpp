@@ -4,6 +4,7 @@
 #include "plot_cadence.hpp"
 #include "freq_keypad.hpp"
 #include "scope_canvas.hpp"
+#include "screen_blit.hpp"
 
 #include "dashboard_audio_control.hpp"
 #include "orc_badge.hpp"
@@ -1093,7 +1094,8 @@ void update(const Snapshot& snapshot) {
 
 // The trace and its axis are drawn off-screen and pushed in one go, the way the FM, AM, CB and P25 scopes do
 // (scope_canvas.hpp). Erasing and redrawing the plot on the display every frame is what made Home flicker.
-scope::Trace g_trace;
+// Its buffer is aligned for the P4's PPA, which clears it each frame instead of the CPU (screen_blit.hpp).
+orcsdr::screen_blit::DmaSprite g_trace;
 
 // Display-only smoothing and peak hold, one value per pixel. Nothing here touches the receive pipeline: the levels
 // come in untouched and are averaged for drawing, the way the FM, AM and other scopes show theirs. (Home used to
@@ -1177,9 +1179,9 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
   draw_spectrum_axis(*canvas, w, h);
   const int64_t push_started_us = esp_timer_get_time();
   plot_stats.raster_us = static_cast<uint32_t>(push_started_us - draw_started_us);
-  M5.Display.startWrite();
-  canvas->pushSprite(origin_x, origin_y);
-  M5.Display.endWrite();
+  // The P4's PPA copies the finished picture to the rotated screen (same pixels as M5GFX's pushSprite, which it falls
+  // back to); the per-pixel rotated copy slowed the DSP on the other core by about a third while Home was showing.
+  orcsdr::screen_blit::push(canvas, origin_x, origin_y);
   const int64_t waterfall_started_us = esp_timer_get_time();
   plot_stats.push_us = static_cast<uint32_t>(waterfall_started_us - push_started_us);
 
@@ -1191,6 +1193,9 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
     const int waterfall_h = popup_over ? kPopY - 2 - (kWaterfallY + 1) : kWaterfallH - 2;
     M5.Display.startWrite();
     M5.Display.setScrollRect(kPlotX + 1, kWaterfallY + 1, kPlotW - 2, waterfall_h, TFT_BLACK);
+    // Stays on the CPU: screen_blit::scroll_up (PPA) is pixel-exact but needs two passes through a scratch copy and
+    // cost Home about 15% of its frame rate (17.7 against 20.6 frames/s, 2026-11-13). A single-pass ring buffer has
+    // to know about every popup and overlay that draws over the waterfall first.
     M5.Display.scroll(0, -rows);
     const float waterfall_range = waterfall_range_db(waterfall_contrast);
     for (int x0 = 0; x0 < w; x0 += 2) {
@@ -1414,7 +1419,8 @@ bool self_check() {
          tap_action(kStepperSize + 5, kControlY + 8).kind == ActionKind::step_size_down &&
          tap_action(1223, 13).kind == ActionKind::open_device_settings &&
          tap_action(kHeaderStatusX+kHeaderStatusW-20,kHeaderStatusY+20).kind == ActionKind::open_clock &&
-         tap_action(1100, 13).kind == ActionKind::sound_toggle &&
+         // Speaker button, header x 1138..1191 since the header was re-spaced (2026-11-11); this tapped 1100 before.
+         tap_action(1164, 38).kind == ActionKind::sound_toggle &&
          std::abs(home_spectrum_floor(levels, std::size(levels), 10.0f) - 62.0f) < 0.01f;
 }
 

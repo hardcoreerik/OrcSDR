@@ -36,7 +36,7 @@ Wi-Fi pause/resume orchestration; catalog operations; serial and authenticated
 device commands; SD/IQ/audio transfers; LAN console command dispatch;
 documentation capture; screen transitions; and top-level touch routing.
 
-main.cpp measurement (Git-normalized): 1,166,148 bytes (~1138.8 KiB), 24,480 lines.
+main.cpp measurement (Git-normalized): 1,025,206 bytes (~1001.2 KiB), 21,180 lines.
 
 The measurement uses LF-normalized repository bytes so it is stable across
 Windows and Linux checkouts. The intended modular endpoint—roughly 500 lines of
@@ -50,9 +50,9 @@ screen permission to draw while radio/decoder work continues independently.
 `navigation_service` owns Home/Settings handoff mechanics; feature dashboards
 render snapshots rather than owning receiver state.
 
-ScreenController IDs: `none`, `home`, `fm`, `p25`, `adsb`, `lora`, `shortwave`, `radio`, `visualizer`, `rf_lab`, `wifi_analysis`, `pocsag`, `settings`, `am`, `documentation`, `cb`, `airband`, `ft8`, `sstv`, `acars`, `dead_air`, `maps`.
+ScreenController IDs: `none`, `home`, `fm`, `p25`, `adsb`, `lora`, `shortwave`, `radio`, `visualizer`, `rf_lab`, `wifi_analysis`, `pocsag`, `settings`, `am`, `documentation`, `cb`, `airband`, `ft8`, `sstv`, `acars`, `dead_air`, `maps`, `ais`.
 
-Dashboard IDs: `home`, `fm`, `p25`, `adsb`, `shortwave`, `weather`, `cb`, `lora`, `airband`, `marine`, `satellite`, `utilities`, `settings`, `rf_lab`, `wifi_analysis`, `pocsag`, `am`, `ft8`, `sstv`, `acars`, `dead_air`.
+Dashboard IDs: `home`, `fm`, `p25`, `adsb`, `shortwave`, `weather`, `cb`, `lora`, `airband`, `marine`, `satellite`, `utilities`, `settings`, `rf_lab`, `wifi_analysis`, `pocsag`, `am`, `ft8`, `sstv`, `acars`, `dead_air`, `ais`, `visualizer`.
 
 Dead Air is integrated into the normal Tab5 dashboard dispatcher, with six native M5GFX panels, real RF/audio observations, bounded events, environmental sensor readings and separate logging. The M5Stack Unit ENV III has working Tab5 temperature, humidity and pressure reads per maintainer acceptance. The opt-in VEIL-26 engine maps measured frequency/level to deterministic symbolic interpretations, distinguished from measurement; it does not identify paranormal causes. See docs/dead-air/CHANGELOG.md, docs/dead-air/VEIL26.md and docs/MAINTAINER_FIELD_ACCEPTANCE_2026-11-04.md. The initial DEVELOPMENT_HANDOFF.md is historical.
 
