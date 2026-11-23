@@ -22,9 +22,9 @@ namespace {
 std::map<std::string,std::vector<unsigned char>> nvs_data;
 bool write_ok=true;
 std::string serial_output;
-int rescans=0,invalidations=0,download_checks=0,download_installs=0,download_cancels=0;
+int rescans=0,invalidations=0,download_checks=0,download_installs=0,download_cancels=0,download_resets=0;
 orcsdr::maps::downloads::Snapshot download_status;
-bool download_installed=false;
+bool download_installed=false,expect_reset_feedback=true;
 bool legacy_inventory=false;
 uint32_t inventory_revision=1;
 orcsdr::setup_ui::Snapshot setup_status;
@@ -123,6 +123,7 @@ bool entry(size_t index,Entry* out){if(index>=download_status.count)return false
 bool check_catalog(){++download_checks;return true;}
 bool request_install(size_t){++download_installs;return true;}
 bool retry(){return false;}
+bool reset_pending(){++download_resets;if(expect_reset_feedback)assert(visible("CLEARING..."));return true;}
 void cancel(){++download_cancels;}
 }
 namespace audio_header {
@@ -306,10 +307,22 @@ void screen_tests() {
   serial_command("RTL_MAP OPEN DOWNLOADS");assert(serial_ok());
   assert(M5.Display.screen_clears==before_download_entry+1);
   assert(map_screen::state().downloads&&visible("Get offline maps"));
+  download_status.pending=true;download_status.busy=false;download_status.phase=maps::downloads::Phase::failed;
+  test_millis+=300;map_screen::tick();map_screen::tick();
+  assert(visible("Use original SD. RESET STUCK forgets the saved install."));
+  const int reset_clears=M5.Display.screen_clears;click(400,548);assert(download_resets==1);
+  assert(M5.Display.screen_clears==reset_clears);
+  serial_command("RTL_MAP DOWNLOAD RESET",false);
+  assert(serial_output=="RTL_MAP_ERROR auth_required\n"&&download_resets==1);
+  expect_reset_feedback=false;serial_command("RTL_MAP DOWNLOAD RESET");
+  assert(serial_ok()&&download_resets==2);expect_reset_feedback=true;
+  download_status.pending=false;download_status.phase=maps::downloads::Phase::idle;
   serial_command("RTL_MAP STATUS",false);
   assert(serial_output.find("downloads=1")!=std::string::npos);
+  std::snprintf(download_status.message,sizeof(download_status.message),"Not enough SD space. Free space or use a larger card.");
   serial_command("RTL_MAP DOWNLOAD LIST",false);
   assert(serial_output.find("verified=26214400 verify_total=104857600 verify_pass=2")!=std::string::npos);
+  assert(serial_output.find("Not enough SD space. Free space or use a larger card.")!=std::string::npos);
   click(100,548);assert(visible("Choose an offline map"));
   const int inventory_clears=M5.Display.screen_clears;
   ++inventory_revision;test_millis+=300;map_screen::tick();map_screen::tick();
