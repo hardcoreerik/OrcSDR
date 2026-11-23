@@ -1,6 +1,6 @@
 #pragma once
 // Receiver audio on the Waveshare board: IQ from the receiver task -> demodulator
-// (components/orcsdr_audio_dsp) -> adaptive resampler -> ES8311 + speaker.
+// (apps/orcsdr-p4-core/components/orcsdr_audio_dsp) -> adaptive resampler -> ES8311 + speaker.
 //
 // The dongle's clock and the I2S clock differ by a few hundred ppm. Without correction the
 // stream buffer would slowly fill or drain and the audio would click about once a second, so a

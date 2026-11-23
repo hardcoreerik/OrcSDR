@@ -2,8 +2,8 @@
 //
 // The screens are the Tab5's own UI source (apps/orcsdr-tab5/ui), drawn through a thin layer that
 // scales its 1280x720 coordinates onto this panel and renders with M5GFX's engine:
-//   board adapter (components/orcsdr_board_hosyond)   panel power, DSI, touch
-//   M5GFX scaling layer (components/orcsdr_gfx_compat) M5.Display / M5Canvas stand-ins
+//   board adapter (apps/orcsdr-p4-core/components/orcsdr_board_hosyond)   panel power, DSI, touch
+//   M5GFX scaling layer (apps/orcsdr-p4-core/components/orcsdr_gfx_compat) M5.Display / M5Canvas stand-ins
 //   present.cpp                                        sprite -> panel frame buffer
 //   home_app.cpp                                       Snapshot, touch, actions, spectrum feed
 //   radio_service.cpp                                  esp-rtl-sdr receiver task

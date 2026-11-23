@@ -1,7 +1,7 @@
 #pragma once
 // Wired Ethernet for boards that have an RMII PHY (Waveshare ESP32-P4-ETH, -POE-ETH, the Module-DEV-KIT). Opt-in: the driver is
 // compiled in only with CONFIG_ORCSDR_ETHERNET=y, and it starts only if the board profile lists Ethernet pins. The pins, PHY address and
-// reset line come from the board profile (components/orcsdr_board_hosyond/src/boards); nothing here names a board.
+// reset line come from the board profile (apps/orcsdr-p4-core/components/orcsdr_board_hosyond/src/boards); nothing here names a board.
 namespace eth_app {
 struct Status {
   bool compiled = false;   // this build includes the driver

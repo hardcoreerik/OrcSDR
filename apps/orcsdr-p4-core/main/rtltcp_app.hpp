@@ -1,5 +1,5 @@
 #pragma once
-// OrcSDR's use of esp-rtl-tcp (components/esp_rtl_tcp): adapts the receiver service to the server's Host interface and registers the
+// OrcSDR's use of esp-rtl-tcp (apps/orcsdr-p4-core/components/esp_rtl_tcp): adapts the receiver service to the server's Host interface and registers the
 // IQ feed as a queued sink while a client is connected. Off by default. Design: docs/hardware/ESP_RTL_TCP_DESIGN.md.
 #include "esp_rtl_tcp.hpp"
 

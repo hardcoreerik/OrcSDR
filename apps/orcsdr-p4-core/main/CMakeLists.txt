@@ -1,5 +1,5 @@
 # The screens are the Tab5 UI sources compiled unchanged from apps/orcsdr-tab5/ui; the M5Unified
-# shim (components/orcsdr_gfx_compat) lets them run on this board. Do not add the real m5unified.
+# shim (apps/orcsdr-p4-core/components/orcsdr_gfx_compat) lets them run on this board. Do not add the real m5unified.
 set(WS4B "${CMAKE_CURRENT_LIST_DIR}")  # home_4b_layout.hpp, home_fft.hpp, home_v3_ui.hpp and the badge live in this directory
 set(TAB5_UI "${CMAKE_CURRENT_LIST_DIR}/../../orcsdr-tab5/ui")
 # Optional ESP-Hosted 3.0.6 image for the kit's ESP32-C6, offered by Settings > Connectivity as an on-device

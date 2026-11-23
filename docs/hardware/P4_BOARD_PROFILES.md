@@ -12,10 +12,10 @@ each value came from, what is unsupported. Code reads the profile instead of GPI
 
 | Piece | File |
 |---|---|
-| Profile type, status levels | `components/orcsdr_board_hosyond/include/orcsdr_board_profile.h` |
-| One file per board | `components/orcsdr_board_hosyond/src/boards/board_*.c` |
-| Selector, list, boot log, pin cross-check | `components/orcsdr_board_hosyond/src/orcsdr_profiles.c` |
-| Build-time choice | `components/orcsdr_board_hosyond/Kconfig` (`ORCSDR_BOARD`) |
+| Profile type, status levels | `apps/orcsdr-p4-core/components/orcsdr_board_hosyond/include/orcsdr_board_profile.h` |
+| One file per board | `apps/orcsdr-p4-core/components/orcsdr_board_hosyond/src/boards/board_*.c` |
+| Selector, list, boot log, pin cross-check | `apps/orcsdr-p4-core/components/orcsdr_board_hosyond/src/orcsdr_profiles.c` |
+| Build-time choice | `apps/orcsdr-p4-core/components/orcsdr_board_hosyond/Kconfig` (`ORCSDR_BOARD`) |
 | Display panels (separate from boards) | `include/orcsdr_display_profile.h` |
 
 All profiles are compiled into every build, so a typo in any board file breaks every build. `ORCSDR_BOARD` only

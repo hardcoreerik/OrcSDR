@@ -352,7 +352,7 @@ Internal RAM free stayed at 120,447 bytes (largest block 43,008) after every 25 
 
 What the page expects from a device: `POST /api/v1/fm?action=start&index&hz&sps&volume&tau[&mode]`, `GET /api/v1/fm` (playing, receiver, frequency_hz, input_sps, volume, browser_audio.available), `action=volume`, `action=stop`, and 48 kHz mono PCM on `ws://<device>:81/api/v1/fm/audio` in "OFA1" packets (24-byte header: magic, session, seq, first sample, rate 48000, frames <= 960, flags; then int16).
 
-`main/web_audio.{hpp,cpp}` implements it. It runs its **own** demodulator (components/orcsdr_audio_dsp, WFM/NFM/AM) on a queued sink (task "webaudio", core 0, priority 5), independent of the speaker path, so it works on boards with no codec. 960 samples per packet = 50 packets/s, about 0.8 Mbit/s.
+`main/web_audio.{hpp,cpp}` implements it. It runs its **own** demodulator (apps/orcsdr-p4-core/components/orcsdr_audio_dsp, WFM/NFM/AM) on a queued sink (task "webaudio", core 0, priority 5), independent of the speaker path, so it works on boards with no codec. 960 samples per packet = 50 packets/s, about 0.8 Mbit/s.
 
 Rules it keeps:
 - **It never touches the board's speaker, volume or mute.** `fm?action=volume` sets only the page's own 0..80 number (kept so the page shows it after a reload); the browser applies it as its own gain. The old behaviour (mapping it to Home's volume) is gone.
