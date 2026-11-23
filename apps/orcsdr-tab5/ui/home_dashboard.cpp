@@ -210,6 +210,13 @@ void draw_menu_icon(dashboards::Id id, int x, int y, uint16_t color) {
     for (int tone = 0; tone < 8; ++tone)
       M5.Display.drawFastVLine(x - 14 + tone * 4, y + 12 - tone * 3, 4 + tone * 3, color);
     M5.Display.drawFastHLine(x - 16, y + 14, 34, color);
+  } else if (id == dashboards::Id::skimmer) {
+    // Two families of narrowband traces: CW keys and a twin-tone RTTY pair.
+    for (int i = 0; i < 4; ++i)
+      M5.Display.drawFastVLine(x - 15 + i * 7, y - 12 + (i % 2) * 6,
+                               23 - (i % 2) * 6, color);
+    M5.Display.drawFastVLine(x + 12, y - 9, 16, color);
+    M5.Display.drawFastVLine(x + 17, y - 9, 16, color);
   } else if (id == dashboards::Id::wifi_analysis) {
     M5.Display.drawCircle(x, y + 7, 3, color);
     M5.Display.drawArc(x, y + 7, 12, 12, 210, 330, color);

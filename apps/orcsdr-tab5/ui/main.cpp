@@ -54,6 +54,7 @@
 #include "orcsdr_storage.hpp"
 #include "am_dashboard.hpp"
 #include "ft8_dashboard.hpp"
+#include "skimmer_dashboard.hpp"
 #include "sstv_app.hpp"
 #include "sstv_dashboard.hpp"
 #include "sstv_diag.hpp"
@@ -2614,6 +2615,7 @@ bool shared_keypad_open();
 void navigation_restore_screen(orcsdr::screens::Id restore);
 void draw_global_bias_warning();
 void draw_ft8_dashboard(bool static_panel);
+void draw_skimmer_dashboard(bool static_panel);
 orcsdr::fm::Snapshot fm_dashboard_snapshot();
 void handle_fm_dashboard_action(const orcsdr::fm::Action& action);
 orcsdr::am::Snapshot am_dashboard_snapshot();
@@ -6226,6 +6228,7 @@ void refresh_active_screen() {
     case Id::lora: draw_lora_dashboard(false); break;
     case Id::wifi_analysis: draw_rf24_dashboard(false); break;
     case Id::ft8: draw_ft8_dashboard(false); break;
+    case Id::skimmer: draw_skimmer_dashboard(false); break;
     case Id::sstv: draw_sstv_dashboard(false); break;
     case Id::acars: orcsdr::acars_app::draw(false); break;
     case Id::dead_air: orcsdr::dead_air_app::draw(false); break;
@@ -6311,6 +6314,7 @@ void close_visualizer() {
     case orcsdr::screens::Id::lora: orcsdr::lora::draw(); break;
     case orcsdr::screens::Id::wifi_analysis: draw_rf24_dashboard(true); break;
     case orcsdr::screens::Id::ft8: draw_ft8_dashboard(true); break;
+    case orcsdr::screens::Id::skimmer: draw_skimmer_dashboard(true); break;
     default: show_home(); break;
   }
 }
@@ -6647,6 +6651,7 @@ void draw_sdr_screen(RtlBand band, uint32_t frequency_hz, uint8_t volume) {
   orcsdr::home::leave();
   orcsdr::rf24::leave();
   orcsdr::ft8::leave();
+  orcsdr::skimmer::leave();
   orcsdr::sstv_app::close();
   orcsdr::acars_app::close();
   orcsdr::ais_app::close();
@@ -11926,6 +11931,8 @@ void navigation_restore_screen(orcsdr::screens::Id restore) {
     draw_rf24_dashboard(true);
   } else if (restore == orcsdr::screens::Id::ft8) {
     draw_ft8_dashboard(true);
+  } else if (restore == orcsdr::screens::Id::skimmer) {
+    draw_skimmer_dashboard(true);
   } else if (restore == orcsdr::screens::Id::sstv) {
     orcsdr::sstv_app::draw(true);   // Settings opened from the SSTV header returns here, not to Home
   } else if (restore == orcsdr::screens::Id::acars) {
@@ -13029,6 +13036,30 @@ void handle_ft8_dashboard_action(const orcsdr::ft8::Action& action) {
   draw_ft8_dashboard(false);
 }
 
+// Native UI-only skimmer preview. Does not retune or start a decoder.
+void draw_skimmer_dashboard(bool static_panel) {
+  if (!static_panel && !orcsdr::screens::may_draw(orcsdr::screens::Id::skimmer)) return;
+  if (!static_panel) orcsdr::screens::note_visible_update(orcsdr::screens::Id::skimmer);
+  orcsdr::skimmer::set_header_hook(draw_global_header_controls);
+  if (!orcsdr::skimmer::active()) orcsdr::skimmer::enter();
+  else if (static_panel) orcsdr::skimmer::draw();
+  else orcsdr::skimmer::update();
+}
+
+void open_skimmer_dashboard() {
+  persist_dashboard_open(orcsdr::dashboards::Id::skimmer);
+  orcsdr::home::leave();
+  orcsdr::rf24::leave();
+  orcsdr::ft8::leave();
+  orcsdr::sstv_app::close();
+  orcsdr::acars_app::close();
+  orcsdr::ais_app::close();
+  orcsdr::dead_air_app::close();
+  orcsdr::screens::begin_transition(orcsdr::screens::Id::skimmer, millis());
+  draw_skimmer_dashboard(true);
+  orcsdr::screens::finish_transition();
+}
+
 void open_ft8_dashboard() {
   persist_dashboard_open(orcsdr::dashboards::Id::ft8);
   orcsdr::home::leave();
@@ -13408,10 +13439,11 @@ const orcsdr::sstv_diag::Hooks kSstvDiagHooks = {
     [](char* out, size_t size) { orcsdr::sstv_app::tune_summary(out, size); }};
 void open_dashboard(orcsdr::dashboards::Id id) {
   using Id = orcsdr::dashboards::Id;
+  if (id != Id::skimmer && id != Id::settings) orcsdr::skimmer::leave();
   if (id != Id::settings && orcsdr::settings::active()) close_global_settings();
   // Settings opened from AIS keeps AIS (and its receiver) alive, as the header Settings button does, so closing
   // Settings can return to it. Everything else below closes AIS.
-  if (id == Id::visualizer) {          // the last All Dashboards entry (the header VIS button is gone)
+  if (id == Id::visualizer) {          // Available from All Dashboards; header VIS button is gone
     open_visualizer();
     return;
   }
@@ -13442,6 +13474,7 @@ void open_dashboard(orcsdr::dashboards::Id id) {
     open_ft8_dashboard();
     return;
   }
+  if (id == Id::skimmer) { open_skimmer_dashboard(); return; }
   if (id == Id::sstv) { open_sstv_dashboard(); return; }
   if (id == Id::acars) { open_acars_dashboard(); return; }
   if (id == Id::ais) {
@@ -16436,7 +16469,7 @@ void handle_sdr_touch(int32_t x, int32_t y) {
     return;
   }
   if (orcsdr::audio_header::settings_hit(x, y)) {
-    open_global_settings(orcsdr::ft8::active() || orcsdr::acars_app::active() || orcsdr::ais_app::active() || orcsdr::dead_air_app::active()
+    open_global_settings(orcsdr::ft8::active() || orcsdr::skimmer::active() || orcsdr::acars_app::active() || orcsdr::ais_app::active() || orcsdr::dead_air_app::active()
                              ? orcsdr::settings::Section::system :
                          rtl_ui_band == RtlBand::adsb
                              ? orcsdr::settings::Section::location_adsb
@@ -16459,6 +16492,10 @@ void handle_sdr_touch(int32_t x, int32_t y) {
   }
   if (orcsdr::dead_air_app::active() && orcsdr::screens::owns(orcsdr::screens::Id::dead_air)) {
     orcsdr::dead_air_app::touch(x, y);
+    return;
+  }
+  if (orcsdr::skimmer::active() && orcsdr::screens::owns(orcsdr::screens::Id::skimmer)) {
+    (void)orcsdr::skimmer::handle_touch(x, y);
     return;
   }
   if (orcsdr::ft8::active()) {
@@ -21155,6 +21192,7 @@ void loop() {
       !settings_ui && orcsdr::screens::status().active != orcsdr::screens::Id::documentation &&
       orcsdr::screens::status().active != orcsdr::screens::Id::wifi_analysis &&
       orcsdr::screens::status().active != orcsdr::screens::Id::ft8 &&
+      orcsdr::screens::status().active != orcsdr::screens::Id::skimmer &&
        orcsdr::screens::status().active != orcsdr::screens::Id::sstv &&
       orcsdr::screens::status().active != orcsdr::screens::Id::acars &&
       orcsdr::screens::status().active != orcsdr::screens::Id::ais &&
@@ -21234,6 +21272,9 @@ void loop() {
       publish_adsb_snapshot(millis());
       refresh_active_screen();
     }
+  } else if (orcsdr::skimmer::active() && orcsdr::screens::owns(orcsdr::screens::Id::skimmer)) {
+    poll_sdr_touch(false);
+    if (!rtl_header_audio_control.expanded) orcsdr::skimmer::update();
   } else if (orcsdr::sstv::ui_active() && orcsdr::screens::owns(orcsdr::screens::Id::sstv)) {
     poll_sdr_touch(false);
     draw_sstv_dashboard(false);

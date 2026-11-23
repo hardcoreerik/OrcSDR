@@ -28,6 +28,7 @@ constexpr Descriptor kEntries[] = {
     {Id::settings, "SETTINGS", "Global device settings", Category::system, true},
     {Id::ais, "AIS", "VHF maritime vessel and aid-to-navigation reports", Category::digital, true},
     {Id::visualizer, "VISUALIZER", "Full-screen RF visualizer", Category::utility, true},
+    {Id::skimmer, "CW / RTTY SKIMMER", "Multi-signal CW and RTTY dashboard (UI preview)", Category::digital, true},
 };
 
 std::array<Id, kRecentCapacity> g_recent{};
@@ -108,7 +109,7 @@ bool self_check() {
                      g_recent[1] == Id::fm && !record_open(Id::p25);
   g_recent = saved;
   g_recent_count = saved_count;
-  return loaded && moved && std::size(kEntries) == 21 && find(Id::ais) != nullptr && find(Id::visualizer) != nullptr && find(Id::ft8) != nullptr && find(Id::rf_lab) != nullptr &&
+  return loaded && moved && std::size(kEntries) == 22 && find(Id::ais) != nullptr && find(Id::visualizer) != nullptr && find(Id::ft8) != nullptr && find(Id::rf_lab) != nullptr &&
          find(Id::am) != nullptr &&
          find(Id::wifi_analysis) != nullptr && find(Id::pocsag) != nullptr && find(Id::sstv) != nullptr && find(Id::acars) != nullptr && find(Id::dead_air) != nullptr;
 }

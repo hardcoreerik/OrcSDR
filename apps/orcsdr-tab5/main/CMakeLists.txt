@@ -151,6 +151,7 @@ idf_component_register(
         "../ui/serial_bench.cpp"
         "../ui/ft8_hunter.cpp"
         "../ui/ft8_dashboard.cpp"
+        "../ui/skimmer_dashboard.cpp"
         "../ui/ft8_map_source.cpp"
         "../ui/sstv_receiver.cpp"
         "../ui/sstv_modes.cpp"
