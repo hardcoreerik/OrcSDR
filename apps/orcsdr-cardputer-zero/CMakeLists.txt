@@ -278,6 +278,12 @@ if(BUILD_TESTING)
   add_test(NAME zero_lora_native_linux COMMAND orc_zero_lora_test)
 endif()
 
+# CAP LoRa radio: the SX1261 on SPI0 CE1 plus the antenna-switch/power plumbing.
+# This is the LoRa-band receiver; the RTL in this build is not usable at 868/915.
+add_library(orc_zero_mesh_radio STATIC src/mesh/sx1262.cpp src/mesh/cap_lora.cpp)
+target_include_directories(orc_zero_mesh_radio PUBLIC src)
+target_link_libraries(orc_zero_mesh_radio PUBLIC Threads::Threads)
+
 # Meshtastic application layer: the 16-byte MeshPacket header, AES-128-CTR with
 # the channel key, and the Data protobuf (portnum + payload). The LoRa PHY -
 # symbols, whitening, CRC - stays where it is, in the shared native decoder.
