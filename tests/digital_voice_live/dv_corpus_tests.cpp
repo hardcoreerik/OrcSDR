@@ -66,6 +66,7 @@ int main(int argc, char** argv) {
   if (!mf) { std::puts("FAIL cannot open manifest"); return 2; }
   std::string line; int cases = 0, failed = 0;
   while (std::getline(mf, line)) {
+    while (!line.empty() && (line.back() == 13 || line.back() == 32)) line.pop_back();   // CRLF checkouts
     if (line.empty() || line[0] == '#') continue;
     std::istringstream ss(line);
     std::string tag, name, file, ids; unsigned long hz; int mask; unsigned min_events, max_ident;
