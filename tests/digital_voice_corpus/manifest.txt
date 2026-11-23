@@ -1,0 +1,10 @@
+# Frozen expectations for the real-capture regression corpus. Run: dv_corpus_tests <this dir> (ctest: digital_voice_corpus).
+# case <name> <iq file> <channel_hz> <protocol mask 1=DMR 2=NXDN48 4=NXDN96> <min events> <max identity events> <exact identity set src>dst@colourcode,... or ->
+# Events are the dv_radio events (integrity or identity validated). Counts below are the measured values on 2026-11-23; they only move with a decoder change.
+case terra_call_cc13 iq/terra_152p1575_call_cc13.cu8 152157500 1 186 11 4106011>6011885@13,4106019>6011885@13
+case terra_call_cc8 iq/terra_152p685_call_cc8.cu8 152685000 1 136 13 4106019>6011885@8
+case terra_control_only iq/terra_152p1575_control_only.cu8 152157500 1 98 0 -
+# Known limitation, frozen on purpose: Capacity Max control CSBKs fail CRC in this decoder AND in DSD-FME. If this ever yields events, update deliberately.
+case capmax_control_crcfail iq/capmax_451p9125_control_crcfail.cu8 451912500 1 0 0 -
+# False-identification guard: an idle NXDN voice channel with every decoder enabled must yield no events and no identities.
+case negative_nxdn_idle_all_decoders iq/negative_nxdn_voice_chan_idle_454p125.cu8 454125000 7 0 0 -
