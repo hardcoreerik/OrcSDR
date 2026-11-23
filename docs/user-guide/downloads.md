@@ -1,13 +1,17 @@
 # Downloads and releases
 
 For ordinary installation, open the
-[OrcSDR M5Burner web flasher](https://burner.m5stack.com/share/firmware/JXFU4H)
-in **Chrome or Edge**, connect the Tab5 by USB, and click **Burn to device**.
-Check the version shown on the page before flashing. The M5Burner desktop
-application is another option. See [Getting started](getting-started.md) for the steps.
+[OrcSDR web flasher](https://theorc.dev/sdr/flash/) in **Chrome or Edge**,
+connect the Tab5 by USB, and follow the page's instructions. This installer
+preserves saved settings by leaving NVS unerased **unless you select Erase
+device**. Leave that checkbox unticked to keep your settings. Compare the
+version shown with [GitHub Releases](https://github.com/hardcoreerik/OrcSDR/releases/latest)
+before flashing; the browser installer can lag a newly published release. See [Getting started](getting-started.md) for the steps.
 
-**M5Burner installation resets saved settings**, including Wi-Fi profiles,
-location, and screen rotation. The Windows settings-preserving installer from
+The [M5Burner web flasher](https://burner.m5stack.com/share/firmware/JXFU4H)
+and M5Burner desktop application are alternative methods. **M5Burner
+installation resets saved settings**, including Wi-Fi profiles, location,
+and screen rotation. The Windows settings-preserving installer from
 [GitHub Releases](https://github.com/hardcoreerik/OrcSDR/releases/latest) leaves
 saved settings and existing C6 firmware untouched.
 

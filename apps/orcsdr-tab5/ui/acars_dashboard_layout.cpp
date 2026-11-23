@@ -37,7 +37,7 @@ size_t collect_rects(View view, bool detail, Rect* out, size_t capacity) {
       case View::channels:
         s.add(kChList); s.add(kChRegion); s.add(kChCustomLabel); s.add(kChMinus); s.add(kChPlus);
         s.add(kChClear); s.add(kChCustomValue); s.add(kChStatus); s.add(kChNotes);
-        for (int i = 0; i < 6; ++i) s.add(ch_row(i));
+        for (int i = 0; i < kChRows; ++i) s.add(ch_row(i));
         break;
       case View::activity:
         for (int i = 0; i < kActTiles; ++i) s.add(act_tile(i));

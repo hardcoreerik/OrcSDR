@@ -18,9 +18,18 @@ namespace orcsdr::acars_receiver {
 constexpr uint32_t kStreamRate = 240000;      // the only input rate the front end accepts
 constexpr int32_t kCarrierOffsetHz = 60000;   // channel = tuned centre + this (fixed by the front end)
 
+// VDL Mode 2 (D8PSK, 25 kHz channels from 136.725 to 136.975 MHz) is a separate receive path chosen by the requested channel.
+// It needs a 250 kS/s stream (an exact 5:1 step to the demodulator's 50 kS/s); the channel sits a quarter of that above the centre.
+constexpr uint32_t kVdl2StreamRate = 250000;
+constexpr int32_t kVdl2CarrierOffsetHz = 62500;
+constexpr uint32_t kVdl2MinHz = 136725000u;
+constexpr uint32_t kVdl2MaxHz = 136975000u;
+constexpr bool is_vdl2_channel(uint32_t hz) { return hz >= kVdl2MinHz && hz <= kVdl2MaxHz; }
+
 struct Hooks {
   bool (*device_ready)() = nullptr;           // an RTL-SDR is enumerated and usable
-  bool (*tune)(uint32_t center_hz) = nullptr; // ask for a 240 kS/s stream centred here; true = the request was accepted
+  // Ask for a stream of sample_rate (kStreamRate, or kVdl2StreamRate on a VDL2 channel) centred here; true = accepted.
+  bool (*tune)(uint32_t center_hz, uint32_t sample_rate) = nullptr;
   void (*release)() = nullptr;                // give the radio's sample rate back (only called if tune() was accepted)
   uint32_t (*sample_rate)() = nullptr;        // the stream rate right now
   uint32_t (*tuned_center)() = nullptr;       // the centre the radio was last told to use
@@ -44,6 +53,14 @@ struct Status {
   uint32_t avg_block_us = 0;         // mean time in offer_iq per decoded block
   acars::Stats decoder{};
   float level = 0.f;                 // mean envelope of the channel at 24 kS/s (0..1.4); a carrier or noise floor reads here
+  // VDL2 path (all zero while an analog channel is tuned). decoder.* above carries: sync = unique-word candidates,
+  // crc_ok / crc_rejected = AVLC frames by FCS, framing_rejected = header + FEC failures.
+  bool vdl2 = false;
+  uint32_t vdl2_header_ok = 0;
+  uint32_t vdl2_fec_ok = 0;
+  uint32_t vdl2_acars = 0;           // ACARS messages extracted from AVLC frames
+  uint32_t vdl2_raw = 0;             // verified data frames kept as raw hex (ATN / CPDLC / ADS-C and anything not ACARS)
+  uint32_t vdl2_other = 0;           // verified frames with no data (acknowledgements, XID, ...), counted only
 };
 
 void install(const Hooks& hooks);              // before start(); safe to repeat

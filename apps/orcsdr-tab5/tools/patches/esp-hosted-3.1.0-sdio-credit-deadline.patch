@@ -1,0 +1,33 @@
+--- a/managed_components/espressif__esp_hosted/host/mcu/eh_host_mcu_transport/src/eh_host_bus_sdio.c
++++ b/managed_components/espressif__esp_hosted/host/mcu/eh_host_mcu_transport/src/eh_host_bus_sdio.c
+@@ -42,6 +42,7 @@
+ 
+ #include "esp_err.h"
+ #include "esp_log.h"
++#include "esp_timer.h"
+ 
+ #include "eh_host_port_err.h"
+ #include "eh_host_port_dma.h"
+@@ -884,7 +885,11 @@
+ 		 * 2. Spin briefly for the fast path, then yield to avoid starving
+ 		 *    the console. */
+ 		const uint32_t SPIN_US = 200u;
+-		for (uint32_t waited_us = 0; waited_us <= (uint32_t)wait_ms * 1000u; ) {
++		/* ORCSDR-TAB5: bound the wait by elapsed time (probe and delay overhead
++		 * included), not by an assumed 1 ms per yield, and stop early on a dead link. */
++		const int64_t credit_wait_started_us = esp_timer_get_time();
++		uint32_t waited_us = 0;
++		for (;;) {
+ 			SDIO_DRV_LOCK();
+ 			int r = sdio_tx_credit_ready(buf_needed);
+ 			SDIO_DRV_UNLOCK();
+@@ -892,6 +897,9 @@
+ 				got = BUFFER_AVAILABLE;
+ 				break;
+ 			}
++			if (sdio_tx_unresponsive_streak >= 32 ||
++			    esp_timer_get_time() - credit_wait_started_us >= (int64_t)wait_ms * 1000)
++				break;
+ 			if (waited_us < SPIN_US) {
+ 				eh_host_port_task_delay_us(20);
+ 				waited_us += 20u;

@@ -18,7 +18,7 @@ namespace orcsdr::acars_ui {
 // Display capacities (not decoder limits).
 constexpr size_t kMessageRows = 12;
 constexpr size_t kAircraftRows = 8;
-constexpr size_t kChannelRows = 6;
+constexpr size_t kChannelRows = 7;
 // Internal bounds.
 constexpr size_t kHistoryCapacity = 48;        // messages kept per store (ring)
 constexpr size_t kAircraftTable = 16;          // aircraft tracked per store (LRU)

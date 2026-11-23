@@ -2,8 +2,12 @@
 // recording stand-in; no hardware or simulated live RF data.
 #include <M5Unified.h>
 #include "dead_air_dashboard.hpp"
+#include "dead_air_envhistory.hpp"
+#include "dead_air_fx.hpp"
+#include "dead_air_runes.hpp"
 #include "screen_controller.hpp"
 #include <cassert>
+#include <cmath>
 #include <string>
 #include <cstdio>
 using namespace orcsdr;
@@ -23,6 +27,19 @@ static void validate_bounds() {
   }
 }
 int main() {
+  // Exercise the same integer renderer at several actual display sizes.
+  for (unsigned i = 0; i < 24; ++i) for (int height : {16, 37, 64}) {
+    host_display::reset();
+    const auto* glyph = da::runes::glyph(da::runes::Alphabet::elder, i);
+    da::runes::draw(*glyph, height, 3, [](int x0, int y0, int x1, int y1) {
+      M5.Display.drawLine(100 + x0, 200 + y0, 100 + x1, 200 + y1, TFT_WHITE);
+    });
+    assert(!host_display::prims.empty());
+    for (const Prim& p : host_display::prims) {
+      assert(p.x >= 100 && p.y >= 200 && p.x + p.w <= 100 + (height + 1) / 2 && p.y + p.h <= 200 + height);
+    }
+  }
+  host_display::reset();
   da::EventModel model;
   model.reset();
   da::attach_events(&model);
@@ -42,6 +59,411 @@ int main() {
   assert(!displayed("99.0") && !displayed("-14.0"));
   assert(displayed("RECEIVER UNAVAILABLE"));
   validate_bounds();
+  // Overview RF strip: no receiver says so; a measured history draws a line that breaks at gaps, dashed baseline and
+  // limit lines only once a baseline exists, and a tick at each event. Repeated samples never clear the whole screen.
+  assert(displayed("NO LIVE RF LEVEL") && displayed("RF 60 s") && displayed("STANDARD"));
+  {
+    const auto in_strip = [](const Prim& p) { return p.x >= 670 && p.x < 1236 && p.y >= 236 && p.y < 324; };
+    da::Snapshot ov = snap;
+    ov.receiver_ready = true;
+    ov.receiver_settled = true;
+    ov.frequency_hz = 98700000;
+    ov.rf_level_dbfs = {-31.0f, -40.0f, 0, true, true, true};
+    ov.rf_history_count = 20;
+    for (int i = 0; i < 20; ++i) ov.rf_history[i] = (i == 7 || i == 8) ? da::kHistGap : static_cast<int16_t>(-350 + i * 3);
+    ov.rf_history_event[12] = static_cast<uint8_t>(da::HistMark::rf_rise);
+    ov.rf_history_seq = 20;
+    ov.revision = 2;
+    host_display::reset();
+    da::update(ov);
+    assert(displayed("LIMIT") && !displayed("NO LIVE RF LEVEL") && !displayed("BASELINE WARMING"));
+    validate_bounds();
+    bool tick = false, dashes = false;
+    for (const Prim& p : host_display::prims) {
+      if (!in_strip(p) || p.kind != Prim::line) continue;
+      assert(p.w < 8);                          // no segment spans the two-sample gap
+      if (p.w == 1 && p.h == 82) tick = true;   // the event tick
+      if (p.w == 5 && p.h == 1) dashes = true;  // a dash of the baseline or limit line
+    }
+    assert(tick && dashes);
+    for (int step = 0; step < 5; ++step) {      // repeated samples: values move, the whole screen is never cleared
+      ov.rf_history_count = static_cast<uint8_t>(21 + step);
+      ov.rf_history[20 + step] = static_cast<int16_t>(-300 - step * 20);
+      ov.rf_history_seq = 21 + step;
+      ov.revision = 3 + step;
+      host_display::reset();
+      da::update(ov);
+      validate_bounds();
+      for (const Prim& p : host_display::prims) assert(!(p.kind == Prim::fill && p.w >= 1280 && p.h >= 700));
+    }
+    ov.rf_level_dbfs.baseline_valid = false;    // baseline lost (retune): no lines, and the strip says why
+    ov.revision = 20;
+    host_display::reset();
+    da::update(ov);
+    assert(displayed("BASELINE WARMING"));
+    ov.rf_history_count = 0;
+    ov.revision = 21;
+    host_display::reset();
+    da::update(ov);
+    assert(displayed("WAITING FOR A SETTLED LEVEL"));
+    validate_bounds();
+    snap.revision = 22;                         // back to the no-receiver snapshot the rest of this test expects
+    da::update(snap);
+  }
+  // Environment readings that change: the displayed value follows, and the whole screen is never cleared.
+  {
+    da::Snapshot env = snap;
+    env.environment_sensor_attached = true;
+    env.temperature_c = {21.0f, 0, 0, true, true, true};
+    env.humidity_rh = {40.0f, 0, 0, true, true, true};
+    env.pressure_hpa = {1013.0f, 0, 0, true, true, true};
+    env.revision = 30;
+    host_display::reset();
+    da::update(env);
+    assert(displayed("MODULE DETECTED") && displayed("21.0") && displayed("1013.0"));
+    for (int step = 1; step <= 4; ++step) {
+      env.temperature_c.value = 21.0f + step * 1.5f;
+      env.humidity_rh.value = 40.0f + step * 2.0f;
+      env.pressure_hpa.value = 1013.0f - step * 0.5f;
+      env.revision = 30 + step;
+      host_display::reset();
+      da::update(env);
+      char want[16];
+      std::snprintf(want, sizeof(want), "%.1f", static_cast<double>(env.temperature_c.value));
+      assert(displayed(want));
+      char want_rh[16];
+      std::snprintf(want_rh, sizeof(want_rh), "%.1f", static_cast<double>(env.humidity_rh.value));
+      assert(displayed(want_rh));
+      char want_hpa[16];
+      std::snprintf(want_hpa, sizeof(want_hpa), "%.1f", static_cast<double>(env.pressure_hpa.value));
+      assert(displayed(want_hpa));
+      validate_bounds();
+      for (const Prim& p : host_display::prims) assert(!(p.kind == Prim::fill && p.w >= 1280 && p.h >= 700));
+    }
+    snap.revision = 40;                         // back to the absent-sensor snapshot
+    da::update(snap);
+  }
+  // Environment trend charts: the history is drawn as lines that break at gaps, the window buttons and the tap cursor
+  // repaint only what changed, and the whole screen is never cleared.
+  {
+    static da::EnvHistory hist;
+    hist.reset(0);
+    for (uint32_t m = 0; m < 90; ++m) {
+      hist.add(0, 20.0f + 0.02f * static_cast<float>(m), m * 60000u + 10u);
+      hist.add(1, 50.0f + static_cast<float>(m % 7), m * 60000u + 10u);
+      if (m < 40 || m > 50) hist.add(2, 1000.0f + 0.1f * static_cast<float>(m), m * 60000u + 10u);  // minutes 41..49 are a gap
+    }
+    da::Snapshot ch = snap;
+    ch.environment_sensor_attached = true;
+    ch.temperature_c = {21.8f, 0, 0, true, true, true};
+    ch.humidity_rh = {53.0f, 0, 0, true, true, true};
+    ch.pressure_hpa = {1008.9f, 0, 0, true, true, true};
+    ch.env_history = &hist;
+    ch.env_history_seq = hist.seq();
+    ch.revision = 50;
+    da::update(ch);
+    da::handle_touch(20 + 3 * 210 + 40, 673, 5000);  // Environment tab
+    assert(da::page() == da::Page::environment);
+    const auto in_chart = [](const Prim& p, int ch_index) {
+      return p.x >= 666 && p.x < 1238 && p.y >= 238 + ch_index * 122 && p.y < 238 + ch_index * 122 + 88;
+    };
+    const auto no_full_clear = [] {
+      for (const Prim& p : host_display::prims) assert(!(p.kind == Prim::fill && p.w >= 1280 && p.h >= 700));
+    };
+    ch.revision = 51;
+    host_display::reset();
+    da::update(ch);
+    assert(displayed("TREND") && displayed("TEMPERATURE (C)") && displayed("HUMIDITY (%RH)") && displayed("PRESSURE (hPa)"));
+    assert(displayed("-6 h") && displayed("NOW"));  // 90 minutes recorded: the 6 H window is chosen
+    int lines[3] = {0, 0, 0};
+    for (const Prim& p : host_display::prims)
+      for (int i = 0; i < 3; ++i)
+        if (p.kind == Prim::line && in_chart(p, i)) ++lines[i];
+    assert(lines[0] > 0 && lines[1] > 0 && lines[2] > 0);
+    validate_bounds();
+    no_full_clear();
+    const auto chart_signature = [&](int chart) {  // where the temperature line runs: changes when the data does
+      uint32_t sig = 0;
+      for (const Prim& p : host_display::prims)
+        if (p.kind == Prim::line && in_chart(p, chart))
+          sig = sig * 1000003u + static_cast<uint32_t>(p.x * 31 + p.y * 17 + p.w * 7 + p.h * 3);
+      return sig;
+    };
+    uint32_t previous_signature = chart_signature(0);
+    for (int step = 0; step < 4; ++step) {        // a new minute average arrives: the line moves, nothing is cleared
+      hist.add(0, 22.0f + 3.0f * static_cast<float>(step), (90u + static_cast<uint32_t>(step)) * 60000u + 10u);
+      ch.env_history_seq = hist.seq();
+      ch.revision = 52 + step;
+      host_display::reset();
+      da::update(ch);
+      assert(chart_signature(0) != previous_signature);  // a renderer that kept drawing the old trend would fail here
+      previous_signature = chart_signature(0);
+      validate_bounds();
+      // Only the full-screen threshold: the stub canvas has no pixel buffer, so draw_body() always takes paint_direct()
+      // here and clears the 1280x522 body. On the device the tile diff pushes just the changed columns.
+      no_full_clear();
+    }
+    da::handle_touch(1010 + 20, 154 + 20, 5010);  // 1 H
+    assert(displayed("-60 m") && displayed("-30 m"));
+    validate_bounds();
+    no_full_clear();
+    host_display::reset();
+    da::handle_touch(900, 260, 5020);             // tap a chart: a cursor and its moment
+    assert(displayed("CURSOR") && displayed("AT CURSOR"));
+    validate_bounds();
+    no_full_clear();
+    host_display::reset();
+    da::handle_touch(905, 400, 5030);             // tap near the cursor: it clears
+    assert(displayed("Tap a chart") && !displayed("AT CURSOR"));
+    da::handle_touch(1086 + 20, 154 + 20, 5040);  // 6 H
+    assert(displayed("-3 h"));
+    ch.env_history = nullptr;                     // no history: the charts say so and nothing crashes
+    ch.revision = 60;
+    host_display::reset();
+    da::update(ch);
+    assert(displayed("NO READINGS IN THIS WINDOW YET"));
+    validate_bounds();
+    // Leaving Dead Air and coming back starts from the defaults: a window or cursor picked before must not survive.
+    ch.env_history = &hist;
+    ch.revision = 61;
+    da::update(ch);
+    da::handle_touch(1010 + 20, 154 + 20, 5045);  // 1 H
+    da::handle_touch(900, 260, 5046);             // and a cursor
+    assert(displayed("AT CURSOR") && displayed("-60 m"));
+    da::leave();
+    screen::begin_transition(screen::Id::dead_air, 5047);
+    da::enter(ch);
+    screen::finish_transition();
+    assert(da::page() == da::Page::overview);
+    da::handle_touch(20 + 3 * 210 + 40, 673, 5048);  // Environment tab again
+    ch.revision = 62;
+    host_display::reset();
+    da::update(ch);
+    assert(displayed("-6 h") && !displayed("-60 m") && displayed("Tap a chart") && !displayed("AT CURSOR"));
+    // The automatic window moving on its own (1 H to 6 H as history grows) must clear a cursor placed in the old one.
+    static da::EnvHistory young;
+    young.reset(0);
+    for (uint32_t m = 0; m < 30; ++m) {
+      young.add(0, 20.0f + 0.1f * static_cast<float>(m), m * 60000u + 10u);
+      young.add(1, 40.0f + 0.5f * static_cast<float>(m), m * 60000u + 10u);
+      young.add(2, 1000.0f + static_cast<float>(m), m * 60000u + 10u);
+    }
+    ch.env_history = &young;
+    ch.env_history_seq = young.seq();
+    ch.revision = 63;
+    host_display::reset();
+    da::update(ch);
+    assert(displayed("-60 m"));
+    // Column 519 (x = 666 + 519) is 5 buckets back, so minute 24 of the fixture: it has a reading in every channel.
+    // (A tap further left lands on a column before the first sample and reads "--  AT CURSOR".)
+    da::handle_touch(666 + 519, 260, 5051);
+    assert(displayed("22.4  AT CURSOR") && displayed("52.0  AT CURSOR") && displayed("1024.0  AT CURSOR"));
+    assert(displayed("CURSOR -5m 00s"));
+    // Temperature stops at minute 49; humidity keeps going to minute 69. The recorded span is 70 minutes whichever
+    // channel is looked at, so the 6 H window must be chosen even though temperature alone covers under 60.
+    for (uint32_t m = 30; m < 70; ++m) {
+      if (m < 50) young.add(0, 20.0f + 0.1f * static_cast<float>(m), m * 60000u + 10u);
+      young.add(1, 40.0f + 0.5f * static_cast<float>(m), m * 60000u + 10u);
+    }
+    ch.env_history_seq = young.seq();
+    ch.revision = 64;
+    host_display::reset();
+    da::update(ch);
+    assert(displayed("-6 h") && !displayed("-60 m"));
+    assert(!displayed("AT CURSOR") && displayed("Tap a chart"));
+    ch.env_history = &hist;
+    ch.env_history_seq = hist.seq();
+    da::handle_touch(40, 673, 5052);              // back to Overview for the rest
+    snap.revision = 70;
+    da::update(snap);
+  }
+  // The orb: a dim still ring with nothing measured, a breathing glow when a level is measured, a burst when an event
+  // is logged. It paints a big orb on the Overview and a small one in the header, in bounds, and is throttled.
+  {
+    const auto in = [](const Prim& p, int x0, int y0, int x1, int y1) { return p.x >= x0 && p.y >= y0 && p.x < x1 && p.y < y1; };
+    da::fx_idle(false, 0.0f);
+    host_display::reset();
+    assert(da::draw_fx(30000));                 // the body was just repainted, so the orb is drawn
+    bool beacon = false, big = false;
+    for (const Prim& p : host_display::prims) {
+      beacon = beacon || in(p, 800, 13, 852, 65);
+      big = big || in(p, 500, 138, 620, 258);
+    }
+    assert(beacon && big);
+    validate_bounds();
+    assert(!da::draw_fx(30500));                // still and unchanged: nothing is repainted
+    da::fx_idle(true, 0.7f);
+    host_display::reset();
+    assert(da::draw_fx(30800));                 // a measurement starts: the glow is drawn
+    assert(!da::draw_fx(30900));                // idle glow is limited to a few frames a second
+    da::Event hit_event{};
+    hit_event.sequence = 5; hit_event.kind = da::Kind::rf_rise; hit_event.value = -30.0f; hit_event.reference = -40.0f;
+    da::fx_event(hit_event, 31000);
+    host_display::reset();
+    assert(da::draw_fx(31020));
+    const size_t burst_prims = host_display::prims.size();
+    assert(burst_prims > 0);
+    validate_bounds();
+    assert(!da::draw_fx(31040));                // a burst runs at about 15 frames a second
+    assert(da::draw_fx(31100));
+    assert(da::draw_fx(31000 + da::Fx::kBurstMs + 300));  // the burst is over; the idle glow carries on
+    // Overview extras: SESSION opens the session card, which shows only counts of what was measured and logged.
+    snap.summary.elapsed_s = 3725; snap.summary.measured_s = 3000;
+    snap.summary.events_rf = 3; snap.summary.events_audio = 2; snap.summary.events_marks = 1;
+    snap.summary.have_level = true; snap.summary.level_max_dbfs = -12.3f; snap.summary.level_min_dbfs = -71.0f;
+    snap.summary.longest_quiet_s = 1500; snap.summary.channels = 4; snap.summary.sweeps = 1; snap.summary.clips = 2;
+    snap.revision = 23;
+    da::update(snap);
+    assert(da::overlay() == da::Overlay::none);
+    assert(da::handle_touch(498 + 20, 305 + 20, 3000).kind == da::ActionKind::none);
+    assert(da::overlay() == da::Overlay::session);
+    assert(displayed("SESSION CARD") && displayed("1h 02m") && displayed("3 RF   2 AUDIO   1 MARKS"));
+    assert(displayed("-12.3 dBFS") && displayed("-71.0 dBFS") && displayed("25m 00s") && displayed("4.8 findings per hour"));
+    assert(displayed("No score, no interpretation."));
+    validate_bounds();
+    snap.summary.elapsed_s = 120; snap.revision = 24;   // a short session gives no rate
+    host_display::reset();
+    da::update(snap);
+    assert(displayed("after 10 minutes") && !displayed("findings per hour"));
+    host_display::reset();
+    assert(!displayed("INVESTIGATION"));
+    assert(da::handle_touch(1070 + 20, 128 + 20, 3010).kind == da::ActionKind::none);   // CLOSE
+    assert(da::overlay() == da::Overlay::none && displayed("INVESTIGATION"));
+    da::handle_touch(498 + 20, 305 + 20, 3020);          // reopen, then a tab tap closes it too
+    assert(da::overlay() == da::Overlay::session);
+    da::handle_touch(20 + 1 * 210 + 40, 673, 3030);
+    assert(da::overlay() == da::Overlay::none && da::page() == da::Page::spectrum);
+    da::handle_touch(40, 673, 3040);                    // back to Overview for the rest
+    assert(da::page() == da::Page::overview);
+    // On another tab the big orb is not drawn (it would paint over that page); the header one still is.
+    da::handle_touch(20 + 1 * 210 + 40, 673, 3050);
+    da::fx_idle(true, 0.2f);
+    host_display::reset();
+    assert(da::draw_fx(40000));
+    bool big_on_spectrum = false, beacon_on_spectrum = false;
+    for (const Prim& p : host_display::prims) {
+      big_on_spectrum = big_on_spectrum || in(p, 500, 138, 620, 258);
+      beacon_on_spectrum = beacon_on_spectrum || in(p, 800, 13, 852, 65);
+    }
+    assert(!big_on_spectrum && beacon_on_spectrum);
+    da::handle_touch(40, 673, 3060);
+    snap.revision = 25;
+    da::update(snap);
+  }
+  // VEIL-26 overlay: opens from the Overview, keeps MEASURED and SYMBOLIC apart, never claims more than a recipe output,
+  // follows new frames without clearing the screen, and reports what an event inspection finds (or does not).
+  {
+    const auto no_full_clear = [] {
+      for (const Prim& p : host_display::prims) assert(!(p.kind == Prim::fill && p.w >= 1280 && p.h >= 700));
+    };
+    da::Snapshot vs = snap;
+    vs.receiver_ready = true;
+    vs.receiver_settled = true;
+    vs.frequency_hz = 162400000;
+    std::snprintf(vs.veil.intention, sizeof(vs.veil.intention), "DEAD AIR");
+    std::snprintf(vs.veil.dictionary, sizeof(vs.veil.dictionary), "placeholder-0");
+    vs.veil.seed = 0x8f6059bbu;
+    vs.revision = 100;
+    da::update(vs);
+    assert(displayed("VEIL-26"));  // the Overview button
+    const da::Action open = da::handle_touch(366 + 20, 305 + 20, 6000);
+    assert(open.kind == da::ActionKind::veil_open && open.value == 0 && da::overlay() == da::Overlay::veil);
+    assert(displayed("VEIL-26 / ESOTERICA") && displayed("NO ANALYSIS RUNNING") && displayed("ANALYSIS: OFF"));
+    assert(displayed("INTENTION: DEAD AIR") && displayed("MEASURED") && displayed("SYMBOLIC / INTERPRETED"));
+    assert(displayed("not messages") && displayed("NOT the original VEIL-26 list"));
+    validate_bounds();
+    assert(da::handle_touch(40 + 20, 180 + 20, 6001).kind == da::ActionKind::veil_toggle);
+    assert(da::handle_touch(306 + 20, 180 + 20, 6002).kind == da::ActionKind::veil_intention);
+    assert(da::handle_touch(1048 + 20, 180 + 20, 6003).kind == da::ActionKind::none);  // LIVE STREAM exists only while inspecting
+    // Analysis on with a live frame (the golden first frame of the intention "hello" is not needed here: only display).
+    vs.veil.enabled = true;
+    vs.veil.logging = true;
+    vs.veil.frames = 4;
+    vs.veil.live.valid = true;
+    vs.veil.live.frame = 3;
+    vs.veil.live.frequency_hz = 162400000;
+    vs.veil.live.level_dbfs = -31.7f;
+    vs.veil.live.freq_code = 162400;
+    vs.veil.live.level_code = 1283;
+    vs.veil.live.state_in = 0x71c7425du;
+    vs.veil.live.state = 0xabeb47eeu;
+    vs.veil.live.letter = 'Y';
+    vs.veil.live.letter_number = 25;
+    std::snprintf(vs.veil.live.word, sizeof(vs.veil.live.word), "XENON");
+    vs.veil.live.a1z26 = 72;
+    vs.veil.live.pythagorean = 27;
+    std::snprintf(vs.veil.letters, sizeof(vs.veil.letters), "ABY");
+    vs.veil.seq_a1z26 = 28;
+    vs.veil.seq_pythagorean = 28;
+    vs.revision = 101;
+    host_display::reset();
+    da::update(vs);
+    assert(displayed("ANALYSIS: ON") && displayed("162.400000 MHz") && displayed("-31.7 dBFS (relative)"));
+    assert(displayed("receiver RF level") && displayed("XENON") && displayed("Y  (25)") && displayed("A1Z26 72   PYTH 27"));
+    assert(displayed("71c7425d > abeb47ee") && displayed("freq_code 162400") && displayed("level_code 1283"));
+    assert(displayed("LOG ON") && displayed("written 0  dropped 0  failed 0"));
+    validate_bounds();
+    assert(da::handle_touch(690, 200, 6003).kind == da::ActionKind::veil_alphabet);
+    vs.veil.alphabet = da::runes::Alphabet::elder;
+    host_display::reset(); ++vs.revision;
+    da::update(vs);
+    assert(displayed("ALPHABET: ELDER FUTHARK") && displayed("dagaz") && displayed("XENON"));
+    validate_bounds(); no_full_clear();
+    for (int step = 0; step < 5; ++step) {  // a frame a second: values move, the whole screen is never cleared
+      vs.veil.live.frame = 4 + step;
+      vs.veil.frames = 5 + step;
+      vs.veil.live.letter = static_cast<char>('C' + step);
+      vs.veil.live.state = 0x1000u + static_cast<uint32_t>(step);
+      vs.veil.written = static_cast<uint32_t>(step);
+      std::snprintf(vs.veil.letters, sizeof(vs.veil.letters), "ABY%c", 'C' + step);
+      vs.revision = 103 + step;
+      host_display::reset();
+      da::update(vs);
+      char want[16];
+      std::snprintf(want, sizeof(want), "%c  (25)", 'C' + step);
+      assert(displayed(want) && displayed("00001000") == (step == 0) && displayed("FRAMES"));
+      assert(displayed(da::runes::glyph(da::runes::Alphabet::elder, vs.veil.live.state % 24)->name));
+      validate_bounds();
+      no_full_clear();
+    }
+    vs.veil.dropped = 2;                     // storage trouble is shown, not hidden
+    vs.veil.write_failures = 1;
+    vs.revision = 110;
+    host_display::reset();
+    da::update(vs);
+    assert(displayed("dropped 2") && displayed("failed 1"));
+    // Inspecting an event that was not analysed says so; one that was shows its own numbers.
+    vs.veil.inspect_seq = 9;
+    vs.veil.event = da::VeilFrameView{};
+    vs.revision = 111;
+    host_display::reset();
+    da::update(vs);
+    assert(displayed("EVENT #9") && displayed("This event was not analysed.") && displayed("LIVE STREAM"));
+    assert(!displayed("receiver RF level"));
+    assert(da::handle_touch(1048 + 20, 180 + 20, 6004).kind == da::ActionKind::veil_open);  // back to the live stream
+    vs.veil.event = vs.veil.live;
+    vs.veil.event.event_sequence = 9;
+    vs.veil.event.state = 7;
+    vs.veil.event.frequency_hz = 146520000;
+    vs.veil.event.level_dbfs = -12.5f;
+    std::snprintf(vs.veil.event.source, sizeof(vs.veil.event.source), "audio");
+    std::snprintf(vs.veil.event.word, sizeof(vs.veil.event.word), "BEACON");
+    vs.revision = 112;
+    host_display::reset();
+    da::update(vs);
+    assert(displayed("146.520000 MHz") && displayed("-12.5 dBFS (relative)") && displayed("receiver audio level") && displayed("BEACON"));
+    assert(displayed("wunjo"));
+    validate_bounds();
+    no_full_clear();
+    assert(da::handle_touch(1070 + 20, 128 + 20, 6005).kind == da::ActionKind::veil_close);  // CLOSE tells the app
+    assert(da::overlay() == da::Overlay::none && displayed("INVESTIGATION"));
+    da::handle_touch(366 + 20, 305 + 20, 6006);                                              // reopen; a tab tap closes it too
+    assert(da::overlay() == da::Overlay::veil);
+    assert(da::handle_touch(40, 673, 6007).kind == da::ActionKind::veil_close);
+    assert(da::overlay() == da::Overlay::none);
+    snap.revision = 120;
+    da::update(snap);
+  }
   for (int i = 0; i < 6; ++i) {
     host_display::reset();
     const int x = 20 + i * 210 + 40;
@@ -58,7 +480,7 @@ int main() {
   assert(da::page() == da::Page::events);
   da::handle_touch(1140, 400, 2100);
   assert(model.sensitivity() == da::Sensitivity::sensitive);
-  da::handle_touch(900, 530, 2200);
+  da::handle_touch(900, 470, 2200);
   assert(model.count() == 1 && model.newest(0)->source == da::Source::manual);
   assert(displayed("MARK no receiver"));
   // Mode and step buttons act only while a receiver is actually present, and only on the Spectrum tab.
@@ -159,6 +581,68 @@ int main() {
   snap.revision = 7;
   da::update(snap);
   validate_bounds();
+  // Peak marker and readout (the tuner's centre spike is skipped), and tap-to-tune on the live plot and waterfall.
+  {
+    snap.sample_rate_sps = 2400000;
+    snap.frequency_hz = 98900000;
+    snap.spectrum_valid = true;
+    snap.revision = 8;
+    da::update(snap);
+    float peaks[da::kTracePoints];
+    for (size_t i = 0; i < da::kTracePoints; ++i) peaks[i] = -90.0f;
+    peaks[108] = -10.0f;                        // the DC spike at the centre: never the peak
+    peaks[150] = -30.0f;
+    host_display::reset();
+    assert(da::draw_spectrum_frame(peaks, da::kTracePoints, 9, 9000));
+    assert(displayed("PEAK 99.374 MHz  -30.0 dBFS"));
+    validate_bounds();
+    const da::Action plot_tap = da::handle_touch(800, 200, 9010);   // a tap on the trace, just left of the centre
+    assert(plot_tap.kind == da::ActionKind::tune_to && plot_tap.value == 98889000);
+    assert(da::handle_touch(800, 380, 9011).value == 98889000);     // and on the waterfall
+    assert(da::handle_touch(1240, 200, 9012).kind == da::ActionKind::none);  // outside the plot
+    snap.receiver_ready = false; snap.revision = 9;
+    da::update(snap);
+    assert(da::handle_touch(800, 200, 9013).kind == da::ActionKind::none);   // no receiver: nothing to tune
+    snap.receiver_ready = true; snap.revision = 10;
+    da::update(snap);
+    // Band map: a sweep's measured channels replace the waterfall; unmeasured channels are dashes, a tap tunes, and the
+    // chip toggles back to the live waterfall.
+    snap.map.start_hz = 88100000u; snap.map.step_hz = 200000u; snap.map.count = 100; snap.map.visited = 40;
+    for (size_t i = 0; i < 100; ++i) snap.map.level[i] = i < 40 ? static_cast<int16_t>(-400) : da::kHistGap;
+    snap.map.level[12] = -250;
+    snap.revision = 11;
+    host_display::reset();
+    da::update(snap);
+    assert(displayed("SWEEP MAP  40/100 CHANNELS") && displayed("PEAK 90.500 MHz  -25.0 dBFS") && displayed("LIVE"));
+    validate_bounds();
+    const auto waterfall_row = []() {
+      for (const Prim& p : host_display::prims) if (p.kind == Prim::fill && p.w == 860 && p.h == 1 && p.y == 453) return true;
+      return false;
+    };
+    host_display::reset();
+    assert(da::draw_spectrum_frame(peaks, da::kTracePoints, 9, 9300));
+    assert(!waterfall_row());                                       // the map is showing: no waterfall rows are drawn
+    const da::Action map_tap = da::handle_touch(480, 400, 9020);
+    assert(map_tap.kind == da::ActionKind::tune_to && map_tap.value == 90500000);
+    host_display::reset();
+    assert(da::handle_touch(1140, 138, 9021).kind == da::ActionKind::none);   // chip: back to the live waterfall
+    assert(displayed("MAP"));
+    host_display::reset();
+    assert(da::draw_spectrum_frame(peaks, da::kTracePoints, 9, 9600));
+    assert(waterfall_row());
+    assert(da::handle_touch(480, 400, 9022).value == 98900000 + static_cast<int>(std::floor(((480.0 - 374.0) / 860.0 - 0.5) * 2400000.0 / 1000.0 + 0.5)) * 1000);
+    da::handle_touch(1140, 138, 9023);                              // chip again: the map
+    assert(da::handle_touch(480, 400, 9024).value == 90500000);
+    snap.sweeping = true; snap.revision = 12;                       // while sweeping the schedule owns tuning
+    da::update(snap);
+    assert(da::handle_touch(480, 400, 9025).kind == da::ActionKind::none);
+    snap.sweeping = false; snap.map = da::BandMapView{}; snap.revision = 13;
+    da::update(snap);
+    host_display::reset();
+    snap.revision = 14;
+    da::update(snap);
+    assert(!displayed("SWEEP MAP"));
+  }
   // Events tab: rows carry time and level, and an event that has a clip says so.
   da::handle_touch(20 + 4 * 210 + 40, 673, 8000);
   assert(da::page() == da::Page::events);
@@ -169,6 +653,157 @@ int main() {
   da::update(snap);
   assert(displayed("MARK no receiver") && displayed("CLIP") && displayed("RF RISE + AUDIO RISE"));
   validate_bounds();
+  // The sensitivity buttons use the same names as the Overview.
+  assert(displayed("QUIET") && displayed("STANDARD") && displayed("SENSITIVE"));
+  // Detail: with nothing tapped, the newest event is described. Its clip is not among the clips Review lists.
+  assert(displayed("EVENT #1  INVESTIGATOR MARK") && displayed("Marked by you") && displayed("1-1 OF 1"));
+  assert(displayed("Older clip not listed") && displayed("SCRUB"));
+  assert(da::handle_touch(264 + 20, 506 + 20, 8001).kind == da::ActionKind::none);  // no listed clip: VIEW CLIP does nothing
+  assert(da::page() == da::Page::events);
+  for (uint32_t i = 0; i < 9; ++i) model.mark_manual(9000 + i, 0, 98900000);
+  snap.revision = 301;
+  host_display::reset();
+  da::update(snap);
+  assert(displayed("1-5 OF 10") && displayed("#10 ") && displayed("#6 ") && !displayed("#5 "));
+  assert(displayed("EVENT #10  INVESTIGATOR MARK"));
+  host_display::reset();
+  assert(da::handle_touch(300, 166 + 2 * 40 + 19, 8010).kind == da::ActionKind::none);  // third row = event #8
+  assert(displayed("EVENT #8  INVESTIGATOR MARK") && displayed("1-5 OF 10"));
+  validate_bounds();
+  host_display::reset();
+  da::handle_touch(206 + 20, 568 + 20, 8020);  // OLDER
+  assert(displayed("6-10 OF 10") && displayed("#5 ") && displayed("#1 ") && !displayed("#10 "));
+  assert(displayed("EVENT #8  INVESTIGATOR MARK"));  // the tapped event stays selected off-page
+  host_display::reset();
+  da::handle_touch(206 + 20, 568 + 20, 8021);  // already the oldest page: nothing moves
+  assert(host_display::prims.empty());
+  model.mark_manual(9100, 0, 0);               // a new event while reading older ones: the page keeps its place
+  snap.revision = 302;
+  host_display::reset();
+  da::update(snap);
+  assert(displayed("7-11 OF 11") && displayed("#5 ") && displayed("#1 ") && !displayed("#11 "));
+  host_display::reset();
+  da::handle_touch(40 + 20, 568 + 20, 8030);   // NEWER
+  assert(displayed("2-6 OF 11"));
+  da::handle_touch(40 + 20, 568 + 20, 8031);   // NEWER again: back to the newest page
+  assert(displayed("1-5 OF 11"));
+  // VEIL-26 from the Events detail: the selected event (#8) is what the overlay inspects, next to its measured row.
+  {
+    assert(displayed("VEIL-26"));
+    const da::Action inspect = da::handle_touch(372 + 20, 568 + 20, 8035);
+    assert(inspect.kind == da::ActionKind::veil_open && inspect.value == 8 && da::overlay() == da::Overlay::veil);
+    assert(displayed("VEIL-26 / ESOTERICA") && displayed("EVENT #8"));
+    assert(da::handle_touch(1070 + 20, 128 + 20, 8036).kind == da::ActionKind::veil_close);
+    assert(da::overlay() == da::Overlay::none && da::page() == da::Page::events);
+  }
+  // VIEW CLIP: the clip that covers the selected event (here the second in the list) is opened on Review.
+  snap.clip_count = 2;
+  std::snprintf(snap.clips[0].name, sizeof(snap.clips[0].name), "s1_e3.wav");
+  snap.clips[0].event_seqs[0] = 3; snap.clips[0].seq_count = 1;
+  std::snprintf(snap.clips[1].name, sizeof(snap.clips[1].name), "s1_e8.wav");
+  snap.clips[1].event_seqs[0] = 8; snap.clips[1].event_seqs[1] = 9; snap.clips[1].seq_count = 2;
+  snap.revision = 303;
+  host_display::reset();
+  da::update(snap);
+  assert(displayed("Clip: s1_e8.wav") && displayed("VIEW CLIP"));
+  const da::Action jump = da::handle_touch(264 + 20, 506 + 20, 8040);
+  assert(jump.kind == da::ActionKind::select_clip && jump.value == 1);
+  assert(da::page() == da::Page::review && displayed("EVIDENCE REVIEW"));
+  validate_bounds();
+  snap.clip_count = 0;                         // the Review checks below start from their own clips
+  snap.clips[0] = da::ClipInfo{};
+  snap.clips[1] = da::ClipInfo{};
+  snap.selected_clip = 0;
+  da::handle_touch(20 + 4 * 210 + 40, 673, 8050);  // back to Events for the rest of the flow
+  assert(da::page() == da::Page::events);
+  // Chime toggle.
+  assert(da::handle_touch(1082 + 20, 510 + 20, 8051).kind == da::ActionKind::toggle_chime);
+  snap.chime_on = true; snap.revision = 304;
+  host_display::reset();
+  da::update(snap);
+  assert(displayed("CHIME ON"));
+  // Scrub: opens from the detail box for the event shown there; no trace says so; a collected trace is drawn with the
+  // cursor readout, a tap moves the cursor, playback follows the clip, and nothing under the overlay can be tapped.
+  {
+    const size_t marks_before = model.count();
+    const uint32_t total_before = model.total();
+    const da::Action open = da::handle_touch(50 + 20, 506 + 20, 8060);
+    assert(open.kind == da::ActionKind::scrub_open && open.value == 8 && da::overlay() == da::Overlay::scrub);
+    assert(displayed("No trace was kept for this event."));
+    snap.scrub.seq = 8; snap.scrub.found = true; snap.scrub.post_filled = 12;
+    for (size_t i = 0; i < da::kTraceSamples; ++i) {
+      snap.scrub.rf[i] = i < da::kTracePre + 12 ? static_cast<int16_t>(-400 + static_cast<int>(i % 7) * 10) : da::kHistGap;
+      snap.scrub.audio[i] = i % 11 == 0 ? da::kHistGap : static_cast<int16_t>(-600 + static_cast<int>(i % 5) * 20);
+    }
+    snap.revision = 305;
+    host_display::reset();
+    da::update(snap);
+    assert(displayed("EVENT #8  /  RF AND AUDIO AROUND IT") && displayed("COLLECTING +3 s OF +10 s"));
+    assert(displayed("CURSOR +0.00 s") && displayed("-10 s") && displayed("+10 s") && displayed("A mark you made"));
+    validate_bounds();
+    host_display::reset();
+    assert(da::handle_touch(925, 250, 8061).kind == da::ActionKind::none);      // tap the plot at about +4.75 s
+    assert(displayed("CURSOR +4.75 s"));
+    assert(da::handle_touch(50 + 20, 560 + 20, 8062).kind == da::ActionKind::none);  // no clip for this event: PLAY does nothing
+    assert(displayed("No clip for this event."));
+    // A clip covers it (second in the list): PLAY asks for it, and while it plays the cursor follows the clip.
+    snap.clip_count = 2;
+    snap.clips[0].event_seqs[0] = 3; snap.clips[0].seq_count = 1;
+    snap.clips[1].event_seqs[0] = 8; snap.clips[1].seq_count = 1;
+    snap.revision = 306;
+    da::update(snap);
+    const da::Action play = da::handle_touch(50 + 20, 560 + 20, 8063);
+    assert(play.kind == da::ActionKind::play_event_clip && play.value == 8);
+    snap.replay_state = 2; snap.scrub.cursor_valid = true; snap.scrub.cursor_ms = -1500; snap.revision = 307;
+    host_display::reset();
+    da::update(snap);
+    assert(displayed("PLAYING -1.50 s") && displayed("STOP") && displayed("the cursor follows the clip"));
+    assert(da::handle_touch(50 + 20, 560 + 20, 8064).kind == da::ActionKind::stop_replay);
+    assert(da::handle_touch(925, 250, 8065).kind == da::ActionKind::none);     // the clip owns the cursor while it plays
+    snap.replay_state = 0; snap.scrub.cursor_valid = false;
+    snap.clip_count = 0; snap.clips[0] = da::ClipInfo{}; snap.clips[1] = da::ClipInfo{};
+    snap.revision = 308;
+    da::update(snap);
+    // Nothing under the overlay answers: MARK EVENT and the sensitivity buttons are covered.
+    da::handle_touch(900, 470, 8066);
+    da::handle_touch(1140, 400, 8067);
+    assert(model.count() == marks_before && model.total() == total_before);
+    assert(da::handle_touch(1070 + 20, 128 + 20, 8068).kind == da::ActionKind::scrub_close);
+    assert(da::overlay() == da::Overlay::none && displayed("DETECTION"));
+  }
+  // Control run: the explanation, a disabled START with no receiver, the running table without a rate, then a result.
+  {
+    snap.receiver_ready = false; snap.revision = 309;
+    da::update(snap);
+    assert(da::handle_touch(818 + 20, 510 + 20, 8070).kind == da::ActionKind::none && da::overlay() == da::Overlay::control);
+    assert(displayed("CONTROL RUN  /  FALSE-ALARM CHECK") && displayed("START 5 MIN") && displayed("Needs a running receiver."));
+    assert(da::handle_touch(50 + 20, 560 + 20, 8071).kind == da::ActionKind::none);
+    snap.receiver_ready = true; snap.revision = 310;
+    da::update(snap);
+    assert(da::handle_touch(50 + 20, 560 + 20, 8072).kind == da::ActionKind::control_start);
+    snap.control.state = 1; snap.control.duration_s = 300; snap.control.elapsed_s = 150; snap.control.observed_s = 149;
+    snap.control.count[0] = 0; snap.control.count[1] = 2; snap.control.count[2] = 9;
+    snap.revision = 311;
+    host_display::reset();
+    da::update(snap);
+    assert(displayed("RUNNING") && displayed("2m 30s of 5m 00s") && displayed("STOP RUN"));
+    assert(displayed("A per-hour rate needs at least 1 minute measured.") && displayed("+12 dB") && displayed("+5 dB"));
+    assert(da::handle_touch(50 + 20, 560 + 20, 8073).kind == da::ActionKind::control_stop);
+    assert(da::handle_touch(900, 470, 8074).kind == da::ActionKind::none);   // MARK EVENT is covered
+    snap.control.state = 2; snap.control.elapsed_s = 300; snap.control.observed_s = 298; snap.control.rate_ok = true;
+    snap.control.per_hour[0] = 0.0f; snap.control.per_hour[1] = 24.0f; snap.control.per_hour[2] = 108.0f;
+    snap.revision = 312;
+    host_display::reset();
+    da::update(snap);
+    assert(displayed("COMPLETE") && displayed("RUN AGAIN") && displayed("108") && displayed("Measured 4m 58s"));
+    assert(!displayed("A per-hour rate needs"));
+    validate_bounds();
+    assert(da::handle_touch(50 + 20, 560 + 20, 8075).kind == da::ActionKind::control_start);
+    da::handle_touch(1070 + 20, 128 + 20, 8076);
+    assert(da::overlay() == da::Overlay::none);
+    snap.control = da::ControlView{}; snap.chime_on = false; snap.revision = 313;
+    da::update(snap);
+  }
   // Review tab: newest clip details, a VERIFY action, and the re-check result.
   da::handle_touch(20 + 5 * 210 + 40, 673, 8100);
   assert(da::page() == da::Page::review);
@@ -292,7 +927,7 @@ int main() {
   snap.revision = 2;
   da::update(snap);
   assert(host_display::prims.empty());
-  assert(da::handle_touch(900, 530, 3200).kind == da::ActionKind::none);
+  assert(da::handle_touch(900, 470, 3200).kind == da::ActionKind::none);
   da::leave();
   assert(!da::active());
   std::puts("Dead Air renderer host tests PASS");

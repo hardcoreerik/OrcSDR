@@ -48,6 +48,10 @@ bool save_image(int32_t which);
 
 // Direct tuning, shared by the touch screen, the OrcDial and the serial console. All are no-ops (false) while the
 // dashboard is closed.
+bool companion_abort();
+bool companion_gain(int steps); // 0 toggles auto/manual, +/- steps use shared gain handler
+bool companion_gain_info(GainInfo* info);
+bool companion_sd_ready();
 bool active();
 uint32_t frequency_hz();
 bool tune_to(uint32_t frequency_hz);          // false when outside the receiver's range

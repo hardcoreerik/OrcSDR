@@ -34,6 +34,13 @@ size_t total_held();
 // Returns the total released.
 size_t reclaim_all(Report* out, size_t capacity, size_t* out_count);
 
+// Allocates `bytes` of PSRAM. When the allocation fails, every holder is asked to give back what it is not using and the
+// allocation is tried once more, so a screen never has to tell the owner to free memory by hand. A holder that is in use
+// refuses to release, so this cannot take memory from a screen that is running. Returns nullptr only when the memory is
+// genuinely not there. Free the result with heap_caps_free (free on the host build).
+// `reclaimed` (may be null) receives the bytes holders released on the way, 0 when the first attempt succeeded.
+void* alloc_psram(size_t bytes, size_t* reclaimed = nullptr);
+
 void clear_for_tests();
 
 }  // namespace orcsdr::memory_reclaim

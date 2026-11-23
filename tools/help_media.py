@@ -91,11 +91,13 @@ class Tab5:
                 return line
         raise TimeoutError(f"Timed out waiting for {prefixes}")
 
-    def authenticate(self) -> None:
+    def authenticate(self, *, create_key: bool = True) -> None:
         self.key_path.parent.mkdir(parents=True, exist_ok=True)
         if self.key_path.exists():
             key = bytes.fromhex(self.key_path.read_text(encoding="ascii").strip())
         else:
+            if not create_key:
+                raise FileNotFoundError("An existing serial authorization key file is required")
             key = secrets.token_bytes(32)
             self.key_path.write_text(key.hex(), encoding="ascii")
         if len(key) != 32:
@@ -103,14 +105,14 @@ class Tab5:
         self.send(f"PAIR {key.hex()}")
         pair = self.wait(("PAIR_OK", "PAIR_LOCKED", "PAIR_INVALID"))
         if pair != "PAIR_OK":
-            raise RuntimeError(f"{pair}; supply the key already paired with this Tab5")
+            raise RuntimeError("Pairing failed; supply the key already paired with this Tab5")
         nonce = secrets.token_bytes(16)
         host = hmac.new(key, b"host" + nonce, hashlib.sha256).hexdigest()
         self.send(f"AUTH {nonce.hex()} {host}")
         reply = self.wait(("AUTH_OK ", "AUTH_DENIED", "AUTH_ERROR", "AUTH_INVALID"))
         expected = hmac.new(key, b"device" + nonce, hashlib.sha256).hexdigest()
         if reply != f"AUTH_OK {expected}":
-            raise RuntimeError(f"Device authentication failed: {reply}")
+            raise RuntimeError("Device authentication failed (device response omitted)")
 
     def doc_list(self) -> tuple[str, dict[str, set[str]]]:
         self.send("UI_DOC_LIST")

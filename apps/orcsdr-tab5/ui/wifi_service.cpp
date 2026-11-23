@@ -16,6 +16,8 @@ extern "C" {
 #include <esp_wifi.h>
 #include <freertos/FreeRTOS.h>
 #include <freertos/task.h>
+#include <freertos/idf_additions.h>
+#include <esp_heap_caps.h>
 }
 
 namespace orcsdr::wifi {
@@ -23,6 +25,7 @@ namespace {
 bool g_started = false;
 std::atomic<bool> g_connected{false};
 std::atomic<bool> g_failed{false};
+std::atomic<int64_t> g_outage_until_us{0};   // simulate_outage(): connect fails until this esp_timer time
 bool g_versions_match = false;
 char g_c6_version[16]{"unknown"};
 bool g_hosted_transport_ready = false;
@@ -165,7 +168,18 @@ void mark_link_failed(const char* why) {
   ESP_LOGE("orcsdr_wifi", "RTL_WIFI_LINK_LOST reason=%s", why);
 }
 
-void on_hosted_event(void*, esp_event_base_t, int32_t id, void*) {
+// The C6 announces every boot with its reset reason. Counted (and the reason kept) so a recovery can tell whether the C6
+// restarted by itself (brown-out or power-on on a disturbed supply) instead of being wedged.
+std::atomic<uint32_t> g_cp_init_count{0};
+std::atomic<int32_t> g_cp_reset_reason{-1};
+
+void on_hosted_event(void*, esp_event_base_t, int32_t id, void* data) {
+  if (id == EH_HOST_EVENT_CP_INIT && data != nullptr) {
+    const int32_t reason = static_cast<int32_t>(static_cast<const eh_host_event_init_t*>(data)->reason);
+    g_cp_reset_reason.store(reason, std::memory_order_release);
+    g_cp_init_count.fetch_add(1, std::memory_order_acq_rel);
+    return;
+  }
   if (g_link_recovering.load(std::memory_order_acquire)) return;
   if (id == EH_HOST_EVENT_TRANSPORT_FAILURE) mark_link_failed("transport_failure");
   // TRANSPORT_DOWN is posted only by esp_hosted_deinit() (our own recovery),
@@ -250,9 +264,38 @@ bool start() {
   if (wifi_mode != ESP_OK) { g_failure_stage = "wifi_mode"; g_failure_code = wifi_mode; return false; }
   const esp_err_t wifi_start = esp_wifi_start();
   if (wifi_start != ESP_OK) { g_failure_stage = "wifi_start"; g_failure_code = wifi_start; return false; }
+  // Modem sleep (the default) lets the radio doze between beacons, which throttles sustained
+  // transfers; a failure here only costs speed, never the link.
+  const esp_err_t power_save = esp_wifi_set_ps(WIFI_PS_NONE);
+  if (power_save != ESP_OK) ESP_LOGW("orcsdr_wifi", "esp_wifi_set_ps(NONE) failed: %s", esp_err_to_name(power_save));
   g_started = true;
+  apply_max_tx_power();   // re-applied on every start, so a C6 restart keeps the cap
   return true;
 }
+
+// C6 transmit-power cap in 0.25 dBm units (8..84); 0 = the C6's own maximum. Set by the adaptive policy in
+// c6_tx_policy and re-applied on every Wi-Fi start, so a C6 that restarted keeps its cap.
+static std::atomic<int8_t> g_max_tx_qdbm{0};
+static int8_t g_applied_qdbm = 0;
+void apply_max_tx_power() {
+  const int8_t cap = g_max_tx_qdbm.load(std::memory_order_relaxed);
+  if (!g_started || (cap == 0 && g_applied_qdbm == 0)) return;   // never capped: leave the C6 exactly as before
+  // 84 (21 dBm) is the C6's ceiling, so "no cap" is applied as 84: it restores full power after a cap was lifted.
+  const int8_t want = cap == 0 ? 84 : cap;
+  const esp_err_t set = esp_wifi_set_max_tx_power(want);
+  int8_t readback = 0;
+  const esp_err_t got = esp_wifi_get_max_tx_power(&readback);
+  if (cap != g_applied_qdbm || set != ESP_OK)
+    printf("RTL_WIFI_TXPWR cap_qdbm=%d result=%s readback_qdbm=%d (%s)\n", cap, esp_err_to_name(set), readback,
+           esp_err_to_name(got));
+  if (set == ESP_OK) g_applied_qdbm = cap;
+}
+void set_max_tx_power_qdbm(int8_t cap, bool apply_now) {
+  g_max_tx_qdbm.store(cap, std::memory_order_relaxed);
+  if (apply_now) apply_max_tx_power();
+}
+uint32_t c6_init_count() { return g_cp_init_count.load(std::memory_order_acquire); }
+int32_t c6_last_reset_reason() { return g_cp_reset_reason.load(std::memory_order_acquire); }
 
 void stop() { if (g_started) { esp_wifi_disconnect(); esp_wifi_stop(); } g_started = false; g_connected.store(false, std::memory_order_release); }
 bool begin_scan() {
@@ -286,22 +329,45 @@ int scan_results(ScanResult* results, size_t capacity) {
   }
   return received;
 }
+uint32_t outage_remaining_s() {
+  const int64_t left = g_outage_until_us.load(std::memory_order_acquire) - esp_timer_get_time();
+  return left > 0 ? static_cast<uint32_t>((left + 999999) / 1000000) : 0;
+}
+
+void simulate_outage(uint32_t seconds) {
+  g_outage_until_us.store(seconds ? esp_timer_get_time() + static_cast<int64_t>(seconds) * 1000000 : 0, std::memory_order_release);
+  ESP_LOGW("orcsdr_wifi", "RTL_WIFI_OUTAGE seconds=%u", static_cast<unsigned>(seconds));
+  if (seconds && g_started && g_connected.load(std::memory_order_acquire)) esp_wifi_disconnect();   // the access point 'goes away'
+}
+
 bool connect(const char* network, const char* password) {
   if (!g_started || !network || !*network) return false;
   wifi_config_t config{};
-  strlcpy(reinterpret_cast<char*>(config.sta.ssid), network, sizeof(config.sta.ssid));
-  strlcpy(reinterpret_cast<char*>(config.sta.password), password ? password : "", sizeof(config.sta.password));
+  // Simulated outage: ask the C6 for a network that does not exist, so it runs its real scan-and-fail path (reason 201, no AP found)
+  // exactly as when an access point is gone, instead of the app skipping the radio.
+  const bool simulated = outage_remaining_s() != 0;
+  strlcpy(reinterpret_cast<char*>(config.sta.ssid), simulated ? "orcsdr-outage-sim" : network, sizeof(config.sta.ssid));
+  strlcpy(reinterpret_cast<char*>(config.sta.password), simulated || !password ? "" : password, sizeof(config.sta.password));
+  if (simulated)
+    ESP_LOGW("orcsdr_wifi", "simulated outage: connecting to a network that is not there, %u s left", static_cast<unsigned>(outage_remaining_s()));
   g_failed.store(false, std::memory_order_release);
   g_connected.store(false, std::memory_order_release);
   strlcpy(g_ssid, network, sizeof(g_ssid));
   const esp_err_t set_config = esp_wifi_set_config(WIFI_IF_STA, &config);
+  // ESP_FAIL / ESP_ERR_TIMEOUT here means the request reached the C6 and got no answer (5 s RPC timeout): the C6 is gone
+  // (on a disturbed supply it power-on resets during transmit bursts) while the SDIO transport has not reported it yet.
+  // Mark the link failed so the recovery starts now, not when some later transfer happens to fail.
+  const auto silent = [](esp_err_t e) { return e == ESP_FAIL || e == ESP_ERR_TIMEOUT; };
   if (set_config != ESP_OK) {
     ESP_LOGE("orcsdr_wifi", "set_config failed: 0x%x", static_cast<unsigned>(set_config));
+    if (silent(set_config)) mark_link_failed("c6_no_response");
     return false;
   }
   const esp_err_t connect = esp_wifi_connect();
-  if (connect != ESP_OK)
+  if (connect != ESP_OK) {
     ESP_LOGE("orcsdr_wifi", "connect request failed: 0x%x", static_cast<unsigned>(connect));
+    if (silent(connect)) mark_link_failed("c6_no_response");
+  }
   return connect == ESP_OK;
 }
 void disconnect() { esp_wifi_disconnect(); g_connected.store(false, std::memory_order_release); }
@@ -336,16 +402,81 @@ int16_t rssi() {
   }
   return cached;
 }
+bool link_details(LinkDetails* out) {
+  if (out == nullptr || g_link_failed.load(std::memory_order_acquire) ||
+      !g_connected.load(std::memory_order_acquire)) return false;
+  wifi_ap_record_t ap{};
+  if (esp_wifi_sta_get_ap_info(&ap) != ESP_OK) return false;
+  wifi_ps_type_t ps = WIFI_PS_NONE;
+  wifi_bandwidth_t bandwidth = WIFI_BW_HT20;
+  (void)esp_wifi_get_ps(&ps);
+  (void)esp_wifi_get_bandwidth(WIFI_IF_STA, &bandwidth);
+  *out = {ap.rssi, ap.primary, static_cast<uint8_t>(ap.second), ap.phy_11b != 0, ap.phy_11g != 0,
+          ap.phy_11n != 0, ap.phy_11ax != 0, static_cast<int>(ps), static_cast<int>(bandwidth)};
+  return true;
+}
 bool link_failed() { return g_link_failed.load(std::memory_order_acquire); }
 void note_start_failure() {
   if (strcmp(g_failure_stage, "hosted_init") == 0 || strcmp(g_failure_stage, "hosted_connect") == 0 ||
       strcmp(g_failure_stage, "version") == 0)
     mark_link_failed(g_failure_stage);
 }
+// esp_hosted_deinit() can block forever. Seen 2026-11-22 on COM17: the C6 browned out during its boot, so it never sent
+// its transport INIT; ESP-Hosted's sdio_write task waits for that INIT in a loop that does not check for shutdown
+// (eh_host_bus_sdio.c sdio_write_task), and deinit joins that task with no timeout. Called from the main loop, that froze
+// the screen, touch and receiver until a power-cycle. So deinit runs in a helper task and the main loop waits at most
+// kDeinitTimeoutMs. A helper that never returns keeps ESP-Hosted's lifecycle lock, so Wi-Fi cannot be re-initialised
+// until the Tab5 restarts: link_wedged() reports that, and later recoveries return at once instead of blocking again.
+namespace {
+constexpr uint32_t kDeinitTimeoutMs = 5000;
+enum : int { kDeinitIdle = 0, kDeinitRunning = 1, kDeinitDone = 2 };
+std::atomic<int> g_deinit_state{kDeinitIdle};
+std::atomic<int> g_deinit_result{0};
+void deinit_worker(void*) {
+  g_deinit_result.store(esp_hosted_deinit(), std::memory_order_release);
+  g_deinit_state.store(kDeinitDone, std::memory_order_release);
+  vTaskDeleteWithCaps(nullptr);
+}
+// Returns true with *result set when deinit finished; false when it timed out (or the helper could not start).
+bool hosted_deinit_bounded(int* result) {
+  const bool fresh = g_deinit_state.load(std::memory_order_acquire) == kDeinitIdle;
+  if (fresh) {
+    g_deinit_state.store(kDeinitRunning, std::memory_order_release);
+    if (xTaskCreatePinnedToCoreWithCaps(deinit_worker, "wifi_deinit", 4096, nullptr, 5, nullptr, tskNO_AFFINITY,
+                                        MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT) != pdPASS) {
+      g_deinit_state.store(kDeinitIdle, std::memory_order_release);
+      ESP_LOGE("orcsdr_wifi", "RTL_WIFI_LINK_RECOVERY deinit_task=failed");
+      return false;
+    }
+  }
+  // Not fresh: an earlier timed-out deinit is still blocked (or has since finished). Never start a second one, and do
+  // not stall the caller again: only take its result if it is already done.
+  const TickType_t start = xTaskGetTickCount();
+  const TickType_t wait = fresh ? pdMS_TO_TICKS(kDeinitTimeoutMs) : 0;
+  while (g_deinit_state.load(std::memory_order_acquire) != kDeinitDone) {
+    if (xTaskGetTickCount() - start >= wait) {
+      ESP_LOGE("orcsdr_wifi", "RTL_WIFI_LINK_WEDGED reason=hosted_deinit_timeout wait_ms=%u (restart the Tab5 to restore Wi-Fi)",
+               static_cast<unsigned>(fresh ? kDeinitTimeoutMs : 0u));
+      return false;
+    }
+    vTaskDelay(pdMS_TO_TICKS(20));
+  }
+  *result = g_deinit_result.load(std::memory_order_acquire);
+  g_deinit_state.store(kDeinitIdle, std::memory_order_release);
+  return true;
+}
+}  // namespace
+
+bool link_wedged() { return g_deinit_state.load(std::memory_order_acquire) == kDeinitRunning; }
+
 bool begin_link_recovery() {
   g_link_recovering.store(true, std::memory_order_release);
   // No esp_wifi_stop()/disconnect(): over a dead link each RPC blocks 5 s.
-  const int deinit = esp_hosted_deinit();
+  int deinit = 0;
+  if (!hosted_deinit_bounded(&deinit)) {
+    g_link_recovering.store(false, std::memory_order_release);
+    return false;
+  }
   ESP_LOGW("orcsdr_wifi", "link recovery: esp_hosted_deinit=%d", deinit);
   if (deinit != 0) {
     // Lifecycle lock timeout/error: teardown did not run, so re-init would

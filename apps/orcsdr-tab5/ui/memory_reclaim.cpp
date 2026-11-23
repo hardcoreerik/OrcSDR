@@ -1,7 +1,11 @@
 #include "memory_reclaim.hpp"
 
 #include <algorithm>
+#include <cstdlib>
 #include <cstring>
+#if defined(ESP_PLATFORM)
+#include <esp_heap_caps.h>
+#endif
 
 namespace orcsdr::memory_reclaim {
 namespace {
@@ -67,6 +71,23 @@ size_t reclaim_all(Report* out, size_t capacity, size_t* out_count) {
   for (size_t i = 0; i < n; ++i) out[i] = released[i];
   if (out_count) *out_count = n;
   return total;
+}
+
+void* alloc_psram(size_t bytes, size_t* reclaimed) {
+  if (reclaimed) *reclaimed = 0;
+#if defined(ESP_PLATFORM)
+  void* p = heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (p) return p;
+  const size_t released = reclaim_all(nullptr, 0, nullptr);
+  if (reclaimed) *reclaimed = released;
+  return heap_caps_malloc(bytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+#else
+  void* p = std::malloc(bytes);
+  if (p) return p;
+  const size_t released = reclaim_all(nullptr, 0, nullptr);
+  if (reclaimed) *reclaimed = released;
+  return std::malloc(bytes);
+#endif
 }
 
 void clear_for_tests() { g_count = 0; }

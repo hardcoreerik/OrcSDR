@@ -8,7 +8,7 @@ These designs belong to their creators. They are **community projects**, not off
 
 | Build | Designer | Files | Project page |
 | --- | --- | --- | --- |
-| OrcSDR handheld case | [Axeman72](https://github.com/Axeman72) | STL files offered; **not yet available here** | [Details](Axeman72/README.md) |
+| OrcSDR handheld case V1 | [Axeman72](https://github.com/Axeman72) | [Nine STLs + assembly image](Axeman72/Case-V1/) — **draft import; license confirmation pending** | [Details](Axeman72/README.md) · [Original PR #212](https://github.com/hardcoreerik/OrcSDR/pull/212) |
 | Tab5 Keyboard Clamshell Cyberdeck | [u/pixeltwisters](https://www.reddit.com/user/pixeltwisters/) / MakerWorld: Jrosen73 | [External MakerWorld model (STL/3MF)](https://makerworld.com/en/models/3405309-tab5-keyboard-clamshell-cyberdeck) | [Details](pixeltwisters-tab5-clamshell/README.md) |
 
 ## Share a build

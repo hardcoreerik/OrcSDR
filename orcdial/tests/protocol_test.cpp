@@ -31,5 +31,7 @@ int main() {
   p.type = orc::Type::semantic_action; p.value = 0;
   orc::encode(p, wire);
   assert(orc::decode(wire, sizeof wire, decoded) && decoded.type == orc::Type::semantic_action);
-  assert(!orc::valid_type(uint8_t(orc::Type::semantic_action) + 1));
+  assert(orc::valid_type(uint8_t(orc::Type::ft8_decode_brief)));
+  assert(orc::valid_type(uint8_t(orc::Type::ft8_decode_text)));
+  assert(!orc::valid_type(uint8_t(orc::Type::ft8_decode_text) + 1));
 }

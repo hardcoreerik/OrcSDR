@@ -20,16 +20,19 @@ constexpr Preset kNorthAmerica[] = {
     {130450000u, "130.450 US/CA", "RadioReference, WiNRADiO; busy-hub overflow per some sources"},
     {131125000u, "131.125 US", "SigIDWiki, RadioReference"},
     {130425000u, "130.425 US", "SigIDWiki, RadioReference"},
+    {136975000u, "136.975 VDL2", "VDL Mode 2 common signalling channel (digital, ICAO Annex 10)"},
 };
 constexpr Preset kEurope[] = {
     {131725000u, "131.725 PRIMARY", "acarsdec README (Europe primary); Wavecom"},
     {131525000u, "131.525 SECONDARY", "acarsdec README (Europe secondary); Wavecom"},
     {131825000u, "131.825 EXTRA", "Wavecom, UDXF table (least corroborated)"},
     {131550000u, "131.550 WORLDWIDE", "SigIDWiki, RadioReference (worldwide common channel)"},
+    {136975000u, "136.975 VDL2", "VDL Mode 2 common signalling channel (digital, ICAO Annex 10)"},
 };
 constexpr Preset kAsiaPacific[] = {
     {131550000u, "131.550 PRIMARY", "SigIDWiki, RadioReference (Asia/Pacific, worldwide)"},
     {131450000u, "131.450 JAPAN", "SigIDWiki, RadioReference (Japan primary)"},
+    {136975000u, "136.975 VDL2", "VDL Mode 2 common signalling channel (digital, ICAO Annex 10)"},
 };
 static_assert(sizeof(kNorthAmerica) / sizeof(Preset) <= kChannelRows, "preset list exceeds visible rows");
 static_assert(sizeof(kEurope) / sizeof(Preset) <= kChannelRows, "preset list exceeds visible rows");

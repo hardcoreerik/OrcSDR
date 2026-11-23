@@ -14,6 +14,13 @@ const char* const kOverview[] = {
     "                receiver's full scale, not calibrated power).",
     "SENSITIVITY     how far above its baseline a level must rise",
     "                before it counts as an event. Set on Events.",
+    "RF STRIP        the last minute of RF level. Green dashes: the",
+    "                baseline. Yellow: the event limit. A break in the",
+    "                line is a moment with no valid measurement.",
+    "                A coloured tick marks an event.",
+    "ORB             glows with how close the level is to the limit and",
+    "                bursts when an event is logged: a cue, not a cause.",
+    "SESSION         counts and extremes of what was measured so far.",
     "LATEST EVENTS   the four newest entries from the event log.",
     "",
     "A dash means no measurement is available. Nothing is invented",
@@ -37,6 +44,11 @@ const char* const kSpectrum[] = {
     "",
     "While sweeping, the log records the gaps: time spent on other",
     "frequencies is marked as not observed, never as quiet.",
+    "",
+    "PEAK   the strongest point of the trace (not the tuner's centre).",
+    "TAP    the plot or waterfall to tune to that frequency.",
+    "MAP    after a sweep, a bar per channel shows the level measured",
+    "       there. Tap a bar to tune. LIVE / MAP switches the view.",
 };
 
 const char* const kAudio[] = {
@@ -64,8 +76,8 @@ const char* const kEnvironment[] = {
     "Not found  the fields show a dash. Nothing is estimated and",
     "           no earlier value is shown as if it were current.",
     "",
-    "Environment readings are context only. They are not used to",
-    "trigger events.",
+    "A temperature, humidity or pressure reading held away from its",
+    "learned baseline is logged as an event (see the Events tab).",
 };
 
 const char* const kEvents[] = {
@@ -77,6 +89,12 @@ const char* const kEvents[] = {
     "MARK         you pressed MARK EVENT: a note that something",
     "             happened at this moment. It is not a detection.",
     "CLIP         a short recording is saved with this event.",
+    "TAP A ROW    shows that event's time, level, baseline and limit.",
+    "             VIEW CLIP opens its clip on Review. NEWER and OLDER",
+    "             page through the log.",
+    "SCRUB        the level 10 s either side of an event, and its clip.",
+    "CONTROL RUN  counts false alarms per hour on an empty setup.",
+    "CHIME        a short ping when an event is logged (off at start).",
     "",
     "SENSITIVITY  Quiet, Standard or Sensitive: how far above the",
     "             baseline a level must go. Sensitive logs more,",

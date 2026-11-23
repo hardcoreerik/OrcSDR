@@ -20,11 +20,11 @@ cd <repository root>
 ./apps/orcsdr-tab5/tools/build-tab5-idf.ps1
 ```
 
-The accessory must work without requiring a C6 firmware update. The existing experimental bridge uses a custom C6 relay; that approach is under review against the no-update requirement. Keep the user's installed C6 firmware intact while investigating its supported interfaces and verifying channel alignment. The build resolver currently caches the experimental image by a hash of the local C6 sources; embedding it does not install it on the device.
+The accessory must work without requiring a C6 firmware update. The current bridge uses a custom C6 relay; its no-update compatibility and long-term transport choice remain under review. Keep the user's installed C6 firmware intact while investigating its supported interfaces and verifying channel alignment. The build resolver caches the integration C6 image by a hash of the local C6 sources; embedding it does not install it on the device.
 
 Local USB automation: send `RTL_WIFI_CHANNEL` and `RTL_ORCDIAL_PAIR START` to the Tab5, then `ORCDIAL_PAIR START` to the Dial. Query the Dial with `ORCDIAL_STATUS` (link, pairing, channel, frequency). `RTL_ORCDIAL_PAIR STOP` closes the Tab5 window. Other authenticated Tab5 controls remain protected. Run `python orcdial/tests/serial_smoke.py --port COM14` for the Dial command and overflow checks; it starts discovery but never tunes.
 
-Run `python orcdial/tests/host_probe.py --port COM17` to check the Tab5 commands and queue a discovery packet through the experimental relay. `RTL_ORCDIAL_PROBE` reports queue acceptance and the preceding completed C6 RPC result; neither proves over-air transmission or pairing. Outgoing replies use a bounded worker queue so Hosted timeouts do not block DSP or UI. Neither script updates firmware.
+Run `python orcdial/tests/host_probe.py --port COM17` to check the Tab5 commands and queue a discovery packet through the current C6 relay. `RTL_ORCDIAL_PROBE` reports queue acceptance and the preceding completed C6 RPC result; neither proves over-air transmission or pairing. Outgoing replies use a bounded worker queue so Hosted timeouts do not block DSP or UI. Neither script updates firmware.
 
 For connected-device control tests, `ORCDIAL_ROTATE <delta>` accepts nonzero detents from -20 to 20 and uses the same dashboard/focus mapping as the physical encoder, without acceleration. `ORCDIAL_FOCUS NEXT` cycles the same focus choices as a short encoder press on a tuner. Both refuse offline control. A queued response is not proof of application: verify the acknowledgment and returned state in `ORCDIAL_STATUS`, then compare the Tab5 state. Status includes dashboard, focus, step, volume, last acknowledgment, and pending-command state.
 

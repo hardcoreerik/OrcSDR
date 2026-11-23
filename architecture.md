@@ -1,8 +1,10 @@
 # OrcSDR current architecture
 
-This describes the release branch at `d30a033` on 2026-09-15. Historical plans
-and validation reports explain how the design arrived here but are not current
-architecture contracts.
+This describes the current `main` architecture reviewed 2026-11-04. The latest
+published versioned firmware at review time is `v0.5.0-beta.1`; exact firmware
+packages and dated RF evidence have their own acceptance boundaries. Historical
+plans and validation reports explain how the design arrived here but are not
+current architecture contracts.
 
 The accepted Stage-1 production DSP path (developed on `claude/dsp-multirate`,
 formerly draft PR #114) is part of `main` as of v0.3.0-beta.1; the Stage-2 multirate
@@ -17,8 +19,8 @@ ESP32-P4. The onboard ESP32-C6 runs matching ESP-Hosted 3.0.6 firmware and uses
 historical and unsupported.
 
 The portable receiver boundary is the external `esp-rtl-sdr` component,
-published release `v0.9.3` (it reports `0.9.3`), pinned immutably at
-`31a159df4f006a837d5041029bc6d1bc63520234` by
+published release `v0.9.6` (it reports `0.9.6`), pinned immutably at
+`dabdda1aff6aa196f3c1523d791adf80d2c24ccc` by
 `apps/orcsdr-tab5/main/idf_component.yml` and
 `apps/orcsdr-tab5/dependencies.lock`. OrcSDR uses callback delivery and owns
 DSP, UI, storage, and product behavior above that driver. The old local USB
@@ -34,7 +36,7 @@ Wi-Fi pause/resume orchestration; catalog operations; serial and authenticated
 device commands; SD/IQ/audio transfers; LAN console command dispatch;
 documentation capture; screen transitions; and top-level touch routing.
 
-main.cpp measurement (Git-normalized): 1,116,405 bytes (~1090.2 KiB), 23,643 lines.
+main.cpp measurement (Git-normalized): 1,025,206 bytes (~1001.2 KiB), 21,180 lines.
 
 The measurement uses LF-normalized repository bytes so it is stable across
 Windows and Linux checkouts. The intended modular endpoint—roughly 500 lines of
@@ -48,21 +50,23 @@ screen permission to draw while radio/decoder work continues independently.
 `navigation_service` owns Home/Settings handoff mechanics; feature dashboards
 render snapshots rather than owning receiver state.
 
-ScreenController IDs: `none`, `home`, `fm`, `p25`, `adsb`, `lora`, `shortwave`, `radio`, `visualizer`, `rf_lab`, `wifi_analysis`, `pocsag`, `settings`, `am`, `documentation`, `cb`, `airband`, `ft8`, `sstv`, `acars`, `dead_air`, `maps`.
+ScreenController IDs: `none`, `home`, `fm`, `p25`, `adsb`, `lora`, `shortwave`, `radio`, `visualizer`, `rf_lab`, `wifi_analysis`, `pocsag`, `settings`, `am`, `documentation`, `cb`, `airband`, `ft8`, `sstv`, `acars`, `dead_air`, `maps`, `ais`.
 
-Dashboard IDs: `home`, `fm`, `p25`, `adsb`, `shortwave`, `weather`, `cb`, `lora`, `airband`, `marine`, `satellite`, `utilities`, `settings`, `rf_lab`, `wifi_analysis`, `pocsag`, `am`, `ft8`, `sstv`, `acars`, `dead_air`.
+Dashboard IDs: `home`, `fm`, `p25`, `adsb`, `shortwave`, `weather`, `cb`, `lora`, `airband`, `marine`, `satellite`, `utilities`, `settings`, `rf_lab`, `wifi_analysis`, `pocsag`, `am`, `ft8`, `sstv`, `acars`, `dead_air`, `ais`, `visualizer`.
 
-The Dead Air initial module provides six native M5GFX research pages and a bounded RF event model. It is not yet wired into the main.cpp application dispatcher or persisted to SD; see docs/dead-air/DEVELOPMENT_HANDOFF.md. ENV III is optional and unverified readings are unavailable.\n\nThe ACARS dashboard (`acars_*` modules, see `docs/acars/DASHBOARD_README.md`) is a presentation-only
-screen: `acars_app` owns its lifecycle, `acars_dashboard_model` holds the bounded snapshot, and `acars_receiver` feeds it from the RTL-SDR (single channel, 240 kS/s, receive only).
+Dead Air is integrated into the normal Tab5 dashboard dispatcher, with six native M5GFX panels, real RF/audio observations, bounded events, environmental sensor readings and separate logging. The M5Stack Unit ENV III has working Tab5 temperature, humidity and pressure reads per maintainer acceptance. The opt-in VEIL-26 engine maps measured frequency/level to deterministic symbolic interpretations, distinguished from measurement; it does not identify paranormal causes. See docs/dead-air/CHANGELOG.md, docs/dead-air/VEIL26.md and docs/MAINTAINER_FIELD_ACCEPTANCE_2026-11-04.md. The initial DEVELOPMENT_HANDOFF.md is historical.
+
+The ACARS dashboard (`acars_*` modules) keeps presentation separate from the receiver and decoder: `acars_app` owns the lifecycle, `acars_dashboard_model` holds bounded data, and VHF analog ACARS and VDL2 D8PSK/AVLC receivers feed decoded aircraft traffic. VDL2 has live CRC-valid AVLC/ACARS acceptance; airline-specific application interpretation is partial (see `docs/acars/CHANGELOG.md`).
 
 The current screen modules include Home, FM, AM, P25, ADS-B, LoRa, POCSAG, RF
 Lab, RF Visualizer, Wi-Fi analysis, Settings, documentation capture, and the
 shared Radio/Scope/Capture surface. Airband has its own dashboard (`airband_*`
 modules: scanner, catalog, runtime, dashboard; see `docs/airband/README.md`) on
 `radio::Band::airband`, using the shared AM demodulator and receiver controls.
-Dashboard catalog entries for Shortwave, Marine, and Satellite route into the
-shared receiver surface; catalog labels do not imply dedicated decoders or
-complete demodulation modes.
+Shortwave Explorer has a dedicated dashboard and AM/USB/LSB audio controls,
+but uses the common receiver/session and DSP infrastructure (rather than a
+separate radio driver). Marine and Satellite catalog entries still use shared
+receiver routing and do not imply dedicated digital decoders.
 
 ## Receiver and DSP ownership
 
@@ -91,11 +95,17 @@ complete demodulation modes.
   for the independent Stage-1 A/B harness. No experimental frontend replaces
   the existing production demodulator.
 
-Receiver profiles are selected inside the single driver API. Blog V4 is the
-tested baseline; Blog V3/V3C profiles exist with experimental evidence
-boundaries, and the Nooelec NESDR SMArt V5 profile is RF-Verified at 24 MHz and
-above (v0.3.0-beta.2). V4L and arbitrary RTL2832 receivers are not accepted by
-inference.
+Receiver profiles are selected inside the single driver API. Blog V4,
+Blog V3c, Blog V4 Lite (V4L) and Nooelec NESDR SMArt V5 are fully supported
+OrcSDR receiver models. **Nooelec XTR / E4000 also runs in OrcSDR within
+its declared tuner frequency range** via the independently implemented driver.
+When a selected dashboard targets an unsupported range (for example AM broadcast),
+the dashboard may open but the receiver **does not issue an invalid tune**.
+This is intentional frequency-capability enforcement, not failed hardware integration.
+Better cross-dashboard disabled-state messaging and wider E4000 RF characterization
+remain open. Older V3 revisions and arbitrary RTL2832 receivers are not accepted
+by family or USB identity alone. Full receiver support is separate from
+universal RF calibration and dashboard-specific decoding.
 
 ## Wi-Fi, catalog, and LAN console
 

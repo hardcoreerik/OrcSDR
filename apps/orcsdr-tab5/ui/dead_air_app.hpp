@@ -38,7 +38,8 @@ struct Hooks {
 };
 
 void install(const Hooks& hooks);
-void open();                       // screen opened: allocate state, start worker, first draw
+bool ready_to_open();              // waits for the last session's worker; false = cannot open now (do not retune the radio)
+void open();                    // screen opened: allocate state, start worker, first draw
 void close();                      // left for any reason; stops the worker and closes the file
 void tick();                       // main loop: build snapshot, run detector, repaint on change
 void draw(bool static_panel);      // refresh requested by the ScreenController
@@ -57,5 +58,9 @@ void feed_spectrum(const float* levels, size_t bins, uint32_t sample_rate_sps);
 // queue, to exercise overflow accounting. Returns the number logged (0 when Dead Air is not open).
 uint32_t flood_manual_marks(uint32_t count);
 void describe(char* out, size_t size);  // one diagnostic line for the serial console
+void describe_env(char* out, size_t size);  // ENV III state and counters (RTL_DEAD_AIR ENV); only meaningful while the screen is open
+void describe_veil(char* out, size_t size);  // VEIL-26 state and counters (RTL_DEAD_AIR VEIL)
+// Authenticated serial only. `args` is "ON", "OFF" or "INTENT <text>"; fills `reply` with one line. False on error.
+bool veil_command(const char* args, char* reply, size_t size);
 
 }  // namespace orcsdr::dead_air_app

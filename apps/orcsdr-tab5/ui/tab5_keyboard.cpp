@@ -30,7 +30,11 @@ constexpr uint8_t kIntrCharEnable = 0x04;
 constexpr uint8_t kMaxEventBytes = 17;  // modifier + up to 16 name characters
 
 constexpr uint32_t kIdlePollMs = 100;      // safety poll in case INT is missed
+// With no keyboard attached the probe backs off (2 s, 4 s, 8 s ... up to a minute) instead of polling forever: each miss
+// holds the bus for up to kTimeoutMs, and plugging a keyboard in is noticed within a minute. A keyboard that was attached and
+// then lost is looked for quickly again.
 constexpr uint32_t kReprobeMs = 2000;
+constexpr uint32_t kReprobeMaxMs = 60000;
 constexpr uint8_t kMaxEventsPerPass = 8;
 constexpr uint8_t kFailuresBeforeDetach = 5;
 constexpr size_t kQueueSize = 16;
@@ -40,6 +44,8 @@ i2c_master_dev_handle_t g_device = nullptr;
 Status g_status;
 uint32_t g_last_poll_ms = 0;
 uint32_t g_last_probe_ms = 0;
+uint32_t g_reprobe_ms = kReprobeMs;  // current gap between probes while no keyboard is attached
+bool g_miss_announced = false;
 uint8_t g_failures = 0;
 
 keyboard_input::Key g_queue[kQueueSize];
@@ -61,6 +67,8 @@ void note_bus_error() {
     i2c_master_bus_rm_device(g_device);
     g_device = nullptr;
     g_status.present = false;
+    g_reprobe_ms = kReprobeMs;  // it was just here: look for it again quickly
+    g_miss_announced = false;
     ESP_LOGW(kTag, "RTL_KEYBOARD detached after repeated I2C errors");
   }
 }
@@ -76,7 +84,19 @@ void push(const keyboard_input::Key& key) {
 
 bool attach() {
   if (g_bus == nullptr) return false;
-  if (i2c_master_probe(g_bus, kAddress, kTimeoutMs) != ESP_OK) return false;
+  // A missing keyboard is the normal case, not an error: the driver logs every miss at error level, so that tag is muted for
+  // the duration of the probe and restored.
+  const esp_log_level_t previous = esp_log_level_get("i2c.master");
+  esp_log_level_set("i2c.master", ESP_LOG_NONE);
+  const esp_err_t probed = i2c_master_probe(g_bus, kAddress, kTimeoutMs);
+  esp_log_level_set("i2c.master", previous);
+  if (probed != ESP_OK) {
+    if (!g_miss_announced) {
+      g_miss_announced = true;
+      ESP_LOGI(kTag, "RTL_KEYBOARD none found at 0x%02x; looking again at a slower pace (up to once a minute)", kAddress);
+    }
+    return false;
+  }
   i2c_device_config_t config = {};
   config.dev_addr_length = I2C_ADDR_BIT_LEN_7;
   config.device_address = kAddress;
@@ -178,9 +198,10 @@ void begin() {
 void service(uint32_t now_ms) {
   if (g_bus == nullptr) return;
   if (g_device == nullptr) {
-    if (now_ms - g_last_probe_ms >= kReprobeMs) {
+    if (now_ms - g_last_probe_ms >= g_reprobe_ms) {
       g_last_probe_ms = now_ms;
-      (void)attach();
+      if (attach()) g_reprobe_ms = kReprobeMs;
+      else g_reprobe_ms = g_reprobe_ms >= kReprobeMaxMs / 2 ? kReprobeMaxMs : g_reprobe_ms * 2;
     }
     return;
   }

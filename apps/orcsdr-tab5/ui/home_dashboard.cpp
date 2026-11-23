@@ -233,9 +233,11 @@ void draw_header_status() {
        kHeaderStatusX + 54, y + 38, current.wifi_connected ? kCyan : TFT_ORANGE, 1);
   M5.Display.drawFastVLine(kHeaderStatusX + 114, y + 8, kHeaderStatusH - 16, kDim);
   draw_usb_icon(kHeaderStatusX + 135, y + 30, current.driver_ready ? kCyan : kDim);
-  text("RTL-SDR", kHeaderStatusX + 148, y + 17, TFT_WHITE, 2);
-  text(current.driver_ready ? "READY" : "NOT READY", kHeaderStatusX + 158, y + 38,
-       current.driver_ready ? kCyan : TFT_ORANGE, 1);
+  // The USB model occupies a bounded 90-pixel slot; long names use the small font.
+  text(current.receiver, kHeaderStatusX + 148, y + 17, TFT_WHITE,
+       strlen(current.receiver) > 7 ? 1 : 2);
+  text(current.link_state[0] ? current.link_state : current.driver_ready ? "READY" : "NOT READY",
+       kHeaderStatusX + 158, y + 38, current.driver_ready ? kCyan : TFT_ORANGE, 1);
   M5.Display.drawFastVLine(kHeaderStatusX + 238, y + 8, kHeaderStatusH - 16, kDim);
   text(current.clock[0] ? current.clock : "--:--", kHeaderStatusX + kHeaderStatusW - 12, y + 17,
        TFT_WHITE, 2, middle_right);
@@ -517,6 +519,12 @@ int gain_step_index() {
   return best;
 }
 
+const char* gain_unavailable_message() {
+  if (!current.driver_ready) return "No receiver connected.";
+  if (current.gain_direct_sampling) return "Direct sampling: gain available from 24 MHz.";
+  return "Gain control unavailable for this tuner or mode.";
+}
+
 void draw_gain_popup() {
   M5.Display.fillRoundRect(kPopX, kPopY, kPopW, kPopH, 12, TFT_BLACK);
   M5.Display.drawRoundRect(kPopX, kPopY, kPopW, kPopH, 12, kCyan);
@@ -532,8 +540,7 @@ void draw_gain_popup() {
                current.rtl_agc, current.driver_ready && current.rtl_agc_available);
   popup_button(kCloseX, kCloseW, "CLOSE", false, true);
   if (!gain || current.gain_step_count < 2) {
-    text(current.driver_ready ? "Tuner gain is not available at this frequency."
-                              : "No receiver connected.",
+    text(gain_unavailable_message(),
          kMinusX, kSliderY + kSliderH / 2, TFT_LIGHTGREY, 2);
   } else {
     char value[48];
@@ -807,6 +814,26 @@ void draw_band_label() {
 
 void draw_footer();
 
+void draw_idle_spectrum() {
+  M5.Display.fillRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, TFT_BLACK);
+  M5.Display.drawRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, kDim);
+  for (int i = 1; i < 5; ++i) {
+    M5.Display.drawFastHLine(kPlotX, kSpectrumY + i * kSpectrumH / 5, kPlotW, kDim);
+    M5.Display.drawFastVLine(kPlotX + i * kPlotW / 5, kSpectrumY, kSpectrumH, kDim);
+  }
+}
+
+void draw_waterfall_tuner_state(bool popup_over = false) {
+  const int bottom = popup_over ? kPopY : kWaterfallY + kWaterfallH - 1;
+  M5.Display.fillRect(kPlotX + 1, kWaterfallY + 1, kPlotW - 2,
+                      bottom - kWaterfallY - 1, TFT_BLACK);
+  if (current.tuner_out_of_range) {
+    const int center = kPlotX + kPlotW / 2;
+    text("Not supported by this tuner", center, kWaterfallY + 36, TFT_ORANGE, 3, middle_center);
+    text("Tune to a supported frequency", center, kWaterfallY + 69, TFT_LIGHTGREY, 2, middle_center);
+  }
+}
+
 void draw_receiver_chrome(bool keep_graphics = false) {
   if (keep_graphics) M5.Display.fillRect(kPopX, kPopY, kPopW, kPopH, TFT_BLACK);
   frame(kMainX, kMainY, kMainW, kMainH, kCyan, 12);
@@ -816,15 +843,11 @@ void draw_receiver_chrome(bool keep_graphics = false) {
     M5.Display.drawRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, kDim);
     M5.Display.drawRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, kDim);
   } else {
-    M5.Display.fillRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, TFT_BLACK);
-    M5.Display.drawRect(kPlotX, kSpectrumY, kPlotW, kSpectrumH, kDim);
-    for (int i = 1; i < 5; ++i) {
-      M5.Display.drawFastHLine(kPlotX, kSpectrumY + i * kSpectrumH / 5, kPlotW, kDim);
-      M5.Display.drawFastVLine(kPlotX + i * kPlotW / 5, kSpectrumY, kSpectrumH, kDim);
-    }
+    draw_idle_spectrum();
     M5.Display.fillRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, TFT_BLACK);
     M5.Display.drawRect(kPlotX, kWaterfallY, kPlotW, kWaterfallH, kDim);
   }
+  if (current.tuner_out_of_range) draw_waterfall_tuner_state();
   draw_frequency();
   draw_mode_chip(current.mode[0] ? current.mode : "--");
   draw_tuning_controls();
@@ -1012,6 +1035,7 @@ void update(const Snapshot& snapshot) {
     current = snapshot;
     return;
   }
+  const bool waterfall_state_changed = snapshot.tuner_out_of_range != current.tuner_out_of_range;
   const bool tuner_changed = snapshot.tuner_revision != current.tuner_revision;
   const bool audio_changed = snapshot.audio_revision != current.audio_revision;
   const bool status_changed = snapshot.status_revision != current.status_revision;
@@ -1029,8 +1053,16 @@ void update(const Snapshot& snapshot) {
   current = snapshot;
   const bool covered = gain_popup || filter_popup || mode_popup;   // a popup is over the lower half
   M5.Display.startWrite();
-  if (status_changed) draw_header_status();
+  if (status_changed || receiver_changed) draw_header_status();
   if (tuner_changed) draw_band_label();
+  if (waterfall_state_changed) {
+    if (current.tuner_out_of_range) {
+      draw_idle_spectrum();
+      g_px_valid = false;
+      spectrum_ceiling_valid = false;
+    }
+    draw_waterfall_tuner_state(covered);
+  }
   if (covered) {
     if (mode_popup && tuner_changed) draw_mode_popup();
     if (filter_popup && (bandwidth_changed || tuner_changed)) draw_filter_popup();
@@ -1076,7 +1108,8 @@ size_t g_px_first_bin = 0, g_px_visible_bins = 0;
 
 void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
                    float floor, bool audio_stressed) {
-  if (!shown || browser || keypad || levels == nullptr || visible_bins < 2) return;
+  if (!shown || browser || keypad || current.tuner_out_of_range ||
+      levels == nullptr || visible_bins < 2) return;
   const uint32_t now = millis();
   const uint32_t interval = audio_stressed ? 333 : plot::kSpectrumIntervalMs;
   if (now - last_spectrum_ms < interval) return;
@@ -1381,7 +1414,8 @@ bool self_check() {
          tap_action(kStepperSize + 5, kControlY + 8).kind == ActionKind::step_size_down &&
          tap_action(1223, 13).kind == ActionKind::open_device_settings &&
          tap_action(kHeaderStatusX+kHeaderStatusW-20,kHeaderStatusY+20).kind == ActionKind::open_clock &&
-         tap_action(1100, 13).kind == ActionKind::sound_toggle &&
+         // Speaker button, header x 1138..1191 since the header was re-spaced (2026-11-11); this tapped 1100 before.
+         tap_action(1164, 38).kind == ActionKind::sound_toggle &&
          std::abs(home_spectrum_floor(levels, std::size(levels), 10.0f) - 62.0f) < 0.01f;
 }
 

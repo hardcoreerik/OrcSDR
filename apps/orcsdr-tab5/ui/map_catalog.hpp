@@ -8,6 +8,8 @@
 namespace orcsdr::maps::catalog {
 enum class Error {none,limit,signature,json,schema,revision,clock,expired,future,
                   rollback,manifest,identity,url,allocation};
+// Signed catalogs may list up to this many packs (all 50 US states plus extras).
+constexpr size_t kMaximumPacks=64;
 struct Policy {
   uint64_t accepted_revision=0,utc_now=0;
   std::string_view accepted_sha256;

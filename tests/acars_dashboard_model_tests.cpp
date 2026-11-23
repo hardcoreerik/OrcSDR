@@ -92,7 +92,7 @@ void test_empty_defaults() {
   CHECK(!s.caps.live_reception && !s.caps.archive && !s.caps.signal_measurements);
   CHECK(s.tune == TuneStatus::unavailable && s.tuned_hz == 0);
   CHECK(!s.archive_available && s.archive_count == 0);
-  CHECK(s.channel_count == 6 && s.channels[0].selected && !s.channels[0].receiving);
+  CHECK(s.channel_count == 7 && s.channels[0].selected && !s.channels[0].receiving);
   for (size_t i = 0; i < s.channel_count; ++i) CHECK(!s.channels[i].activity_measured && !s.channels[i].receiving);
   CHECK(s.requested_hz == 131550000u);
 }
@@ -720,7 +720,7 @@ void test_channels_view_interaction() {
   CHECK(tap_action(*ui, *m, layout::kChClear).kind == ActionKind::none);   // nothing to clear
   a = tap_action(*ui, *m, layout::kChRegion);
   CHECK(a.kind == ActionKind::tune_requested && m->snapshot().prefs.region == Region::europe && a.value == 131725000u);
-  CHECK(m->snapshot().channel_count == 4);
+  CHECK(m->snapshot().channel_count == 5);   // four analog presets plus VDL2
   // Row beyond the region's preset count is inert.
   CHECK(tap_action(*ui, *m, layout::ch_row(5)).kind == ActionKind::none);
   // The airband limits stop the nudge buttons.

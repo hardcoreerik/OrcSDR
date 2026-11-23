@@ -13,6 +13,21 @@ $patches = @(
   @{ File = 'esp-hosted-sdio-aligned-packet-buffers.patch'; Name = 'SDIO aligned packet buffers' }
 )
 
+# The patch set depends on the installed ESP-Hosted version. 3.1.0 fixes the detached-task handle upstream, so
+# that patch is dropped, and the two SDIO patches are re-based on the 3.1.0 source.
+$hostedManifest = Join-Path $appRoot 'managed_components\espressif__esp_hosted\idf_component.yml'
+$hostedVersion = ((Select-String -Path $hostedManifest -Pattern '^version:\s*(\S+)').Matches[0].Groups[1].Value)
+if ($hostedVersion -eq '3.1.0') {
+  $patches = @(
+    @{ File = 'esp-hosted-trampoline-null-delete.patch'; Name = 'trampoline null-delete' },
+    @{ File = 'esp-hosted-sdio-unresponsive-failure.patch'; Name = 'SDIO unresponsive failure event (#106)' },
+    @{ File = 'esp-hosted-3.1.0-sdio-credit-deadline.patch'; Name = 'SDIO credit elapsed-time deadline (3.1.0)' },
+    @{ File = 'esp-hosted-3.1.0-sdio-aligned-packet-buffers.patch'; Name = 'SDIO aligned packet buffers (3.1.0)' }
+  )
+} elseif ($hostedVersion -ne '3.0.6') {
+  throw "No local patch set for ESP-Hosted ${hostedVersion}."
+}
+
 foreach ($entry in $patches) {
   $patch = Join-Path $PSScriptRoot (Join-Path 'patches' $entry.File)
 

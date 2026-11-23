@@ -46,6 +46,24 @@ int main() {
   format_event_row(sw, row, sizeof(row));
   assert(std::string(row) == "#4 22:13:20 SWEEP STOP 17 hops");
 
+  // Overview strip scale: fits the valid samples (gaps ignored), never narrower than the minimum span, and the
+  // baseline and limit lines are inside it when they are drawn.
+  const int16_t samples[4] = {-352, kHistGap, -300, -331};
+  StripScale plain = strip_scale(samples, 4, false, 0.0f, 0.0f);
+  assert(plain.hi - plain.lo >= 20.0f - 0.001f);
+  assert(plain.lo < -35.2f && plain.hi > -30.0f);
+  StripScale with_lines = strip_scale(samples, 4, true, -40.0f, -32.0f);
+  assert(with_lines.lo <= -43.0f && with_lines.hi >= -27.0f);
+  StripScale wide = strip_scale(samples, 4, true, -90.0f, -10.0f);   // a wide range is kept, not squeezed
+  assert(wide.lo <= -93.0f && wide.hi >= -7.0f);
+  const int16_t only_gaps[2] = {kHistGap, kHistGap};
+  StripScale none = strip_scale(only_gaps, 2, false, 0.0f, 0.0f);
+  assert(none.lo == -100.0f && none.hi == 0.0f);                     // nothing measured: a harmless default range
+  assert(strip_y(plain.hi, plain, 100, 50) == 100 && strip_y(plain.lo, plain, 100, 50) == 149);
+  assert(strip_y(1000.0f, plain, 100, 50) == 100 && strip_y(-1000.0f, plain, 100, 50) == 149);  // clamped to the strip
+  assert(strip_y(-30.0f, plain, 100, 1) == 100);                     // degenerate height
+  assert(strip_scale(nullptr, 5, false, 0.0f, 0.0f).hi == 0.0f);   // no samples pointer: no crash
+
   // A short buffer is truncated, never overrun.
   char tiny[8];
   format_event_row(rf, tiny, sizeof(tiny));

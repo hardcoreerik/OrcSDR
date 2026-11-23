@@ -14,7 +14,8 @@ constexpr uint32_t magic = 0x4c44524f; // ORDL in little-endian bytes
 enum class Type : uint8_t {
   hello = 1, pair_request, pair_ack, heartbeat, tune_relative,
   tune_absolute, set_step, set_mode, set_gain, set_volume,
-  set_squelch, request_state, radio_state, error, set_dashboard, semantic_action
+  set_squelch, request_state, radio_state, error, set_dashboard, semantic_action,
+  ft8_decode_brief, ft8_decode_text // receiver-only schema-1 metadata
 };
 enum class Role : uint8_t { dial = 1, receiver = 2 };
 
@@ -60,7 +61,7 @@ inline uint32_t crc32(const uint8_t* data, size_t size) {
   return ~crc;
 }
 inline bool valid_type(uint8_t n) {
-  return n >= uint8_t(Type::hello) && n <= uint8_t(Type::semantic_action);
+  return n >= uint8_t(Type::hello) && n <= uint8_t(Type::ft8_decode_text);
 }
 inline bool newer_sequence(uint32_t candidate, uint32_t previous) {
   return previous == 0 || int32_t(candidate - previous) > 0;

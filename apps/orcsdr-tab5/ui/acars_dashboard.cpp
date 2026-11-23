@@ -17,6 +17,7 @@
 #include "acars_dashboard_layout.hpp"
 #include "acars_dirty_rects.hpp"
 #include "acars_demo_data.hpp"
+#include "acars_interpret.hpp"
 #include "dashboard_audio_control.hpp"
 #include "focus_nav.hpp"
 
@@ -424,7 +425,12 @@ void draw_live(const Snapshot& s) {
     fit(m.flight[0] ? m.flight : "--", 232, cy, 80, m.flight[0] ? TFT_WHITE : kMuted);
     fit(m.label[0] ? m.label : "--", 318, cy, 44, TFT_WHITE);
     text(m.frequency_hz ? f : "--", 366, cy, kMuted);
-    fit(m.has_text ? m.preview : "(no text)", 448, cy, 290, m.has_text ? TFT_WHITE : kMuted);
+    // Cyan is the interpreted summary, white is the raw text. Blocks whose text layout is not understood stay raw.
+    Interpretation interp;
+    if (!m.has_interpretation && interpret(m, interp) && (interp.decoded || !m.has_text) && interp.summary[0])
+      fit(interp.summary, 448, cy, 290, kCyan);
+    else
+      fit(m.has_text ? m.preview : "(no text)", 448, cy, 290, m.has_text ? TFT_WHITE : kMuted);
     integrity_cell(m, {row.x + row.w - 100, row.y, 100, row.h}, s.prefs.highlight_corrected);
   }
 
@@ -569,11 +575,18 @@ void draw_detail(const Snapshot& s) {
   card(in);
   Clip clip(in);
   text("APPLICATION INTERPRETATION", in.x + 16, in.y + 24, kCyan, f24);
-  if (m.has_interpretation)
+  Interpretation interp;
+  if (m.has_interpretation) {
     paragraph(m.interpretation, {in.x + 16, in.y + 46, in.w - 32, 90}, TFT_WHITE, 3);
-  else
-    paragraph("NOT SUPPLIED. No application parser is installed, so the text above is shown exactly as received.",
+  } else if (interpret(m, interp)) {
+    // Headline right-aligned on the title row, then up to four decoded lines.
+    fit(interp.headline, in.x + in.w - 16, in.y + 24, in.w - 400, interp.decoded ? kGreen : kAmber, f18, middle_right);
+    for (size_t i = 0; i < interp.line_count; ++i)
+      fit(interp.lines[i], in.x + 16, in.y + 58 + static_cast<int>(i) * 24, in.w - 32, TFT_WHITE);
+  } else {
+    paragraph("NOT SUPPLIED. This label or text layout is not understood yet, so the text above is shown exactly as received.",
               {in.x + 16, in.y + 46, in.w - 32, 90}, kMuted, 3);
+  }
 }
 
 // ---- AIRCRAFT
@@ -672,12 +685,12 @@ void draw_channels(const Snapshot& s) {
     Clip clip(row);
     G.fillRoundRect(row.x, row.y + 2, row.w, row.h - 4, 6, sel ? kSelected : kPanel);
     G.drawRoundRect(row.x, row.y + 2, row.w, row.h - 4, 6, sel ? kGreen : kBorder);
-    fit(c.label, row.x + 14, row.y + 20, 360, sel ? kGreen : TFT_WHITE, f24);
-    fit(preset(s.prefs.region, i).source, row.x + 14, row.y + 42, 560, kMuted);
-    if (sel) text("REQUESTED", row.x + row.w - 14, row.y + 20, kGreen, f18, middle_right);
+    fit(c.label, row.x + 14, row.y + 16, 360, sel ? kGreen : TFT_WHITE, f24);
+    fit(preset(s.prefs.region, i).source, row.x + 14, row.y + 36, 560, kMuted);
+    if (sel) text("REQUESTED", row.x + row.w - 14, row.y + 16, kGreen, f18, middle_right);
     if (c.decoded_messages) {
       std::snprintf(b, sizeof(b), "%u DECODED", static_cast<unsigned>(c.decoded_messages));
-      text(b, row.x + row.w - 14, row.y + 42, kCyan, f18, middle_right);
+      text(b, row.x + row.w - 14, row.y + 36, kCyan, f18, middle_right);
     }
   }
   button(layout::kChCustomLabel, "CUSTOM", s.custom_active, false);

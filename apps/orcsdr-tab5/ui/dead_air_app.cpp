@@ -17,12 +17,22 @@
 
 #include "dead_air_audio.hpp"
 #include "dead_air_clip.hpp"
+#include "dead_air_control.hpp"
 #include "dead_air_dashboard.hpp"
+#include "dead_air_env.hpp"
+#include "dead_air_env_m5.hpp"
+#include "dead_air_envhistory.hpp"
+#include "dead_air_envevents.hpp"
 #include "dead_air_journal.hpp"
 #include "dead_air_mic.hpp"
 #include "dead_air_model.hpp"
 #include "dead_air_sd_journal.hpp"
+#include "dead_air_stats.hpp"
 #include "dead_air_sweep.hpp"
+#include "dead_air_veil26.hpp"
+#include "dead_air_veil26_log.hpp"
+#include <esp_log.h>
+#include "memory_reclaim.hpp"
 #include "orcsdr_storage.hpp"
 #include "screen_controller.hpp"
 
@@ -34,7 +44,12 @@ constexpr uint32_t kObserveIntervalMs = 50;     // detector cadence: persistence
 constexpr uint32_t kSettleMs = 800;             // after a retune/gain/rate change or receiver (re)start
 constexpr uint32_t kSnapshotIntervalMs = 250;   // slowest visible refresh when nothing else changed
 constexpr uint32_t kSpectrumFreshMs = 1000;
+constexpr uint32_t kHistoryMs = 500;            // one RF strip sample per 500 ms: kRfHistory of them is the last minute
+static_assert(kClipInfoSeqs >= kClipMaxTriggers, "ClipInfo must hold every event a clip can cover");
 constexpr uint32_t kWorkerStopWaitMs = 1500;
+constexpr const char* kVeilIntentions[] = {"DEAD AIR", "ARE YOU THERE", "LISTEN", "ANYONE", "OPEN CHANNEL", "NO QUESTION"};
+constexpr uint8_t kVeilIntentionCount = sizeof(kVeilIntentions) / sizeof(kVeilIntentions[0]);
+constexpr uint8_t kVeilCustom = 255;            // the intention was set over serial
 constexpr uint32_t kMaxClipsPerSession = 40;  // about 40 MB; keeps a busy session from filling the card
 constexpr uint64_t kRingMarginSamples = 8192;  // never trust PCM this close to being overwritten by the next DSP block
 // Full scale matches the receiver's IQ meter (rtl_signal_dbfs): a CU8 complex sample with both axes
@@ -96,6 +111,7 @@ struct ClipResult {
   char name[32]{};
   char sha[65]{};
   uint32_t samples = 0;
+  uint32_t pre_samples = 0;              // from the clip's start to its first trigger
   char demod[8]{};
   uint32_t frequency_hz = 0;
   bool speaker_on = false;
@@ -122,6 +138,23 @@ struct ClipChannel {
   const char* tag = "";                  // file name suffix
   std::atomic<uint32_t> saved{0}, failed{0};
   uint32_t refused_no_audio = 0, refused_busy = 0, refused_limit = 0;
+};
+
+// One event's trace (see ScrubView): index kTracePre - 1 is the sample taken when the event was logged.
+struct EventTrace {
+  uint32_t seq = 0;                       // 0 = unused
+  uint8_t post = 0;                       // samples collected after the event
+  int16_t rf[kTraceSamples]{};
+  int16_t audio[kTraceSamples]{};
+};
+
+// Journal lines other than events and clips (control result, session summary), posted by the UI task and written by the
+// SD worker, which alone owns the file.
+struct NoteQueue {
+  static constexpr uint32_t kSlots = 4;
+  char line[kSlots][320];
+  uint16_t length[kSlots]{};
+  std::atomic<uint32_t> head{0}, tail{0};
 };
 
 struct State {
@@ -156,8 +189,10 @@ struct State {
   uint8_t selected = 0;                   // clip chosen on the Review tab (index into recent)
   bool pinned = false;                    // the owner chose a clip; new clips do not move the selection
   char op_name[32]{};                     // clip the in-flight verify/load applies to
-  int16_t* replay_pcm = nullptr;          // PSRAM buffer the SD worker fills for a replay
+  int16_t* replay_pcm = nullptr;          // the mic ring's buffer, lent to the SD worker for a replay (never live together)
   uint32_t replay_cap = 0;                // samples
+  bool mic_resume = false;                // the mic was running when a replay took its buffer: start it again afterwards
+  uint32_t mic_resume_due_ms = 0;
   uint32_t replay_samples = 0;            // loaded
   uint8_t replay_state = 0;               // 0 idle, 1 loading, 2 playing, 3 not played
   const char* replay_note = "";
@@ -182,6 +217,49 @@ struct State {
   Sweep sweep;
   uint8_t sweep_preset = 0;
   uint16_t sweep_dwell_ms = 500;
+  int16_t hist[kRfHistory]{};             // the last minute of RF level for the Overview strip, oldest first
+  uint8_t hist_mark[kRfHistory]{};
+  uint8_t hist_count = 0;
+  uint32_t hist_ms = 0, hist_seq = 0, hist_total = 0;
+  // Context around each logged event for the scrub view: a level every kTraceStepMs, kept per event.
+  EventTrace traces[kEventCapacity];      // slot = event sequence % kEventCapacity, like the event ring
+  int16_t fine_rf[kTracePre]{}, fine_audio[kTracePre]{};  // the most recent samples, oldest first
+  uint8_t fine_count = 0;
+  uint32_t fine_ms = 0;
+  uint32_t scrub_seq = 0;                 // the event whose trace the open scrub view shows (0 = none)
+  ControlRun control;                     // false-alarm check: three detectors, one per sensitivity
+  bool control_was_running = false;
+  SessionStats stats;
+  env::EnvSensor env_sensor;              // ENV III on Port A (SHT30 + QMP6988); polled from tick() while the screen is open
+  bool env_bus = false;                   // the Port A bus could be started (not the same as a module being present)
+  EnvEventDetector env_events;            // temperature / humidity / pressure leaving their own baseline
+  EnvHistory env_history;                 // one-minute averages for the Environment charts (this State lives in PSRAM)
+  uint32_t env_chart_seq = 0, env_chart_ms = 0;  // the history revision the dashboard was last given, and when
+  uint32_t ring_retry_ms = 0;             // last attempt to allocate the receiver clip ring after open() could not
+  uint32_t env_last_at[3]{};              // sample time last fed to env_events, per channel (each sample is fed once)
+  bool env_seen[3]{};
+  BandMapView map;                        // the last sweep's measured level per channel
+  NoteQueue notes;                        // extra journal lines (control result, session summary) for the SD worker
+  bool chime_on = false;
+  bool chime_active = false;              // the tone is playing on the replay channel
+  uint32_t chime_start_ms = 0, chime_last_ms = 0;
+  int16_t* chime_pcm = nullptr;           // PSRAM, built the first time the chime is switched on
+  uint32_t chime_samples = 0;
+  // VEIL-26: optional symbolic analysis of the measured level (see dead_air_veil26.hpp). Off at every session start; while
+  // it is off nothing runs and nothing is written. UI-task fields first, then the worker-owned file.
+  veil26::Stream veil;
+  bool veil_on = false;
+  bool veil_cfg_pending = false;          // the config record could not be queued yet
+  runes::Alphabet veil_alphabet = runes::Alphabet::latin;
+  uint8_t veil_intent = 0;                // index into kVeilIntentions, or kVeilCustom
+  uint32_t veil_inspect_seq = 0;          // event the VEIL-26 overlay shows (0 = the live stream)
+  VeilFrameView veil_live;
+  VeilFrameView veil_events[kEventCapacity];  // slot = event sequence % kEventCapacity, like the event ring
+  veil26::RecordQueue veil_queue;         // UI task -> SD worker, bounded; a full queue drops and counts
+  std::atomic<uint32_t> veil_written{0}, veil_write_failures{0};
+  std::atomic<bool> veil_logging{false};  // the interpretation file is open
+  storage::File veil_file;                // worker only
+  bool veil_failed = false;               // worker only: the file could not be opened or written
 };
 
 Hooks g_hooks;
@@ -190,6 +268,7 @@ bool g_open = false;
 std::atomic<AudioRing*> g_ring{nullptr};
 std::atomic<PcmRing*> g_rx_ring{nullptr};   // DSP thread writes the receiver audio here
 std::atomic<bool> g_replaying{false};        // a clip is playing through the speaker
+std::atomic<uint32_t> g_rx_writers{0};      // DSP-thread calls currently inside offer_audio's ring write
 std::atomic<PcmRing*> g_mic_ring{nullptr};  // the mic task writes room audio here
 std::atomic<bool> g_audio_wanted{false};
 uint8_t g_last_action = 0;     // diagnostic: last touch action kind seen by the app
@@ -296,6 +375,7 @@ void write_clip(State& s, ClipChannel& ch) {
   r.ok = true;
   r.truncated = job.truncated;
   r.samples = samples;
+  r.pre_samples = job.trigger_sample >= job.start ? static_cast<uint32_t>(job.trigger_sample - job.start) : 0u;
   std::memcpy(r.demod, t.demod, sizeof(r.demod));
   r.frequency_hz = t.frequency_hz;
   r.speaker_on = t.speaker_on;
@@ -414,8 +494,21 @@ void run_ticket(State& s, ClipChannel& ch) {
   else write_clip(s, ch);
 }
 
+// Writes the journal lines the UI task queued (control result, session summary).
+void service_notes(State& s) {
+  NoteQueue& q = s.notes;
+  for (;;) {
+    const uint32_t tail = q.tail.load(std::memory_order_relaxed);
+    if (tail == q.head.load(std::memory_order_acquire)) return;
+    const uint32_t slot = tail % NoteQueue::kSlots;
+    (void)journal_line(s, q.line[slot], q.length[slot]);
+    q.tail.store(tail + 1, std::memory_order_release);
+  }
+}
+
 // Runs whatever the UI task has handed over, for each source.
 void service_tickets(State& s) {
+  service_notes(s);
   for (ClipChannel* ch : {&s.rx, &s.mic}) {
     if (ch->mail.state.load(std::memory_order_acquire) != 1) continue;
     ch->mail.state.store(2, std::memory_order_relaxed);
@@ -438,8 +531,64 @@ void write_clip_summary(State& s) {
   }
 }
 
+// VEIL-26 interpretation records go to their own file, never to the measured-event journal. The worker opens it on the first
+// queued line, writes a few lines per pass (so storage traffic is bounded by the queue), and gives up on the file for the
+// session on the first failure; after that queued lines are discarded and counted, and live detection is untouched.
+struct VeilWriter final : veil26::LineWriter {
+  storage::File* file;
+  explicit VeilWriter(storage::File* f) : file(f) {}
+  bool append(const char* line, size_t length) override {
+    return file->write(reinterpret_cast<const uint8_t*>(line), length) == length;
+  }
+};
+
+void service_veil(State& s, size_t max_lines) {
+  if (!s.veil_queue.pending()) return;
+  if (s.veil_failed) {  // the file is gone for this session: drain so the UI keeps getting honest counters
+    char scratch[veil26::kLineBytes];
+    size_t n = 0;
+    for (size_t i = 0; i < max_lines && s.veil_queue.take(scratch, sizeof(scratch), &n); ++i)
+      s.veil_write_failures.fetch_add(1, std::memory_order_relaxed);
+    return;
+  }
+  if (!s.veil_file) {
+    storage::FileSystem& fs = storage::filesystem();
+    char path[72];
+    const int n = std::snprintf(path, sizeof(path), "/orcsdr/dead_air/veil26_%010lu.jsonl",
+                                static_cast<unsigned long>(s.worker.session.load(std::memory_order_acquire)));
+    if (n <= 0 || static_cast<size_t>(n) >= sizeof(path) || fs.exists(path) || !(s.veil_file = fs.open(path, FILE_APPEND))) {
+      s.veil_failed = true;
+      s.veil_logging.store(false, std::memory_order_relaxed);
+      return;
+    }
+    s.veil_logging.store(true, std::memory_order_relaxed);
+  }
+  VeilWriter writer(&s.veil_file);
+  bool failed = false;
+  const size_t written = veil26::drain(s.veil_queue, writer, max_lines, &failed);
+  s.veil_written.fetch_add(static_cast<uint32_t>(written), std::memory_order_relaxed);
+  if (failed || (written && !s.veil_file.sync())) {
+    s.veil_failed = true;
+    s.veil_logging.store(false, std::memory_order_relaxed);
+    s.veil_write_failures.fetch_add(1, std::memory_order_relaxed);
+  }
+}
+
+void finish_veil(State& s) {
+  service_veil(s, veil26::RecordQueue::kSlots);  // what the UI task queued just before the stop, summary included
+  if (s.veil_file) {
+    (void)s.veil_file.sync();
+    (void)s.veil_file.close();
+  }
+  s.veil_file = storage::File();
+  s.veil_logging.store(false, std::memory_order_relaxed);
+}
+
 // Dedicated, low-priority storage worker. It owns the SD sink and journal; the UI task only
 // pushes events into the lock-free queue and reads the health atomics.
+void release_audio_buffers(State& s);
+void mic_stop(State& s, const char* reason);
+
 void worker_main(void* arg) {
   State* s = static_cast<State*>(arg);
   Worker& w = s->worker;
@@ -461,6 +610,7 @@ void worker_main(void* arg) {
   while (open && !w.stop.load(std::memory_order_acquire)) {
     s->journal.drain(s->queue, s->sink, 8);
     service_tickets(*s);
+    service_veil(*s, 4);  // at most four interpretation lines per 100 ms pass
     w.saved.store(s->journal.saved(), std::memory_order_relaxed);
     w.missing.store(s->journal.missing(), std::memory_order_relaxed);
     w.dropped.store(s->queue.dropped(), std::memory_order_relaxed);
@@ -474,6 +624,7 @@ void worker_main(void* arg) {
   if (open) {
     service_tickets(*s);  // a ticket posted just before the stop
     write_clip_summary(*s);
+    finish_veil(*s);
     const bool clean = s->journal.finish(s->queue, s->sink);
     const bool closed = s->sink.close();
     w.saved.store(s->journal.saved(), std::memory_order_relaxed);
@@ -483,6 +634,8 @@ void worker_main(void* arg) {
   } else if (s->sink.opened()) {
     (void)s->sink.close();
   }
+  if (!open) finish_veil(*s);  // the journal failed or never opened: still close any interpretation file and count the rest
+  release_audio_buffers(*s);  // the screen is gone and this task was the last reader of the rings
   // The final state (stopped/failed) stays published for the dashboard.
   w.alive.store(false, std::memory_order_release);
   w.task = nullptr;
@@ -506,6 +659,17 @@ void log_sweep(State& s, Kind kind, uint32_t now) {
   s.model.mark_sweep(e);
 }
 
+// The band map keeps the strongest level measured on each channel while the receiver dwelt there.
+void record_map_level(State& s, uint32_t hz, float level_dbfs) {
+  BandMapView& m = s.map;
+  if (!m.count || !m.step_hz || hz < m.start_hz) return;
+  const uint32_t index = (hz - m.start_hz) / m.step_hz;
+  if (index >= m.count) return;
+  const int16_t tenths = static_cast<int16_t>(std::clamp<long>(std::lround(level_dbfs * 10.0f), -3000, 3000));
+  if (m.level[index] == kHistGap) { m.level[index] = tenths; ++m.visited; }
+  else m.level[index] = std::max(m.level[index], tenths);
+}
+
 void stop_sweep(State& s, uint32_t now) {
   if (!s.sweep.running()) return;
   s.sweep.stop();
@@ -518,10 +682,17 @@ void stop_sweep(State& s, uint32_t now) {
 }
 
 bool start_sweep(State& s, uint32_t now) {
-  if (s.sweep.running() || !g_hooks.receiver_ready()) return false;
+  if (s.sweep.running() || s.control.running() || !g_hooks.receiver_ready()) return false;
   SweepConfig c = sweep_preset(s.sweep_preset).config;
   c.dwell_ms = s.sweep_dwell_ms;
   if (!s.sweep.start(c, g_hooks.frequency_hz(), now)) return false;
+  // A fresh band map: every channel of this sweep starts as "not measured".
+  s.map = BandMapView{};
+  s.map.start_hz = c.start_hz;
+  s.map.step_hz = c.step_hz;
+  s.map.count = static_cast<uint16_t>(std::min<uint32_t>(kBandMapChannels, (c.end_hz - c.start_hz) / c.step_hz + 1u));
+  for (size_t i = 0; i < kBandMapChannels; ++i) s.map.level[i] = kHistGap;
+  s.stats.on_sweep_start();
   log_sweep(s, Kind::sweep_start, now);
   return true;
 }
@@ -558,10 +729,47 @@ void ring_write(PcmRing& r, const int16_t* pcm, size_t count) {
   r.written.store(w, std::memory_order_release);
 }
 
+// PSRAM for the clip rings, the replay buffer and the chime. Other screens keep large buffers after the user leaves them
+// (the LoRa receiver holds 15.8 MB once opened), so a failed allocation asks the registered holders to give back what they
+// are not using and tries again (memory_reclaim::alloc_psram). Nothing the user has to do.
+void* psram_alloc(size_t bytes) {
+  size_t reclaimed = 0;
+  void* p = memory_reclaim::alloc_psram(bytes, &reclaimed);
+  if (!p || reclaimed)  // the serial log says what was asked, what other screens gave back, and what is left
+    ESP_LOGW("dead_air", "PSRAM request %u B %s; holders released %u B; PSRAM free %u B, largest block %u B",
+             static_cast<unsigned>(bytes), p ? "granted after reclaim" : "REFUSED", static_cast<unsigned>(reclaimed),
+             static_cast<unsigned>(heap_caps_get_free_size(MALLOC_CAP_SPIRAM)),
+             static_cast<unsigned>(heap_caps_get_largest_free_block(MALLOC_CAP_SPIRAM)));
+  return p;
+}
+
+// Gives back the audio buffers (clip rings, replay buffer, chime: about 3.5 MB when all are in use) once the screen has
+// been left and nothing can touch them. Called by the SD worker as its last act, which is also the last user of the rings;
+// close() has already cleared the callback pointers, stopped the mic and any replay or chime. The next open() allocates
+// them again.
+void release_audio_buffers(State& s) {
+  vTaskDelay(pdMS_TO_TICKS(50));  // an audio callback or speaker DMA that loaded a pointer just before close() finishes
+  if (g_open) return;             // the screen was reopened meanwhile: the buffers are in use again
+  // The DSP thread may be inside ring_write on the receiver ring; wait for it to leave (bounded). If it does not, keep the
+  // buffers: the next open() reuses them.
+  for (int i = 0; i < 50 && g_rx_writers.load(std::memory_order_acquire) != 0; ++i) vTaskDelay(pdMS_TO_TICKS(10));
+  if (g_rx_writers.load(std::memory_order_acquire) != 0 || g_open) return;
+  s.replay_pcm = nullptr;  // borrowed from the mic ring: freed with it
+  for (int16_t** p : {&s.rx.ring.pcm, &s.mic.ring.pcm, &s.chime_pcm}) {
+    int16_t* buffer = *p;
+    *p = nullptr;
+    if (buffer) heap_caps_free(buffer);
+  }
+  s.rx.ring.capacity = s.mic.ring.capacity = 0;
+  s.replay_cap = 0;
+  s.mic_resume = false;
+  s.chime_samples = 0;
+}
+
 bool alloc_ring(PcmRing& r) {
   if (r.pcm) return true;
   const uint32_t cap = kClipSampleRate / 1000u * kClipRingMs;
-  r.pcm = static_cast<int16_t*>(heap_caps_malloc(static_cast<size_t>(cap) * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  r.pcm = static_cast<int16_t*>(psram_alloc(static_cast<size_t>(cap) * sizeof(int16_t)));
   r.capacity = r.pcm ? cap : 0;
   return r.pcm != nullptr;
 }
@@ -586,11 +794,14 @@ void trigger_clip(State& s, ClipChannel& ch, const Event& e) {
   }
 }
 
+void veil_on_event(State& s, const Event& e);
+
 void on_event(void* context, const Event& e) {
   State* s = static_cast<State*>(context);
   enqueue_event(&s->queue, e);  // the journal first: this never depends on audio
   trigger_clip(*s, s->rx, e);
   trigger_clip(*s, s->mic, e);
+  veil_on_event(*s, e);         // after the measured record is queued; an interpretation never delays or replaces it
 }
 
 void remember_clip(State& s, const ClipChannel& ch, const ClipResult& r) {
@@ -609,6 +820,9 @@ void remember_clip(State& s, const ClipChannel& ch, const ClipResult& r) {
   c.frequency_hz = r.frequency_hz;
   c.speaker_on = r.speaker_on;
   c.mic = ch.mic;
+  c.seq_count = static_cast<uint8_t>(std::min<size_t>(r.seq_count, kClipInfoSeqs));
+  std::memcpy(c.event_seqs, r.seqs, c.seq_count * sizeof(uint32_t));
+  c.pre_ds = static_cast<uint16_t>(std::min<uint64_t>(65535, static_cast<uint64_t>(r.pre_samples) * 10u / kClipSampleRate));
   s.recent_count = static_cast<uint8_t>(std::min<size_t>(kClipInfoCount, s.recent_count + 1u));
   for (size_t i = kClipInfoCount - 1; i > 0; --i) s.verify_state[i] = s.verify_state[i - 1];
   s.verify_state[0] = 0;  // the newest clip has not been re-checked
@@ -645,7 +859,7 @@ void end_replay(State& s, bool completed) {
   if (g_hooks.replay_stop) g_hooks.replay_stop();
   g_replaying.store(false, std::memory_order_release);
   s.replay_state = 0;
-  if (s.mic.enabled) s.mic_restart_due_ms = (millis() + 300u) | 1u;  // playback leaves the shared I2S input returning a constant
+  if (s.mic_resume) s.mic_resume_due_ms = (millis() + 300u) | 1u;  // playback leaves the shared I2S input returning a constant
   s.log_pending = true;  // recorded once the worker is free
   s.log_completed = completed;
   const int i = find_recent(s, s.op_name);
@@ -656,11 +870,16 @@ void end_replay(State& s, bool completed) {
 void request_play(State& s) {
   if (!s.recent_count || s.replay_state == 1 || s.replay_state == 2 || !g_hooks.replay_begin) return;
   if (s.rx.mail.state.load(std::memory_order_acquire) != 0) { s.replay_state = 3; s.replay_note = "Busy writing; try again"; return; }
-  if (!s.replay_pcm) {
-    s.replay_cap = kClipSampleRate / 1000u * kClipRingMs;
-    s.replay_pcm = static_cast<int16_t*>(heap_caps_malloc(static_cast<size_t>(s.replay_cap) * sizeof(int16_t), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
-    if (!s.replay_pcm) { s.replay_cap = 0; s.replay_state = 3; s.replay_note = "No memory for replay"; return; }
+  if (s.mic.mail.state.load(std::memory_order_acquire) != 0) { s.replay_state = 3; s.replay_note = "Busy writing; try again"; return; }
+  // The replay borrows the mic ring's buffer: the mic cannot record while a clip plays anyway. A running mic is stopped for
+  // the replay and started again afterwards.
+  if (!alloc_ring(s.mic.ring)) { s.replay_state = 3; s.replay_note = "No memory for replay"; return; }
+  if (s.mic.enabled) {
+    mic_stop(s, "replay");
+    s.mic_resume = true;
   }
+  s.replay_pcm = s.mic.ring.pcm;
+  s.replay_cap = s.mic.ring.capacity;
   const uint8_t i = std::min<uint8_t>(s.selected, static_cast<uint8_t>(s.recent_count - 1));
   ClipTicket t{};
   t.verify = true;
@@ -757,6 +976,7 @@ void mic_sink(const int16_t* pcm, size_t count) {
 
 bool mic_start(State& s) {
   if (s.mic.enabled) return true;
+  if (s.replay_state == 1 || s.replay_state == 2) { s.mic_error = "playing a clip"; s.mic_state = 3; return false; }  // its buffer is lent out
   if (!alloc_ring(s.mic.ring)) { s.mic_error = "no memory"; s.mic_state = 3; return false; }
   s.mic.ring.written.store(0, std::memory_order_relaxed);
   s.mic.ring.run_start.store(0, std::memory_order_relaxed);
@@ -831,6 +1051,14 @@ bool start_worker() {
   g_state->journal = EventJournal();
   g_state->queue.~EventQueue();  // atomics are not assignable; no worker is alive, so rebuild in place
   new (&g_state->queue) EventQueue();
+  g_state->notes.head.store(0, std::memory_order_relaxed);  // no worker is alive: nothing is reading the notes
+  g_state->notes.tail.store(0, std::memory_order_relaxed);
+  g_state->veil_queue.reset();                              // likewise for the interpretation queue and its file
+  g_state->veil_written.store(0, std::memory_order_relaxed);
+  g_state->veil_write_failures.store(0, std::memory_order_relaxed);
+  g_state->veil_logging.store(false, std::memory_order_relaxed);
+  g_state->veil_file = storage::File();
+  g_state->veil_failed = false;
   w.alive.store(true, std::memory_order_release);
   set_state(w, RecorderState::starting);
   if (xTaskCreatePinnedToCoreWithCaps(worker_main, "dead_air_sd", 12288, g_state, 1, &w.task, 0,
@@ -840,6 +1068,286 @@ bool start_worker() {
     return false;
   }
   return true;
+}
+
+// ---- Journal notes, event traces, chime --------------------------------------------------------------------------------
+bool post_note(State& s, const char* line, int length) {
+  if (length <= 0 || length >= static_cast<int>(sizeof(s.notes.line[0]))) return false;
+  if (s.worker.state.load(std::memory_order_acquire) != static_cast<uint8_t>(RecorderState::active)) return false;
+  NoteQueue& q = s.notes;
+  const uint32_t head = q.head.load(std::memory_order_relaxed);
+  if (head - q.tail.load(std::memory_order_acquire) >= NoteQueue::kSlots) return false;  // the worker is behind: drop it
+  const uint32_t slot = head % NoteQueue::kSlots;
+  std::memcpy(q.line[slot], line, static_cast<size_t>(length));
+  q.length[slot] = static_cast<uint16_t>(length);
+  q.head.store(head + 1, std::memory_order_release);
+  return true;
+}
+
+void post_control_note(State& s) {
+  const ControlRun& c = s.control;
+  char rate[3][16];
+  for (int i = 0; i < 3; ++i) {
+    if (c.rate_available()) std::snprintf(rate[i], sizeof(rate[i]), "%.1f", static_cast<double>(c.per_hour(static_cast<Sensitivity>(i))));
+    else std::snprintf(rate[i], sizeof(rate[i]), "null");
+  }
+  char line[320];
+  const int n = std::snprintf(line, sizeof(line),
+      "{\"v\":1,\"type\":\"control_run\",\"complete\":%s,\"duration_s\":%lu,\"observed_s\":%lu,"
+      "\"false_alarms\":{\"quiet\":%lu,\"standard\":%lu,\"sensitive\":%lu},"
+      "\"per_hour\":{\"quiet\":%s,\"standard\":%s,\"sensitive\":%s},"
+      "\"note\":\"declared by the investigator as a setup with nothing to detect; RF only; live detection was paused\"}\n",
+      c.complete() ? "true" : "false", static_cast<unsigned long>(c.duration_ms() / 1000u),
+      static_cast<unsigned long>(c.observed_ms() / 1000u), static_cast<unsigned long>(c.count(Sensitivity::quiet)),
+      static_cast<unsigned long>(c.count(Sensitivity::standard)), static_cast<unsigned long>(c.count(Sensitivity::sensitive)),
+      rate[0], rate[1], rate[2]);
+  (void)post_note(s, line, n);
+}
+
+void post_session_note(State& s, uint32_t now) {
+  const SessionSummary m = s.stats.summary(now, s.rx.saved.load(std::memory_order_relaxed) + s.mic.saved.load(std::memory_order_relaxed));
+  char hi[16], lo[16];
+  if (m.have_level) {
+    std::snprintf(hi, sizeof(hi), "%.1f", static_cast<double>(m.level_max_dbfs));
+    std::snprintf(lo, sizeof(lo), "%.1f", static_cast<double>(m.level_min_dbfs));
+  } else {
+    std::snprintf(hi, sizeof(hi), "null");
+    std::snprintf(lo, sizeof(lo), "null");
+  }
+  char line[320];
+  const int n = std::snprintf(line, sizeof(line),
+      "{\"v\":1,\"type\":\"session_summary\",\"elapsed_s\":%lu,\"measured_s\":%lu,"
+      "\"events\":{\"rf\":%lu,\"audio\":%lu,\"marks\":%lu},\"level_max_dbfs\":%s,\"level_min_dbfs\":%s,"
+      "\"longest_quiet_s\":%lu,\"channels\":%u,\"sweeps\":%lu,\"clips\":%lu}\n",
+      static_cast<unsigned long>(m.elapsed_s), static_cast<unsigned long>(m.measured_s),
+      static_cast<unsigned long>(m.events_rf), static_cast<unsigned long>(m.events_audio), static_cast<unsigned long>(m.events_marks),
+      hi, lo, static_cast<unsigned long>(m.longest_quiet_s), static_cast<unsigned>(m.channels),
+      static_cast<unsigned long>(m.sweeps), static_cast<unsigned long>(m.clips));
+  (void)post_note(s, line, n);
+}
+
+// ---- VEIL-26 (UI task only) --------------------------------------------------------------------------------------------
+// Feeds the engine from the observations Dead Air already makes: no new acquisition, no new detector. A frame is made at
+// most once a second from a usable observation (valid, settled, a tuned frequency, a finite level) and once per RF or
+// audio event. Anything else is a gap: the stream is not advanced and the break is counted. The engine runs in a few
+// dozen integer operations per frame, off every DSP path.
+void veil_fill(VeilFrameView& v, const veil26::Frame& f, uint32_t hz, double level, uint32_t t_ms, uint32_t utc,
+               uint32_t event_seq, const char* source) {
+  v = VeilFrameView{};
+  v.valid = true;
+  v.frame = f.index;
+  v.monotonic_ms = t_ms;
+  v.unix_time = utc;
+  v.frequency_hz = hz;
+  v.event_sequence = event_seq;
+  v.level_dbfs = static_cast<float>(level);
+  v.freq_code = static_cast<int32_t>(std::clamp<int64_t>(f.codes.frequency, INT32_MIN, INT32_MAX));
+  v.level_code = static_cast<int32_t>(std::clamp<int64_t>(f.codes.level, INT32_MIN, INT32_MAX));
+  v.state_in = f.state_in;
+  v.state = f.state;
+  v.letter_number = f.letter_number;
+  v.letter = f.letter;
+  v.word_index = f.word_index;
+  std::snprintf(v.word, sizeof(v.word), "%s", f.word);
+  v.a1z26 = static_cast<uint16_t>(f.word_a1z26);
+  v.pythagorean = static_cast<uint16_t>(f.word_pythagorean);
+  std::snprintf(v.source, sizeof(v.source), "%s", source);
+}
+
+bool veil_post_config(State& s, uint32_t now) {
+  char line[veil26::kLineBytes];
+  const size_t n = veil26::format_config(s.veil.intention(), s.veil.seed(), g_hooks.utc_epoch ? g_hooks.utc_epoch() : 0, now, line, sizeof(line), s.veil_alphabet);
+  return n != 0 && s.veil_queue.post(line, n);
+}
+
+void veil_post_record(State& s, const veil26::Frame& f, veil26::Trigger trigger, uint32_t event_seq, const char* event_kind,
+                      uint32_t hz, double level, const char* source, uint32_t now, uint32_t utc) {
+  if (s.veil_cfg_pending) {  // a record is only useful after the config that explains it
+    if (!veil_post_config(s, now)) return;  // counted by the queue as dropped when it was full
+    s.veil_cfg_pending = false;
+  }
+  veil26::RecordInput in;
+  in.frame = f;
+  in.alphabet = s.veil_alphabet;
+  in.intention = s.veil.intention();
+  in.seed = s.veil.seed();
+  in.trigger = trigger;
+  in.event_sequence = event_seq;
+  in.event_kind = event_kind;
+  in.monotonic_ms = now;
+  in.unix_time = utc;
+  in.frequency_hz = hz;
+  in.level_dbfs = level;
+  in.level_source = source;
+  in.config_revision = s.config_revision;
+  char line[veil26::kLineBytes];
+  const size_t n = veil26::format_record(in, line, sizeof(line));
+  if (n) (void)s.veil_queue.post(line, n);
+}
+
+// Starts the stream again from an intention. Nothing carries over: frame counter, letters, live frame and the per-event
+// interpretations all restart, and a new config record names the intention for the file.
+void veil_restart(State& s, const char* intention) {
+  s.veil.restart(intention);
+  s.veil_live = VeilFrameView{};
+  for (VeilFrameView& v : s.veil_events) v = VeilFrameView{};
+  s.veil_cfg_pending = s.veil_on;
+}
+
+void veil_observe(State& s, const RfObservation& obs, uint32_t now) {
+  if (!s.veil_on) return;
+  if (s.veil_cfg_pending && veil_post_config(s, now)) s.veil_cfg_pending = false;
+  veil26::Observation o;
+  o.now_ms = now;
+  o.valid = obs.valid;
+  o.settled = obs.settled;
+  o.frequency_hz = obs.frequency_hz;
+  o.config_revision = obs.configuration_revision;
+  o.level_dbfs = static_cast<double>(obs.level_dbfs);
+  veil26::Frame f;
+  bool log_due = false;
+  if (s.veil.observe(o, &f, &log_due) != veil26::Stream::Result::frame) return;
+  veil_fill(s.veil_live, f, obs.frequency_hz, obs.level_dbfs, now, obs.unix_time, 0, "rf");
+  if (log_due) veil_post_record(s, f, veil26::Trigger::sample, 0, "", obs.frequency_hz, obs.level_dbfs, "rf", now, obs.unix_time);
+}
+
+// An RF rise or an audio burst has a tuned frequency and a measured dBFS level: exactly the pair the frequency-log
+// convention quantizes. Environment events and marks have no such pair, so they are not interpreted (and say so).
+void veil_on_event(State& s, const Event& e) {
+  if (!s.veil_on || (e.source != Source::rf && e.source != Source::audio)) return;
+  veil26::Frame f;
+  if (!s.veil.observe_event(e.frequency_hz, static_cast<double>(e.value), &f)) return;
+  const char* source = e.source == Source::rf ? "rf" : "audio";
+  veil_fill(s.veil_events[e.sequence % kEventCapacity], f, e.frequency_hz, e.value, e.monotonic_ms, e.unix_time, e.sequence, source);
+  s.veil_live = s.veil_events[e.sequence % kEventCapacity];
+  veil_post_record(s, f, veil26::Trigger::event, e.sequence, kind_name(e.kind), e.frequency_hz, e.value, source,
+                   e.monotonic_ms, e.unix_time);
+}
+
+veil26::Counters veil_counters(const State& s) {
+  veil26::Counters c;
+  c.frames = s.veil.frames();
+  c.gaps = s.veil.gaps();
+  c.skipped_invalid = s.veil.skipped();
+  c.records_posted = s.veil_queue.posted();
+  c.records_dropped = s.veil_queue.dropped();
+  c.records_written = s.veil_written.load(std::memory_order_relaxed);
+  c.write_failures = s.veil_write_failures.load(std::memory_order_relaxed);
+  return c;
+}
+
+void veil_post_summary(State& s) {
+  if (!s.veil_on) return;
+  char line[veil26::kLineBytes];
+  const size_t n = veil26::format_summary(veil_counters(s), line, sizeof(line));
+  if (n) (void)s.veil_queue.post(line, n);
+}
+
+// Every kTraceStepMs: one RF and one audio sample into the short ring, and into each trace still collecting its +10 s.
+void update_traces(State& s, uint32_t now) {
+  if (now - s.fine_ms < kTraceStepMs) return;
+  s.fine_ms = now;
+  const bool rf_ok = g_hooks.receiver_ready() && s.rx_settled && s.last_level_valid && std::isfinite(s.last_level);
+  const int16_t rf = rf_ok ? static_cast<int16_t>(std::clamp<long>(std::lround(s.last_level * 10.0f), -3000, 3000)) : kHistGap;
+  const bool au_ok = s.audio_flowing && std::isfinite(s.audio_rms);
+  const int16_t au = au_ok ? static_cast<int16_t>(std::clamp<long>(std::lround(s.audio_rms * 10.0f), -3000, 3000)) : kHistGap;
+  std::memmove(s.fine_rf, s.fine_rf + 1, (kTracePre - 1) * sizeof(s.fine_rf[0]));
+  std::memmove(s.fine_audio, s.fine_audio + 1, (kTracePre - 1) * sizeof(s.fine_audio[0]));
+  s.fine_rf[kTracePre - 1] = rf;
+  s.fine_audio[kTracePre - 1] = au;
+  for (EventTrace& t : s.traces) {
+    if (!t.seq || t.post >= kTraceSamples - kTracePre) continue;
+    t.rf[kTracePre + t.post] = rf;
+    t.audio[kTracePre + t.post] = au;
+    ++t.post;
+  }
+}
+
+// An event was logged: keep the 10 s of context before it (the +10 s after fills in as it happens).
+void capture_trace(State& s, const Event& e) {
+  EventTrace& t = s.traces[e.sequence % kEventCapacity];
+  t.seq = e.sequence;
+  t.post = 0;
+  for (size_t j = 0; j < kTraceSamples; ++j) t.rf[j] = t.audio[j] = kHistGap;
+  std::memcpy(t.rf, s.fine_rf, sizeof(s.fine_rf));
+  std::memcpy(t.audio, s.fine_audio, sizeof(s.fine_audio));
+}
+
+// A short two-note ping, built once in PSRAM.
+bool build_chime(State& s) {
+  if (s.chime_pcm) return true;
+  constexpr uint32_t kNote = 4800;  // 100 ms per note at 48 kHz
+  s.chime_pcm = static_cast<int16_t*>(psram_alloc(2u * kNote * sizeof(int16_t)));
+  if (!s.chime_pcm) return false;
+  s.chime_samples = 2u * kNote;
+  for (uint32_t i = 0; i < s.chime_samples; ++i) {
+    const float hz = i < kNote ? 880.0f : 1320.0f;
+    const float within = static_cast<float>(i % kNote) / static_cast<float>(kNote);
+    const float envelope = (1.0f - within) * std::min(1.0f, static_cast<float>(i % kNote) / 120.0f);  // quick attack, linear decay
+    s.chime_pcm[i] = static_cast<int16_t>(5500.0f * envelope * std::sin(6.2831853f * hz * static_cast<float>(i) / static_cast<float>(kClipSampleRate)));
+  }
+  return true;
+}
+
+void end_chime(State& s) {
+  if (!s.chime_active) return;
+  if (g_hooks.replay_stop) g_hooks.replay_stop();
+  g_replaying.store(false, std::memory_order_release);
+  s.chime_active = false;
+  if (s.mic.enabled) s.mic_restart_due_ms = (millis() + 300u) | 1u;  // playback leaves the shared I2S input stuck, as after a replay
+}
+
+// Plays the ping when the owner switched the chime on, the speaker is not muted, and nothing else is using the speaker.
+void play_chime(State& s, uint32_t now) {
+  if (!s.chime_on || s.chime_active || s.replay_state != 0 || !g_hooks.replay_begin || !s.chime_pcm) return;
+  if (!(g_hooks.sound_enabled && g_hooks.sound_enabled())) return;
+  if (s.chime_last_ms && now - s.chime_last_ms < 3000) return;  // one ping per few seconds, however busy the band is
+  s.chime_last_ms = now;
+  g_replaying.store(true, std::memory_order_release);  // the radio's audio and the mic stand down first
+  if (g_hooks.replay_begin(s.chime_pcm, s.chime_samples)) {
+    s.chime_active = true;
+    s.chime_start_ms = now;
+  } else {
+    g_replaying.store(false, std::memory_order_release);
+  }
+}
+
+// Overview RF strip: one sample every kHistoryMs, and a mark on the newest sample for each event logged since. A moment
+// with no settled, valid level is a gap, so the strip never draws a line across a retune, a sweep or a lost receiver.
+void update_history(State& s, uint32_t now) {
+  if (now - s.hist_ms >= kHistoryMs) {
+    s.hist_ms = now;
+    if (s.hist_count == kRfHistory) {
+      std::memmove(s.hist, s.hist + 1, (kRfHistory - 1) * sizeof(s.hist[0]));
+      std::memmove(s.hist_mark, s.hist_mark + 1, kRfHistory - 1);
+      --s.hist_count;
+    }
+    const bool valid = g_hooks.receiver_ready() && s.rx_settled && s.last_level_valid && std::isfinite(s.last_level);
+    const long tenths = valid ? std::lround(s.last_level * 10.0f) : 0;
+    s.hist[s.hist_count] = valid ? static_cast<int16_t>(std::clamp<long>(tenths, -3000, 3000)) : kHistGap;
+    s.hist_mark[s.hist_count] = static_cast<uint8_t>(HistMark::none);
+    ++s.hist_count;
+    ++s.hist_seq;
+  }
+  update_traces(s, now);
+  const uint32_t total = s.model.total();
+  if (total != s.hist_total) {
+    const size_t fresh = std::min<size_t>(total - s.hist_total, s.model.count());
+    for (size_t i = fresh; i-- > 0;) {  // oldest first, so the newest event's mark wins
+      const Event* e = s.model.newest(i);
+      if (!e) continue;
+      s.stats.on_event(*e);
+      if (e->source != Source::sweep) capture_trace(s, *e);
+      dead_air::fx_event(*e, now);  // the orb bursts for RF, audio and marks; sweep records are ignored there
+      if (e->kind == Kind::rf_rise || e->kind == Kind::audio_burst) play_chime(s, now);
+      HistMark mark = HistMark::none;
+      if (e->kind == Kind::rf_rise) mark = HistMark::rf_rise;
+      else if (e->kind == Kind::audio_burst) mark = HistMark::audio_burst;
+      else if (e->kind == Kind::manual_marker) mark = HistMark::manual;
+      if (mark != HistMark::none && s.hist_count) s.hist_mark[s.hist_count - 1] = static_cast<uint8_t>(mark);
+    }
+    s.hist_total = total;
+  }
 }
 
 void build_snapshot(uint32_t now) {
@@ -856,7 +1364,72 @@ void build_snapshot(uint32_t now) {
   n.unix_time = g_hooks.utc_epoch ? g_hooks.utc_epoch() : 0;
   n.session_elapsed_s = (now - s.opened_ms) / 1000u;
   n.recording = false;     // audio/IQ recording is not implemented
-  n.scanning = false;      // no sweep exists; one tuned channel
+  n.scanning = false;      // unused; sweep state is in `sweeping` below
+  std::memcpy(n.rf_history, s.hist, sizeof(n.rf_history));
+  std::memcpy(n.rf_history_event, s.hist_mark, sizeof(n.rf_history_event));
+  n.rf_history_count = s.hist_count;
+  n.rf_history_seq = s.hist_seq;
+  n.summary = s.stats.summary(now, s.rx.saved.load(std::memory_order_relaxed) + s.mic.saved.load(std::memory_order_relaxed));
+  n.chime_on = s.chime_on;
+  {
+    VeilView& v = n.veil;
+    v.alphabet = s.veil_alphabet;
+    v.enabled = s.veil_on;
+    v.logging = s.veil_logging.load(std::memory_order_relaxed);
+    std::snprintf(v.intention, sizeof(v.intention), "%s", s.veil.intention());
+    v.seed = s.veil.seed();
+    const veil26::Counters c = veil_counters(s);
+    v.frames = c.frames;
+    v.gaps = c.gaps;
+    v.skipped = c.skipped_invalid;
+    v.posted = c.records_posted;
+    v.dropped = c.records_dropped;
+    v.written = c.records_written;
+    v.write_failures = c.write_failures;
+    v.live = s.veil_live;
+    std::snprintf(v.letters, sizeof(v.letters), "%s", s.veil.letters());
+    v.seq_a1z26 = static_cast<uint16_t>(s.veil.sequence_a1z26());
+    v.seq_pythagorean = static_cast<uint16_t>(s.veil.sequence_pythagorean());
+    v.inspect_seq = s.veil_inspect_seq;
+    v.event = VeilFrameView{};
+    if (s.veil_inspect_seq) {
+      const VeilFrameView& e = s.veil_events[s.veil_inspect_seq % kEventCapacity];
+      if (e.valid && e.event_sequence == s.veil_inspect_seq) v.event = e;  // else: that event was not analysed
+    }
+    std::snprintf(v.dictionary, sizeof(v.dictionary), "%s", veil26::kDictionaryId);
+  }
+  n.map = s.map;
+  ControlView& cv = n.control;
+  cv = ControlView{};
+  cv.state = s.control.running() ? 1 : s.control.has_result() ? (s.control.complete() ? 2 : 3) : 0;
+  cv.duration_s = s.control.duration_ms() / 1000u;
+  cv.elapsed_s = s.control.elapsed_ms(now) / 1000u;
+  cv.observed_s = s.control.observed_ms() / 1000u;
+  cv.rate_ok = s.control.rate_available();
+  for (int i = 0; i < 3; ++i) {
+    cv.count[i] = s.control.count(static_cast<Sensitivity>(i));
+    cv.per_hour[i] = s.control.per_hour(static_cast<Sensitivity>(i));
+  }
+  ScrubView& sv = n.scrub;
+  sv = ScrubView{};
+  if (s.scrub_seq && dead_air::overlay() == Overlay::scrub) {
+    sv.seq = s.scrub_seq;
+    const EventTrace& t = s.traces[s.scrub_seq % kEventCapacity];
+    if (t.seq == s.scrub_seq) {
+      sv.found = true;
+      sv.post_filled = t.post;
+      std::memcpy(sv.rf, t.rf, sizeof(sv.rf));
+      std::memcpy(sv.audio, t.audio, sizeof(sv.audio));
+      // While this event's clip plays, say where in the event it is. The clip is anchored to its first event only.
+      if (s.replay_state == 2) {
+        const int i = find_recent(s, s.op_name);
+        if (i >= 0 && s.recent[i].seq_count > 0 && s.recent[i].event_seqs[0] == s.scrub_seq) {
+          sv.cursor_valid = true;
+          sv.cursor_ms = static_cast<int32_t>(now - s.replay_started_ms) - static_cast<int32_t>(s.recent[i].pre_ds) * 100;
+        }
+      }
+    }
+  }
   // Audio is only available while demodulated audio is actually flowing (speaker on, or the Audio tab open).
   n.audio_available = s.audio_flowing;
   n.audio_level_dbfs = {};
@@ -891,9 +1464,27 @@ void build_snapshot(uint32_t now) {
   n.audio_baseline_ready = s.audio_detector.baseline_ready();
   n.audio_baseline_dbfs = s.audio_detector.baseline();
   std::memcpy(n.audio_envelope, s.audio_env, sizeof(n.audio_envelope));
-  // ENV III is not connected: leave the optional sensor absent. Nothing is simulated.
-  n.environment_sensor_attached = false;
+  // ENV III: a channel has a value only after a checked reading (CRC / chip id / plausible range); nothing is simulated.
+  // Present without a reading yet shows as warming up, and a reading older than the dashboard's limit shows as stale.
+  n.environment_sensor_attached = s.env_sensor.sht_present() || s.env_sensor.qmp_present();
   n.temperature_c = n.humidity_rh = n.pressure_hpa = n.motion_g = {};
+  n.env_history = &s.env_history;
+  // Chart-only changes (a minute average moving) are handed to the dashboard at most every 10 s: a one-minute average
+  // gains nothing from faster redraws, and where the body canvas could not be allocated each one is a full repaint.
+  if (s.env_history.seq() != s.env_chart_seq && (s.env_chart_seq == 0 || now - s.env_chart_ms >= 10000u)) {
+    s.env_chart_seq = s.env_history.seq();
+    s.env_chart_ms = now;
+  }
+  n.env_history_seq = s.env_chart_seq;
+  {
+    float value = 0;
+    uint32_t at = 0;
+    n.temperature_c.present = n.humidity_rh.present = s.env_sensor.sht_present();
+    n.pressure_hpa.present = s.env_sensor.qmp_present();
+    if (s.env_sensor.temperature(&value, &at)) { n.temperature_c.valid = true; n.temperature_c.value = value; n.temperature_c.age_ms = now - at; }
+    if (s.env_sensor.humidity(&value, &at)) { n.humidity_rh.valid = true; n.humidity_rh.value = value; n.humidity_rh.age_ms = now - at; }
+    if (s.env_sensor.pressure(&value, &at)) { n.pressure_hpa.valid = true; n.pressure_hpa.value = value; n.pressure_hpa.age_ms = now - at; }
+  }
   Reading rf{};
   rf.present = ready;
   rf.valid = ready && n.receiver_settled && s.last_level_valid;
@@ -919,11 +1510,55 @@ void build_snapshot(uint32_t now) {
 }
 
 // Structural changes that need the page recomposed.
+// A sensor reading counts as changed when what is drawn changes: its state, going stale (reading_status's 10 s), or the
+// value at the one decimal the dashboard prints.
+bool reading_shown_differently(const Reading& a, const Reading& b) {
+  if (a.present != b.present || a.valid != b.valid || (a.age_ms > 10000) != (b.age_ms > 10000)) return true;
+  return a.valid && std::lround(a.value * 10.0f) != std::lround(b.value * 10.0f);
+}
+bool environment_moved(const Snapshot& a, const Snapshot& b) {
+  const Page page = dead_air::page();
+  if (page != Page::overview && page != Page::environment) return false;
+  return a.environment_sensor_attached != b.environment_sensor_attached ||
+         (page == Page::environment && a.env_history_seq != b.env_history_seq) ||
+         reading_shown_differently(a.temperature_c, b.temperature_c) ||
+         reading_shown_differently(a.humidity_rh, b.humidity_rh) ||
+         reading_shown_differently(a.pressure_hpa, b.pressure_hpa);
+}
+
 bool visibly_changed(const Snapshot& a, const Snapshot& b) {
-  return a.receiver_ready != b.receiver_ready || a.receiver_settled != b.receiver_settled ||
+  switch (dead_air::overlay()) {  // what an open overlay shows moves on its own clock
+    case Overlay::control:
+      if (a.control.elapsed_s != b.control.elapsed_s || a.control.observed_s != b.control.observed_s) return true;
+      break;
+    case Overlay::session:
+      if (a.summary.elapsed_s != b.summary.elapsed_s || a.summary.events_rf != b.summary.events_rf ||
+          a.summary.events_audio != b.summary.events_audio || a.summary.events_marks != b.summary.events_marks ||
+          a.summary.clips != b.summary.clips || a.summary.channels != b.summary.channels) return true;
+      break;
+    case Overlay::scrub:
+      if (a.scrub.found != b.scrub.found || a.scrub.post_filled != b.scrub.post_filled ||
+          a.scrub.cursor_valid != b.scrub.cursor_valid || a.scrub.cursor_ms / 100 != b.scrub.cursor_ms / 100) return true;
+      break;
+    case Overlay::veil:
+      if (a.veil.alphabet != b.veil.alphabet || a.veil.live.state != b.veil.live.state ||
+          a.veil.event.state != b.veil.event.state || a.veil.enabled != b.veil.enabled || a.veil.logging != b.veil.logging || a.veil.live.valid != b.veil.live.valid ||
+          a.veil.live.frame != b.veil.live.frame || a.veil.live.event_sequence != b.veil.live.event_sequence ||
+          a.veil.frames != b.veil.frames || a.veil.gaps != b.veil.gaps || a.veil.dropped != b.veil.dropped ||
+          a.veil.written != b.veil.written || a.veil.write_failures != b.veil.write_failures ||
+          a.veil.skipped / 20u != b.veil.skipped / 20u || a.veil.event.valid != b.veil.event.valid ||
+          a.veil.inspect_seq != b.veil.inspect_seq || a.veil.seed != b.veil.seed) return true;
+      break;
+    default: break;
+  }
+  return environment_moved(a, b) || a.chime_on != b.chime_on || a.map.visited != b.map.visited || a.map.count != b.map.count ||
+         a.control.state != b.control.state || a.control.count[0] != b.control.count[0] ||
+         a.control.count[1] != b.control.count[1] || a.control.count[2] != b.control.count[2] ||
+         a.receiver_ready != b.receiver_ready || a.receiver_settled != b.receiver_settled ||
          a.frequency_hz != b.frequency_hz || a.sound_enabled != b.sound_enabled ||
          a.battery_percent != b.battery_percent ||
          (a.session_elapsed_s != b.session_elapsed_s && dead_air::page() == Page::overview) ||
+         (a.rf_history_seq != b.rf_history_seq && dead_air::page() == Page::overview) ||
          a.recorder_state != b.recorder_state || a.recorder_saved != b.recorder_saved ||
          a.recorder_missing != b.recorder_missing || a.recorder_dropped != b.recorder_dropped ||
          a.recorder_session != b.recorder_session || a.rf_level_dbfs.valid != b.rf_level_dbfs.valid ||
@@ -950,8 +1585,17 @@ bool levels_moved(const Snapshot& a, const Snapshot& b) {
 void install(const Hooks& hooks) { g_hooks = hooks; }
 bool active() { return g_open && dead_air::active(); }
 
+bool ready_to_open() {
+  if (!ready_hooks() || !ensure_state()) return false;
+  State& s = *g_state;
+  // The previous session's worker frees the audio buffers as its last act: let it finish before they are allocated again.
+  const uint32_t begin = millis();
+  while (s.worker.alive.load(std::memory_order_acquire) && millis() - begin < kWorkerStopWaitMs) vTaskDelay(pdMS_TO_TICKS(10));
+  return !s.worker.alive.load(std::memory_order_acquire);
+}
+
 void open() {
-  if (!ready_hooks() || !ensure_state()) return;
+  if (!ready_to_open()) return;
   State& s = *g_state;
   const uint32_t now = millis();
   s.model.reset();
@@ -977,6 +1621,8 @@ void open() {
   s.rx.refused_no_audio = s.rx.refused_busy = s.rx.refused_limit = 0;
   // The microphone starts every session OFF; only an explicit tap turns it on.
   s.mic.enabled = false;
+  s.mic_resume = false;  // a replay from the last session must not switch the mic on in this one
+  s.mic_resume_due_ms = 0;
   s.mic.saved.store(0, std::memory_order_relaxed);
   s.mic.failed.store(0, std::memory_order_relaxed);
   s.mic.refused_no_audio = s.mic.refused_busy = s.mic.refused_limit = 0;
@@ -1000,6 +1646,35 @@ void open() {
   s.audio_flowing = false;
   s.last_audio_ms = 0;
   s.last_level_refresh_ms = 0;
+  std::memset(s.hist, 0, sizeof(s.hist));
+  std::memset(s.hist_mark, 0, sizeof(s.hist_mark));
+  s.hist_count = 0;
+  s.hist_ms = s.hist_seq = s.hist_total = 0;
+  for (EventTrace& t : s.traces) t.seq = 0;
+  for (size_t i = 0; i < kTracePre; ++i) s.fine_rf[i] = s.fine_audio[i] = kHistGap;
+  s.fine_ms = 0;
+  s.scrub_seq = 0;
+  s.control.reset();
+  s.control_was_running = false;
+  s.stats.reset(now);
+  env::Bus* port_a = env::port_a_bus();
+  s.env_bus = port_a != nullptr;
+  s.env_sensor.begin(port_a);  // forgets any earlier readings; the module is probed again every time the screen opens
+  s.env_events.reset();
+  s.env_history.reset(now);
+  s.env_chart_seq = 0;
+  s.env_chart_ms = 0;
+  for (int c = 0; c < 3; ++c) { s.env_last_at[c] = 0; s.env_seen[c] = false; }
+  s.map = BandMapView{};
+  s.chime_on = false;  // the chime is off at every session start; only a tap turns it on
+  s.chime_active = false;
+  s.chime_last_ms = 0;
+  s.veil_on = false;   // VEIL-26 is opt-in and off at every session start, like the chime and the microphone
+  s.veil_alphabet = runes::Alphabet::latin;
+  s.veil_intent = 0;
+  s.veil_inspect_seq = 0;
+  s.veil_cfg_pending = false;
+  veil_restart(s, kVeilIntentions[0]);
   (void)start_worker();
   if (g_hooks.set_demod) g_hooks.set_demod(0);  // NFM, the browse band's own demodulator
   build_snapshot(now);
@@ -1027,16 +1702,58 @@ void close() {
   mic_stop(*g_state, "session_closed");            // the microphone never outlives the screen
   g_audio_wanted.store(false, std::memory_order_relaxed);
   stop_sweep(*g_state, millis());  // logs the stop and puts the receiver back before the journal closes
+  end_chime(*g_state);
+  if (g_state->control.running()) {  // a run cut short by leaving still records what it measured
+    g_state->control.stop(millis());
+    g_state->control_was_running = false;
+    post_control_note(*g_state);
+  }
+  post_session_note(*g_state, millis());  // the worker writes it before it closes the file
+  veil_post_summary(*g_state);
   dead_air::leave();
   g_state->model.set_listener(nullptr, nullptr);
   if (g_hooks.release_demod) g_hooks.release_demod();
   g_state->worker.stop.store(true, std::memory_order_release);  // worker flushes, syncs and closes the file
 }
 
+// Each accepted sensor sample is fed to the environment detector once. A channel that has no reading (module unplugged,
+// dropped after repeated failures) is reset, so an unplug can never look like a departure from the baseline.
+void feed_env_events(State& s, uint32_t now) {
+  s.env_history.tick(now);  // a silent sensor must show as gaps, not as its last value
+  const EnvChannel channels[3] = {EnvChannel::temperature, EnvChannel::humidity, EnvChannel::pressure};
+  for (int c = 0; c < 3; ++c) {
+    float value = 0.0f;
+    uint32_t at = 0;
+    const bool have = c == 0   ? s.env_sensor.temperature(&value, &at)
+                      : c == 1 ? s.env_sensor.humidity(&value, &at)
+                               : s.env_sensor.pressure(&value, &at);
+    if (!have) {
+      s.env_events.reset(channels[c]);
+      s.env_seen[c] = false;
+      continue;
+    }
+    if (s.env_seen[c] && at == s.env_last_at[c]) continue;
+    s.env_seen[c] = true;
+    s.env_last_at[c] = at;
+    s.env_history.add(static_cast<size_t>(c), value, at);
+    EnvFinding f;
+    if (s.env_events.observe(channels[c], value, at, s.model.sensitivity(), &f))
+      (void)s.model.append_measured(env_event(f, now, g_hooks.utc_epoch ? g_hooks.utc_epoch() : 0, s.model.sensitivity()));
+  }
+}
+
 void tick() {
   if (!g_open || !g_state || !dead_air::active()) return;
   State& s = *g_state;
   const uint32_t now = millis();
+  s.env_sensor.service(now);  // a few short I2C transfers once a second; nothing in between
+  feed_env_events(s, now);
+  if (!s.rx.ring.pcm && now - s.ring_retry_ms >= 3000) {
+    // open() asked for the clip ring while another screen's buffers (or a retune still in flight) may have refused to
+    // release; once they can, clip capture starts without the owner doing anything.
+    s.ring_retry_ms = now;
+    if (alloc_ring(s.rx.ring)) s.rx.ring.capture.store(s.rx.enabled, std::memory_order_release);
+  }
   const bool ready = g_hooks.receiver_ready();
   const uint32_t signature = g_hooks.config_signature();
   s.rx_settled = ready && static_cast<int32_t>(now - s.settle_until_ms) >= 0;
@@ -1081,8 +1798,29 @@ void tick() {
     if (obs.valid) { s.last_level = level; s.last_level_valid = obs.settled; }
     else if (!fresh && ready) { /* between blocks: keep the last settled level */ }
     else s.last_level_valid = false;
-    s.model.observe_rf(obs);
+    if (s.control.running()) {
+      // A control run feeds the same sample to three detectors and pauses the live one, so its counts never mix with findings.
+      s.control.observe(obs);
+      RfObservation paused = obs;
+      paused.valid = false;
+      s.model.observe_rf(paused);
+    } else {
+      s.model.observe_rf(obs);
+    }
+    veil_observe(s, obs, now);  // after the detector has seen the sample; off unless the owner switched VEIL-26 on
+    s.stats.on_level(now, obs.valid && obs.settled, level);
+    if (ready) s.stats.on_frequency(g_hooks.frequency_hz());
+    if (s.sweep.running() && obs.valid && ready && g_hooks.frequency_hz() == s.sweep.current_hz() &&
+        static_cast<int32_t>(now - s.settle_until_ms) >= 0 && std::isfinite(level)) {
+      record_map_level(s, s.sweep.current_hz(), level);  // the level while the receiver dwells on this channel
+    }
   }
+  s.control.tick(now);
+  if (s.control_was_running && !s.control.running()) {  // the run just ended (time up or stopped): record the result
+    s.control_was_running = false;
+    post_control_note(s);
+  }
+  update_history(s, now);
   // Audio level buckets from the DSP thread: update the envelope and run the activity detector.
   bool audio_changed = false;
   float fresh_bars[8];
@@ -1114,7 +1852,7 @@ void tick() {
       audio_changed = true;
       AudioFinding f;
       // Not while a sweep is hopping: every hop is a different channel.
-      if (s.rx_settled && !s.sweep.running() &&
+      if (s.rx_settled && !s.sweep.running() && !s.control.running() &&
           s.audio_detector.observe(b, now, s.config_revision, s.model.sensitivity(), &f)) {
         Event e{};
         e.monotonic_ms = now;
@@ -1126,7 +1864,7 @@ void tick() {
         e.reference = f.baseline_dbfs;
         e.threshold = f.threshold_db;
         (void)s.model.append_measured(e);
-      } else if (!s.rx_settled || s.sweep.running()) {
+      } else if (!s.rx_settled || s.sweep.running() || s.control.running()) {
         s.audio_detector.reset();
       }
     }
@@ -1161,7 +1899,26 @@ void tick() {
       }
     }
   }
+  if (s.mic_resume && s.replay_state != 1 && s.replay_state != 2 && !g_replaying.load(std::memory_order_relaxed) &&
+      (!s.mic_resume_due_ms || static_cast<int32_t>(now - s.mic_resume_due_ms) >= 0)) {
+    s.mic_resume = false;
+    s.mic_resume_due_ms = 0;
+    (void)mic_start(s);
+  }
   if (s.replay_state == 2 && g_hooks.replay_playing && now - s.replay_started_ms > 300 && !g_hooks.replay_playing()) end_replay(s, true);
+  if (s.chime_active && now - s.chime_start_ms > 300 && g_hooks.replay_playing && !g_hooks.replay_playing()) end_chime(s);
+  {
+    // The orb: its idle glow follows how close the live level is to the event limit; events burst it (see update_history).
+    const bool live = ready && s.rx_settled && s.last_level_valid;
+    float proximity = 0.0f;
+    if (live && s.model.baseline_ready()) {
+      proximity = std::clamp((s.last_level - s.model.rf_baseline_dbfs()) / rf_rise_threshold_db(s.model.sensitivity()), 0.0f, 1.0f);
+    } else if (live) {
+      proximity = 0.1f;  // still learning the baseline
+    }
+    dead_air::fx_idle(live, proximity);
+    (void)dead_air::draw_fx(now);
+  }
   if (s.log_pending && s.rx.mail.state.load(std::memory_order_acquire) == 0) {
     ClipTicket t{};
     t.log_play = true;
@@ -1260,6 +2017,66 @@ void touch(int32_t x, int32_t y) {
         if (g_hooks.tune) g_hooks.tune(g_hooks.frequency_hz());  // restart the stream cleanly in the new mode
       }
       break;
+    case ActionKind::tune_to:
+      if (g_state->sweep.running()) break;
+      if (g_hooks.tune && g_hooks.receiver_ready() && action.value > 0) g_hooks.tune(static_cast<uint32_t>(action.value));
+      break;
+    case ActionKind::scrub_open: g_state->scrub_seq = static_cast<uint32_t>(action.value); break;
+    case ActionKind::scrub_close: g_state->scrub_seq = 0; break;
+    case ActionKind::play_event_clip: {
+      // The clip that covers the event (a radio clip is preferred to a microphone one): choose it, then play it as usual,
+      // which re-checks its hash first.
+      State& s = *g_state;
+      int pick = -1;
+      for (uint8_t i = 0; i < s.recent_count && pick < 0; ++i) {
+        for (uint8_t k = 0; k < s.recent[i].seq_count; ++k)
+          if (s.recent[i].event_seqs[k] == static_cast<uint32_t>(action.value) && !s.recent[i].mic) { pick = i; break; }
+      }
+      for (uint8_t i = 0; i < s.recent_count && pick < 0; ++i) {
+        for (uint8_t k = 0; k < s.recent[i].seq_count; ++k)
+          if (s.recent[i].event_seqs[k] == static_cast<uint32_t>(action.value)) { pick = i; break; }
+      }
+      if (pick >= 0) {
+        s.selected = static_cast<uint8_t>(pick);
+        s.pinned = pick != 0;
+        request_play(s);
+      }
+      break;
+    }
+    case ActionKind::control_start:
+      if (!g_state->control.running() && !g_state->sweep.running() && g_hooks.receiver_ready()) {
+        g_state->control.start(millis());
+        g_state->control_was_running = true;
+      }
+      break;
+    case ActionKind::control_stop: g_state->control.stop(millis()); break;  // tick() records the result
+    case ActionKind::veil_open: g_state->veil_inspect_seq = static_cast<uint32_t>(action.value); break;
+    case ActionKind::veil_close: g_state->veil_inspect_seq = 0; break;
+    case ActionKind::veil_toggle: {
+      State& s = *g_state;
+      if (s.veil_on) {
+        veil_post_summary(s);  // the file says how this stretch of analysis ended
+        s.veil_on = false;
+      } else {
+        s.veil_on = true;
+        veil_restart(s, s.veil.intention());
+      }
+      break;
+    }
+    case ActionKind::veil_alphabet:
+      runes::set_alphabet(g_state->veil_alphabet == runes::Alphabet::latin ? runes::Alphabet::elder : runes::Alphabet::latin,
+                          g_state->veil_alphabet, g_state->veil_on, g_state->veil_cfg_pending);
+      break;
+    case ActionKind::veil_intention: {
+      State& s = *g_state;
+      s.veil_intent = s.veil_intent == kVeilCustom ? 0 : static_cast<uint8_t>((s.veil_intent + 1) % kVeilIntentionCount);
+      veil_restart(s, kVeilIntentions[s.veil_intent]);
+      break;
+    }
+    case ActionKind::toggle_chime:
+      if (g_state->chime_on) { g_state->chime_on = false; end_chime(*g_state); }
+      else g_state->chime_on = build_chime(*g_state);
+      break;
     case ActionKind::tune_up:
     case ActionKind::tune_down:
       if (g_state->sweep.running()) break;
@@ -1267,14 +2084,16 @@ void touch(int32_t x, int32_t y) {
         g_hooks.tune(g_hooks.step_frequency(g_hooks.frequency_hz(), action.value > 0 ? 1 : -1));
       }
       break;
-    default: break;  // recording and clip actions are not implemented and have no buttons
+    default: break;  // start/stop recording, save clip and export have no buttons yet
   }
 }
 
 void offer_audio(const int16_t* pcm, size_t count) {
   AudioRing* r = g_ring.load(std::memory_order_acquire);
   if (!r || !pcm || count == 0) return;
+  g_rx_writers.fetch_add(1, std::memory_order_acq_rel);  // announced before the ring pointer is read: release_audio_buffers waits for 0
   if (PcmRing* ring = g_rx_ring.load(std::memory_order_acquire)) ring_write(*ring, pcm, count);
+  g_rx_writers.fetch_sub(1, std::memory_order_acq_rel);
   AudioBucket out[4];
   const size_t m = r->meter.feed(pcm, count, out, 4);
   for (size_t i = 0; i < m; ++i) {
@@ -1362,6 +2181,78 @@ void describe(char* out, size_t size) {
                 static_cast<unsigned long>(g_state->mic.refused_no_audio + g_state->mic.refused_busy + g_state->mic.refused_limit),
                 static_cast<unsigned long>(dead_air_mic::stats().blocks), static_cast<unsigned>(g_state->replay_state),
                 static_cast<unsigned>(g_state->selected), g_state->replay_note);
+}
+
+void describe_env(char* out, size_t size) {
+  if (!out || !size) return;
+  if (!g_state || !g_open) { std::snprintf(out, size, "DEAD_AIR_ENV open=0 (the sensor is only polled while Dead Air is open)"); return; }
+  const env::EnvSensor& e = g_state->env_sensor;
+  const uint32_t now = millis();
+  float t = 0, rh = 0, p = 0;
+  uint32_t t_at = 0, rh_at = 0, p_at = 0;
+  const bool have_t = e.temperature(&t, &t_at), have_rh = e.humidity(&rh, &rh_at), have_p = e.pressure(&p, &p_at);
+  const env::Counters& c = e.counters();
+  std::snprintf(out, size,
+                "DEAD_AIR_ENV open=1 bus=%d sht=%d qmp=%d temp_c=%.2f temp_age_ms=%ld rh=%.2f rh_age_ms=%ld hpa=%.2f hpa_age_ms=%ld "
+                "sht_ok=%lu sht_crc=%lu sht_bus=%lu qmp_ok=%lu qmp_bad=%lu qmp_bus=%lu attaches=%lu",
+                g_state->env_bus ? 1 : 0, e.sht_present() ? 1 : 0, e.qmp_present() ? 1 : 0,
+                have_t ? static_cast<double>(t) : -999.0, have_t ? static_cast<long>(now - t_at) : -1L,
+                have_rh ? static_cast<double>(rh) : -999.0, have_rh ? static_cast<long>(now - rh_at) : -1L,
+                have_p ? static_cast<double>(p) : -999.0, have_p ? static_cast<long>(now - p_at) : -1L,
+                static_cast<unsigned long>(c.sht_ok), static_cast<unsigned long>(c.sht_crc), static_cast<unsigned long>(c.sht_bus),
+                static_cast<unsigned long>(c.qmp_ok), static_cast<unsigned long>(c.qmp_bad), static_cast<unsigned long>(c.qmp_bus),
+                static_cast<unsigned long>(c.attaches));
+}
+
+void describe_veil(char* out, size_t size) {
+  if (!out || !size) return;
+  if (!g_state || !g_open) { std::snprintf(out, size, "DEAD_AIR_VEIL open=0 (VEIL-26 only runs while Dead Air is open)"); return; }
+  const State& s = *g_state;
+  const veil26::Counters c = veil_counters(s);
+  std::snprintf(out, size,
+                "DEAD_AIR_VEIL open=1 on=%d logging=%d dict=%s alphabet=%s intention=\"%s\" seed=%08lx frames=%lu gaps=%lu skipped=%lu "
+                "posted=%lu dropped=%lu written=%lu write_failures=%lu pending=%lu state=%08lx letters=\"%s\" "
+                "live_hz=%lu live_dbfs=%.1f live_word=%s",
+                s.veil_on ? 1 : 0, s.veil_logging.load(std::memory_order_relaxed) ? 1 : 0, veil26::kDictionaryId, runes::alphabet(s.veil_alphabet).id, s.veil.intention(),
+                static_cast<unsigned long>(s.veil.seed()), static_cast<unsigned long>(c.frames), static_cast<unsigned long>(c.gaps),
+                static_cast<unsigned long>(c.skipped_invalid), static_cast<unsigned long>(c.records_posted),
+                static_cast<unsigned long>(c.records_dropped), static_cast<unsigned long>(c.records_written),
+                static_cast<unsigned long>(c.write_failures), static_cast<unsigned long>(s.veil_queue.pending()),
+                static_cast<unsigned long>(s.veil.state()), s.veil.letters(),
+                static_cast<unsigned long>(s.veil_live.frequency_hz), static_cast<double>(s.veil_live.level_dbfs),
+                s.veil_live.valid ? s.veil_live.word : "-");
+}
+
+bool veil_command(const char* args, char* reply, size_t size) {
+  if (!reply || !size) return false;
+  reply[0] = '\0';
+  if (!args || !g_state || !g_open) { std::snprintf(reply, size, "RTL_DEAD_AIR_VEIL_ERROR not_open"); return false; }
+  State& s = *g_state;
+  if (std::strcmp(args, "ON") == 0) {
+    if (!s.veil_on) { s.veil_on = true; veil_restart(s, s.veil.intention()); }
+  } else if (std::strcmp(args, "OFF") == 0) {
+    if (s.veil_on) { veil_post_summary(s); s.veil_on = false; }
+  } else if (std::strncmp(args, "ALPHABET ", 9) == 0) {
+    runes::Alphabet alphabet;
+    if (!runes::parse(args + 9, &alphabet)) {
+      std::snprintf(reply, size, "RTL_DEAD_AIR_VEIL_ERROR use ALPHABET LATIN|ELDER");
+      return false;
+    }
+    runes::set_alphabet(alphabet, s.veil_alphabet, s.veil_on, s.veil_cfg_pending);
+  } else if (std::strncmp(args, "INTENT ", 7) == 0) {
+    char text[veil26::kMaxIntention + 1] = {};
+    size_t n = 0;
+    for (const char* p = args + 7; *p && n < veil26::kMaxIntention; ++p)
+      if (*p >= 0x20 && *p <= 0x7e) text[n++] = *p;  // printable ASCII only; the file and the screen stay plain text
+    if (n == 0) { std::snprintf(reply, size, "RTL_DEAD_AIR_VEIL_ERROR empty_intention"); return false; }
+    s.veil_intent = kVeilCustom;
+    veil_restart(s, text);
+  } else {
+    std::snprintf(reply, size, "RTL_DEAD_AIR_VEIL_ERROR use ON, OFF, INTENT <text> or ALPHABET LATIN|ELDER");
+    return false;
+  }
+  std::snprintf(reply, size, "RTL_DEAD_AIR_VEIL_OK on=%d alphabet=%s intention=\"%s\"", s.veil_on ? 1 : 0, runes::alphabet(s.veil_alphabet).id, s.veil.intention());
+  return true;
 }
 
 }  // namespace orcsdr::dead_air_app

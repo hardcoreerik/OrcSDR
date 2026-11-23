@@ -1,0 +1,71 @@
+name: AIS dual-channel IQ receiver
+on:
+  push:
+    branches:
+      - chatgpt/ais-dashboard-20261106
+      - "claude/ais-integration-*"
+    paths:
+      - "apps/orcsdr-tab5/ui/ais_receiver.*"
+      - "apps/orcsdr-tab5/ui/ais_receive_pipeline.*"
+      - "apps/orcsdr-tab5/ui/ais_binary_app.*"
+      - "apps/orcsdr-tab5/ui/ais_protocol.*"
+      - "apps/orcsdr-tab5/ui/ais_station_store.*"
+      - "tests/ais_receiver_tests.cpp"
+      - "tests/ais_receiver_bench.cpp"
+      - "tests/ais_receiver_stress.cpp"
+      - "apps/orcsdr-tab5/ui/ais_radio.*"
+      - "tools/ais_make_iq.py"
+      - "tools/ais_decode_cu8.cpp"
+      - "tools/ais_check_replay.py"
+      - ".github/workflows/ais-receiver-host-tests.yml"
+  pull_request:
+    paths:
+      - "apps/orcsdr-tab5/ui/ais_receiver.*"
+      - "apps/orcsdr-tab5/ui/ais_receive_pipeline.*"
+      - "tests/ais_receiver_tests.cpp"
+      - "tests/ais_receiver_stress.cpp"
+      - "apps/orcsdr-tab5/ui/ais_radio.*"
+      - "tools/ais_make_iq.py"
+      - "tools/ais_decode_cu8.cpp"
+      - "tools/ais_check_replay.py"
+  workflow_dispatch:
+jobs:
+  receiver:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Compile and run synthetic dual-channel IQ/HDLC/CRC/station pipeline tests (ASan+UBSan)
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O1 -g -Wall -Wextra -Wpedantic -Werror \
+            -fsanitize=address,undefined -fno-omit-frame-pointer \
+            -Iapps/orcsdr-tab5/ui \
+            apps/orcsdr-tab5/ui/ais_receiver.cpp \
+            apps/orcsdr-tab5/ui/ais_receive_pipeline.cpp \
+            apps/orcsdr-tab5/ui/ais_binary_app.cpp \
+            apps/orcsdr-tab5/ui/ais_protocol.cpp \
+            apps/orcsdr-tab5/ui/ais_station_store.cpp \
+            tests/ais_receiver_tests.cpp -o /tmp/ais-receiver-tests
+          /tmp/ais-receiver-tests
+      - name: Carrier offset, noise and timing floors with an independent burst model
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O2 -Wall -Wextra -Wpedantic -Werror             -Iapps/orcsdr-tab5/ui             apps/orcsdr-tab5/ui/ais_receiver.cpp             tests/ais_receiver_stress.cpp -o /tmp/ais-receiver-stress
+          /tmp/ais-receiver-stress 120
+      - name: Synthetic fleet IQ -> host decoder -> manifest (bytes, positions, static fields)
+        run: |
+          set -euo pipefail
+          python3 -m pip install --quiet numpy
+          python3 tools/ais_make_iq.py --out /tmp/ais_fleet.cu8
+          U=apps/orcsdr-tab5/ui
+          g++ -std=c++17 -O2 -Wall -Wextra -Werror -I$U tools/ais_decode_cu8.cpp $U/ais_radio.cpp             $U/ais_receiver.cpp $U/ais_receive_pipeline.cpp $U/ais_protocol.cpp $U/ais_binary_app.cpp             $U/ais_station_store.cpp $U/ais_snapshot_adapter.cpp -o /tmp/ais_decode_cu8
+          /tmp/ais_decode_cu8 /tmp/ais_fleet.cu8 > /tmp/ais_host_decode.txt
+          python3 tools/ais_check_replay.py /tmp/ais_fleet.cu8.json --host /tmp/ais_host_decode.txt
+      - name: Host-only no-signal processing microbenchmark (informational)
+        run: |
+          set -euo pipefail
+          g++ -std=c++17 -O3 -Wall -Wextra -Wpedantic -Werror \
+            -Iapps/orcsdr-tab5/ui \
+            apps/orcsdr-tab5/ui/ais_receiver.cpp \
+            tests/ais_receiver_bench.cpp -o /tmp/ais-receiver-bench
+          /tmp/ais-receiver-bench

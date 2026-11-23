@@ -1,6 +1,7 @@
 #pragma once
 #include <cstddef>
 #include <cstdint>
+#include "dead_air_runes.hpp"
 
 namespace orcsdr::dead_air {
 
@@ -50,8 +51,96 @@ struct ClipInfo {
   uint32_t frequency_hz = 0;
   bool speaker_on = false;      // the Tab5 speaker state when the clip was taken
   bool mic = false;             // room audio from the Tab5 microphones, not the receiver
+  uint32_t event_seqs[8]{};     // events this clip covers (the first is the one in its file name)
+  uint8_t seq_count = 0;
+  uint16_t pre_ds = 0;          // tenths of a second from the clip's start to its first trigger (the first event)
 };
 constexpr size_t kClipInfoCount = 4;
+constexpr size_t kClipInfoSeqs = 8;  // capacity of ClipInfo::event_seqs; the clip planner holds the same number
+
+// The last minute of the RF level for the Overview strip: one sample per 500 ms, oldest first.
+constexpr size_t kRfHistory = 120;
+constexpr int16_t kHistGap = INT16_MIN;  // no valid measurement at that moment (retune, sweep, receiver lost)
+enum class HistMark : uint8_t { none, rf_rise, audio_burst, manual };
+
+// Context kept around every logged event for the scrub view: a level every 250 ms, 10 s before the event to 10 s after.
+// Index kTracePre - 1 is the sample taken at the event (within one step); kHistGap marks a moment with no measurement.
+constexpr size_t kTraceSamples = 80;
+constexpr size_t kTracePre = 40;
+constexpr uint32_t kTraceStepMs = 250;
+struct ScrubView {
+  uint32_t seq = 0;            // the event being scrubbed (0 = none)
+  bool found = false;          // a trace was kept for it
+  uint8_t post_filled = 0;     // samples after the event collected so far (kTraceSamples - kTracePre when complete)
+  int16_t rf[kTraceSamples]{};     // tenths of a dBFS
+  int16_t audio[kTraceSamples]{};  // tenths of a dBFS
+  bool cursor_valid = false;   // a clip of this event is playing and is anchored to it
+  int32_t cursor_ms = 0;       // playback position relative to the event (negative = before)
+};
+
+// One sweep's measured level per channel (peak while the receiver dwelt there), for the band map.
+constexpr size_t kBandMapChannels = 256;
+struct BandMapView {
+  uint32_t start_hz = 0, step_hz = 0;
+  uint16_t count = 0;          // channels in the sweep (0 = no sweep has run)
+  uint16_t visited = 0;        // channels measured so far
+  int16_t level[kBandMapChannels]{};  // tenths of a dBFS; kHistGap = not measured
+};
+
+// Control run state for the control overlay.
+struct ControlView {
+  uint8_t state = 0;           // 0 never run, 1 running, 2 complete, 3 stopped early
+  uint32_t duration_s = 0, elapsed_s = 0, observed_s = 0;
+  uint32_t count[3]{};         // false alarms per sensitivity: quiet, standard, sensitive
+  bool rate_ok = false;        // enough measured time for a per-hour rate
+  float per_hour[3]{};
+};
+
+// Session facts for the session card.
+struct SessionSummary {
+  uint32_t elapsed_s = 0;
+  uint32_t events_rf = 0, events_audio = 0, events_marks = 0;
+  uint32_t measured_s = 0;     // time with a settled, valid level
+  bool have_level = false;
+  float level_max_dbfs = 0.0f, level_min_dbfs = 0.0f;
+  uint32_t longest_quiet_s = 0;  // longest stretch with no logged event
+  uint16_t channels = 0;       // distinct frequencies tuned
+  uint32_t sweeps = 0;
+  uint32_t clips = 0;
+};
+
+class EnvHistory;  // dead_air_envhistory.hpp: minute averages of temperature, humidity and pressure
+// VEIL-26 (see dead_air_veil26.hpp): symbolic output of a fixed recipe applied to measured numbers. Everything in a
+// VeilFrameView other than frequency_hz, level_dbfs and the timestamps is INTERPRETED, never measured.
+struct VeilFrameView {
+  bool valid = false;
+  uint32_t frame = 0, monotonic_ms = 0, unix_time = 0, frequency_hz = 0;
+  uint32_t event_sequence = 0;   // Dead Air event this frame interprets, 0 for a periodic frame
+  float level_dbfs = 0.0f;       // measured, relative dBFS
+  int32_t freq_code = 0, level_code = 0;
+  uint32_t state_in = 0, state = 0;
+  uint8_t letter_number = 0;
+  char letter = 0;
+  uint8_t word_index = 0;
+  char word[16] = "";
+  uint16_t a1z26 = 0, pythagorean = 0;  // gematria of the word
+  char source[6] = "rf";                // where the level came from: rf (receiver) or audio
+};
+struct VeilView {
+  runes::Alphabet alphabet = runes::Alphabet::latin;
+  bool enabled = false;
+  bool logging = false;          // the interpretation file is open on the SD card
+  char intention[25] = "";
+  uint32_t seed = 0;
+  uint32_t frames = 0, gaps = 0, skipped = 0;          // analysed frames, breaks, observations that could not be used
+  uint32_t posted = 0, dropped = 0, written = 0, write_failures = 0;  // interpretation records
+  VeilFrameView live;            // newest frame of the stream
+  char letters[33] = "";         // newest letters, '|' where a break fell
+  uint16_t seq_a1z26 = 0, seq_pythagorean = 0;
+  uint32_t inspect_seq = 0;      // event the overlay is inspecting (0 = none)
+  VeilFrameView event;           // that event's interpretation (valid = false when it was not analysed)
+  char dictionary[16] = "";      // dictionary id: "placeholder-0" until the canonical table is supplied
+};
 
 constexpr size_t kBins = 96;
 constexpr size_t kEventCapacity = 48;
@@ -73,6 +162,8 @@ struct Snapshot {
   Reading humidity_rh{};
   Reading pressure_hpa{};
   Reading motion_g{};        // device movement, not room movement
+  const EnvHistory* env_history = nullptr;  // owned by the app, read only on the UI task; null before the first session
+  uint32_t env_history_seq = 0;             // changes when a charted value does
   // Spectrum and waveform bins are accepted only when a real source supplies
   // them. No fabricated waterfall, FFT, or voice scores.
   float spectrum_dbfs[kBins]{};
@@ -93,7 +184,19 @@ struct Snapshot {
   float audio_peak_dbfs = -100.0f;
   float audio_baseline_dbfs = 0.0f;
   bool audio_baseline_ready = false;
-  // Event-linked clips of the receiver's demodulated audio. Microphone clips are not implemented.
+  // RF level history for the Overview strip. Tenths of a dBFS; kHistGap marks a moment with no valid measurement, and
+  // the strip never draws a line across one. rf_history_event holds a HistMark per sample.
+  int16_t rf_history[kRfHistory]{};
+  uint8_t rf_history_event[kRfHistory]{};
+  uint8_t rf_history_count = 0;
+  uint32_t rf_history_seq = 0;  // increments once per sample
+  ScrubView scrub;
+  BandMapView map;
+  ControlView control;
+  SessionSummary summary;
+  VeilView veil;
+  bool chime_on = false;        // a short tone is played when an event is logged
+  // Event-linked clips of the receiver's demodulated audio (microphone clips are listed beside them, flagged `mic`).
   bool clips_enabled = true;
   uint8_t clip_state = 0;       // 0 idle, 1 capturing, 2 writing
   uint32_t clips_saved = 0, clips_failed = 0, clips_refused = 0;

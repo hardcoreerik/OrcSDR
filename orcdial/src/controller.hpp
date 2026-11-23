@@ -11,7 +11,8 @@ enum class ActionKind : uint8_t {
   message, identity, wifi_ap, wifi_channel, setting, view, activate,
   span, filter,   // Home: zoom the spectrum, widen or narrow the receive filter (appended: values are on the wire)
   ft8_band, ft8_item, ft8_hunter,  // FT8 dashboard (appended after span/filter, so no existing value moves)
-  ft8_fine                         // FT8 dashboard: centre tap toggles rotation between band selection and fine (Hz) tuning
+  ft8_fine,                        // FT8 dashboard: centre tap toggles rotation between band selection and fine (Hz) tuning
+  sstv_save, sstv_abort, sstv_demod, sstv_gain_auto
 };
 struct Action { ActionKind kind = ActionKind::none; int32_t value = 0; };
 inline bool frequency_action(ActionKind kind) { return kind == ActionKind::tune; }

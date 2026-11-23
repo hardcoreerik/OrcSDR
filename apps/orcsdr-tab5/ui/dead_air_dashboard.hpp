@@ -7,8 +7,23 @@ namespace orcsdr::dead_air {
 enum class ActionKind : uint8_t {
   none, close, toggle_mute, open_settings, start_scan, stop_scan,
   start_recording, stop_recording, save_clip, export_session, play_clip,
-  tune_up, tune_down, set_demod, sweep_preset, sweep_dwell, toggle_clips, verify_clip, toggle_mic, select_clip, stop_replay
+  tune_up, tune_down, set_demod, sweep_preset, sweep_dwell, toggle_clips, verify_clip, toggle_mic, select_clip, stop_replay,
+  tune_to,          // value = frequency in Hz (a tap on the spectrum or on the band map)
+  scrub_open,       // value = event sequence whose trace the scrub view shows
+  scrub_close,
+  play_event_clip,  // value = event sequence: verify and play the clip that covers it
+  control_start,
+  control_stop,
+  toggle_chime,
+  veil_open,        // value = event sequence to inspect (0 = the live stream)
+  veil_close,
+  veil_toggle,      // analysis on / off
+  veil_alphabet,    // next display alphabet (never restarts analysis)
+  veil_intention    // next preset intention (restarts the stream)
 };
+
+// Full-body views opened from a button; the tab bar stays and a tab tap closes them.
+enum class Overlay : uint8_t { none, scrub, control, session, veil };
 // Real receiver demodulators only. Sweep patterns and generated audio are not demodulators.
 constexpr const char* kModeNames[] = {"NFM", "WFM", "AM", "USB", "LSB"};
 constexpr int kModeCount = 5;
@@ -51,6 +66,13 @@ struct AudioView {
 };
 bool draw_audio_frame(const AudioView& view, uint32_t now_ms);
 Page page();
+Overlay overlay();
+// The orb: a logged event bursts it (kind from the event, rise in dB above its baseline), and draw_fx() animates it on
+// the Overview and in the header of every tab. draw_fx() paints only while something changed on the orb and only on the
+// UI task; it returns true when it painted. `live`/`proximity` set the idle glow (see dead_air_fx.hpp).
+void fx_event(const Event& event, uint32_t now_ms);
+void fx_idle(bool live, float proximity);
+bool draw_fx(uint32_t now_ms);
 Action handle_touch(int32_t x, int32_t y, uint32_t now_ms);
 bool self_check();
 

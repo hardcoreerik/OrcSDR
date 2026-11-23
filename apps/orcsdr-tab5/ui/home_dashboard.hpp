@@ -14,6 +14,7 @@ struct Snapshot {
   uint32_t audio_revision = 0;
   uint32_t status_revision = 0;
   uint32_t frequency_hz = 0;
+  bool tuner_out_of_range = false;
   // What the attached dongle can tune; the keypad accepts exactly this range.
   uint32_t tune_min_hz = 24000000;
   uint32_t tune_max_hz = 1766000000;
@@ -36,6 +37,7 @@ struct Snapshot {
   // Receiver gain, all capability-gated by main.cpp. gain_auto means OrcSDR
   // SMART gain when gain_smart (FM/AM), otherwise the tuner's own AGC.
   bool gain_available = false;
+  bool gain_direct_sampling = false;
   bool gain_auto_available = false;
   bool gain_smart = false;
   bool gain_auto = false;
@@ -48,6 +50,9 @@ struct Snapshot {
   int16_t gain_steps_tenth_db[32]{};
   char wifi_ip[16]{};
   char receiver[12] = "RTL-SDR";
+  // Header state line for a network receiver ("LIVE", "BEHIND 62%", "CONNECTING"); empty means the USB
+  // receiver, which shows READY / NOT READY from driver_ready.
+  char link_state[12]{};
   char mode[12]{};
   // Mode popup: the pinned choice (0 = AUTO), the mode in use, the band's usual mode (all 0 AUTO, 1 NFM, 2 AM,
   // 3 WFM, 4 USB, 5 LSB), whether Home may pick the mode here, and the band's name.
