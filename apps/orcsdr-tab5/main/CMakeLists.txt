@@ -116,6 +116,7 @@ idf_component_register(
         "../ui/sd_transfer.cpp"
         "../ui/iq_transfer_engine.cpp"
         "../ui/display_bench.cpp"
+        "../ui/screen_blit.cpp"
         "../ui/serial_help.cpp"
         "../ui/serial_adsb.cpp"
         "../ui/serial_location.cpp"

@@ -78,8 +78,35 @@ void test_known_mapping() {
 
 }  // namespace
 
+// A counter-clockwise turn of a w x h picture, as the PPA does it, must land every pixel where to_panel() puts it.
+void test_ppa_angles() {
+  for (uint8_t rotation = 0; rotation < 8; ++rotation) {
+    const int degrees = ppa_ccw_degrees(rotation);
+    if (rotation != 1 && rotation != 3) {
+      CHECK(degrees == -1);
+      continue;
+    }
+    const Geometry g = geometry(rotation);
+    const int x0 = 9, y0 = 4, w = 37, h = 21;
+    const Rect r = panel_rect(g, x0, y0, w, h);
+    CHECK(r.w == h && r.h == w);
+    size_t wrong = 0;
+    for (int y = 0; y < h; ++y)
+      for (int x = 0; x < w; ++x) {
+        int px, py;
+        to_panel(g, x0 + x, y0 + y, &px, &py);
+        // CCW 90 in screen coordinates (y down): (x, y) -> (y, w - 1 - x); CCW 270: (x, y) -> (h - 1 - y, x)
+        const int bx = degrees == 90 ? y : h - 1 - y;
+        const int by = degrees == 90 ? w - 1 - x : x;
+        wrong += (px != r.x + bx) || (py != r.y + by);
+      }
+    CHECK(wrong == 0);
+  }
+}
+
 int main() {
   test_known_mapping();
+  test_ppa_angles();
   for (uint8_t rotation = 0; rotation < 8; ++rotation) {
     const Geometry g = geometry(rotation);
     for (bool swap : {false, true}) {
