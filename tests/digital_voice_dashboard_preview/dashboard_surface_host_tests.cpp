@@ -7,7 +7,14 @@
 #include <cassert>
 #include <cstdio>
 using namespace orcsdr::digital_voice_ui;
-namespace orcsdr::screens { bool g_owns=false; }
+// Test double for the real ScreenController ownership query: only the Digital
+// Voice id can be owned, and only while the test says the controller granted it.
+// Ownership enforcement in Surface stays live; the real controller pulls in the
+// whole app, so it is not linked into this host suite.
+namespace orcsdr::screens {
+bool g_owns=false;
+bool owns(Id id){ return id==Id::digital_voice && g_owns; }
+}
 namespace {int headers=0;void header(){++headers;}}
 int main(){
   lgfx::LovyanGFX display;
