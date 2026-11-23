@@ -1,0 +1,38 @@
+name: Support report host tests
+
+on:
+  pull_request:
+    paths:
+      - 'apps/orcsdr-tab5/ui/main.cpp'
+      - 'apps/orcsdr-tab5/ui/support_report.hpp'
+      - 'apps/orcsdr-tab5/ui/serial_support.*'
+      - 'apps/orcsdr-tab5/ui/serial_help.cpp'
+      - 'tests/serial_support_tests.cpp'
+      - 'tools/test_support_report.py'
+      - 'tools/test_support_report_device.py'
+      - '.github/workflows/support-report-tests.yml'
+  push:
+    branches: [main]
+    paths:
+      - 'apps/orcsdr-tab5/ui/main.cpp'
+      - 'apps/orcsdr-tab5/ui/support_report.hpp'
+      - 'apps/orcsdr-tab5/ui/serial_support.*'
+      - 'apps/orcsdr-tab5/ui/serial_help.cpp'
+      - 'tests/serial_support_tests.cpp'
+      - 'tools/test_support_report.py'
+      - 'tools/test_support_report_device.py'
+
+permissions:
+  contents: read
+
+jobs:
+  support-report:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Compile and test support report
+        run: |
+          python3 tools/test_support_report.py
+          python3 tools/test_support_report_device.py --self-check

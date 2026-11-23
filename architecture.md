@@ -36,7 +36,7 @@ Wi-Fi pause/resume orchestration; catalog operations; serial and authenticated
 device commands; SD/IQ/audio transfers; LAN console command dispatch;
 documentation capture; screen transitions; and top-level touch routing.
 
-main.cpp measurement (Git-normalized): 1,166,148 bytes (~1138.8 KiB), 24,480 lines.
+main.cpp measurement (Git-normalized): 1,025,206 bytes (~1001.2 KiB), 21,180 lines.
 
 The measurement uses LF-normalized repository bytes so it is stable across
 Windows and Linux checkouts. The intended modular endpoint—roughly 500 lines of

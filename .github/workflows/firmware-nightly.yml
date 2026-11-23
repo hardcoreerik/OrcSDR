@@ -4,6 +4,9 @@ name: Firmware nightly
 # publishes it to the rolling `nightly` prerelease (merged .bin, ELF, SHA256SUMS, build-info.json),
 # then tells theorc.dev (repository_dispatch; theorc-site also polls hourly). Never touches
 # release tags. Linux port of the Windows build: tools/ci/build-hosted-c6.sh, tools/ci/build-tab5.sh.
+# A failed schedule or workflow_dispatch run opens or updates one nightly-failure issue for
+# hardcoreerik. A later published nightly, or a deliberate skip because nothing changed, closes it.
+# A cancelled run does not open or close that issue.
 on:
   schedule:
     - cron: '23 10 * * *'   # 03:23 PDT / 02:23 PST
@@ -204,3 +207,43 @@ jobs:
           if [ "$code" != 204 ]; then
             echo "::warning::theorc-site dispatch failed (HTTP $code); its hourly sync will pick the build up. Token expired?"
           fi
+
+  # Runs only after gate, tests, build, and publish have finished or been skipped.
+  # always() is required: a failed or skipped needed job would otherwise skip this one,
+  # including the deliberate "nothing changed" skip (tests/build/publish skipped).
+  # !cancelled() is quoted so YAML does not treat it as a tag, and so a cancelled run
+  # never opens an issue. The script then tells the three outcomes apart:
+  #   failure  — any needed result other than success/skipped (timeout counts)
+  #   resolve  — all four succeeded, or gate succeeded with build=false and the rest skipped
+  #   leave    — a cancelled result, or any other shape, does not open or close the issue
+  # This job cannot publish firmware. Its token can edit issues and cannot write contents.
+  alert:
+    name: Update nightly-failure issue
+    needs: [gate, tests, build, publish]
+    if: "${{ always() && !cancelled() && (github.event_name == 'schedule' || github.event_name == 'workflow_dispatch') }}"
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    permissions:
+      actions: read
+      contents: read
+      issues: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+          fetch-depth: 1
+      - name: Open, update, or close the nightly-failure issue
+        env:
+          GH_TOKEN: ${{ github.token }}
+          ASSIGNEE: hardcoreerik
+          LABEL: nightly-failure
+          GATE_RESULT: ${{ needs.gate.result }}
+          TESTS_RESULT: ${{ needs.tests.result }}
+          BUILD_RESULT: ${{ needs.build.result }}
+          PUBLISH_RESULT: ${{ needs.publish.result }}
+          GATE_BUILD: ${{ needs.gate.outputs.build }}
+          NIGHTLY_SHA: ${{ needs.gate.outputs.sha || github.sha }}
+          NIGHTLY_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          NIGHTLY_EVENT: ${{ github.event_name }}
+          NIGHTLY_ATTEMPT: ${{ github.run_attempt }}
+        run: bash .github/scripts/nightly-failure-issue.sh

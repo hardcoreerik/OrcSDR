@@ -62,6 +62,15 @@ cannot authenticate an already-paired device. On an unpaired device, the tool
 creates the key file and enrolls it. Keep that file private and retain it for
 future access.
 
+## Forget the paired computer
+
+Serial tools sign in with the key of the first computer that paired. If that key
+file is lost, every other key gets `PAIR_LOCKED`. Open **Settings → System →
+FORGET COMPUTER** and tap it again (**TAP TO CONFIRM**) within the same visit;
+any other tap cancels. The stored key is erased, any open serial session ends,
+and every other setting stays. The next computer that pairs becomes the new one.
+The button is grey when no computer is paired.
+
 ## Companion web console
 
 Companion → ENABLE starts the TV Mission Control page at `http://<tab5-ip>/` and
