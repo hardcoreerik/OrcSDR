@@ -1,0 +1,17 @@
+-- Configuring done (0.0s)
+-- Generating done (0.3s)
+-- Build files have been written to: /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-San-live
+[ 58%] Built target dv_live
+[ 64%] Building CXX object CMakeFiles/dv_replay.dir/dv_replay.cpp.o
+[ 70%] Building CXX object CMakeFiles/dv_replay.dir/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/apps/orcsdr-tab5/ui/digital_voice_dashboard_model.cpp.o
+[ 94%] Built target dv_live_tests
+[100%] Linking CXX executable dv_replay
+[100%] Built target dv_replay
+Internal ctest changing into directory: /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-San-live
+Test project /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-San-live
+    Start 1: digital_voice_live
+1/1 Test #1: digital_voice_live ...............   Passed    2.46 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   2.49 sec

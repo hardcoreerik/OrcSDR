@@ -1,0 +1,15 @@
+-- Configuring done (0.0s)
+-- Generating done (0.2s)
+-- Build files have been written to: /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-San-discovery
+[ 50%] Built target radio_discovery_evidence_tests
+[100%] Built target radio_discovery_storage_tests
+Internal ctest changing into directory: /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-San-discovery
+Test project /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-San-discovery
+    Start 1: radio_discovery_evidence_tests
+1/2 Test #1: radio_discovery_evidence_tests ...   Passed    0.02 sec
+    Start 2: radio_discovery_storage_tests
+2/2 Test #2: radio_discovery_storage_tests ....   Passed    0.02 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =   0.06 sec

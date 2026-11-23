@@ -1,0 +1,111 @@
+Embedding ESP-Hosted 3.0.6 C6 image: F:\Ai\OrcSDR\.orcsdr-cache\hosted-c6\3.0.6-e1a4f5492ac4-orcdial-c64f6f800595\esp_hosted_tab5_c6.bin
+Activating ESP-IDF 5.5
+Setting IDF_PATH to 'C:\Espressif\frameworks\esp-idf-v5.5.4'.
+* Checking python version ... 3.14.3
+* Checking python dependencies ... OK
+* Deactivating the current ESP-IDF environment (if any) ... OK
+* Establishing a new ESP-IDF environment ... OK
+* Identifying shell ... pwsh.exe
+* Detecting outdated tools in system ... Found tools that are not used by active ESP-IDF version.
+For removing old versions of amazon-corretto-11-x64-windows-jdk, ccache, cmake, esp-clang, esp-clang-libs, esp-clangd, esp-rom-elfs, espressif-ide, espup, idf-driver, idf-python-wheels, ninja, openocd-esp32, python, riscv32-esp-elf, riscv32-esp-elf-gdb, 
+tool-riscv32-esp-elf-gdb, vs_build_tools, xtensa-esp-elf, xtensa-esp-elf-gdb use command 'python.exe C:\Espressif\frameworks\esp-idf-v5.5.4\tools\idf_tools.py uninstall'
+To free up even more space, remove installation packages of those tools.
+Use option python.exe C:\Espressif\frameworks\esp-idf-v5.5.4\tools\idf_tools.py uninstall --remove-archives.
+
+Done! You can now compile ESP-IDF projects.
+Go to the project directory and run:
+
+  idf.py build
+
+Executing action: reconfigure
+Running cmake in directory F:\Ai\OrcSDR\.claude\worktrees\dmr-digital-voice-review-dde01d\apps\orcsdr-tab5\build-native-hosted3
+Executing "cmake -G Ninja -DPYTHON_DEPS_CHECKED=1 -DPYTHON=C:\Espressif\python_env\idf5.5_py3.14_env\Scripts\python.exe -DESP_PLATFORM=1 -DSDKCONFIG=build-native-hosted3/sdkconfig -DORCSDR_WORLD_MAP= -DORCSDR_MAP_CATALOG_BASE_URL=https://github.com/hardcoreerik/OrcMaps/releases/download/maps-catalog-v1 -DORCSDR_MAP_CATALOG_PUBLIC_KEY_FILE=F:\Ai\OrcSDR\.claude\worktrees\dmr-digital-voice-review-dde01d\apps\orcsdr-tab5\tools\..\main\maps_production_public.pem -DSDKCONFIG_DEFAULTS=sdkconfig.defaults -DORCSDR_DSP_AB=0 -DORCSDR_DSP_STAGE_TIMING=1 -DORCSDR_DSP_LAB=0 -DORCSDR_C6_FAULT_TEST=0 -DORCSDR_WIFI_RX_DIAG=0 -DORCSDR_MAP_STARTUP_DIAG=0 -DC6_FIRMWARE_BIN=F:\Ai\OrcSDR\.orcsdr-cache\hosted-c6\3.0.6-e1a4f5492ac4-orcdial-c64f6f800595\esp_hosted_tab5_c6.bin -DCCACHE_ENABLE=1 F:\Ai\OrcSDR\.claude\worktrees\dmr-digital-voice-review-dde01d\apps\orcsdr-tab5"...
+-- IDF_TARGET is not set, guessed 'esp32p4' from sdkconfig 'F:/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/apps/orcsdr-tab5/build-native-hosted3/sdkconfig'
+-- Found Git: C:/Program Files/Git/cmd/git.exe (found version "2.56.0.windows.4")
+-- Minimal build - OFF
+-- ccache will be used for faster recompilation
+-- The C compiler identification is GNU 14.2.0
+-- The CXX compiler identification is GNU 14.2.0
+-- The ASM compiler identification is GNU
+-- Found assembler: C:/Espressif/tools/riscv32-esp-elf/esp-14.2.0_20260121/riscv32-esp-elf/bin/riscv32-esp-elf-gcc.exe
+-- Detecting C compiler ABI info
+-- Detecting C compiler ABI info - done
+-- Check for working C compiler: C:/Espressif/tools/riscv32-esp-elf/esp-14.2.0_20260121/riscv32-esp-elf/bin/riscv32-esp-elf-gcc.exe - skipped
+-- Detecting C compile features
+-- Detecting C compile features - done
+-- Detecting CXX compiler ABI info
+-- Detecting CXX compiler ABI info - done
+-- Check for working CXX compiler: C:/Espressif/tools/riscv32-esp-elf/esp-14.2.0_20260121/riscv32-esp-elf/bin/riscv32-esp-elf-g++.exe - skipped
+-- Detecting CXX compile features
+-- Detecting CXX compile features - done
+-- Building ESP-IDF components for target esp32p4
+NOTICE: Skipping optional dependency: espressif/usb
+
+NOTICE: Skipping optional dependency: espressif/esp_tinyusb
+
+NOTICE: Processing 12 dependencies:
+
+NOTICE: [1/12] esp_rtl_sdr (dabdda1aff6aa196f3c1523d791adf80d2c24ccc)
+
+NOTICE: [2/12] espressif/eppp_link (1.1.6)
+
+NOTICE: [3/12] espressif/esp-dsp (1.8.2)
+
+NOTICE: [4/12] espressif/esp_hosted (3.0.6)
+
+NOTICE: [5/12] espressif/esp_serial_slave_link (1.1.2)
+
+NOTICE: [6/12] espressif/esp_wifi_remote (1.6.4)
+
+NOTICE: [7/12] espressif/mdns (1.13.1)
+
+NOTICE: [8/12] espressif/wifi_remote_over_eppp (0.3.3)
+
+NOTICE: [9/12] m5stack/m5gfx (0.2.27)
+
+NOTICE: [10/12] m5stack/m5unified (0.2.20)
+
+NOTICE: [11/12] orcmaps (6a621a70ebbf7906b1d6c089bd61dbbc456475ed)
+
+NOTICE: [12/12] idf (5.5.4)
+
+CMake Error at C:/Espressif/frameworks/esp-idf-v5.5.4/tools/cmake/component.cmake:231 (message):
+  CMake Warning (dev) at build_properties.temp.cmake:8:
+
+    Syntax Warning in cmake code at column 106
+
+  
+
+    Argument not separated from preceding token by whitespace.
+
+  Call Stack (most recent call first):
+
+    C:/Espressif/frameworks/esp-idf-v5.5.4/tools/cmake/scripts/component_get_requirements.cmake:3 (include)
+
+  This warning is for project developers.  Use -Wno-dev to suppress it.
+
+
+
+  CMake Error at
+  F:/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/components/orcsdr_digital_voice_rx/CMakeLists.txt:2
+  (project):
+
+    project command is not scriptable
+
+  Call Stack (most recent call first):
+
+    C:/Espressif/frameworks/esp-idf-v5.5.4/tools/cmake/scripts/component_get_requirements.cmake:107 (include)
+    C:/Espressif/frameworks/esp-idf-v5.5.4/tools/cmake/scripts/component_get_requirements.cmake:160 (__component_get_requirements)
+
+  
+
+
+
+Call Stack (most recent call first):
+  C:/Espressif/frameworks/esp-idf-v5.5.4/tools/cmake/build.cmake:666 (__component_get_requirements)
+  C:/Espressif/frameworks/esp-idf-v5.5.4/tools/cmake/project.cmake:752 (idf_build_process)
+  CMakeLists.txt:46 (project)
+
+
+-- Configuring incomplete, errors occurred!
+cmake failed with exit code 1, output of the command is in the F:\Ai\OrcSDR\.claude\worktrees\dmr-digital-voice-review-dde01d\apps\orcsdr-tab5\build-native-hosted3\log\idf_py_stderr_output_58864 and F:\Ai\OrcSDR\.claude\worktrees\dmr-digital-voice-review-dde01d\apps\orcsdr-tab5\build-native-hosted3\log\idf_py_stdout_output_58864

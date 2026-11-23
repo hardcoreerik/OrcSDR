@@ -1,0 +1,28 @@
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD
+-- Performing Test CMAKE_HAVE_LIBC_PTHREAD - Success
+-- Found Threads: TRUE  
+-- Configuring done (0.9s)
+-- Generating done (0.4s)
+-- Build files have been written to: /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-Release-live
+[  5%] Building CXX object CMakeFiles/dv_live.dir/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/apps/orcsdr-tab5/ui/dv_channelizer.cpp.o
+[ 11%] Building CXX object CMakeFiles/dv_live.dir/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/apps/orcsdr-tab5/ui/dv_radio.cpp.o
+[ 17%] Building CXX object CMakeFiles/dv_live.dir/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/components/orcsdr_dmr/d1_frontend/src/frontend.cpp.o
+[ 23%] Building CXX object CMakeFiles/dv_live.dir/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/components/orcsdr_nxdn/src/frontend.cpp.o
+[ 29%] Linking CXX static library libdv_live.a
+[ 58%] Built target dv_live
+[ 64%] Building CXX object CMakeFiles/dv_replay.dir/dv_replay.cpp.o
+[ 70%] Building CXX object CMakeFiles/dv_replay.dir/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/apps/orcsdr-tab5/ui/digital_voice_dashboard_model.cpp.o
+[ 76%] Building CXX object CMakeFiles/dv_live_tests.dir/dv_live_tests.cpp.o
+[ 82%] Building CXX object CMakeFiles/dv_live_tests.dir/nxdn_synth.cpp.o
+[ 88%] Linking CXX executable dv_replay
+[ 88%] Built target dv_replay
+[ 94%] Linking CXX executable dv_live_tests
+[100%] Built target dv_live_tests
+Internal ctest changing into directory: /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-Release-live
+Test project /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-Release-live
+    Start 1: digital_voice_live
+1/1 Test #1: digital_voice_live ...............   Passed    0.19 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.21 sec

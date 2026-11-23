@@ -12,7 +12,9 @@ using DibitSink = void (*)(std::uint8_t, void*) noexcept;
 // Reset both this object and the decoder on every retune/discontinuity.
 class Frontend final {
 public:
-    explicit Frontend(Mode mode) noexcept;
+    // input_rate_hz: 48000 for both modes (validated default). NXDN48 may be fed a 24000 Hz stream (half the work; the
+    // symbol geometry then equals NXDN96 at 48 kHz). The caller supplies the decimated stream; nothing resamples here.
+    explicit Frontend(Mode mode, double input_rate_hz = 48000.0) noexcept;
     void reset() noexcept;
     [[nodiscard]] bool feed(const IQSample* iq, std::size_t count,
                             DibitSink sink, void* user = nullptr) noexcept;
@@ -21,6 +23,7 @@ public:
 private:
     void build_taps() noexcept;
     Mode mode_;
+    double fs_ = 48000.0;
     std::size_t sps_ = 10;
     std::size_t channel_n_ = 0;
     std::size_t rrc_n_ = 0;

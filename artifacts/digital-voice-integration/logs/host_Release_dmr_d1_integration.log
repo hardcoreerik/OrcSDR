@@ -1,0 +1,20 @@
+-- Configuring done (0.1s)
+-- Generating done (0.4s)
+-- Build files have been written to: /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-Release-dmr_d1_integration
+[ 11%] Building CXX object CMakeFiles/orcsdr_dmr_d1_integration.dir/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/components/orcsdr_dmr/d1_frontend/src/frontend.cpp.o
+[ 22%] Linking CXX static library liborcsdr_dmr_d1_integration.a
+[ 55%] Built target orcsdr_dmr_d1_integration
+[ 66%] Linking CXX executable dmr_d1_replay_bridge
+[ 77%] Linking CXX executable dmr_d1_integration_tests
+[ 88%] Built target dmr_d1_replay_bridge
+[100%] Built target dmr_d1_integration_tests
+Internal ctest changing into directory: /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-Release-dmr_d1_integration
+Test project /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-Release-dmr_d1_integration
+    Start 1: dmr_d1_integration_tests
+1/2 Test #1: dmr_d1_integration_tests .........   Passed    0.01 sec
+    Start 2: dmr_d1_replay_bridge_cli
+2/2 Test #2: dmr_d1_replay_bridge_cli .........   Passed    0.16 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =   0.20 sec

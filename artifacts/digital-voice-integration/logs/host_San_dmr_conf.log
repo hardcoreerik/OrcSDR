@@ -1,0 +1,26 @@
+-- Configuring done (0.1s)
+-- Generating done (0.3s)
+-- Build files have been written to: /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-San-dmr_conf
+[ 42%] Built target dmr_conformance_subject
+[ 71%] Built target dmr_protocol_conformance
+[100%] Built target dmr_false_sync_audit
+Internal ctest changing into directory: /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-San-dmr_conf
+Test project /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-San-dmr_conf
+    Start 1: dmr_conformance_golay
+1/7 Test #1: dmr_conformance_golay ............   Passed    0.03 sec
+    Start 2: dmr_conformance_cach_bptc
+2/7 Test #2: dmr_conformance_cach_bptc ........   Passed    0.01 sec
+    Start 3: dmr_conformance_integrity
+3/7 Test #3: dmr_conformance_integrity ........   Passed    0.02 sec
+    Start 4: dmr_conformance_stream
+4/7 Test #4: dmr_conformance_stream ...........   Passed    0.02 sec
+    Start 5: dmr_conformance_late_entry
+5/7 Test #5: dmr_conformance_late_entry .......   Passed    0.02 sec
+    Start 6: dmr_false_sync_adversarial
+6/7 Test #6: dmr_false_sync_adversarial .......   Passed    0.88 sec
+    Start 7: dmr_false_sync_geometry
+7/7 Test #7: dmr_false_sync_geometry ..........   Passed    0.37 sec
+
+100% tests passed, 0 tests failed out of 7
+
+Total Test time (real) =   1.39 sec

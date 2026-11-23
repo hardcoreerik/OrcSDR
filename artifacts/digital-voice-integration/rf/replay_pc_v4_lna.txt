@@ -1,0 +1,27 @@
+=== 152.1575 MHz (DMR-T3-ctrl)
+  t=  2.49s DMR ev=INTEGRITY VALIDATED ran=0 cc=13(v) slot=1(v) src=0 dst=0 grp=0 rf=0
+  t=  2.53s DMR ev=INTEGRITY VALIDATED ran=0 cc=13(v) slot=1(v) src=0 dst=0 grp=0 rf=0
+  t=  2.73s DMR ev=INTEGRITY VALIDATED ran=0 cc=13(v) slot=1(v) src=0 dst=0 grp=0 rf=0
+  t=  2.76s DMR ev=INTEGRITY VALIDATED ran=0 cc=13(v) slot=1(v) src=0 dst=0 grp=0 rf=0
+  t=  2.83s DMR ev=INTEGRITY VALIDATED ran=0 cc=13(v) slot=1(v) src=0 dst=0 grp=0 rf=0
+  t=  2.90s DMR ev=INTEGRITY VALIDATED ran=0 cc=13(v) slot=1(v) src=0 dst=0 grp=0 rf=0
+  t=  3.07s DMR ev=INTEGRITY VALIDATED ran=0 cc=13(v) slot=1(v) src=0 dst=0 grp=0 rf=0
+  t=  3.14s DMR ev=INTEGRITY VALIDATED ran=0 cc=13(v) slot=1(v) src=0 dst=0 grp=0 rf=0
+  t=  3.21s DMR ev=INTEGRITY VALIDATED ran=0 cc=13(v) slot=1(v) src=0 dst=0 grp=0 rf=0
+  t=  3.24s DMR ev=INTEGRITY VALIDATED ran=0 cc=13(v) slot=1(v) src=0 dst=0 grp=0 rf=0
+  t=  3.31s DMR ev=INTEGRITY VALIDATED ran=0 cc=13(v) slot=1(v) src=0 dst=0 grp=0 rf=0
+  t=  3.38s DMR ev=INTEGRITY VALIDATED ran=0 cc=13(v) slot=1(v) src=0 dst=0 grp=0 rf=0
+RTL_DV_STATUS link=receiving running=1 ch_hz=152157500 epoch=2 blocks=879 wrong_rate=0 settle_skipped=0 gaps=0 loss=0 tune=1/0 events=367 dropped=0 dmr_acq=1 dmr_ev=978 dmr_id=0 n48_frames=0 n48_ok=0 n96_frames=0 n96_ok=0 blk_us_max=0 blk_us_avg=0 level_milli=203 mask=7 state_bytes=34304 pairs=7200000 us_ch=0 us_dmr=0 us_n48=0 us_n96=0
+shown 367 events (first 40 printed)
+=== 454.225 MHz (NXDN-ctrl)
+RTL_DV_STATUS link=receiving running=1 ch_hz=454225000 epoch=2 blocks=879 wrong_rate=0 settle_skipped=0 gaps=0 loss=0 tune=1/0 events=0 dropped=0 dmr_acq=0 dmr_ev=0 dmr_id=0 n48_frames=334 n48_ok=0 n96_frames=0 n96_ok=0 blk_us_max=0 blk_us_avg=0 level_milli=627 mask=7 state_bytes=34304 pairs=7200000 us_ch=0 us_dmr=0 us_n48=0 us_n96=0
+shown 0 events (first 40 printed)
+=== 454.350 MHz (NXDN-ctrl)
+RTL_DV_STATUS link=receiving running=1 ch_hz=454350000 epoch=2 blocks=879 wrong_rate=0 settle_skipped=0 gaps=0 loss=0 tune=1/0 events=0 dropped=0 dmr_acq=0 dmr_ev=0 dmr_id=0 n48_frames=216 n48_ok=0 n96_frames=0 n96_ok=0 blk_us_max=0 blk_us_avg=0 level_milli=875 mask=7 state_bytes=34304 pairs=7200000 us_ch=0 us_dmr=0 us_n48=0 us_n96=0
+shown 0 events (first 40 printed)
+=== 453.950 MHz (UO-NXDN-ctrl)
+RTL_DV_STATUS link=receiving running=1 ch_hz=453950000 epoch=2 blocks=879 wrong_rate=0 settle_skipped=0 gaps=0 loss=0 tune=1/0 events=0 dropped=0 dmr_acq=0 dmr_ev=0 dmr_id=0 n48_frames=320 n48_ok=0 n96_frames=0 n96_ok=0 blk_us_max=0 blk_us_avg=0 level_milli=162 mask=7 state_bytes=34304 pairs=7200000 us_ch=0 us_dmr=0 us_n48=0 us_n96=0
+shown 0 events (first 40 printed)
+=== 454.2125 MHz (NXDN-ctrl)
+RTL_DV_STATUS link=receiving running=1 ch_hz=454212500 epoch=2 blocks=879 wrong_rate=0 settle_skipped=0 gaps=0 loss=0 tune=1/0 events=0 dropped=0 dmr_acq=0 dmr_ev=0 dmr_id=0 n48_frames=0 n48_ok=0 n96_frames=0 n96_ok=0 blk_us_max=0 blk_us_avg=0 level_milli=641 mask=7 state_bytes=34304 pairs=7200000 us_ch=0 us_dmr=0 us_n48=0 us_n96=0
+shown 0 events (first 40 printed)

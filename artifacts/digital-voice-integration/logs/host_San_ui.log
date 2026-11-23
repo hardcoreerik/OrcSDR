@@ -1,0 +1,15 @@
+-- Configuring done (0.0s)
+-- Generating done (0.2s)
+-- Build files have been written to: /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-San-ui
+[ 45%] Built target dv_dashboard_host_contract
+[100%] Built target dv_dashboard_surface_contract
+Internal ctest changing into directory: /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-San-ui
+Test project /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-San-ui
+    Start 1: digital_voice_pages
+1/2 Test #1: digital_voice_pages ..............   Passed    0.02 sec
+    Start 2: digital_voice_surface_contract
+2/2 Test #2: digital_voice_surface_contract ...   Passed    0.01 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =   0.05 sec

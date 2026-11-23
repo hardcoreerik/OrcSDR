@@ -201,6 +201,16 @@ idf_component_register(
         "../ui/cb_scanner.cpp"
         "../ui/dashboard_audio_control.cpp"
         "../ui/digital_voice_app.cpp"
+        "../ui/dv_channelizer.cpp"
+        "../ui/dv_radio.cpp"
+        "../ui/dv_radio_task.cpp"
+        "../ui/dv_scanner.cpp"
+        "../../../components/orcsdr_dmr/src/d0.cpp"
+        "../../../components/orcsdr_dmr/d1_protocol/src/d1.cpp"
+        "../../../components/orcsdr_dmr/d1_frontend/src/frontend.cpp"
+        "../../../components/orcsdr_dmr/d1_integration/src/d1_bridge.cpp"
+        "../../../components/orcsdr_nxdn/src/decoder.cpp"
+        "../../../components/orcsdr_nxdn/src/frontend.cpp"
         "../ui/digital_voice_dashboard.cpp"
         "../ui/digital_voice_dashboard_model.cpp"
         "../ui/digital_voice_dashboard_surface.cpp"
@@ -321,6 +331,9 @@ idf_component_register(
         "../ui/rf24_dashboard.cpp"
         "../ui/wifi_service.cpp"
     INCLUDE_DIRS "." "../ui" "../dsp" "${CMAKE_CURRENT_BINARY_DIR}"
+        "../../../components/orcsdr_dmr/include" "../../../components/orcsdr_dmr/d1_protocol/include"
+        "../../../components/orcsdr_dmr/d1_frontend/include" "../../../components/orcsdr_dmr/d1_integration/include"
+        "../../../components/orcsdr_nxdn/include"
     REQUIRES
         bootloader_support
         mbedtls

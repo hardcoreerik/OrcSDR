@@ -1,0 +1,4 @@
+dmr: blocks=17 events=9 acq=0 id=9 max_us=0
+nxdn48: events=7 n48_ok=7 n96_ok=0 frames48=7 frames96=0 max_us=0
+nxdn96: events=7 n48_ok=0 n96_ok=7 frames48=0 frames96=7 max_us=0
+PASS digital voice live chain (synthetic IQ)

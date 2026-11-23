@@ -1,0 +1,12 @@
+Terra DMR T3 ctrl Eugene            152.1575 MHz  chan avg-peak  -28.0 dB  hold  -22.9  floor(med)  -29.3  over floor   1.3 dB
+Terra DMR Oakridge                  152.3450 MHz  chan avg-peak  -25.9 dB  hold  -21.4  floor(med)  -27.1  over floor   1.3 dB
+HAM DMR 442.425 CC1 Blanton Hts     442.4250 MHz  chan avg-peak  -21.8 dB  hold  -21.8  floor(med)  -23.0  over floor   1.2 dB
+HAM DMR 444.425 CC1 SantaClara      444.4250 MHz  chan avg-peak  -25.2 dB  hold  -21.4  floor(med)  -25.7  over floor   0.4 dB
+HAM DMR 444.2375 CC9                444.2375 MHz  chan avg-peak  -23.9 dB  hold  -21.8  floor(med)  -25.3  over floor   1.5 dB
+NXDN Silke ctrl Eugene              454.2250 MHz  chan avg-peak  -26.2 dB  hold  -21.2  floor(med)  -26.5  over floor   0.3 dB
+NXDN Silke ctrl Quarry Hill         454.3500 MHz  chan avg-peak  -26.2 dB  hold  -21.2  floor(med)  -26.4  over floor   0.2 dB
+NXDN Silke ctrl Hansen Butte        454.2125 MHz  chan avg-peak  -23.4 dB  hold  -21.1  floor(med)  -25.7  over floor   2.3 dB
+NXDN Silke ctrl Prairie Mtn         454.4375 MHz  chan avg-peak  -21.9 dB  hold  -21.2  floor(med)  -23.4  over floor   1.5 dB
+NXDN Silke ctrl Buck Mtn            463.3750 MHz  chan avg-peak  -24.6 dB  hold  -21.2  floor(med)  -28.0  over floor   3.4 dB
+NXDN UO ctrl                        453.9500 MHz  chan avg-peak  -25.3 dB  hold  -21.2  floor(med)  -26.9  over floor   1.5 dB
+NXDN OSH ctrl                       462.1750 MHz  chan avg-peak  -24.6 dB  hold  -21.1  floor(med)  -26.6  over floor   2.0 dB

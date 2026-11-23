@@ -1,0 +1,15 @@
+=== 454.1250 MHz (wide capture, DDC)
+RTL_DV_STATUS link=receiving running=1 ch_hz=454125000 epoch=2 blocks=1172 wrong_rate=0 settle_skipped=0 gaps=0 loss=0 tune=1/0 events=0 dropped=0 dmr_acq=0 dmr_ev=0 dmr_id=0 n48_frames=0 n48_ok=0 n96_frames=0 n96_ok=0 blk_us_max=0 blk_us_avg=0 level_milli=47 mask=7 state_bytes=35920 pairs=9600000 us_ch=0 us_dmr=0 us_n48=0 us_n9
+shown 0 events (first 40 printed)
+=== 454.1500 MHz (wide capture, DDC)
+RTL_DV_STATUS link=receiving running=1 ch_hz=454150000 epoch=2 blocks=1172 wrong_rate=0 settle_skipped=0 gaps=0 loss=0 tune=1/0 events=0 dropped=0 dmr_acq=0 dmr_ev=0 dmr_id=0 n48_frames=0 n48_ok=0 n96_frames=0 n96_ok=0 blk_us_max=0 blk_us_avg=0 level_milli=45 mask=7 state_bytes=35920 pairs=9600000 us_ch=0 us_dmr=0 us_n48=0 us_n9
+shown 0 events (first 40 printed)
+=== 454.0250 MHz (wide capture, DDC)
+RTL_DV_STATUS link=receiving running=1 ch_hz=454025000 epoch=2 blocks=1172 wrong_rate=0 settle_skipped=0 gaps=0 loss=0 tune=1/0 events=0 dropped=0 dmr_acq=0 dmr_ev=0 dmr_id=0 n48_frames=0 n48_ok=0 n96_frames=0 n96_ok=0 blk_us_max=0 blk_us_avg=0 level_milli=10 mask=7 state_bytes=35920 pairs=9600000 us_ch=0 us_dmr=0 us_n48=0 us_n9
+shown 0 events (first 40 printed)
+=== 453.7250 MHz (wide capture, DDC)
+RTL_DV_STATUS link=receiving running=1 ch_hz=453725000 epoch=2 blocks=1172 wrong_rate=0 settle_skipped=0 gaps=0 loss=0 tune=1/0 events=0 dropped=0 dmr_acq=0 dmr_ev=0 dmr_id=0 n48_frames=0 n48_ok=0 n96_frames=0 n96_ok=0 blk_us_max=0 blk_us_avg=0 level_milli=76 mask=7 state_bytes=35920 pairs=9600000 us_ch=0 us_dmr=0 us_n48=0 us_n9
+shown 0 events (first 40 printed)
+=== 454.5750 MHz (wide capture, DDC)
+RTL_DV_STATUS link=receiving running=1 ch_hz=454575000 epoch=2 blocks=1172 wrong_rate=0 settle_skipped=0 gaps=0 loss=0 tune=1/0 events=0 dropped=0 dmr_acq=0 dmr_ev=0 dmr_id=0 n48_frames=36 n48_ok=0 n96_frames=0 n96_ok=0 blk_us_max=0 blk_us_avg=0 level_milli=62 mask=7 state_bytes=35920 pairs=9600000 us_ch=0 us_dmr=0 us_n48=0 us_n
+shown 0 events (first 40 printed)

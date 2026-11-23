@@ -1,0 +1,11 @@
+[100%] Linking CXX executable dv_dashboard_surface_contract
+[100%] Built target dv_dashboard_host_contract
+[100%] Built target dv_dashboard_surface_contract
+    Start 1: digital_voice_pages
+1/2 Test #1: digital_voice_pages ..............   Passed    0.03 sec
+    Start 2: digital_voice_surface_contract
+2/2 Test #2: digital_voice_surface_contract ...   Passed    0.02 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =   0.07 sec

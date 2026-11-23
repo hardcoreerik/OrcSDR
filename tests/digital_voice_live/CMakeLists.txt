@@ -1,0 +1,43 @@
+cmake_minimum_required(VERSION 3.16)
+project(orcsdr_digital_voice_live_host LANGUAGES CXX)
+option(ORC_DV_LIVE_SANITIZERS "ASan/UBSan" OFF)
+set(CMAKE_CXX_STANDARD 17)
+set(CMAKE_CXX_STANDARD_REQUIRED ON)
+set(CMAKE_CXX_EXTENSIONS OFF)
+set(ROOT ${CMAKE_CURRENT_LIST_DIR}/../..)
+set(UI ${ROOT}/apps/orcsdr-tab5/ui)
+set(DMR ${ROOT}/components/orcsdr_dmr)
+set(NXDN ${ROOT}/components/orcsdr_nxdn)
+# The production sources under test (strict flags) ...
+add_library(dv_live STATIC
+  ${UI}/dv_channelizer.cpp ${UI}/dv_scanner.cpp ${UI}/dv_radio.cpp
+  ${DMR}/d1_integration/src/d1_bridge.cpp ${DMR}/d1_frontend/src/frontend.cpp
+  ${DMR}/d1_protocol/src/d1.cpp ${DMR}/src/d0.cpp
+  ${NXDN}/src/decoder.cpp ${NXDN}/src/frontend.cpp)
+target_include_directories(dv_live PUBLIC ${UI}
+  ${DMR}/d1_integration/include ${DMR}/d1_frontend/include ${DMR}/d1_protocol/include ${DMR}/include
+  ${NXDN}/include)
+# ... and the test TUs (the synth adapters include the decoder suites wholesale, so unused helpers are expected there).
+add_executable(dv_live_tests dv_live_tests.cpp dmr_synth.cpp nxdn_synth.cpp)
+target_link_libraries(dv_live_tests PRIVATE dv_live)
+find_package(Threads REQUIRED)
+target_link_libraries(dv_live_tests PRIVATE Threads::Threads)
+if(CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(dv_live PRIVATE -Wall -Wextra -Wpedantic -Werror)
+  set_source_files_properties(dmr_synth.cpp nxdn_synth.cpp PROPERTIES COMPILE_OPTIONS "-Wno-unused-function;-Wno-unused-variable")
+  target_compile_options(dv_live_tests PRIVATE -Wall -Wextra)
+  if(ORC_DV_LIVE_SANITIZERS)
+    foreach(t dv_live dv_live_tests)
+      target_compile_options(${t} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+      target_link_options(${t} PRIVATE -fsanitize=address,undefined)
+    endforeach()
+  endif()
+endif()
+add_executable(dv_replay dv_replay.cpp ${UI}/digital_voice_dashboard_model.cpp)
+target_link_libraries(dv_replay PRIVATE dv_live)
+if(ORC_DV_LIVE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
+  target_compile_options(dv_replay PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
+  target_link_options(dv_replay PRIVATE -fsanitize=address,undefined)
+endif()
+enable_testing()
+add_test(NAME digital_voice_live COMMAND dv_live_tests)

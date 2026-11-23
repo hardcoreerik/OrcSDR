@@ -1,0 +1,12 @@
+[100%] Linking CXX executable dv_dashboard_surface_contract
+[100%] Built target dv_dashboard_host_contract
+/usr/bin/ld: CMakeFiles/dv_dashboard_surface_contract.dir/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/apps/orcsdr-tab5/ui/digital_voice_dashboard_surface.cpp.o: in function `orcsdr::digital_voice_ui::Surface::draw(lgfx::LovyanGFX&, orcsdr::digital_voice_ui::Snapshot const&, bool, void (*)())':
+digital_voice_dashboard_surface.cpp:(.text+0x20): undefined reference to `orcsdr::screens::owns(orcsdr::screens::Id)'
+/usr/bin/ld: CMakeFiles/dv_dashboard_surface_contract.dir/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/apps/orcsdr-tab5/ui/digital_voice_dashboard_surface.cpp.o: in function `orcsdr::digital_voice_ui::Surface::update(lgfx::LovyanGFX&, orcsdr::digital_voice_ui::Snapshot const&, bool)':
+digital_voice_dashboard_surface.cpp:(.text+0x9f): undefined reference to `orcsdr::screens::owns(orcsdr::screens::Id)'
+/usr/bin/ld: CMakeFiles/dv_dashboard_surface_contract.dir/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/apps/orcsdr-tab5/ui/digital_voice_dashboard_surface.cpp.o: in function `orcsdr::digital_voice_ui::Surface::touch(int, int, orcsdr::digital_voice_ui::Snapshot const&, bool)':
+digital_voice_dashboard_surface.cpp:(.text+0x110): undefined reference to `orcsdr::screens::owns(orcsdr::screens::Id)'
+collect2: error: ld returned 1 exit status
+gmake[2]: *** [CMakeFiles/dv_dashboard_surface_contract.dir/build.make:161: dv_dashboard_surface_contract] Error 1
+gmake[1]: *** [CMakeFiles/Makefile2:111: CMakeFiles/dv_dashboard_surface_contract.dir/all] Error 2
+gmake: *** [Makefile:101: all] Error 2

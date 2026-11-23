@@ -1,0 +1,26 @@
+dmr: blocks=17 events=9 acq=0 id=9 max_us=0
+worker=0 events=9 drops=0 ring_max=0
+worker=1 events=9 drops=0 ring_max=12279
+nxdn48: events=7 n48_ok=7 n96_ok=0 frames48=7 frames96=0 max_us=0
+nxdn96: events=7 n48_ok=0 n96_ok=7 frames48=0 frames96=7 max_us=0
+PASS digital voice live chain (synthetic IQ)
+=== 152.1575 MHz (DMR-T3-ctrl)
+RTL_DV_STATUS events=367 dmr_acq=1 dmr_ev=978 n48_frames=0 n48_ok=0 n96_frames=0 n96_ok=0
+=== 454.225 MHz (NXDN-ctrl)
+RTL_DV_STATUS events=0 dmr_acq=0 dmr_ev=0 n48_frames=334 n48_ok=0 n96_frames=0 n96_ok=0
+=== 454.350 MHz (NXDN-ctrl)
+RTL_DV_STATUS events=0 dmr_acq=0 dmr_ev=0 n48_frames=216 n48_ok=0 n96_frames=0 n96_ok=0
+=== 453.950 MHz (UO-NXDN-ctrl)
+RTL_DV_STATUS events=0 dmr_acq=0 dmr_ev=0 n48_frames=320 n48_ok=0 n96_frames=0 n96_ok=0
+=== 454.2125 MHz (NXDN-ctrl)
+RTL_DV_STATUS events=0 dmr_acq=0 dmr_ev=0 n48_frames=0 n48_ok=0 n96_frames=0 n96_ok=0
+=== 454.1250 MHz (wide capture, DDC)
+RTL_DV_STATUS events=0 n48_frames=0 n48_ok=0 n96_frames=0 n96_ok=0
+=== 454.1500 MHz (wide capture, DDC)
+RTL_DV_STATUS events=0 n48_frames=0 n48_ok=0 n96_frames=0 n96_ok=0
+=== 454.0250 MHz (wide capture, DDC)
+RTL_DV_STATUS events=0 n48_frames=0 n48_ok=0 n96_frames=0 n96_ok=0
+=== 453.7250 MHz (wide capture, DDC)
+RTL_DV_STATUS events=0 n48_frames=0 n48_ok=0 n96_frames=0 n96_ok=0
+=== 454.5750 MHz (wide capture, DDC)
+RTL_DV_STATUS events=0 n48_frames=36 n48_ok=0 n96_frames=0 n96_ok=0

@@ -1,0 +1,20 @@
+-- Configuring done (0.0s)
+-- Generating done (0.3s)
+-- Build files have been written to: /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-Release-nxdn
+[ 14%] Building CXX object CMakeFiles/orcsdr_nxdn.dir/src/frontend.cpp.o
+[ 28%] Linking CXX static library liborcsdr_nxdn.a
+[ 42%] Built target orcsdr_nxdn
+[ 57%] Building CXX object CMakeFiles/orcsdr_nxdn_replay.dir/tools/replay.cpp.o
+[ 71%] Building CXX object CMakeFiles/orcsdr_nxdn_tests.dir/tests/test_decoder.cpp.o
+[ 85%] Linking CXX executable orcsdr_nxdn_replay
+[ 85%] Built target orcsdr_nxdn_replay
+[100%] Linking CXX executable orcsdr_nxdn_tests
+[100%] Built target orcsdr_nxdn_tests
+Internal ctest changing into directory: /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-Release-nxdn
+Test project /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-Release-nxdn
+    Start 1: nxdn_host_metadata
+1/1 Test #1: nxdn_host_metadata ...............   Passed    0.02 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.05 sec

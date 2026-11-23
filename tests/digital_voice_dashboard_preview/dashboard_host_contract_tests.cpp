@@ -78,7 +78,7 @@ int main(){
   assert(host_stub::contains("TIME SLOT"));
   assert(host_stub::contains("UNKNOWN"));
   assert(!host_stub::contains("TS1") && !host_stub::contains("TS2"));
-  assert(host_stub::contains("HOST VALIDATED / NOT LIVE TAB5"));
+  assert(host_stub::contains("IQ METADATA / RF UNVERIFIED"));
   assert(!host_stub::out_of_bounds && host_stub::full_clear_count==0);
   auto x=s; x.revision=3; x.evidence=Evidence::candidate;
   host_stub::reset();assert(dashboard.present(display,x,ui,true,false));

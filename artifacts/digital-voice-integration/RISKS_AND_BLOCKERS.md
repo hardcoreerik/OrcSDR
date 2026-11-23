@@ -12,3 +12,12 @@
 6. **No hardware actions taken.** Flashing, SD writes and screenshots need the owner to name the board/port first.
 7. Pinned real-IQ replay gates and P25 core host tests not yet rerun locally.
 8. Voice: AMBE+2 licensing not started; nothing audible is claimed.
+
+## Updated 2026-11-23
+- The Tab5's dongle reports "RTL V4L", bias tee OFF, TUNER_AGC. Its levels at 152.1575 vary 28..330 between a single-channel
+  dwell and a hop. Bias tee on the Tab5 was NOT enabled (only the PC bias tee was authorized). Owner decision needed.
+- Live DMR on the Tab5 itself not yet observed; DMR needs ~2.5 s to acquire on the Terra control channel but the scanner dwell
+  is 1.5 s: lengthen dwell for DMR entries or hold on candidate.
+- NXDN control channels need CAC decoding for system identity; RAN only appears on SACCH (traffic). No NXDN voice traffic captured.
+- First OPEN after a fresh boot often closes the dashboard within ~2 s (second OPEN stays); cause not yet found.
+- RTL_DV MASK has no way to clear the override except leaving the dashboard.

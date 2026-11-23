@@ -10,7 +10,6 @@
 namespace orcsdr::nxdn {
 namespace {
 constexpr double kPi = 3.14159265358979323846;
-constexpr double kFs = 48000.0;
 // Bounded deterministic Kaiser I0 (no special-function library on ESP32-P4).
 double i0(double x) noexcept {
     double sum = 1.0, term = 1.0;
@@ -24,8 +23,10 @@ double i0(double x) noexcept {
 double sign(double x) noexcept { return x>0 ? 1.0 : (x<0 ? -1.0 : 0.0); }
 }
 
-Frontend::Frontend(Mode mode) noexcept : mode_(mode) {
-    sps_ = mode == Mode::nxdn48 ? 20U : 10U;
+Frontend::Frontend(Mode mode, double input_rate_hz) noexcept : mode_(mode), fs_(input_rate_hz) {
+    sps_ = static_cast<std::size_t>(std::lround(fs_/(mode == Mode::nxdn48 ? 2400.0 : 4800.0)));
+    if(sps_<4U) sps_=4U;
+    if(sps_>20U) sps_=20U;   // the tap/history arrays are sized for 20 samples per symbol
     channel_n_ = 2U*9U*sps_+1U;
     rrc_n_ = 2U*8U*sps_+1U;
     build_taps();
@@ -39,7 +40,7 @@ void Frontend::build_taps() noexcept {
     double sum=0;
     for (std::size_t k=0;k<channel_n_;++k) {
         const double m=static_cast<double>(k)-static_cast<double>(channel_n_-1U)/2;
-        const double sinc=m==0 ? 2*cutoff/kFs : std::sin(2*kPi*cutoff*m/kFs)/(kPi*m);
+        const double sinc=m==0 ? 2*cutoff/fs_ : std::sin(2*kPi*cutoff*m/fs_)/(kPi*m);
         const double z=2*static_cast<double>(k)/static_cast<double>(channel_n_-1U)-1;
         const double win=i0(beta*std::sqrt(std::max(0.0,1-z*z)))/denom;
         channel_taps_[k]=static_cast<float>(sinc*win);
@@ -84,29 +85,47 @@ bool Frontend::feed(const IQSample* iq,std::size_t count,
         if(!std::isfinite(iq[i].re)||!std::isfinite(iq[i].im)) return false;
     for(std::size_t i=0;i<count;++i) {
         // Continuous-phase IQ carrier tracking before channel filtering.
-        const double c=std::cos(nco_phase_),s=std::sin(nco_phase_);
-        const IQSample mixed{static_cast<float>(iq[i].re*c+iq[i].im*s),
-                             static_cast<float>(iq[i].im*c-iq[i].re*s)};
-        nco_phase_+=2*kPi*carrier_hz_/kFs;
+        // Single-precision trig: the double sin/cos here ran 48,000 times a second and cost more than both filters on a
+        // single-precision-FPU target (ESP32-P4). The phase accumulator itself stays double; only its sine/cosine is float.
+        const float ph=static_cast<float>(nco_phase_);
+        const float c=std::cos(ph),s=std::sin(ph);
+        const IQSample mixed{iq[i].re*c+iq[i].im*s,
+                             iq[i].im*c-iq[i].re*s};
+        nco_phase_+=2*kPi*carrier_hz_/fs_;
         if(nco_phase_>kPi) nco_phase_-=2*kPi;
         if(nco_phase_<-kPi) nco_phase_+=2*kPi;
         channel_hist_[channel_pos_]=mixed;
         channel_pos_=(channel_pos_+1)%channel_n_;
         float x=0,y=0;
-        std::size_t p=channel_pos_;
-        for(std::size_t k=0;k<channel_n_;++k) {
-            p=p==0?channel_n_-1:p-1;
-            x+=channel_taps_[k]*channel_hist_[p].re;
-            y+=channel_taps_[k]*channel_hist_[p].im;
+        {
+            // Newest sample first. Two straight segments (no per-tap wrap test) and two accumulators per axis to break
+            // the floating-point add dependency chain.
+            float x0=0,x1=0,y0=0,y1=0;
+            std::size_t k=0;
+            std::size_t p=channel_pos_;           // taps k=0..channel_pos_-1 read hist[pos-1] down to hist[0]
+            for(;k+1<=channel_pos_&&k+2<=channel_pos_;k+=2) {
+                const IQSample a=channel_hist_[p-1],b=channel_hist_[p-2];
+                x0+=channel_taps_[k]*a.re; y0+=channel_taps_[k]*a.im;
+                x1+=channel_taps_[k+1]*b.re; y1+=channel_taps_[k+1]*b.im;
+                p-=2;
+            }
+            for(;k<channel_pos_;++k) { --p; x0+=channel_taps_[k]*channel_hist_[p].re; y0+=channel_taps_[k]*channel_hist_[p].im; }
+            p=channel_n_;                          // remaining taps read hist[n-1] down to hist[pos]
+            for(;k+2<=channel_n_;k+=2) {
+                const IQSample a=channel_hist_[p-1],b=channel_hist_[p-2];
+                x0+=channel_taps_[k]*a.re; y0+=channel_taps_[k]*a.im;
+                x1+=channel_taps_[k+1]*b.re; y1+=channel_taps_[k+1]*b.im;
+                p-=2;
+            }
+            for(;k<channel_n_;++k) { --p; x0+=channel_taps_[k]*channel_hist_[p].re; y0+=channel_taps_[k]*channel_hist_[p].im; }
+            x=x0+x1; y=y0+y1;
         }
         const IQSample filtered{x,y};
         float disc=0;
         if(have_iq_) {
-            const double re=static_cast<double>(filtered.re)*prev_iq_.re+
-                            static_cast<double>(filtered.im)*prev_iq_.im;
-            const double im=static_cast<double>(filtered.im)*prev_iq_.re-
-                            static_cast<double>(filtered.re)*prev_iq_.im;
-            disc=static_cast<float>(std::atan2(im,re));
+            const float re=filtered.re*prev_iq_.re+filtered.im*prev_iq_.im;
+            const float im=filtered.im*prev_iq_.re-filtered.re*prev_iq_.im;
+            disc=std::atan2(im,re);
         }
         prev_iq_=filtered;have_iq_=true;
         // Fixed 64-sample update independent of caller chunk boundaries.
@@ -116,7 +135,7 @@ bool Frontend::feed(const IQSample* iq,std::size_t count,
             const double var=disc_sumsq_/64.0-mean*mean;
             if(var<0.1) {
                 const double tau=128.0*static_cast<double>(sps_);
-                carrier_hz_+=(-std::expm1(-64.0/tau))*mean*kFs/(2*kPi);
+                carrier_hz_+=(-std::expm1(-64.0/tau))*mean*fs_/(2*kPi);
                 carrier_hz_=std::max(-3000.0,std::min(3000.0,carrier_hz_));
             }
             disc_sum_=0;disc_sumsq_=0;disc_count_=0;
@@ -124,10 +143,23 @@ bool Frontend::feed(const IQSample* iq,std::size_t count,
         rrc_hist_[rrc_pos_]=disc;
         rrc_pos_=(rrc_pos_+1)%rrc_n_;
         float rrc=0;
-        p=rrc_pos_;
-        for(std::size_t k=0;k<rrc_n_;++k) {
-            p=p==0?rrc_n_-1:p-1;
-            rrc+=rrc_taps_[k]*rrc_hist_[p];
+        {
+            float r0=0,r1=0,r2=0,r3=0;
+            std::size_t k=0,q=rrc_pos_;
+            for(;k+4<=rrc_pos_;k+=4) {
+                r0+=rrc_taps_[k]*rrc_hist_[q-1]; r1+=rrc_taps_[k+1]*rrc_hist_[q-2];
+                r2+=rrc_taps_[k+2]*rrc_hist_[q-3]; r3+=rrc_taps_[k+3]*rrc_hist_[q-4];
+                q-=4;
+            }
+            for(;k<rrc_pos_;++k) { --q; r0+=rrc_taps_[k]*rrc_hist_[q]; }
+            q=rrc_n_;
+            for(;k+4<=rrc_n_;k+=4) {
+                r0+=rrc_taps_[k]*rrc_hist_[q-1]; r1+=rrc_taps_[k+1]*rrc_hist_[q-2];
+                r2+=rrc_taps_[k+2]*rrc_hist_[q-3]; r3+=rrc_taps_[k+3]*rrc_hist_[q-4];
+                q-=4;
+            }
+            for(;k<rrc_n_;++k) { --q; r0+=rrc_taps_[k]*rrc_hist_[q]; }
+            rrc=(r0+r1)+(r2+r3);
         }
         // Mueller-Muller symbol clock with linear fractional interpolation.
         if(have_rrc_) {

@@ -106,10 +106,10 @@ const char* integration_name(Protocol p) {
   switch(p) {
     case Protocol::p25_phase1:return "NATIVE RECEIVE / VOICE";
     case Protocol::p25_phase2:return "PARTIAL / NO VOICE";
-    case Protocol::dmr:return "HOST VALIDATED / NOT LIVE TAB5";
+    case Protocol::dmr:return "IQ METADATA / RF UNVERIFIED";
     case Protocol::dstar:return "HOST HEADER / NO IQ FRONTEND";
     case Protocol::ysf:return "HOST FICH / NO IQ FRONTEND";
-    case Protocol::nxdn48:case Protocol::nxdn96:return "HOST IQ SYNTHETIC / NO TAB5";
+    case Protocol::nxdn48:case Protocol::nxdn96:return "IQ RAN ONLY / RF UNVERIFIED";
     default:return "NO VERIFIED PROTOCOL";
   }
 }

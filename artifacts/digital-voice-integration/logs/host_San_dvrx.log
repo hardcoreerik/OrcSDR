@@ -1,0 +1,14 @@
+-- Configuring done (0.0s)
+-- Generating done (0.3s)
+-- Build files have been written to: /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-San-dvrx
+[ 33%] Built target orcsdr_digital_voice_rx
+[ 66%] Built target orcsdr_dv_rx_cli
+[100%] Built target orcsdr_dv_rx_tests
+Internal ctest changing into directory: /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-San-dvrx
+Test project /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-San-dvrx
+    Start 1: orcsdr_dv_metadata_fec_crc
+1/1 Test #1: orcsdr_dv_metadata_fec_crc .......   Passed    0.03 sec
+
+100% tests passed, 0 tests failed out of 1
+
+Total Test time (real) =   0.05 sec

@@ -1,0 +1,16 @@
+-- Configuring done (0.1s)
+-- Generating done (0.3s)
+-- Build files have been written to: /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-San-dmr_d1_integration
+[ 55%] Built target orcsdr_dmr_d1_integration
+[ 77%] Built target dmr_d1_replay_bridge
+[100%] Built target dmr_d1_integration_tests
+Internal ctest changing into directory: /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-San-dmr_d1_integration
+Test project /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-San-dmr_d1_integration
+    Start 1: dmr_d1_integration_tests
+1/2 Test #1: dmr_d1_integration_tests .........   Passed    0.14 sec
+    Start 2: dmr_d1_replay_bridge_cli
+2/2 Test #2: dmr_d1_replay_bridge_cli .........   Passed    0.24 sec
+
+100% tests passed, 0 tests failed out of 2
+
+Total Test time (real) =   0.40 sec

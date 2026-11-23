@@ -68,6 +68,7 @@
 #include "acars_selftest.hpp"
 #include "ais_app.hpp"
 #include "digital_voice_app.hpp"
+#include "dv_radio.hpp"
 #include "ais_radio.hpp"
 #include "ft8_tuning.hpp"
 #include "ft8_heard_db.hpp"
@@ -8396,6 +8397,9 @@ static void rtl_dsp_task(void *) {
     // AIS receiver: both channels from the one 162.000 MHz / 240 kS/s stream it asked for (any other rate or centre is refused).
     if (block.band == RtlBand::browse && orcsdr::ais_radio::running())
       orcsdr::ais_radio::offer_iq(block.data, block.bytes, block.sample_rate_sps);
+    // Digital Voice: a read-only tap on the 240 kS/s stream it asked for (any other rate is refused, never resampled).
+    if (block.band == RtlBand::browse && orcsdr::dv_radio::running())
+      orcsdr::dv_radio::offer_iq(block.data, block.bytes, block.sample_rate_sps);
     if (!block.custom_rate && block.band == RtlBand::lora)
       lora_iq_offer(block.data, block.bytes);
     mark(dsp_stats::Stage::decoders);
@@ -13291,6 +13295,8 @@ void open_ais_dashboard() {
 }
 // Digital Voice logic lives in digital_voice_app. It is view-only until the scanner is wired: it owns no receiver,
 // reads only whether an RTL-SDR is present, and never retunes. See artifacts/digital-voice-integration/.
+// SD replay source for the Digital Voice dashboard (RTL_DV REPLAY): the file stays open between UI ticks.
+File& dv_replay_file() { static File file; return file; }
 void open_digital_voice_dashboard() {
   persist_dashboard_open(orcsdr::dashboards::Id::digital_voice);
   orcsdr::home::leave();
@@ -13304,6 +13310,31 @@ void open_digital_voice_dashboard() {
   app.receiver_ready = [] { return rtl_device_ready(); };
   app.go_home = [] { show_home(); };
   app.now_ms = [] { return static_cast<uint32_t>(millis()); };
+  const orcsdr::acars_receiver::Hooks shared = acars_receiver_hooks();   // the one receiver owner's tune / release rules
+  app.tune = shared.tune;
+  app.release = shared.release;
+  app.utc_epoch = shared.utc_epoch;
+  app.micros = [] { return static_cast<uint32_t>(esp_timer_get_time()); };
+  app.lost_samples = [] { return rtl_iq_pipeline_drop_samples.load(std::memory_order_relaxed); };
+  app.load_plan = [](char* out, size_t capacity) {
+    if (!preferences.isKey("dv_plan")) return false;
+    const std::string csv = preferences.getString("dv_plan", "");
+    if (csv.empty() || csv.size() >= capacity) return false;
+    std::memcpy(out, csv.c_str(), csv.size() + 1);
+    return true;
+  };
+  app.save_plan = [](const char* csv) { preferences.putString("dv_plan", csv); };
+  app.replay_open = [](const char* path) {
+    if (!ensure_tab5_sd() || g_sd_fs == nullptr) return false;
+    dv_replay_file() = g_sd_fs->open(path, FILE_READ);
+    return static_cast<bool>(dv_replay_file());
+  };
+  app.replay_read = [](uint8_t* buffer, size_t capacity) -> size_t {
+    if (!dv_replay_file()) return 0u;
+    const int got = static_cast<int>(dv_replay_file().read(buffer, capacity));   // a read error is -1: never cast that to a length
+    return got > 0 ? static_cast<size_t>(got) > capacity ? capacity : static_cast<size_t>(got) : 0u;
+  };
+  app.replay_close = [] { if (dv_replay_file()) dv_replay_file().close(); };
   orcsdr::digital_voice_app::install(app);
   orcsdr::digital_voice_app::open();
 }
@@ -20147,6 +20178,7 @@ void process_command(char* command) {
   if (orcsdr::serial_dead_air::handle_command(command, authenticated, kSerialDeadAirHooks)) return;
   if (orcsdr::serial_decoder_diag::handle_command(command, authenticated, kSerialDecoderDiagHooks)) return;
   if (orcsdr::serial_ui_nav::handle_command(command, authenticated, kSerialUiNavHooks)) return;
+  if (orcsdr::digital_voice_app::handle_command(command, authenticated, [](const char* line) { Serial.println(line); })) return;
   if (orcsdr::serial_memory::handle_command(command, authenticated, kSerialMemoryHooks)) return;
   if (orcsdr::serial_display_bench::handle_command(command, authenticated, kSerialDisplayBenchHooks)) return;
 #if ORCSDR_ORCDIAL

@@ -1,0 +1,19 @@
+-- Configuring done (0.0s)
+-- Generating done (0.4s)
+-- Build files have been written to: /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-Release-dmr
+[ 25%] Built target orcsdr_dmr_d0
+[100%] Built target orcsdr_dmr_test_bptc
+[100%] Built target orcsdr_dmr_test_cach
+[100%] Built target orcsdr_dmr_test_sync
+Internal ctest changing into directory: /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-Release-dmr
+Test project /mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-review-dde01d/build/hs-Release-dmr
+    Start 1: dmr_d0_sync
+1/3 Test #1: dmr_d0_sync ......................   Passed    0.01 sec
+    Start 2: dmr_d0_cach
+2/3 Test #2: dmr_d0_cach ......................   Passed    0.01 sec
+    Start 3: dmr_d0_bptc
+3/3 Test #3: dmr_d0_bptc ......................   Passed    0.01 sec
+
+100% tests passed, 0 tests failed out of 3
+
+Total Test time (real) =   0.05 sec

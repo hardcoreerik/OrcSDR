@@ -130,9 +130,13 @@ void Frontend::consume_one(const ComplexSample& sample) noexcept {
     discr_history_[discr_head_] = hz;
     float filt = 0.0F;
     // Circular convolution; 61 constant taps, no buffers or allocation.
-    for (std::size_t j = 0; j < kPulseTaps; ++j) {
-        const auto index = (discr_head_ + kPulseTaps - j) % kPulseTaps;
-        filt += taps_[j] * discr_history_[index];
+    // Same tap order and arithmetic as before; the index walks backwards with a wrap instead of an integer modulo per tap.
+    {
+        std::size_t index = discr_head_;
+        for (std::size_t j = 0; j < kPulseTaps; ++j) {
+            filt += taps_[j] * discr_history_[index];
+            index = index == 0 ? kPulseTaps - 1 : index - 1;
+        }
     }
     discr_head_ = (discr_head_+1) % kPulseTaps;
     filtered_history_[static_cast<std::size_t>(processed_) % kHistory] = filt;
@@ -147,9 +151,38 @@ void Frontend::try_acquire() noexcept {
     // at 10-sample spacing, from the *measured* FSK discriminator waveform.
     // Only eight D0 ETSI syncs are considered. No CRC or identity is inferred.
     float observed[kSyncSymbols];
-    double sum_y=0.0, sum_yy=0.0;
+    float fsum_y=0.0F, fsum_yy=0.0F;
     for(std::size_t i=0;i<kSyncSymbols;++i) {
         observed[i]=filtered_at(processed_-1-(kSyncSymbols-1-i)*10);
+        fsum_y+=observed[i];
+        fsum_yy+=observed[i]*observed[i];
+    }
+    // Cost screen. This runs every second sample while unlocked (24,000 times a second) and the exact path below uses
+    // double precision, which a single-precision-FPU target (ESP32-P4) executes in software. The screen is single precision
+    // and deliberately conservative: it rejects only when the exact path could not accept either (the exact variance gate
+    // is 100000 and the exact score gate is kMinimumSyncCorrelation; float error is ~1e-6 relative, the margins are 10 %).
+    // Anything that might pass falls through to the unchanged exact code, so decoded results are identical.
+    {
+        const float fvar_y=fsum_yy-fsum_y*fsum_y/static_cast<float>(kSyncSymbols);
+        if (fvar_y < 90000.0F) return;
+        float fbest=0.0F;
+        for(std::size_t kind=0;kind<kSyncCount;++kind) {
+            const std::uint64_t word=kSyncWords[kind];
+            float sx=0.0F,sxx=0.0F,sxy=0.0F;
+            for(std::size_t i=0;i<kSyncSymbols;++i) {
+                const float x=static_cast<float>(dibit_level(static_cast<std::uint8_t>((word >> (46-2*i)) & 3U)));
+                sx+=x;sxx+=x*x;sxy+=x*observed[i];
+            }
+            const float fvar_x=sxx-sx*sx/static_cast<float>(kSyncSymbols);
+            const float fcov=sxy-sx*fsum_y/static_cast<float>(kSyncSymbols);
+            if(fcov<=0.0F||fvar_x<=0.0F) continue;
+            const float fscore=(fcov*fcov)/(fvar_x*fvar_y);
+            if(fscore>fbest) fbest=fscore;
+        }
+        if (fbest < kMinimumSyncCorrelation*0.9F) return;
+    }
+    double sum_y=0.0, sum_yy=0.0;
+    for(std::size_t i=0;i<kSyncSymbols;++i) {
         sum_y+=observed[i];
         sum_yy+=static_cast<double>(observed[i])*observed[i];
     }

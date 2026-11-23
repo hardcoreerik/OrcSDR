@@ -1,0 +1,2 @@
+RTL_DV_STATUS link=receiving running=1 ch_hz=454125000 epoch=2 blocks=8790 wrong_rate=0 settle_skipped=0 gaps=0 loss=0 tune=1/0 events=0 dropped=0 dmr_acq=0 dmr_ev=0 dmr_id=0 n48_frames=0 n48_ok=0 n96_frames=0 n96_ok=0 blk_us_max=0 blk_us_avg=0 level_milli=83 
+shown 0 events (first 40 printed)
