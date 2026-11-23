@@ -642,6 +642,79 @@ class NightlyFailureIssueTest(unittest.TestCase):
         self.assertNotIn("Post job cleanup.", body)
         self.assertNotIn("docker rm", body)
 
+    def test_post_job_cleanup_two_markers_retains_build_error(self):
+        """Verify two Post job cleanup markers in one job trim from the first marker."""
+        first_cleanup = ["2026-11-10T17:58:33.3447831Z Post job cleanup."] + [
+            f"2026-11-10T17:58:34.{i:07d}Z cache-teardown-{i:02d} " + ("c" * 40)
+            for i in range(90)
+        ]
+        second_cleanup = ["2026-11-10T17:58:40.0000000Z Post job cleanup."] + [
+            f"2026-11-10T17:58:41.{i:07d}Z docker rm -f container_{i:02d}"
+            for i in range(25)
+        ]
+        log = "\n".join(
+            [
+                "2026-11-10T17:58:32.0000000Z Building firmware...",
+                "2026-11-10T17:58:33.2141318Z CMake Error: Missing required kconfig option",
+                "2026-11-10T17:58:33.3315437Z ##[error]Process completed with exit code 2.",
+                *first_cleanup,
+                *second_cleanup,
+            ]
+        )
+        completed, saved, _calls = self.run_alert(
+            {"gate": "success", "tests": "failure", "build": "skipped", "publish": "skipped", "gate_build": "true"},
+            blank_state(run=FAILED_TESTS_JOBS, log=log),
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        body = saved["issues"][0]["body"]
+        self.assertIn("CMake Error: Missing required kconfig option", body)
+        self.assertIn("##[error]Process completed with exit code 2.", body)
+        self.assertNotIn("Post job cleanup.", body)
+        self.assertNotIn("cache-teardown-", body)
+        self.assertNotIn("docker rm", body)
+
+    def test_multi_job_cleanup_trimmed_before_combining(self):
+        """Verify each failed job trims its own cleanup suffix before multi-job assembly."""
+        multi_jobs = {
+            "jobs": [
+                {
+                    "databaseId": 1001,
+                    "name": "tests",
+                    "conclusion": "failure",
+                    "steps": [{"name": "P25 core tests", "conclusion": "failure"}],
+                },
+                {
+                    "databaseId": 1002,
+                    "name": "build",
+                    "conclusion": "failure",
+                    "steps": [{"name": "Build Tab5 firmware", "conclusion": "failure"}],
+                },
+            ]
+        }
+        cleanup_1 = ["2026-11-10T17:58:01.0000000Z Post job cleanup."] + [
+            f"2026-11-10T17:58:02.{i:07d}Z tests-cleanup-{i:02d}" for i in range(90)
+        ]
+        cleanup_2 = ["2026-11-10T17:59:01.0000000Z Post job cleanup."] + [
+            f"2026-11-10T17:59:02.{i:07d}Z build-cleanup-{i:02d}" for i in range(90)
+        ]
+        job_logs = {
+            "1001": "\n".join(["tests failed on assertion X", *cleanup_1]),
+            "1002": "\n".join(["build failed on kconfig Y", *cleanup_2]),
+        }
+        completed, saved, _calls = self.run_alert(
+            {"gate": "success", "tests": "failure", "build": "failure", "publish": "skipped", "gate_build": "true"},
+            blank_state(run=multi_jobs, job_logs=job_logs),
+        )
+        self.assertEqual(completed.returncode, 0, completed.stderr)
+        body = saved["issues"][0]["body"]
+        self.assertIn("=== tests ===", body)
+        self.assertIn("=== build ===", body)
+        self.assertIn("tests failed on assertion X", body)
+        self.assertIn("build failed on kconfig Y", body)
+        self.assertNotIn("Post job cleanup.", body)
+        self.assertNotIn("tests-cleanup-", body)
+        self.assertNotIn("build-cleanup-", body)
+
     def test_assignee_failure_still_opens_an_issue_that_mentions_the_owner(self):
         """Verify fallback create without assignee still opens and @mentions the owner."""
         completed, saved, calls = self.run_alert(

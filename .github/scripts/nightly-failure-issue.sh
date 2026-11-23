@@ -146,17 +146,6 @@ def redact(text: str) -> str:
     text = re.sub(r"(?i)(bearer\s+)[^\s\"']+", r"\1[redacted]", text)
     return text
 
-def strip_post_job_cleanup(raw_lines: list[str]) -> list[str]:
-    """Drop trailing GitHub Actions post-job cleanup lines when earlier output exists."""
-    pattern = re.compile(r"^(?:\d{4}-\d{2}-\d{2}T\S+\s+)?Post job cleanup\.$")
-    for idx in range(len(raw_lines) - 1, -1, -1):
-        if pattern.match(raw_lines[idx]):
-            prefix = raw_lines[:idx]
-            if any(line.strip() for line in prefix):
-                return prefix
-            break
-    return raw_lines
-
 lines = [f"@{assignee}", ""]
 if kind == "resolve":
     lines.append("The firmware nightly is green again. Closing this issue.")
@@ -223,7 +212,7 @@ else:
     raw = re.sub(r"\x1b\[[0-9;?]*[ -/]*[@-~]", "", raw)
     raw = re.sub(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)", "", raw)
     raw = redact(raw)
-    raw_lines = strip_post_job_cleanup(raw.splitlines())
+    raw_lines = raw.splitlines()
     while raw_lines and raw_lines[-1] == "":
         raw_lines.pop()
     truncated = len(raw_lines) > 80
@@ -351,26 +340,57 @@ if [ -s "$failed_jobs_file" ]; then
     fi
   done
 
-  present_logs=0
-  while IFS=$'\t' read -r job_id _; do
-    [ -n "$job_id" ] || continue
-    if [ -s "$tmpdir/job-${job_id}.log" ]; then
-      present_logs=$((present_logs + 1))
-    fi
-  done <"$failed_jobs_file"
+  if python3 - "$failed_jobs_file" "$tmpdir" "$log_file" <<'PY'
+import os, re, sys
 
-  : >"$log_file"
-  while IFS=$'\t' read -r job_id job_name; do
-    [ -n "$job_id" ] || continue
-    if [ -s "$tmpdir/job-${job_id}.log" ]; then
-      if [ "$present_logs" -gt 1 ]; then
-        printf '=== %s ===\n' "$job_name" >>"$log_file"
-      fi
-      cat "$tmpdir/job-${job_id}.log" >>"$log_file"
-      printf '\n' >>"$log_file"
-      log_ok=1
-    fi
-  done <"$failed_jobs_file"
+failed_jobs_path, tmpdir, log_out = sys.argv[1], sys.argv[2], sys.argv[3]
+cleanup_re = re.compile(r"^(?:\d{4}-\d{2}-\d{2}T\S+\s+)?Post job cleanup\.$")
+
+def strip_job_cleanup(text: str) -> str:
+    """Normalize one job log and trim it at its first Post job cleanup marker."""
+    text = text.lstrip("\ufeff")
+    text = text.replace("\x00", "").replace("\r\n", "\n").replace("\r", "\n")
+    text = re.sub(r"\x1b\[[0-9;?]*[ -/]*[@-~]", "", text)
+    text = re.sub(r"\x1b\][^\x07\x1b]*(?:\x07|\x1b\\)", "", text)
+    lines = text.splitlines()
+    for idx, line in enumerate(lines):
+        if cleanup_re.match(line):
+            if any(item.strip() for item in lines[:idx]):
+                lines = lines[:idx]
+            break
+    while lines and lines[-1] == "":
+        lines.pop()
+    return "\n".join(lines)
+
+entries = []
+with open(failed_jobs_path, encoding="utf-8") as fh:
+    for raw_row in fh:
+        raw_row = raw_row.rstrip("\r\n")
+        if not raw_row:
+            continue
+        job_id, _, job_name = raw_row.partition("\t")
+        path = os.path.join(tmpdir, f"job-{job_id}.log")
+        if not os.path.isfile(path) or os.path.getsize(path) == 0:
+            continue
+        with open(path, encoding="utf-8", errors="replace") as jfh:
+            cleaned = strip_job_cleanup(jfh.read())
+        if cleaned.strip():
+            entries.append((job_name or "unknown job", cleaned))
+
+with open(log_out, "w", encoding="utf-8") as out:
+    if entries:
+        multi = len(entries) > 1
+        blocks = [
+            f"=== {name} ===\n{cleaned}" if multi else cleaned
+            for name, cleaned in entries
+        ]
+        out.write("\n\n".join(blocks) + "\n")
+
+sys.exit(0 if entries else 1)
+PY
+  then
+    log_ok=1
+  fi
 fi
 if [ "$log_ok" -eq 0 ]; then
   echo "::warning::Failed-step logs were not available."
