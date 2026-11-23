@@ -286,6 +286,15 @@ target_include_directories(orc_zero_meshtastic PUBLIC src "${ORC_MBEDTLS_INCLUDE
 target_link_libraries(orc_zero_meshtastic PUBLIC "${ORC_MBEDCRYPTO_LIBRARY}" Threads::Threads)
 
 if(BUILD_TESTING)
+  # Station index reader. The index is generated from the FCC snapshot and is not
+  # committed, so the test skips when it has not been built.
+  add_executable(orc_zero_station_directory_test tests/station_directory_test.cpp)
+  target_include_directories(orc_zero_station_directory_test PRIVATE src)
+  target_compile_options(orc_zero_station_directory_test PRIVATE -UNDEBUG)
+  add_test(NAME zero_station_directory
+           COMMAND orc_zero_station_directory_test "${CMAKE_CURRENT_SOURCE_DIR}/fm_am_stations.idx")
+endif()
+if(BUILD_TESTING)
   add_executable(orc_zero_meshtastic_test tests/meshtastic_decode_test.cpp)
   target_link_libraries(orc_zero_meshtastic_test PRIVATE orc_zero_meshtastic)
   target_compile_options(orc_zero_meshtastic_test PRIVATE -UNDEBUG)
