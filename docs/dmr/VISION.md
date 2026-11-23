@@ -10,6 +10,14 @@
 
 OrcSDR should be as useful for exploring an unfamiliar radio environment as it is for monitoring a familiar one. A user sets a location (or leaves it unset), chooses a search scope, and OrcSDR discovers actual activity, describes what it can prove, and remembers what it learned—**without an internet requirement**. Curated directory data is an optional accelerator, never the source of an invented reception result.
 
+## NXDN product direction — owner-approved 2026-11-22
+
+The NXDN program targets **both** amateur-radio/scanner/DX users and commercial-radio technicians/integrators. Both **Type-C** and **Type-D** trunking are required independent receive-only qualification tracks. Research into legally appropriate **AMBE+2 clear-voice reception begins early and in parallel** with standards/decoder work, without claiming that voice is already licensed or implemented.
+
+The differentiating experience is **Discover → Understand → Measure → Remember**: zero-codeplug NXDN48/96 discovery, verified RAN and call identities, Last Heard, local channel learning, and a field-survey analyzer with evidence-qualified RF measurements. NXDN research stays in `REA-Results`; approved product scope and future decoder work stay on `feature/dmr-digital-voice-foundation`. Neither Pluto nor TX belongs in this work.
+
+See [approved NXDN market strategy and phased implementation gates](../digital-voice/NXDN_MARKET_STRATEGY_AND_ROADMAP_2026-11-22.md). This is planning, **not** completed NXDN reception.
+
 ## Four system-wide requirements
 
 1. **Discover first, configure second.** Search selected frequencies and classify DMR, P25 and NXDN when the corresponding host- and RF-validated decoder supports it. Learn frequency, DMR color code and time slot, P25 NAC/system/site/talkgroup, NXDN RAN, radio IDs, and other identity fields *only* from successfully decoded signaling. Permit discovery with no imported profile.

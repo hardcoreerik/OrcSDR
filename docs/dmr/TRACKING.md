@@ -71,6 +71,12 @@ The user specifically wants simple import and migration of existing radio data/a
 
 **Provider restrictions:** A directory listing, FCC license, RadioID record or internet-sourced alias is not an RF observation. Current documented [DATA_SOURCE_LEDGER.md](../DATA_SOURCE_LEDGER.md) rules for redistribution, source URL, retrieval, transformation, copyright/terms and rollback remain mandatory. API access must never be treated as implied permission for offline redistribution or commercial appliance use.
 
+## NXDN market strategy — owner-approved 2026-11-22
+
+**Three explicit decisions:** one receiver product for **amateur/scanner/DX and commercial technician/integrator** customers; **both NXDN Type-C and Type-D** developed and qualified independently; **voice feasibility/licensing started immediately in parallel** with NXDN48 and NXDN96 protocol research. These are roadmap commitments **not decoder completion**.
+
+Roadmap checkpoints: NX-R0 standards/IQ/market research; NX-V0 AMBE+2 software/hardware licensing and receive-audio feasibility; NX-H48 / NX-H96 independently validated metadata; NX-IQ real-IQ acceptance; NX-DX discovery/Last Heard; NX-C Type-C and NX-D Type-D trunking; NX-DATA GPS/status/text; NX-P4 hardware profiling; NX-UI field analyzer; NX-VOICE licensed clear voice. No premature inference of real hardware support, trunking or intelligible audio. See [complete NXDN market-to-engineering roadmap](../digital-voice/NXDN_MARKET_STRATEGY_AND_ROADMAP_2026-11-22.md). The single canonical integration branch remains `feature/dmr-digital-voice-foundation` and all decoder code remains outside `main.cpp`.
+
 ## System foundations and delivery order
 
 | Gate | Work | Status | Evidence required to close |
@@ -83,7 +89,7 @@ The user specifically wants simple import and migration of existing radio data/a
 | D1-S | Confirm BS CACH cadence before slot promotion | **Corrected D1-CACH-01 by four clean alternating BS bursts; independent conformance Release/ASan passed** | Random/zero-prefix rejects confidence upgrade; continuous BS cadence permits supported slot; direct-mode slot unchanged; identity integrity remains independent |
 | D2 | DX-01 to DX-04 plus offline logbook and CFG-01/02/03/08 | Not started | Single-tuner lifecycle, scan/candidate/save flows, reboot and SD failure tests, no-net integration, P25 regression |
 | D3 | Pack imports and offline ID/candidate matching (DX-05/06), IQ recorder/replay (DX-07) | Not started | Authorized data/terms, deterministic fixture and corruption tests, replay without SDR hardware |
-| D4 | NXDN48/NXDN96 independent protocol cores on shared verified DSP primitives | Not started | Replay/test fixture gates for LICH/SACCH/RAN/identity, distinguish NXDN modes, no P25/DMR regression |
+| D4 | NXDN48/NXDN96 independent RX cores **plus both Type-C and Type-D**, discovery-first field analysis, early voice feasibility | **Product scope approved 2026-11-22; implementation not started** | Separate 48/96 IQ, LICH/SACCH/RAN/identity acceptance; independent Type-C/Type-D grants/site replay; Last Heard/evidence contracts; AMBE+2 licensing decision before voice; no P25/DMR regression. [Detailed NXDN roadmap](../digital-voice/NXDN_MARKET_STRATEGY_AND_ROADMAP_2026-11-22.md) |
 | D5 | Cross-protocol hunt, antenna comparison and map overlays (DX-08/09) | Not started | Measured sensitivity/false-positive/CPU + memory with noisy/quiet/simultaneous systems, offline map acceptance |
 | D6 | DMR Tier III and named vendor systems (DX-10), plus voice work | Not started | Per-family spec/compatibility and replay/live RF gates; voice requires independent AMBE+2 feasibility/licensing decision |
 

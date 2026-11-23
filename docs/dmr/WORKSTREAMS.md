@@ -4,6 +4,12 @@
 **Source of scope:** [VISION.md](VISION.md) and [TRACKING.md](TRACKING.md). **As of:** 2026-11-11.
 **Current status (2026-11-16):** **DMR D1-N source-pinned real-IQ acceptance PASS** (40/40 native Release+ASan runs at five chunk sizes, all original source hashes verified, integrity-validated radio ID 3024109/TG99/CC1 on two positives, zero false identities on both exact negative controls). [CI 44028198169](https://github.com/hardcoreerik/OrcSDR/actions/runs/44028198169). MS-only sync does not claim an unsupported TS1/TS2; the first keyup's one-vs-two upstream voice-sync difference stays recorded as separate upstream REVIEW. Independent D1-F adversarial audit PASS. D-STAR/YSF synthetic hard-bit metadata foundations are now on the same feature branch and unified host tests PASS [CI 44028198172](https://github.com/hardcoreerik/OrcSDR/actions/runs/44028198172). Physical Tab5 receive integration, actual P4 CPU/memory, real IQ D-STAR/YSF frontends and voice licensing are NOT VERIFIED. Main.cpp refactor and Pluto/TX work remain separate; see [architecture boundary](../digital-voice/REFACTOR_BOUNDARY_2026-11-16.md).
 
+## Owner-approved NXDN market and implementation direction — 2026-11-22
+
+NXDN48 and NXDN96 are **not implemented**. The owner approved **both** amateur/scanner and commercial field-analysis audiences, **both** Type-C and Type-D trunking as independently qualified features, and **early parallel** AMBE+2 voice feasibility/licensing work. Complete user scenarios, market assumptions, technical dependencies, proof levels and phase gates are in [NXDN market strategy and roadmap](../digital-voice/NXDN_MARKET_STRATEGY_AND_ROADMAP_2026-11-22.md).
+
+Research artifacts belong in REA-Results, but the approved product decisions and implementation program belong on **this same Digital Voice branch**. Any future scoped NXDN implementation must originate from `feature/dmr-digital-voice-foundation` and return here. Do not create a separate permanent NXDN foundation, touch the `main.cpp` refactor, add another SDR/USB owner, or mix Pluto/TX work. New NXDN agent folder ownership must be established by the lead before coding; none is implicitly assigned by this note.
+
 ## One shared branch, exclusive folders
 
 | Owner | Exclusive write folder | New assignment (proposed; NOT started) | Acceptance |
