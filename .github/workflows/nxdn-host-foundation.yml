@@ -1,0 +1,46 @@
+name: NXDN receive host and pinned IQ checks
+on:
+  push:
+    branches: [feature/dmr-digital-voice-foundation]
+    paths:
+      - 'components/orcsdr_nxdn/**'
+      - 'tests/nxdn_replay_acceptance/**'
+      - '.github/workflows/nxdn-host-foundation.yml'
+  pull_request:
+    paths:
+      - 'components/orcsdr_nxdn/**'
+      - 'tests/nxdn_replay_acceptance/**'
+      - '.github/workflows/nxdn-host-foundation.yml'
+  workflow_dispatch:
+jobs:
+  host:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        build: [Release, Sanitizers]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Configure
+        run: cmake -S components/orcsdr_nxdn -B build/nxdn -DCMAKE_BUILD_TYPE=${{ matrix.build == 'Sanitizers' && 'Debug' || 'Release' }} -DORC_NXDN_SANITIZERS=${{ matrix.build == 'Sanitizers' && 'ON' || 'OFF' }}
+      - name: Build
+        run: cmake --build build/nxdn --parallel 2
+      - name: Test
+        run: ctest --test-dir build/nxdn --output-on-failure -V
+  pinned-real-air-diagnostics:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build host receiver
+        run: |
+          cmake -S components/orcsdr_nxdn -B build/nxdn -DCMAKE_BUILD_TYPE=Release
+          cmake --build build/nxdn --parallel 2
+      - name: Retrieve independently captured upstream fixtures
+        run: |
+          mkdir -p /tmp/nxdn-iq
+          BASE=https://raw.githubusercontent.com/MattCheramie/GopherTrunk/f06bfff493f47fdeb69807c8b08b2b32a253839f/internal/radio/nxdn/testdata
+          for name in nxdn48_rdch_voice_447100_16oct_48k.cs16 nxdn96_rdch_voice_447100_15oct_48k.cs16 nxdn96_rcch_cc_453775_19oct_48k.cs16; do
+            curl -fSL --retry 3 "$BASE/$name" -o "/tmp/nxdn-iq/$name"
+          done
+      - name: Verify fixture hashes and compare three IQ chunk sizes
+        run: python3 tests/nxdn_replay_acceptance/check_replay.py --fixtures /tmp/nxdn-iq --replay build/nxdn/orcsdr_nxdn_replay
