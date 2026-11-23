@@ -34,7 +34,7 @@ constexpr int kSpectrumH = 260, kWaterfallY = 372, kWaterfallH = 242;
 constexpr int kSideX = 870, kSideW = 388;
 constexpr int kFooterY = 650, kFooterH = 56;
 constexpr uint32_t kBiasHoldMs = 2000;
-constexpr size_t kActionCapacity = 16;
+constexpr size_t kActionCapacity = 32;
 constexpr size_t kMaxReadings = 3600;
 constexpr size_t kScreenPixels = 1280u * 720u;
 
@@ -167,6 +167,14 @@ bool queue(ActionKind kind, int32_t value) {
   g_actions[g_action_write] = {kind, value};
   g_action_write = next;
   return true;
+}
+
+bool pending_bias_enable() {
+  bool pending = false;
+  for (size_t i = g_action_read; i != g_action_write; i = (i + 1) % kActionCapacity) {
+    if (g_actions[i].kind == ActionKind::bias_tee) pending = g_actions[i].value != 0;
+  }
+  return pending;
 }
 
 bool safe_note(const char* value) {
@@ -815,7 +823,7 @@ void queue_restore() {
   queue(ActionKind::rtl_agc, g_initial.rtl_agc ? 1 : 0);
   // Exit restore may turn bias OFF but never back ON: by exit the attached
   // receiver or antenna may not be the one bias was enabled for.
-  if (runtime().bias_tee) queue(ActionKind::bias_tee, 0);
+  if (runtime().bias_tee || pending_bias_enable()) queue(ActionKind::bias_tee, 0);
   if ((g_initial.capabilities & ESP_RTL_SDR_CAP_TUNER_BANDWIDTH) &&
       g_initial.sample_rate_sps == 2400000)
     queue(ActionKind::tuner_bandwidth_hz,

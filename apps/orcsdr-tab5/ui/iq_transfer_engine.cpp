@@ -14,6 +14,7 @@ namespace {
 
 struct IqGetState {
   bool active = false;
+  size_t size = 0;
   size_t sent = 0;
   mbedtls_sha256_context sha;
 };
@@ -67,7 +68,7 @@ void get_begin(const Hooks& hooks) {
     return;
   }
   size_t bytes = 0;
-  if (!hooks.capture_ready(&bytes)) {
+  if (!hooks.capture_ready(&bytes) || bytes == 0) {
     hooks.write_line("RTL_IQ_GET_ERROR capture_not_ready");
     return;
   }
@@ -78,6 +79,7 @@ void get_begin(const Hooks& hooks) {
     return;
   }
   g_iq_get.active = true;
+  g_iq_get.size = bytes;
   g_iq_get.sent = 0;
   say(hooks, "RTL_IQ_GET_READY chunk=%u bytes=%u\n",
       static_cast<unsigned>(orcsdr::sd_transfer::kGetChunkBytes), static_cast<unsigned>(bytes));
@@ -88,10 +90,16 @@ void get_chunk(const Hooks& hooks) {
     hooks.write_line("RTL_IQ_GET_ERROR not_active");
     return;
   }
-  const size_t total = hooks.capture_bytes();
+  const size_t total = g_iq_get.size;
+  const uint8_t* base = hooks.capture_data();
+  const size_t available = hooks.capture_bytes();
+  if (base == nullptr || g_iq_get.sent >= total || available < total) {
+    get_abort(hooks, "capture_changed");
+    return;
+  }
   const size_t remaining = total - g_iq_get.sent;
   const size_t count = std::min(remaining, orcsdr::sd_transfer::kGetChunkBytes);
-  const uint8_t* data = hooks.capture_data() + g_iq_get.sent;
+  const uint8_t* data = base + g_iq_get.sent;
   if (mbedtls_sha256_update(&g_iq_get.sha, data, count) != 0) {
     get_abort(hooks, "sha_update");
     return;

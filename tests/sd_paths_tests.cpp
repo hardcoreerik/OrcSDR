@@ -14,6 +14,7 @@ int failures = 0;
 }  // namespace
 
 int main() {
+  using orcsdr::sd_paths::is_acars_log;
   using orcsdr::sd_paths::remove_allowed;
   using orcsdr::sd_paths::transfer_allowed;
 
@@ -32,6 +33,7 @@ int main() {
   CHECK(!transfer_allowed("/orcsdr/../boot.bin"));
   CHECK(!transfer_allowed("/orcsdr/a..b"));                 // any ".." is refused
   CHECK(!transfer_allowed("/orcsdr/a\\b"));
+  CHECK(!transfer_allowed("/orcsdr/a\"b"));
   CHECK(!transfer_allowed("/orcsdr/a\tb"));
   CHECK(!transfer_allowed("/orcsdr/a\x7f"));
   CHECK(!transfer_allowed("/orcsdr/\xc3\xa9"));             // non-ASCII
@@ -43,9 +45,22 @@ int main() {
 
   CHECK(remove_allowed("/orcsdr/a"));
   CHECK(remove_allowed("/OrcSDR_Splash_1280x720_60fps_10s.orsplash"));
+  CHECK(!remove_allowed(nullptr));
+  CHECK(!remove_allowed("/orcsdr/a\"b"));
   CHECK(!remove_allowed("/OrcSDR_Splash_1280x720_60fps_10s.orsplash.bak"));
   CHECK(!remove_allowed("/orcsdr/"));
   CHECK(!remove_allowed("/other"));
+
+  CHECK(is_acars_log("/orcsdr/acars/20261122.jsonl"));
+  CHECK(is_acars_log("/orcsdr/acars/undated.jsonl"));
+  CHECK(!is_acars_log(nullptr));
+  CHECK(!is_acars_log("/orcsdr/acars/"));
+  CHECK(!is_acars_log("/orcsdr/acars/other.bin"));
+  CHECK(!is_acars_log("/orcsdr/acars/2026112.jsonl"));
+  CHECK(!is_acars_log("/orcsdr/acars/202611220.jsonl"));
+  CHECK(!is_acars_log("/orcsdr/acars/2026112a.jsonl"));
+  CHECK(!is_acars_log("/orcsdr/acars/sub/20261122.jsonl"));
+  CHECK(!is_acars_log("/orcsdr/acars/20261122.jsonl.bak"));
 
   if (failures == 0) std::printf("sd_paths: all checks passed\n");
   return failures == 0 ? 0 : 1;

@@ -17,6 +17,7 @@ constexpr size_t kPutChunkBytes = 16 * 1024;
 // USB Serial/JTAG has a 4 KiB TX queue; smaller reads avoid producer deadlock.
 constexpr size_t kGetChunkBytes = 2 * 1024;
 constexpr uint64_t kMaxBytes = 64ULL * 1024ULL * 1024ULL;
+constexpr size_t kMaxListEntries = 512;
 
 // Every pointer must be set.
 struct Hooks {
