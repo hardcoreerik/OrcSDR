@@ -74,7 +74,7 @@ class DashboardSession {
     ft8_last_utc_=0;
     ft8_drawn_=false;
     clock_open_=clock_entry_=false;clock_digits_.clear();clock_tick_=0;
-    if(mode==15){clock_.start();ft8_visual_.clear();ft8_map_.clear();ft8_map_open_=false;ft8_log_offset_=0;ft8_visual_painted_=ft8_map_painted_=~uint64_t{0};ft8_visual_palette_=~0u;}
+    if(mode==15){clock_.start();ft8_visual_.clear();ft8_map_.clear();ft8_map_open_=false;ft8_page_=0;ft8_log_offset_=0;ft8_visual_painted_=ft8_map_painted_=~uint64_t{0};ft8_visual_palette_=~0u;}
     if(mode==16){
       p25_=P25Screen{};
       const uint32_t profile_channel=rf_center;
@@ -189,7 +189,7 @@ class DashboardSession {
         ft8_band_.toggle_mode();ft8_header_dirty_=true;clock_tick_=0;return true;
       }
       if(key==Key::mute){
-        ft8_map_open_=!ft8_map_open_;ft8_screen_.rect(0,0,320,146,CompactRenderer::bg);ft8_map_painted_=ft8_visual_painted_=~uint64_t{0};
+        ft8_page_=ft8_page_?0:1;ft8_map_open_=ft8_page_==1;ft8_screen_.rect(0,0,320,146,CompactRenderer::bg);ft8_map_painted_=ft8_visual_painted_=~uint64_t{0};
         ft8_render_epoch_=~uint64_t{0};ft8_header_dirty_=true;clock_tick_=0;return true;
       }
       if(key==Key::up||key==Key::down){
@@ -200,9 +200,20 @@ class DashboardSession {
       }
       if(key==Key::step){clock_open_=true;ft8_screen_.rect(0,18,320,152,CompactRenderer::bg);clock_tick_=0;return true;}
       if(key==Key::escape)return false;
+      // Same contract as every dashboard: left/right page, up/down act inside
+      // the page. Band moved to B, which FT8 never used for bias tee.
       if(key==Key::left||key==Key::right){
-        ft8_band_.step(key==Key::right);
+        ft8_page_=key==Key::right?1:0;
+        ft8_map_open_=ft8_page_==1;
+        ft8_screen_.rect(0,36,320,124,CompactRenderer::bg);
+        ft8_map_painted_=ft8_visual_painted_=~uint64_t{0};
         ft8_header_dirty_=true;
+        return true;
+      }
+      if(key==Key::bias_tee){
+        ft8_band_.step(true);
+        ft8_header_dirty_=true;
+        return true;
       }
       return true;
     }
@@ -364,8 +375,8 @@ class DashboardSession {
 
 
 
-        if(ft8_map_open_){ft8_screen_.text(4,160,"NATURAL EARTH",CompactRenderer::muted);ft8_screen_.keys(94,160,{{"M","RX"},{"T","UTC"},{"SPACE","DASH"}});}
-        else ft8_screen_.keys(4,160,{{"Z/C","BAND"},{"G","MODE"},{"M","MAP"},{"T","UTC"},{"SPACE","DASH"}});
+        if(ft8_map_open_){ft8_screen_.rect(0,158,320,12,CompactRenderer::bg);ft8_screen_.keys(4,160,{{"Z/C","PAGE"},{"M","RX"},{"T","UTC"},{"SPACE","DASH"}});}
+        else {ft8_screen_.rect(0,158,320,12,CompactRenderer::bg);ft8_screen_.keys(4,160,{{"Z/C","PAGE"},{"F/X","LOG"},{"B","BAND"},{"M","MAP"},{"SPACE","DASH"}});}
       }
       if(!ft8_drawn_||ft8_header_dirty_){
         const auto* preset=orcsdr::ft8::band(ft8_band_.index);
@@ -373,8 +384,7 @@ class DashboardSession {
         std::snprintf(label,sizeof(label),"%.4f MHZ USB  %s  %s",ft8_band_.dial()/1e6,preset->label,
           ft8_applied_==ft8_band_.dial()&&ft8_applied_mode_==ft8_band_.mode?"RX":"TUNING");
         ft8_screen_.rect(0,0,320,36,CompactRenderer::bg);
-        ft8_screen_.badge(1,1,28);
-        ft8_screen_.text(33,3,std::string("OrcSDR ")+orcsdr::ft8::mode_name(ft8_band_.mode)+(ft8_map_open_?" MAP":" RX"),CompactRenderer::green,ft8_map_open_?1:2);
+        ft8_screen_.status_bar((std::string(orcsdr::ft8::mode_name(ft8_band_.mode))+(ft8_map_open_?" MAP":" RX")).c_str(),-1,ft8_page_,2);
         ft8_screen_.text(33,23,label,CompactRenderer::white);
         ft8_header_dirty_=false;
       }
@@ -416,8 +426,8 @@ class DashboardSession {
         ft8_screen_.text(4,147,label,clock.synced?CompactRenderer::green:CompactRenderer::yellow);
         clock_tick_=ui_tick;
         ft8_screen_.rect(0,160,320,10,CompactRenderer::bg);
-        if(ft8_map_open_){ft8_screen_.text(4,160,"NATURAL EARTH",CompactRenderer::muted);ft8_screen_.keys(94,160,{{"M","RX"},{"T","UTC"},{"SPACE","DASH"}});}
-        else ft8_screen_.keys(4,160,{{"Z/C","BAND"},{"G","MODE"},{"M","MAP"},{"T","UTC"},{"SPACE","DASH"}});
+        if(ft8_map_open_){ft8_screen_.rect(0,158,320,12,CompactRenderer::bg);ft8_screen_.keys(4,160,{{"Z/C","PAGE"},{"M","RX"},{"T","UTC"},{"SPACE","DASH"}});}
+        else {ft8_screen_.rect(0,158,320,12,CompactRenderer::bg);ft8_screen_.keys(4,160,{{"Z/C","PAGE"},{"F/X","LOG"},{"B","BAND"},{"M","MAP"},{"SPACE","DASH"}});}
       }
       return ft8_screen_.pixels;
     }
@@ -1147,7 +1157,7 @@ class DashboardSession {
   P25Screen p25_;
   Ft8Visuals ft8_visual_;
   Ft8WorldMap ft8_map_;
-  bool ft8_map_open_=false;size_t ft8_log_offset_=0;
+  bool ft8_map_open_=false;int ft8_page_=0;size_t ft8_log_offset_=0;
   uint64_t ft8_visual_painted_=~uint64_t{0},ft8_map_painted_=~uint64_t{0};
   unsigned ft8_visual_palette_=~0u;
   ClockControl clock_;

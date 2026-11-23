@@ -45,6 +45,7 @@ struct Snapshot {
   std::array<uint8_t,256> spectrum{};
   std::array<std::array<uint8_t,256>,kWaterfallRows> waterfall{};
   int waterfall_rows=0,menu_selection=0,dashboard_selection=0;
+ int battery_percent=-1;
  uint8_t fm_page=0,fm_city=0;  // FM dashboard page and chosen location
 };
 class ControlModel {

@@ -510,6 +510,28 @@ decoding. If the script itself is killed with `SIGKILL` the launcher stays froze
 `kill -CONT $(pgrep -f M5CardputerZero-APPLaunch)` or
 `systemctl --user restart APPLaunch.service` recovers it.
 
+### Navigation contract
+
+Every dashboard follows the same rule, so the keys do not have to be relearned
+per screen. Dashboards may add hotkeys, but they may not repurpose these:
+
+| Key | Meaning |
+| --- | --- |
+| `Z` / `C` | previous / next screen **within** the dashboard |
+| `F` / `X` | move **within** the current screen: scroll, select, adjust |
+| `Enter` | act on the current screen |
+| `Esc` | leave the screen; from the first screen, leave the dashboard |
+| `Space` | dashboard selector |
+| `Tab` | menu |
+| `V` | frequency entry |
+
+The status bar shows one dot per screen so a screen with siblings is obvious
+without a manual. Hotkeys stay in the footer, next to the keys they replace.
+
+Where a dashboard used to violate the rule the binding moved rather than the
+rule: FT8 had `Z`/`C` on band change, so band change became `B` and `Z`/`C` now
+page between FT8 RX and the map. FM and LoRa already paged with `Z`/`C`.
+
 ### Keyboard capabilities
 
 The internal keyboard is the `tca8418c` controller at

@@ -29,6 +29,29 @@ struct CompactRenderer {
   bool initialized=false;
   Page previous_page=Page::receive;
   void fill(uint16_t color){pixels.fill(color);++full_clears;}
+  // One status bar for every dashboard. The Orc face is the only icon: the row
+  // carries the product and screen names, the battery if it is known, and a rule
+  // under it. Each screen draws its own readout in the row below.
+  // `page` is 0-based and `pages` the screen count: a row of dots tells the
+  // operator a screen has siblings, which is what makes paging discoverable.
+  void status_bar(const char* dashboard,int battery=-1,int page=-1,int pages=0){
+    rect(0,0,320,36,panel);
+    badge(1,1,28);
+    text(33,3,"ORCSDR",green,2);
+    text(111,3,dashboard,cyan,2,17);
+    int right=316;
+    if(battery>=0){
+      char b[8];std::snprintf(b,sizeof(b),"%d%%",battery);
+      const int w=6*int(std::strlen(b));
+      text(right-w,3,b,white);right-=w+8;
+    }
+    if(pages>1&&page>=0){
+      const int dot=4,gap=3,total=pages*dot+(pages-1)*gap;
+      for(int i=0,x=right-total;i<pages;++i,x+=dot+gap)rect(x,7,dot,dot,i==page?cyan:grid);
+    }
+    line(0,35,319,35,grid);
+  }
+
   void point(int x,int y,uint16_t color){if(x>=0&&x<width&&y>=0&&y<height)pixels[size_t(y)*width+x]=color;}
   void rect(int x,int y,int w,int h,uint16_t c){if(w<=0||h<=0)return;for(int yy=std::max(0,y);yy<std::min(height,y+h);++yy)for(int xx=std::max(0,x);xx<std::min(width,x+w);++xx)point(xx,yy,c);}
   void border(int x,int y,int w,int h,uint16_t c){rect(x,y,w,1,c);rect(x,y+h-1,w,1,c);rect(x,y,1,h,c);rect(x+w-1,y,1,h,c);}
@@ -104,21 +127,17 @@ struct CompactRenderer {
       keys(4,162,{{"SPACE","DASH"},{"V","FREQ"},{"S/D","VOL"},{"P","COLOR"},{"TAB","MENU"}});
     }
     // Clear only the widgets being updated; framebuffer output skips identical pixels.
-    rect(0,0,320,40,panel);
-    badge(1,1,28);text(33,1,"OrcSDR",green);text(79,1,"FM BROADCAST",cyan);
+    status_bar("FM BROADCAST",s.battery_percent,int(s.fm_page),4);
     const std::string conn=s.simulated?"DEMO":s.connection==Connection::ready?(s.audio_ready?"RTL ON":"NO AUDIO"):s.connection==Connection::connecting?"OPEN...":"NO RX";
-    text(316-int(conn.size())*6,1,conn,s.connection==Connection::ready?green:yellow);
+    text(316-int(conn.size())*6,27,conn,s.connection==Connection::ready?green:yellow);
     const bool pending=s.requested_hz!=s.applied_hz&&s.connection==Connection::ready;
     const uint32_t station=s.applied_hz?s.applied_hz:s.requested_hz;
-    text(33,13,format_mhz(pending?s.requested_hz:station),pending?yellow:white,2);
-    text(123,19,"MHZ WFM",cyan);
+    text(33,21,format_mhz(pending?s.requested_hz:station),pending?yellow:white,2);
+    text(123,27,"MHZ WFM",cyan);
 
     const uint32_t span=s.applied_rate?s.applied_rate:kDefaultSpanHz;
-    char buf[64];std::snprintf(buf,sizeof(buf),"SPAN %.3fM",span/1000000.);text(202,19,buf,cyan);
-    std::snprintf(buf,sizeof(buf),"STEP %uK",s.step_hz/1000);text(4,32,buf,cyan);
-    std::snprintf(buf,sizeof(buf),"VOL %d%%",s.volume);text(82,32,s.muted?"MUTED":buf,s.muted?yellow:green);
-    std::snprintf(buf,sizeof(buf),"G %+.1f",s.gain_tenth_db/10.);text(145,32,s.gain_auto?"G AUTO":buf,white);
-    text(208,32,orcsdr::waterfall_style::palette_name(s.palette),muted,1,18);
+    char buf[64];std::snprintf(buf,sizeof(buf),"SPAN %.3fM",span/1000000.);text(202,27,buf,cyan);
+
     // Visuals are NEVER synthesized in live mode. DEMO is explicit.
     rect(spectrum.x,spectrum.y,spectrum.w,spectrum.h,0x0021);
     rect(waterfall.x,waterfall.y,waterfall.w,waterfall.h,bg);

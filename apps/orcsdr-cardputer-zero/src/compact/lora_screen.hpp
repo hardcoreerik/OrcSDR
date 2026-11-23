@@ -178,9 +178,7 @@ struct LoraScreen {
   }
 
   void draw_header() {
-    frame.fill(frame.bg);
-    frame.badge(1, 1, 28);
-    frame.text(33, 3, "ORCSDR MESH", frame.green, 2, 22);
+    frame.status_bar("LORA/MESH",-1,int(page),int(kPageCount));
     char b[64];
     std::snprintf(b, sizeof(b), "%s %u/%u", page_name(page), unsigned(page) + 1,
                   unsigned(kPageCount));

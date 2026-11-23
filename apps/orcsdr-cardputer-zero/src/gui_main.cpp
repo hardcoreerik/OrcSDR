@@ -10,6 +10,7 @@
 #include <chrono>
 #include <cstdint>
 #include <cstring>
+#include <fstream>
 #include <iostream>
 #include <memory>
 #include <stdexcept>
@@ -255,6 +256,14 @@ int choose_input(const std::string& explicit_path){
   ::close(fd);
  }return -1;
 }
+// Battery for the status bar. The gauge is a bq27220 on this board; if it is
+// missing the bar simply omits the figure rather than showing a fake level.
+static int read_battery_percent(){
+  std::ifstream in("/sys/class/power_supply/bq27220-0/capacity");
+  int value=-1;
+  if(in>>value)return std::clamp(value,0,100);
+  return -1;
+}
 int run_fb(const Options& a,ControlModel& model,FmSession* session){
  const int fd=::open("/dev/fb0",O_RDWR|O_CLOEXEC);
  if(fd<0)throw std::runtime_error("Cannot open /dev/fb0; check launcher/display permissions");
@@ -386,6 +395,7 @@ int run_fb(const Options& a,ControlModel& model,FmSession* session){
       std::memcpy(target,&encoded,pixel_bytes);
    }
   }
+  if((ticks%40)==0)model.s.battery_percent=read_battery_percent();
   ++frames_drawn;
 
   if(fb_stats){
