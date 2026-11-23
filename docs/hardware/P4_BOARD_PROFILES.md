@@ -344,6 +344,23 @@ Status (link, speed, duplex, MAC, IP, gateway, which PHY driver, why it did not 
 
 Nothing here unlocks transmit: lora_tx is never inferred from detection.
 
+## Shared UI changes on main since the P4 branch point (reconciliation, 2026-11-23)
+
+Compared: `origin/main` at `87045424` against the point where this branch left `main` (`4362bd9b`, 2026-11-06). 220 files under `apps/orcsdr-tab5/ui` changed: 190 new, 30 modified. **Everything below is what the code and the builds show. P4 Core (ESP32-P4-ETH profile) and the browser bundle build; nothing was flashed and no browser or board was driven.**
+
+| Shared change on main | OrcSDR P4 Core | OrcSDR Web (browser) | Notes |
+|---|---|---|---|
+| AIS (registry entry, 20 `ais_*` modules, dashboard; PR 245) | Not compiled. The All Dashboards tile is shown (the registry marks it `available`); opening it only logs "not available on this target yet", with no on-screen notice. | Not compiled. Same tile and behaviour. | Wiring needs a screen wrapper and the radio hooks (`docs/AIS_PORTABILITY_HANDOFF.md`) and a 240 kS/s source at 162 MHz. |
+| Visualizer registry entry | Not compiled (`rf_visualizer` is not in the P4 source list). Tile shown, opening logs "not available". | Compiled (`rf_visualizer`, `vizctl_controller`); not re-tested after the merge. | |
+| Volume tray redesign and header geometry (`dashboard_audio_control`, `screen_controller::set_draw_hold`) | Compiled. The shared `draw()` paints an open tray. | Compiled, same. | The "hold dashboards still under the tray" call and the top-drawn overlay refresh are made only from the Tab5's `main.cpp`. On P4 Core and in the browser a dashboard may paint over an open tray; **not checked**. |
+| Home spectrum copied by the P4 PPA (PR 262, `screen_blit`) | Seam `ORCSDR_NO_SCREEN_BLIT`: keeps `pushSprite`. | Same seam. | Tab5 build unchanged. |
+| 104 `serial_*` command modules, rtl_tcp client and server (17 `rtl_tcp_*`), SD transfer, support report | Not compiled. P4 Core has its own `serial_cli.cpp` and `esp_rtl_tcp`. | Not compiled. | Tab5 `main.cpp` and its modules only. |
+| `settings_app.cpp` (+252 lines: RTL_TCP page and others) | Compiled. | Compiled. | Builds. How the new pages behave on P4 Core and in the browser was not exercised. |
+| Maps (`map_catalog`, `map_downloads`, `map_install`, `map_screen`, `map_serial`) | Not compiled; P4 Core has `map_service_p4`. | Not compiled; browser has `web_map_service`. | |
+| `wifi_service.cpp`, `am_dashboard.cpp`, `rf_lab.cpp`, `home_dashboard.cpp` (modified) | Compiled. | `wifi_service` not compiled; the others are. | Build only. |
+
+No new compile seam was needed beyond `ORCSDR_NO_SCREEN_BLIT`. Open items for the owner (each changes visible behaviour, so none was done): an on-screen "not available on this target" notice for tiles a target does not have; moving the tray hold and overlay refresh out of the Tab5 `main.cpp` into a shared module; wiring AIS and the Visualizer into P4 Core.
+
 ## Pending on the owner side (2026-11-09)
 
 - **COM29 web tests on the current image** (basemap delivery, `build-p4eth-net`): not run. The board boots and passes `p4_health.py`, but its Ethernet link does not come up with no cable, so the web server never listens. Re-run `tools/web_maps_test.js`, the four other web tests and `tools/p4_web_auth_test.py` once a cable is on it.
