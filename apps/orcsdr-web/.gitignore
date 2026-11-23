@@ -1,0 +1,5 @@
+# build outputs and the pinned third-party fetch (see web/build.ps1)
+dist/
+web/dist/
+web/third_party/
+decoders/build/

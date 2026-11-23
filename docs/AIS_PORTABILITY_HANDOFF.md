@@ -1,6 +1,6 @@
 # AIS portability handoff (OrcSDR P4 Core and OrcSDR Web)
 
-Status: **analysis only. No P4 Core or Web build of this branch has been run.** Nothing here is evidence that either target compiles or receives AIS. The owner of `claude/orcsdr-web-landing` (draft PR 238) makes the changes; this branch does not touch `apps/orcsdr-p4-core` or `apps/orcsdr-web`.
+Status (updated 2026-11-23 on `claude/orcsdr-web-landing`, draft PR 238): **analysis, plus a build of the merged tree that does not include any AIS source.** The analysis below was written on the AIS branch, which does not touch `apps/orcsdr-p4-core` or `apps/orcsdr-web`. Since then `origin/main` (`87045424`, with AIS merged) was merged into the landing branch, and OrcSDR P4 Core (ESP32-P4-ETH profile) and the browser bundle both build. **Neither target compiles an AIS source**: the AIS modules are not in either source list, so nothing below about AIS compiling, linking or receiving on P4 Core or in the browser has been tried. The registry's AIS tile is shown on both targets; opening it on P4 Core only logs "not available on this target yet". Nothing was flashed and no board or browser was driven for this. See the per-target table in `docs/hardware/P4_BOARD_PROFILES.md` ("Shared UI changes on main since the P4 branch point").
 
 ## Dependency map of the AIS sources
 
@@ -34,6 +34,10 @@ Status: **analysis only. No P4 Core or Web build of this branch has been run.** 
 - `ais_dashboard.cpp` includes `esp_attr.h` (for `EXT_RAM_BSS_ATTR`) only under `ESP_PLATFORM`. A non-ESP build gets a plain static.
 - The dashboard text says "TEST REPLAY DATA - NOT LIVE RF" when `Snapshot::test_replay` is set; it contains no Tab5-specific wording.
 
-## Verification to run in a throwaway worktree (not yet done)
+## Verification to run in a throwaway worktree (partly done)
 
 Combine this branch with the latest `claude/orcsdr-web-landing`, build P4 Core for Waveshare ESP32-P4-ETH and the wasm bundle with the documented scripts, flash nothing, commit nothing, and classify each failure as a dashboard portability defect, a missing source-list entry, a missing browser source capability, or an unrelated existing failure.
+
+### Progress on that verification (2026-11-23)
+
+Done: the landing branch with `origin/main` `87045424` merged builds for P4 Core (`-B build-p4eth-net`, Waveshare ESP32-P4-ETH overlay set) and for the browser bundle (`apps/orcsdr-web/web/build.ps1`), with no AIS source added. Not done, in order: add the nine AIS sources listed under "Per-target work" to `apps/orcsdr-p4-core/main/CMakeLists.txt` and `apps/orcsdr-web/web/build.sh`; build both and classify each failure; write `screen_ais.cpp` and the `ais_radio::Hooks` for P4 Core; decide the browser's 240 kS/s 162 MHz source. Flash nothing until the owner names the board and confirms its port.

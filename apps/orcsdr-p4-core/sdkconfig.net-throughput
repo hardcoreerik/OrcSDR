@@ -1,0 +1,10 @@
+# TCP windows sized for a raw IQ stream (esp-rtl-tcp, 2.4 MS/s = 38 Mbit/s). lwip's default 5760 bytes (four segments) limits a single
+# stream to a few tens of Mbit/s on a LAN and made a wired 100 Mbit link drop blocks. lwip buffers go to PSRAM where possible
+# (CONFIG_SPIRAM_TRY_ALLOCATE_WIFI_LWIP). Also enables WebSocket support for the browser IQ channel (main/web_iq.cpp, needs 16 sockets).
+# Measure before making this a default for every board.
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=32768
+CONFIG_LWIP_TCP_WND_DEFAULT=32768
+CONFIG_LWIP_TCP_RECVMBOX_SIZE=16
+CONFIG_LWIP_MAX_SOCKETS=24
+CONFIG_HTTPD_WS_SUPPORT=y
+CONFIG_HTTPD_WS_PRE_HANDSHAKE_CB_SUPPORT=y

@@ -49,4 +49,7 @@ artifacts/radio-scan-soak/
 artifacts/pocsag-validation/
 artifacts/lora_validation/
 artifacts/release-readiness/
+# OrcSDR P4 Core per-board build directories and fetched components.
+apps/orcsdr-p4-core/build-*/
+apps/orcsdr-p4-core/managed_components/
 docs/user-guide/assets/screenshots/raw/

@@ -1,0 +1,6 @@
+# The browser bundle and its build scripts must be byte-stable across checkouts (shell scripts run in Docker).
+* text eol=lf
+*.gz binary
+*.wasm binary
+*.jpg binary
+*.rgb565 binary
