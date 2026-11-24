@@ -1,0 +1,35 @@
+name: DMR Tier III trunk backend
+on:
+  push:
+    branches: ["agents/dmr-tier3-trunk-follow-20261124"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  host:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        mode: [release, sanitizer]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Build and test
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p output
+          if [ "${{ matrix.mode }}" = sanitizer ]; then
+            cmake -S tests/dmr_trunk -B build/trunk -DCMAKE_BUILD_TYPE=Debug -DCMAKE_CXX_FLAGS="-fsanitize=address,undefined -fno-omit-frame-pointer" -DCMAKE_EXE_LINKER_FLAGS="-fsanitize=address,undefined" 2>&1 | tee output/configure.log
+          else
+            cmake -S tests/dmr_trunk -B build/trunk -DCMAKE_BUILD_TYPE=Release 2>&1 | tee output/configure.log
+          fi
+          cmake --build build/trunk 2>&1 | tee output/build.log
+          ctest --test-dir build/trunk --output-on-failure 2>&1 | tee output/test.log
+      - name: Package sources
+        if: always()
+        run: tar -czf output/trunk-source.tar.gz components/orcsdr_dmr_trunk tests/dmr_trunk docs/dmr/TRUNK_FOLLOW_BACKEND.md
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: trunk-backend-${{ matrix.mode }}
+          path: output
