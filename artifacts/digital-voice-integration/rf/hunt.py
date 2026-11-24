@@ -5,6 +5,8 @@ import subprocess, time, json, re, os, sys
 from pathlib import Path
 import shutil
 ARCH = Path(r"F:/Ai/OrcSDR-data/digital-voice")   # durable copy outside the worktree
+# Bias tee powers the external LNA. It is OFF unless DV_BIAS=1: with no LNA on the antenna port the 4.5 V would go into the antenna itself.
+BIAS = os.environ.get('DV_BIAS', '0') == '1'
 H = Path(__file__).parent / "hunt"; H.mkdir(exist_ok=True)
 CH = [(442962500,"PNW DMR Eugene CC1 (RRDB)"),(442887500,"PNW DMR Salem CC1"),(442750000,"PNW DMR Colton CC1"),(442812500,"PNW DMR Mt Hebo CC1"),(444025000,"PNW DMR Buxton CC9"),(451912500,"TRBOWest CapMax Blanton Ridge ctrl"),(442425000,"ham CC1 (unverified)"),(152157500,"Terra T3 ctrl"),(152345000,"Terra Oakridge"),(152106000,"candidate voice 152.106"),(152219000,"candidate voice 152.219"),(152685000,"candidate 152.685"),(152895000,"candidate 152.895"),(153068000,"candidate 153.068"),(441744000,"sweep 441.744"),(441676000,"sweep 441.676"),(441050000,"sweep 441.050"),(431998000,"sweep 431.998"),(438026000,"sweep 438.026")]
 SECS = 14
@@ -32,7 +34,7 @@ while not (H/"STOP").exists():
     for hz, name in CH:
         if (H/"STOP").exists(): break
         try:
-            subprocess.run(["rtl_biast","-d","0","-b","1"],capture_output=True)
+            subprocess.run(["rtl_biast","-d","0","-b","1" if BIAS else "0"],capture_output=True)
             f = H/f"cap_{hz}_{int(time.time())}.cu8"
             r = subprocess.run(["rtl_sdr","-f",str(hz-60000),"-s","240000","-g","30","-n",str(240000*SECS),str(f)],capture_output=True,timeout=60)
             if not f.exists() or f.stat().st_size < 1000: log(f"{hz} capture failed"); continue
@@ -42,7 +44,7 @@ while not (H/"STOP").exists():
             m = re.search(r"events=(\d+).*?dmr_acq=(\d+) dmr_ev=(\d+) dmr_id=(\d+)",p.stdout)
             lm = re.search(r"level_milli=(\d+)",p.stdout)
             ev,acq,dev,did = (int(x) for x in m.groups()) if m else (-1,0,0,0)
-            rec = dict(t=time.strftime("%Y-%m-%d %H:%M:%S"),hz=hz,name=name,events=ev,dmr_ev=dev,dmr_id=did,level=int(lm.group(1)) if lm else None,file=f.name)
+            rec = dict(config=os.environ.get('DV_CONFIG', 'PC V4 + outdoor antenna + LNA (until 2026-11-23 19:05)'),bias_tee=BIAS,t=time.strftime("%Y-%m-%d %H:%M:%S"),hz=hz,name=name,events=ev,dmr_ev=dev,dmr_id=did,level=int(lm.group(1)) if lm else None,file=f.name)
             keep = ev < 0 or did > 0 or (ev > 0 and time.time()-last_keep.get(hz,0) > 3600)
             if keep: last_keep[hz] = time.time()
             dn = -2
