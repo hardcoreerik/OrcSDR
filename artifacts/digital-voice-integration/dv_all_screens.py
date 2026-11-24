@@ -23,4 +23,6 @@ try:
             remote = re.search(r'path="([^"]+)"', done).group(1)
             c.authenticate(create_key=False); c.get_file(remote, OUT / f"dv_screen_{view}.bmp")
 finally:
+    try: run(c, 'UI_DOC_EXIT', 3.0) if 'run' in globals() else (c.send('UI_DOC_EXIT'), c.wait(('UI_DOC_EXIT',), 5))   # documentation mode blocks touch until it is exited
+    except Exception: pass
     c.close()

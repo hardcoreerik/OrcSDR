@@ -29,4 +29,6 @@ try:
         remote = re.search(r'path="([^"]+)"', r).group(1)
         out = Path(__file__).parent / "captures" / f"{slug}.bmp"; c.get_file(remote, out); print("saved", out)
 finally:
+    try: run(c, 'UI_DOC_EXIT', 3.0) if 'run' in globals() else (c.send('UI_DOC_EXIT'), c.wait(('UI_DOC_EXIT',), 5))   # documentation mode blocks touch until it is exited
+    except Exception: pass
     c.close()
