@@ -2,6 +2,10 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Digital Voice header shows the Orc badge and dashboard name — 2026-11-23
+
+- **Fix:** the Digital Voice screens were missing the Orc badge and the dashboard name at the top left, which every other dashboard shows. The dashboard's header hook now calls the shared `audio_header::draw_brand("DIGITAL VOICE")` before the shared controls. Verified by PNG screenshot on the Tab5.
+
 ## Unreleased — Digital Voice SCAN screen: scan plans, evidence stages, retained-widget rendering — 2026-11-23
 
 - **SCAN screen redesigned (`digital_voice_scan_view.{hpp,cpp}`):** status banner (ready / scanning / sync acquired / integrity validated / identity verified / hold / paused / error, each from real scanner and decoder state), frequency, plan line with position and pass estimate, progress, counts, evidence ladder, reason line, six buttons, a discovered-signals list and a selected-signal panel with DMR and NXDN fields. Controls are enabled by one function (`action_state()`) shared by drawing and touch, so a disabled control says why and does nothing.

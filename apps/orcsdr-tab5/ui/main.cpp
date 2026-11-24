@@ -13305,7 +13305,11 @@ void open_digital_voice_dashboard() {
   orcsdr::acars_app::close();
   orcsdr::ais_app::close();
   orcsdr::digital_voice_app::Hooks app = {};
-  app.header_controls = draw_global_header_controls;
+  // Shared header chrome for this dashboard: the Orc badge and the dashboard name (as every other dashboard shows), then the controls.
+  app.header_controls = [] {
+    orcsdr::audio_header::draw_brand("DIGITAL VOICE");
+    draw_global_header_controls();
+  };
   app.overlay_open = [] { return rtl_header_audio_control.expanded; };
   app.receiver_ready = [] { return rtl_device_ready(); };
   app.go_home = [] { show_home(); };
