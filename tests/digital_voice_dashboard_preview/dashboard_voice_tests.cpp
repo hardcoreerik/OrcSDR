@@ -73,6 +73,20 @@ int main() {
     host_stub::reset(); CHECK(dash.present(display, s, ui, true, false));
     CHECK(!host_stub::contains("TS1") && !host_stub::contains("TS2"));
   }
+  { // SETUP: SAVE DMR SPEECH toggle (decoded speech only; off by default; N/A without storage)
+    ui.view = View::setup; ui.density = Density::discovery_first; dash = Dashboard();
+    Snapshot q; q.revision = 1; q.can_save_speech = true;
+    host_stub::reset(); CHECK(dash.present(display, q, ui, true, false));
+    CHECK(host_stub::contains("SAVE DMR SPEECH: OFF") && host_stub::contains("Decoded clear speech only"));
+    CHECK(dash.handle_touch(32 + 408 - 20 + 100, 158 + 322 + 20, q, ui).kind == ActionKind::toggle_save_speech);
+    q.revision = 2; q.save_speech = true; q.speech_files = 3;
+    host_stub::reset(); CHECK(dash.present(display, q, ui, true, false));
+    CHECK(host_stub::contains("SAVE DMR SPEECH: ON (3)") && !host_stub::out_of_bounds);
+    q.revision = 3; q.can_save_speech = false;
+    host_stub::reset(); CHECK(dash.present(display, q, ui, true, false));
+    CHECK(host_stub::contains("SAVE DMR SPEECH: N/A"));
+    CHECK(dash.handle_touch(32 + 408 - 20 + 100, 158 + 322 + 20, q, ui).kind == ActionKind::none);
+  }
   std::printf("dashboard_voice_tests: %s\n", g_fail ? "FAILED" : "ok");
   return g_fail ? 1 : 0;
 }

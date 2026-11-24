@@ -13370,6 +13370,20 @@ void open_digital_voice_dashboard() {
     if (!ensure_tab5_sd()) return false;
     return orcsdr::sd_writer::shared().submit("/orcsdr/dv_discovery.txt", nullptr, 0, data, length);
   };
+  // Decoded-speech recording (SETUP toggle): one WAV per call through the same background writer, and the persistent on/off flag.
+  app.file_save = [](const char* path, const void* header, size_t header_len, const void* data, size_t length) {
+    if (!ensure_tab5_sd()) return false;
+    return orcsdr::sd_writer::shared().submit(path, header, header_len, data, length);
+  };
+  app.file_save_result = []() -> int {
+    orcsdr::sd_writer::Writer& w = orcsdr::sd_writer::shared();
+    const orcsdr::sd_writer::State st = w.result().state;
+    if (st == orcsdr::sd_writer::State::done) { w.acknowledge(); return 1; }
+    if (st == orcsdr::sd_writer::State::failed) { w.acknowledge(); return 2; }
+    return 0;
+  };
+  app.flag_load = [](const char* key) { return preferences.getBool(key, false); };
+  app.flag_store = [](const char* key, bool value) { preferences.putBool(key, value); };
   app.db_save_result = []() -> int {
     orcsdr::sd_writer::Writer& w = orcsdr::sd_writer::shared();
     const orcsdr::sd_writer::State st = w.result().state;

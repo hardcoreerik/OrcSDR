@@ -9,6 +9,7 @@
 #include <cstddef>
 #include <cstdint>
 
+#include "dv_speech_rec.hpp"
 #include "dv_voice_audio.hpp"
 
 namespace orcsdr::dv_voice_service {
@@ -19,6 +20,7 @@ struct Hooks {
   bool (*audio_path_ready)() = nullptr;   // speaker path can accept audio (receiver present, sink enabled)
   void (*set_exclusive)(bool on) = nullptr;   // block / unblock the analogue NFM demod audio
   uint32_t (*now_ms)() = nullptr;
+  uint32_t (*utc_epoch)() = nullptr;     // wall-clock seconds for recording file names, 0 = unknown
   // Optional pump thread (ESP-IDF: dv_voice_service_task.cpp). Without it the owner calls pump() from its own loop.
   bool (*spawn)(void (*fn)(void*), void* arg) = nullptr;
   void (*join)() = nullptr;
@@ -37,7 +39,14 @@ void set_enabled(bool on);
 bool enabled();
 void set_listen(dv_voice::Listen listen);
 void reset();           // drop audio and codec state
-void set_buffer_ms(uint32_t ms);      // playout hold after the first qualified group (jitter buffer), 0..1000 ms
+void set_buffer_ms(uint32_t ms);
+// Optional recording of DECODED DMR speech (SETUP toggle "SAVE DMR SPEECH"). Off by default. The pump thread collects the call, the UI
+// task writes the finished file: speech_ready() hands it over, speech_release() gives the buffer back.
+void set_save_speech(bool on);
+bool save_speech();
+bool speech_ready(const int16_t** pcm, size_t* samples, char* name, size_t name_size, uint8_t header[dv_speech_rec::kHeaderBytes]);
+void speech_release(bool saved);
+dv_speech_rec::Stats speech_stats();      // playout hold after the first qualified group (jitter buffer), 0..1000 ms
 bool play_tone(uint32_t ms);          // speaker-path isolation: known-good 1 kHz PCM through the same resampler/ring/speaker
 
 // Published copy of the engine state (safe to read from the UI task).

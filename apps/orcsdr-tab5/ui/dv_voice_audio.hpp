@@ -71,6 +71,11 @@ struct Snapshot {
   Stats stats;
 };
 
+// Optional observer of every frame the engine VOICES for a real call (slot 1 or 2): 8 kHz PCM exactly as it enters the resampler,
+// silent = muted silence frame, concealed frame or lost-superframe gap. Never called for the speaker-path test tone.
+using SpeechSink = void (*)(uint8_t slot, uint32_t call_serial, uint32_t src, uint32_t dst, const int16_t pcm[160], bool silent,
+                            uint32_t now_ms, void* user);
+
 // Optional per-frame observer (tests): 9 wire bytes, 160 PCM samples at 8 kHz, codec flags ("E" error, "S" silence).
 using FrameTap = void (*)(uint8_t slot, uint32_t call_serial, const uint8_t wire[9], const int16_t pcm[160], int corrected,
                           int total, const char* flags, void* user);
@@ -90,6 +95,7 @@ public:
   void set_listen(Listen l);
   void set_muted(bool m);
   void set_frame_tap(FrameTap tap, void* user) { tap_ = tap; tap_user_ = user; }
+  void set_speech_sink(SpeechSink sink, void* user) { speech_sink_ = sink; speech_user_ = user; }
   Listen listen() const { return listen_; }
   void set_target_buffer_ms(uint32_t ms) { cfg_.target_buffer_ms = ms > 1000 ? 1000 : ms; }
   uint32_t target_buffer_ms() const { return cfg_.target_buffer_ms; }
@@ -145,6 +151,8 @@ private:
   uint64_t synth_total_us_ = 0;
   FrameTap tap_ = nullptr;
   void* tap_user_ = nullptr;
+  SpeechSink speech_sink_ = nullptr;
+  void* speech_user_ = nullptr;
   uint8_t privacy_[3] = {0, 0, 0};
   // Group being synthesized (see service()).
   bool pending_active_ = false;

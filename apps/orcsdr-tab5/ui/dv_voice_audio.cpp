@@ -175,6 +175,7 @@ size_t Engine::buffered_samples() const { return static_cast<size_t>(wr_ - rd_);
 
 void Engine::push_frame(uint8_t slot, const int16_t pcm[160], bool silent) {
   Slot& s = slots_[slot];
+  if (speech_sink_ && slot >= 1 && slot <= 2) speech_sink_(slot, s.serial, src_, dst_, pcm, silent, pending_now_ms_, speech_user_);
   if (ring_cap_ - static_cast<size_t>(wr_ - rd_) < kFrameSamples8k * kUp) { ++stats_.overruns; return; }
   float buf[kTapsPerPhase - 1 + kFrameSamples8k];
   std::memcpy(buf, s.hist, sizeof(s.hist));
@@ -212,6 +213,7 @@ bool Engine::inject_test_pcm(const int16_t* pcm8k, size_t n, uint32_t now_ms) {
 void Engine::begin_group(const dv_radio::VoiceMsg& m, uint32_t now_ms) {
   Slot& s = slots_[m.slot];
   const uint32_t t0 = micros();
+  pending_now_ms_ = now_ms;
   pending_first_sample_ = wr_;
   if (m.new_call || !s.live || s.serial != m.call_serial) {
     orc_vocoder_reset(&s.codec);

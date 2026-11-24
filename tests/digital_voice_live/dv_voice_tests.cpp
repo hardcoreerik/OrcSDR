@@ -12,6 +12,7 @@
 #include "dv_radio.hpp"
 #include "dv_voice_audio.hpp"
 #include "dv_voice_service.hpp"
+#include "dv_speech_rec.hpp"
 #include "orcsdr_dmr/d1.hpp"
 #include "orcsdr_dmr/d1_call.hpp"
 
@@ -311,6 +312,59 @@ static void corpus_tests(const char* dir) {
   CHECK(off.groups == 0);                         // queue disabled: counters only, nothing delivered
 }
 
+// ---- Speech recorder (decoded DMR speech only) -------------------------------------------------------------------
+static void speech_tests() {
+  using namespace dv_speech_rec;
+  int16_t pcm[160]; for (int i = 0; i < 160; ++i) pcm[i] = static_cast<int16_t>(1000 + i);
+  { Recorder r; CHECK(r.begin());
+    for (int i = 0; i < 30; ++i) r.frame(2, 7, 4106011, 1000, pcm, false, 1000 + i * 20);
+    r.service(5000);
+    CHECK(!r.ready(nullptr, nullptr, nullptr, 0, nullptr));        // off by default: nothing is kept
+    CHECK(r.stats().calls_saved == 0);
+    r.set_enabled(true);
+    for (int i = 0; i < 30; ++i) r.frame(0, 7, 1, 1, pcm, false, 1000 + i * 20);      // slot 0 = test tone: never recorded
+    r.service(9000); CHECK(!r.ready(nullptr, nullptr, nullptr, 0, nullptr) && !r.recording());
+    for (int i = 0; i < 30; ++i) r.frame(2, 7, 4106011, 1000, pcm, i % 5 == 4, 1000 + i * 20);   // 24 speech + 6 silent frames
+    CHECK(r.recording());
+    r.service(1000 + 30 * 20 + 1000); CHECK(!r.ready(nullptr, nullptr, nullptr, 0, nullptr));    // quiet only 1 s: still the same call
+    r.service(1000 + 30 * 20 + 3000);
+    const int16_t* p = nullptr; size_t n = 0; char name[72]; uint8_t h[kHeaderBytes];
+    CHECK(r.ready(&p, &n, name, sizeof(name), h) && n == 4800);
+    CHECK(std::strstr(name, "/orcsdr/dmr_") == name && std::strstr(name, "_ts2_4106011.wav") != nullptr);
+    CHECK(std::memcmp(h, "RIFF", 4) == 0 && std::memcmp(h + 8, "WAVEfmt ", 8) == 0 && std::memcmp(h + 36, "data", 4) == 0);
+    CHECK(h[24] == 0x40 && h[25] == 0x1f && h[40] == (9600 & 255) && h[41] == (9600 >> 8));   // 8000 Hz, 9600 data bytes
+    CHECK(p[0] == 1000 && p[4 * 160] == 0 && p[4 * 160 + 159] == 0);                               // silent frame stored as zeros
+    for (int i = 0; i < 10; ++i) r.frame(1, 8, 5, 6, pcm, false, 20000 + i * 20);                 // next call arrives while the file is waiting
+    r.service(30000); CHECK(r.stats().calls_dropped_busy >= 1);
+    r.release(true); CHECK(r.stats().calls_saved == 1 && !r.ready(nullptr, nullptr, nullptr, 0, nullptr));
+    for (int i = 0; i < 30; ++i) r.frame(1, 9, 5, 6, pcm, false, 40000 + i * 20);
+    r.frame(2, 10, 7, 8, pcm, false, 41000);                                                      // a different call finalizes the previous one
+    CHECK(r.ready(nullptr, nullptr, nullptr, 0, nullptr)); r.release(false);
+    CHECK(r.stats().calls_saved == 1 && r.stats().calls_discarded >= 1);
+    for (int i = 0; i < 5; ++i) r.frame(1, 11, 5, 6, pcm, false, 50000 + i * 20);                 // 100 ms: too short
+    r.service(60000); CHECK(!r.ready(nullptr, nullptr, nullptr, 0, nullptr));
+    r.set_enabled(false);
+    for (int i = 0; i < 30; ++i) r.frame(1, 12, 5, 6, pcm, false, 70000 + i * 20);
+    r.service(80000); CHECK(!r.ready(nullptr, nullptr, nullptr, 0, nullptr));
+  }
+  { // engine -> recorder: only voiced real-call frames, silence frames and the test tone excluded
+    dv_voice::Engine e; Recorder r; CHECK(e.begin() && r.begin()); r.set_enabled(true); e.set_enabled(true);
+    e.set_speech_sink([](uint8_t slot, uint32_t serial, uint32_t src, uint32_t dst, const int16_t* pcm, bool silent, uint32_t now, void* u) {
+      static_cast<Recorder*>(u)->frame(slot, serial, src, dst, pcm, silent, now); }, &r);
+    uint32_t now = 1000;
+    int16_t tone[160] = {}; CHECK(e.inject_test_pcm(tone, 160, now));
+    // The real recorded superframe from terra_153p068 (3 speech frames and 15 silence frames), repeated: 10 groups = 600 ms of speech.
+    static const char* kReal = "B9E881526173002A6BB9E881526173002A6BB9E881526173002A6BB9E881526173002A6BB9E881526173002A6BB9E881526173002A6B9BCC8374C8ED298BFF9BCC8374C9FF18AAFF99EE8374ECBD2D8AFFC499A5267CBACD3062EA41C05731F40775808E6CE14331A449ED52B9E881526173002A6BB9E881526173002A6BB9E881526173002A6BB9E881526173002A6BB9E881526173002A6BB9E881526173002A6B";
+    auto m = msg(2, 4, true, "B9E881526173002A6B"); m.source_id = 4106008;
+    for (int i = 0; i < 162; ++i) { unsigned x; std::sscanf(kReal + 2 * i, "%2x", &x); m.payload[i] = (uint8_t)x; }
+    for (int gI = 0; gI < 10; ++gI) { e.handle(m, now + gI * 360); m.new_call = false; }
+    r.flush();
+    const int16_t* p = nullptr; size_t n = 0; char name[72];
+    CHECK(r.ready(&p, &n, name, sizeof(name), nullptr) && n == 180u * 160u);                      // 10 groups x 18 frames, not the tone
+    CHECK(std::strstr(name, "_ts2_4106008.wav") != nullptr);
+  }
+}
+
 // ---- Service: gate, pacing, commands, self test (host double of the firmware sink) -----------------------------------
 static std::vector<int16_t> g_sink;
 static bool g_exclusive = false, g_allowed = true, g_path = true;
@@ -368,6 +422,7 @@ int main(int argc, char** argv) {
   gate_tests();
   engine_tests();
   service_tests();
+  speech_tests();
   // encoder self-consistency (guards the fixture, not the decoder)
   { uint8_t lc[9] = {0, 0, 0x20, 0, 0, 100, 0x3e, 0x99, 0x9b}; std::array<uint8_t, 128> w; encode_lc(lc, w, false); CHECK(row_ok(w)); encode_lc(lc, w, true); CHECK(row_ok(w)); }
   if (argc > 1) corpus_tests(argv[1]);

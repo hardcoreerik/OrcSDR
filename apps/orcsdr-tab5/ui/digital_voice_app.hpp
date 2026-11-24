@@ -20,6 +20,12 @@ struct Hooks {
   bool (*audio_allowed)() = nullptr;
   bool (*audio_path_ready)() = nullptr;
   void (*audio_exclusive)(bool on) = nullptr;
+  // Speech recording (SETUP toggle): a file write through the shared background SD writer (header + data, buffer valid until
+  // file_save_result() reports 1 = done or 2 = failed) and a persistent boolean setting.
+  bool (*file_save)(const char* path, const void* header, size_t header_len, const void* data, size_t length) = nullptr;
+  int (*file_save_result)() = nullptr;
+  bool (*flag_load)(const char* key) = nullptr;
+  void (*flag_store)(const char* key, bool value) = nullptr;
   uint32_t (*utc_epoch)() = nullptr;     // wall-clock seconds, 0 when the clock is not valid (times then stay unknown)
   // Receiver-owner access (the same tune / release rules ACARS and AIS use; no second owner).
   bool (*tune)(uint32_t center_hz, uint32_t sample_rate) = nullptr;

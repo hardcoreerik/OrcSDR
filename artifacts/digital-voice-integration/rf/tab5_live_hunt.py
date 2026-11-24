@@ -6,6 +6,16 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "benchmarks"))
 from tab5_bench_lib import connect, run, kv, find, dv
 D = Path(__file__).parent / "tab5live"; D.mkdir(exist_ok=True)
+import tab5_bench_lib as _lib
+_orig_run = _lib.run
+def _logged_run(c, cmd, window=1.2):
+    lines = _orig_run(c, cmd, window)
+    with open(D / "serial.log", "a", encoding="utf-8") as f:       # persistent serial monitor: every command and every line the Tab5 answered
+        f.write(f"{time.strftime('%H:%M:%S')} > {cmd}{chr(10)}")
+        for l in lines:
+            if not l.startswith('{"type"'): f.write(f"  {l[:300]}{chr(10)}")
+    return lines
+run = _logged_run
 ARCH = Path("F:/Ai/OrcSDR-data/digital-voice/tab5live"); ARCH.mkdir(parents=True, exist_ok=True)
 SECS = float(sys.argv[1]) if len(sys.argv) > 1 else 60
 CH = [(152.1575, 496), (152.685, 496), (152.345, 496), (451.9125, None), (153.068, 496)]   # (MHz, manual gain tenth-dB or None = auto)
@@ -20,7 +30,7 @@ while not (D / "STOP").exists():
         c = connect()
         try:
             if not open_dash(c): time.sleep(20); continue
-            run(c, "RTL_DV MASK 1", 1.2)
+            run(c, "RTL_DV MASK 1", 1.2); run(c, "RTL_DV AUDIO SAVE ON", 1.2)
             for mhz, gain in CH:
                 if (D / "STOP").exists(): break
                 run(c, "RTL_DV SCAN STOP", 4.0); run(c, f"RTL_DV PLAN {mhz}", 1.5); run(c, "RTL_DV MASK 1", 1.2); run(c, "RTL_DV SCAN START", 5.0); time.sleep(4)
@@ -28,14 +38,17 @@ while not (D / "STOP").exists():
                 if gain is None: run(c, "RTL_DRIVER GAINMODE AUTO", 1.5)
                 else: run(c, "RTL_DRIVER GAINMODE MANUAL", 1.5); run(c, f"RTL_DRIVER GAIN {gain}", 1.5)
                 run(c, "RTL_DV SCAN HOLD", 1.5)
+                # Decoded DMR speech is saved by the firmware itself (SETUP > SAVE DMR SPEECH, persistent; RTL_DV AUDIO SAVE ON): /orcsdr/dmr_*.wav
                 t0 = time.time(); first = None; last = {}; ui = ""
                 while time.time() - t0 < SECS and not (D / "STOP").exists():
                     time.sleep(5); ui, r = dv(c)
+                    aud = kv(find(run(c, "RTL_DV AUDIO STATUS", 1.0), "RTL_DV_AUDIO "))
                     if r: last = r
                     if first is None and int(last.get("dmr_ev", 0)) > 0: first = round(time.time() - t0, 1)
                 rec = dict(config=os.environ.get("DV_CONFIG", "Tab5 V4L + indoor 140/440 whip"), t=time.strftime("%Y-%m-%d %H:%M:%S"), mhz=mhz, gain=gain if gain else "auto", secs=round(time.time() - t0), source="tab5_live_antenna", replay=False,
                            link=last.get("link"), loss=last.get("loss"), level_milli=last.get("level_milli"), dmr_acq=last.get("dmr_acq"), dmr_ev=last.get("dmr_ev"),
                            dmr_id=last.get("dmr_id"), events=last.get("events"), first_dmr_event_s=first, hist=(re.search(r"hist=(\d+)", ui) or [None, None])[1],
+                           audio={k: aud.get(k) for k in ("phase", "groups", "speech", "qual", "prot", "unq", "calls", "nfm_blocked", "rec", "rec_saved", "rec_discarded", "rec_busy")} if (aud := locals().get('aud')) else None,
                            db=(re.search(r"db_sys=\d+ db_tg=\d+ db_units=\d+", ui) or [None])[0])
                 for p in (D / "tab5live.jsonl", ARCH / "tab5live.jsonl"):
                     with open(p, "a") as j: j.write(json.dumps(rec) + "\n")

@@ -324,7 +324,14 @@ void setup(Paint& p,const Snapshot& s,Density mode) {
            {a.x+18,a.y+322,370,44},false);
   p.button(mode==Density::discovery_first?"DENSITY: DISCOVERY":"DENSITY: ANALYSIS",
            {a.x+18,a.y+376,370,44},true);
-  p.label("No new USB/tuning or audio owner",a.x+408,a.y+398,a);
+  {
+    char t[48];
+    if(!s.can_save_speech)std::snprintf(t,sizeof(t),"SAVE DMR SPEECH: N/A");
+    else if(s.save_speech)std::snprintf(t,sizeof(t),"SAVE DMR SPEECH: ON (%u)",static_cast<unsigned>(s.speech_files));
+    else std::snprintf(t,sizeof(t),"SAVE DMR SPEECH: OFF");
+    p.button(t,{a.x+408,a.y+322,376,44},s.can_save_speech,s.save_speech);
+  }
+  p.label("Decoded clear speech only, one WAV per call",a.x+408,a.y+398,a);
   p.title("FEATURE READINESS",b.x+18,b.y+32,b);
   p.label("P25-I: native receive and voice",b.x+18,b.y+98,b);
   p.label("DMR: host data / no Tab5 IQ",b.x+18,b.y+140,b);
@@ -404,6 +411,7 @@ Action Dashboard::handle_touch(int32_t x,int32_t y,const Snapshot& s,
   if(state.view==View::setup) {
     const auto a=state.density==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
     if(Rect{a.x+18,a.y+376,370,44}.contains(x,y))return {ActionKind::toggle_density};
+    if(s.can_save_speech&&Rect{a.x+408,a.y+322,376,44}.contains(x,y))return {ActionKind::toggle_save_speech};
   }
   if(state.view==View::systems && s.systems_available) {
     const auto a=state.density==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
