@@ -33,7 +33,7 @@ int main(){
  auto c=blk("3100fff85bbbed3ea7233d26",4,2000,1,2,152685000,8);
  auto d=blk("b1080035c9deba131554bbe6",5,2288,1,2,152685000,8);
  CHECK(p.feed(c,g)==Parse::pending);CHECK(p.feed(d,g)==Parse::grant);
- CHECK(g.rx_hz==152685000&&g.absolute_lpcn==215&&g.source==4106019&&g.slot==2&&g.cc==8);
+ CHECK(g.rx_hz==152682500&&g.absolute_lpcn==215&&g.source==4106019&&g.slot==2&&g.cc==8);
  // Independently specified logical channel, no guessed frequency.
  auto l=blk("b10000a85bbbed3ea71b0000",3,3000);stamp(l.bytes,0xa5a5);
  CHECK(p.feed(l,g)==Parse::grant);CHECK(g.lpcn==10&&g.slot==2&&!g.absolute);

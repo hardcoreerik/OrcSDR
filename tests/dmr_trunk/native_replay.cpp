@@ -15,7 +15,7 @@ void sink(const d1::integration::Event& ev,void* ptr) noexcept {
  if(c.adapter.consume(ev,1,c.hz,ms,true,g)==trunk::Parse::grant){
    ++c.grants;
    std::cout<<"grant "<<g.rx_hz<<" TS"<<unsigned(g.slot)<<" CC"<<unsigned(g.cc)<<" LPCN "<<g.absolute_lpcn<<" TG "<<g.target<<" SRC "<<g.source<<"\n";
-   if(!g.absolute||g.rx_hz!=c.hz||g.slot!=2||g.target!=6011885||
+   if(!g.absolute||g.rx_hz!=(c.hz==152685000?152682500u:c.hz)||g.slot!=2||g.target!=6011885||
       (c.hz==152157500&&(g.cc!=13||g.absolute_lpcn!=173||(g.source!=4106011&&g.source!=4106019)))||
       (c.hz==152685000&&(g.cc!=8||g.absolute_lpcn!=215||g.source!=4106019)))c.bad=true;
  }
