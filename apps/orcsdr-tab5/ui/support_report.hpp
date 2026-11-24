@@ -35,6 +35,7 @@ struct Snapshot {
   uint32_t dma_free = 0;
   uint32_t dma_largest = 0;
   uint32_t psram_free = 0;
+  char dv_audio[260] = {};   // preformatted ORC_SUPPORT_DV_AUDIO line; empty (the default) = Digital Voice audio not running, line omitted
 };
 
 // Calls write() once per line, without embedded newlines. No radio state is
@@ -89,6 +90,7 @@ inline void emit(const Snapshot& s, WriteLine write) {
                 static_cast<unsigned long>(s.dma_largest),
                 static_cast<unsigned long>(s.psram_free));
   write(line);
+  if (s.dv_audio[0] != 0) write(s.dv_audio);
   write("ORC_SUPPORT_END");
 }
 

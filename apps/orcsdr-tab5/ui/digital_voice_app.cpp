@@ -14,6 +14,7 @@
 #include "dv_discovery_bridge.hpp"
 #include "dv_radio.hpp"
 #include "dv_scanner.hpp"
+#include "dv_voice_service.hpp"
 #include "screen_controller.hpp"
 
 namespace orcsdr::digital_voice_app {
@@ -86,6 +87,64 @@ void free_state() {
   g_state->~State();
   heap_caps_free(g_state);
   g_state = nullptr;
+}
+
+void start_voice_service() {
+  dv_voice_service::Hooks h;
+  h.audio_out = g_hooks.audio_out;
+  h.audio_allowed = g_hooks.audio_allowed;
+  h.audio_path_ready = g_hooks.audio_path_ready;
+  h.set_exclusive = g_hooks.audio_exclusive;
+  h.now_ms = g_hooks.now_ms;
+  dv_voice_service::fill_platform_hooks(h);   // pump task on core 1, PSRAM stack
+  dv_voice_service::install(h);
+  (void)dv_voice_service::start();            // false = no memory: the LIVE page then says AUDIO UNAVAILABLE
+}
+
+VoicePhase voice_phase_of(dv_voice::Phase p) {
+  switch (p) {
+    case dv_voice::Phase::listening: return VoicePhase::listening;
+    case dv_voice::Phase::acquiring: return VoicePhase::acquiring;
+    case dv_voice::Phase::buffering: return VoicePhase::buffering;
+    case dv_voice::Phase::decoding: return VoicePhase::decoding;
+    case dv_voice::Phase::silence_frame: return VoicePhase::silence_frame;
+    case dv_voice::Phase::degraded: return VoicePhase::degraded;
+    case dv_voice::Phase::call_ended: return VoicePhase::call_ended;
+    case dv_voice::Phase::protected_voice: return VoicePhase::protected_voice;
+    case dv_voice::Phase::privacy_unknown: return VoicePhase::privacy_unknown;
+    case dv_voice::Phase::muted: return VoicePhase::muted;
+    default: return VoicePhase::unavailable;
+  }
+}
+
+// Voice panel facts for the LIVE page. Quantised so the panel repaints only when something visible changed.
+void refresh_voice(Snapshot& s) {
+  const dv_voice_service::Published p = dv_voice_service::snapshot();
+  VoiceAudioView v;
+  v.available = p.running;
+  v.phase = p.running ? voice_phase_of(p.engine.phase) : VoicePhase::unavailable;
+  v.listen = static_cast<ListenMode>(static_cast<uint8_t>(p.engine.listen));
+  v.active_slot = p.engine.active_slot;
+  const int rms = p.engine.stats.rms_last;
+  v.level = static_cast<uint8_t>(rms <= 0 ? 0 : rms >= 5600 ? 8 : rms / 700 + 1);
+  if (v.phase != VoicePhase::decoding && v.phase != VoicePhase::degraded) v.level = 0;
+  v.privacy_ts1 = p.engine.privacy[1]; v.privacy_ts2 = p.engine.privacy[2];
+  v.speech_frames = static_cast<uint32_t>(p.engine.stats.frames_speech);
+  v.silence_frames = static_cast<uint32_t>(p.engine.stats.frames_silence);
+  v.error_frames = static_cast<uint32_t>(p.engine.stats.frames_error);
+  v.concealed_frames = static_cast<uint32_t>(p.engine.stats.frames_concealed);
+  v.underruns = static_cast<uint32_t>(p.engine.stats.underruns);
+  v.buffered_ms = static_cast<uint16_t>(p.engine.stats.buffered_ms / 20u * 20u);
+  v.latency_ms = static_cast<uint16_t>(p.engine.stats.latency_ms_last);
+  v.source_id = p.engine.source_id; v.destination_id = p.engine.destination_id; v.group_call = p.engine.group_call;
+  const VoiceAudioView& o = s.voice;
+  if (v.available != o.available || v.phase != o.phase || v.listen != o.listen || v.active_slot != o.active_slot ||
+      v.level != o.level || v.privacy_ts1 != o.privacy_ts1 || v.privacy_ts2 != o.privacy_ts2 ||
+      v.speech_frames != o.speech_frames || v.silence_frames != o.silence_frames || v.error_frames != o.error_frames ||
+      v.buffered_ms != o.buffered_ms || v.source_id != o.source_id || v.destination_id != o.destination_id) {
+    s.voice = v;
+    ++s.audio_revision;
+  }
 }
 
 void install_radio_hooks() {
@@ -486,6 +545,7 @@ void refresh(State& st) {
     s.frequency_hz = ss.frequency_hz; s.has_frequency = true;
   }
   if (changed) ++s.revision;
+  refresh_voice(s);
 }
 
 void stop_scan(State& st) {
@@ -647,6 +707,12 @@ void apply_radio_action(State& st, const Action& a) {
     case ActionKind::skip_frequency: st.scanner.skip(now()); break;
     case ActionKind::plan_prev: step_plan(st, -1); break;
     case ActionKind::plan_next: step_plan(st, +1); break;
+    case ActionKind::set_listen:
+      if (a.value > 3) { ++g_unapplied_actions; return; }
+      dv_voice_service::set_listen(static_cast<dv_voice::Listen>(a.value));
+      st.snapshot.voice.listen = static_cast<ListenMode>(a.value);
+      ++st.snapshot.audio_revision;
+      return;
     case ActionKind::save_channel: if (!save_hit(st, a.value)) { ++g_unapplied_actions; return; } break;
     default: ++g_unapplied_actions; return;     // save / setup: no owner yet, never faked
   }
@@ -665,6 +731,7 @@ void open() {
   }
   new (&g_state->snapshot) Snapshot();
   g_state->scanner = dv::Scanner();
+  start_voice_service();
   load_saved_plan();
   g_state->db.clear();
   if (g_hooks.db_load) {
@@ -692,6 +759,7 @@ void close() {
   stop_replay(*g_state);
   service_persistence(*g_state, true);        // flush what was learned; the buffer outlives this call
   g_state->scanner.stop();
+  dv_voice_service::stop();                   // releases the analogue audio path before the receiver is given back
   dv_radio::stop();
   g_state->surface.leave();
   free_state();
@@ -794,6 +862,9 @@ bool handle_command(const char* command, bool authenticated, void (*write_line)(
   if (!command || !write_line || std::strncmp(command, "RTL_DV ", 7) != 0) return false;
   const char* arg = command + 7;
   char line[640];
+  if (std::strncmp(arg, "AUDIO", 5) == 0) {
+    return dv_voice_service::handle_command(arg, authenticated, write_line);
+  }
   if (std::strcmp(arg, "STATUS") == 0) {
     describe(line, sizeof(line));
     write_line(line);

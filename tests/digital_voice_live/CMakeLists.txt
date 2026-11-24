@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(orcsdr_digital_voice_live_host LANGUAGES CXX)
+project(orcsdr_digital_voice_live_host LANGUAGES C CXX)
 option(ORC_DV_LIVE_SANITIZERS "ASan/UBSan" OFF)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -12,7 +12,7 @@ set(NXDN ${ROOT}/components/orcsdr_nxdn)
 add_library(dv_live STATIC
   ${UI}/dv_channelizer.cpp ${UI}/dv_scanner.cpp ${UI}/dv_radio.cpp ${UI}/dv_discovery.cpp
   ${DMR}/d1_integration/src/d1_bridge.cpp ${DMR}/d1_frontend/src/frontend.cpp
-  ${DMR}/d1_protocol/src/d1.cpp ${DMR}/src/d0.cpp
+  ${DMR}/d1_protocol/src/d1.cpp ${DMR}/d1_protocol/src/d1_call.cpp ${DMR}/src/d0.cpp
   ${NXDN}/src/decoder.cpp ${NXDN}/src/frontend.cpp)
 target_include_directories(dv_live PUBLIC ${UI}
   ${DMR}/d1_integration/include ${DMR}/d1_frontend/include ${DMR}/d1_protocol/include ${DMR}/include
@@ -39,6 +39,16 @@ if(ORC_DV_LIVE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
   target_compile_options(dv_replay PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
   target_link_options(dv_replay PRIVATE -fsanitize=address,undefined)
 endif()
+# Native voice engine (OrcSDR AMBE+2 vocoder over the pinned mbelib) for the Stage B replay harness.
+set(MBE ${ROOT}/components/mbelib)
+set(VOC ${ROOT}/components/orcsdr_vocoder)
+add_library(dv_vocoder STATIC ${MBE}/mbelib.c ${MBE}/ambe3600x2450.c ${MBE}/ecc.c ${VOC}/orcsdr_vocoder.c)
+target_include_directories(dv_vocoder PUBLIC ${MBE} ${VOC})
+set_target_properties(dv_vocoder PROPERTIES C_STANDARD 99)
+add_executable(dv_voice_replay dv_voice_replay.cpp ${UI}/dv_voice_audio.cpp)
+target_link_libraries(dv_voice_replay PRIVATE dv_live dv_vocoder m)
+add_executable(dv_voice_tests dv_voice_tests.cpp ${UI}/dv_voice_audio.cpp ${UI}/dv_voice_service.cpp)
+target_link_libraries(dv_voice_tests PRIVATE dv_live dv_vocoder m)
 add_executable(dv_inspect dv_inspect.cpp)
 target_link_libraries(dv_inspect PRIVATE dv_live)
 add_executable(dv_corpus_tests dv_corpus_tests.cpp ${UI}/digital_voice_dashboard_model.cpp)
@@ -48,7 +58,7 @@ target_link_libraries(dv_discovery_tests PRIVATE dv_live)
 add_executable(dv_bench dv_bench.cpp ${UI}/digital_voice_dashboard_model.cpp)
 target_link_libraries(dv_bench PRIVATE dv_live)
 if(ORC_DV_LIVE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-  foreach(t dv_inspect dv_corpus_tests dv_discovery_tests dv_bench)
+  foreach(t dv_inspect dv_corpus_tests dv_discovery_tests dv_bench dv_voice_replay dv_voice_tests dv_vocoder)
     target_compile_options(${t} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
     target_link_options(${t} PRIVATE -fsanitize=address,undefined)
   endforeach()
@@ -57,3 +67,4 @@ enable_testing()
 add_test(NAME digital_voice_discovery_db COMMAND dv_discovery_tests)
 add_test(NAME digital_voice_corpus COMMAND dv_corpus_tests ${ROOT}/tests/digital_voice_corpus)
 add_test(NAME digital_voice_live COMMAND dv_live_tests)
+add_test(NAME digital_voice_native_voice COMMAND dv_voice_tests ${ROOT}/tests/digital_voice_corpus)

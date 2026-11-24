@@ -69,6 +69,7 @@
 #include "ais_app.hpp"
 #include "digital_voice_app.hpp"
 #include "dv_radio.hpp"
+#include "dv_voice_service.hpp"
 #include "ais_radio.hpp"
 #include "ft8_tuning.hpp"
 #include "ft8_heard_db.hpp"
@@ -1896,6 +1897,8 @@ std::atomic<uint8_t> rtl_requested_volume{kRtlVolumeDefault};
 std::atomic<uint8_t> rtl_live_volume{kRtlVolumeDefault};
 std::atomic<bool> rtl_audio_user_enabled{true};
 std::atomic<bool> rtl_audio_enabled{false};
+// Digital Voice owns the speaker while its audio service runs: the analogue NFM demod audio of a digital channel is noise.
+std::atomic<bool> g_dv_audio_exclusive{false};
 std::atomic<bool> rtl_speaker_start_allowed{false};
 std::atomic<bool> rtl_speaker_codec_primed{false};
 std::atomic<bool> rtl_headphone_connected{false};
@@ -2544,6 +2547,7 @@ void handle_shortwave_dashboard_action(const orcsdr::shortwave::Action& action);
 void adjust_rtl_volume(int delta);
 void spectrum_offer_iq_snapshot(const uint8_t* iq, size_t bytes);
 void queue_audio_samples(int16_t* audio, size_t audio_count);
+void queue_audio_samples_unfiltered(int16_t* audio, size_t audio_count);
 #if ORCSDR_DSP_AB
 void rds_process_mpx_sample(float phase, float pilot_y0 = 0.0f);
 #endif
@@ -7173,7 +7177,16 @@ int16_t shape_audio_sample(float demodulated, float base_scale) {
   return static_cast<int16_t>(constrain(sample, -15000, 15000));
 }
 
+// Every producer except the Digital Voice vocoder goes through this gate (DSP demod, visualizer, P25, tones).
 void queue_audio_samples(int16_t* audio, size_t audio_count) {
+  if (g_dv_audio_exclusive.load(std::memory_order_acquire)) {
+    orcsdr::dv_voice_service::note_nfm_blocked();
+    return;
+  }
+  queue_audio_samples_unfiltered(audio, audio_count);
+}
+
+void queue_audio_samples_unfiltered(int16_t* audio, size_t audio_count) {
   if (audio_count == 0) return;
 #if ORCSDR_DSP_AB
   if (dsp_ab_take_audio(audio, audio_count)) {
@@ -13314,6 +13327,11 @@ void open_digital_voice_dashboard() {
   app.receiver_ready = [] { return rtl_device_ready(); };
   app.go_home = [] { show_home(); };
   app.now_ms = [] { return static_cast<uint32_t>(millis()); };
+  // Voice audio: speech leaves only through the existing speaker sink; the user's sound switch stays the master mute.
+  app.audio_out = [](const int16_t* pcm, size_t n) { queue_audio_samples_unfiltered(const_cast<int16_t*>(pcm), n); };
+  app.audio_allowed = [] { return rtl_audio_user_enabled.load(std::memory_order_acquire); };
+  app.audio_path_ready = [] { return rtl_audio_enabled.load(std::memory_order_acquire) && rtl_device_ready(); };
+  app.audio_exclusive = [](bool on) { g_dv_audio_exclusive.store(on, std::memory_order_release); };
   const orcsdr::acars_receiver::Hooks shared = acars_receiver_hooks();   // the one receiver owner's tune / release rules
   app.tune = shared.tune;
   app.release = shared.release;
@@ -19739,6 +19757,7 @@ static __attribute__((noinline)) orcsdr::support_report::Snapshot collect_rtl_su
   s.dma_free = heap_caps_get_free_size(kDmaCaps);
   s.dma_largest = heap_caps_get_largest_free_block(kDmaCaps);
   s.psram_free = heap_caps_get_free_size(MALLOC_CAP_SPIRAM);
+  orcsdr::dv_voice_service::format_support(s.dv_audio, sizeof(s.dv_audio));   // empty unless Digital Voice audio is running
   if (g_rtl != nullptr) {
     s.driver_installed = true;
     const auto profile = g_rtl_profile.load(std::memory_order_acquire);

@@ -77,6 +77,33 @@ struct Status {
   uint8_t mask = 0;
 };
 
+// ---- Native voice path (receive only). The worker qualifies BS voice superframes (privacy/identity/continuity gates in
+// dmr::d1::CallManager) and queues them here for the voice audio task. Only CLEAR, positively identified groups arrive as
+// kind==group; everything else is a notice. Single consumer.
+enum class VoiceKind : uint8_t { group, flush, call_ended, protected_voice, unqualified };
+constexpr size_t kVoicePayloadBytes = 162;      // 6 bursts x 27 bytes of over-the-air voice bits
+struct VoiceMsg {
+  VoiceKind kind = VoiceKind::flush;
+  uint8_t slot = 0, colour_code = 0;
+  bool group_call = false, new_call = false;
+  uint16_t lost_superframes = 0;
+  uint32_t source_id = 0, destination_id = 0;
+  uint32_t call_serial = 0;                      // increments per call; stable within one call
+  uint32_t t_ms = 0, frequency_hz = 0;
+  uint8_t payload[kVoicePayloadBytes] = {};
+};
+struct VoiceStatus {
+  uint32_t anchors = 0, groups_seen = 0, qualified = 0, protected_groups = 0, unqualified = 0;
+  uint32_t calls_started = 0, calls_ended = 0, lost_superframes = 0;
+  uint32_t emb_abandoned = 0, sync_abandoned = 0, embedded_lc_ok = 0, embedded_lc_bad = 0;
+  uint32_t queue_drops = 0, queue_pending = 0, flushes = 0;
+  uint8_t privacy[3] = {0, 0, 0};                // index = slot; 0 unknown, 1 clear, 2 protected
+  bool active[3] = {false, false, false};
+};
+bool pop_voice(VoiceMsg* out);                   // voice task: oldest queued item
+void set_voice_queue_enabled(bool enabled);      // false = qualify and count but do not queue (no audio consumer running)
+VoiceStatus voice_status();
+
 void install(const Hooks& hooks);
 bool start();                          // UI task: allocate PSRAM state. False without hooks/memory (link() says which).
 void stop();                           // UI task: give the sample rate back, free state

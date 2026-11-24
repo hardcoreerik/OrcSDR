@@ -15,6 +15,11 @@ struct Hooks {
   bool (*receiver_ready)() = nullptr;    // an RTL-SDR is present
   void (*go_home)() = nullptr;           // memory failure: never leave an undrawn screen
   uint32_t (*now_ms)() = nullptr;
+  // Voice audio (the existing speaker sink and the user's sound switch; see dv_voice_service.hpp).
+  void (*audio_out)(const int16_t* mono48k, size_t samples) = nullptr;
+  bool (*audio_allowed)() = nullptr;
+  bool (*audio_path_ready)() = nullptr;
+  void (*audio_exclusive)(bool on) = nullptr;
   uint32_t (*utc_epoch)() = nullptr;     // wall-clock seconds, 0 when the clock is not valid (times then stay unknown)
   // Receiver-owner access (the same tune / release rules ACARS and AIS use; no second owner).
   bool (*tune)(uint32_t center_hz, uint32_t sample_rate) = nullptr;

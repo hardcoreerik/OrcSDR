@@ -135,6 +135,29 @@ const char* scan_mode_name(ScanMode m) {
     default:return "NO SCAN PLAN";
   }
 }
+const char* voice_phase_name(VoicePhase p) {
+  switch (p) {
+    case VoicePhase::listening:return "LISTENING";
+    case VoicePhase::acquiring:return "ACQUIRING VOICE";
+    case VoicePhase::buffering:return "BUFFERING";
+    case VoicePhase::decoding:return "DECODING SPEECH";
+    case VoicePhase::silence_frame:return "SILENCE FRAME";
+    case VoicePhase::degraded:return "DEGRADED AUDIO";
+    case VoicePhase::call_ended:return "CALL ENDED";
+    case VoicePhase::protected_voice:return "PROTECTED VOICE";
+    case VoicePhase::privacy_unknown:return "PRIVACY UNKNOWN";
+    case VoicePhase::muted:return "AUDIO MUTED";
+    default:return "AUDIO UNAVAILABLE";
+  }
+}
+const char* listen_mode_name(ListenMode m) {
+  switch (m) {
+    case ListenMode::ts1:return "TS1";
+    case ListenMode::ts2:return "TS2";
+    case ListenMode::mute:return "MUTE";
+    default:return "AUTO";
+  }
+}
 const char* disabled_text(Disabled d) {
   switch (d) {
     case Disabled::no_receiver:return "NO RECEIVER";

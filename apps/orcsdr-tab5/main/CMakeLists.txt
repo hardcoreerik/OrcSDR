@@ -205,9 +205,13 @@ idf_component_register(
         "../ui/dv_discovery.cpp"
         "../ui/dv_radio.cpp"
         "../ui/dv_radio_task.cpp"
+        "../ui/dv_voice_audio.cpp"
+        "../ui/dv_voice_service.cpp"
+        "../ui/dv_voice_service_task.cpp"
         "../ui/dv_scanner.cpp"
         "../../../components/orcsdr_dmr/src/d0.cpp"
         "../../../components/orcsdr_dmr/d1_protocol/src/d1.cpp"
+        "../../../components/orcsdr_dmr/d1_protocol/src/d1_call.cpp"
         "../../../components/orcsdr_dmr/d1_frontend/src/frontend.cpp"
         "../../../components/orcsdr_dmr/d1_integration/src/d1_bridge.cpp"
         "../../../components/orcsdr_nxdn/src/decoder.cpp"
@@ -342,6 +346,7 @@ idf_component_register(
         m5unified
         m5gfx
         mbelib
+        orcsdr_vocoder
         nvs_flash
         esp_rtl_sdr
         orcmaps

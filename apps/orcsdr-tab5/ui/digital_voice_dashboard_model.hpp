@@ -9,6 +9,22 @@ enum class Receiver : uint8_t { disconnected, ready, receiving, paused, unavaila
 enum class Evidence : uint8_t { none, energy, candidate, sync, integrity_valid, identity_valid };
 enum class Origin : uint8_t { live, real_iq_replay, synthetic_bits, demo };
 enum class Audio : uint8_t { unknown, clear_available, encrypted, unavailable };
+// Digital voice audio as the LIVE page shows it. Presentation only: the audio service owns every value.
+enum class VoicePhase : uint8_t { unavailable, listening, acquiring, buffering, decoding, silence_frame, degraded, call_ended,
+                                  protected_voice, privacy_unknown, muted };
+enum class ListenMode : uint8_t { automatic, ts1, ts2, mute };
+struct VoiceAudioView {
+  bool available = false;
+  VoicePhase phase = VoicePhase::unavailable;
+  ListenMode listen = ListenMode::automatic;
+  uint8_t active_slot = 0;               // 0 = none voiced
+  uint8_t level = 0;                     // 0..8, coarse on purpose (limits repaint rate)
+  uint8_t privacy_ts1 = 0, privacy_ts2 = 0;   // 0 unknown, 1 clear, 2 protected
+  uint32_t speech_frames = 0, silence_frames = 0, error_frames = 0, concealed_frames = 0, underruns = 0;
+  uint16_t buffered_ms = 0, latency_ms = 0;
+  uint32_t source_id = 0, destination_id = 0;
+  bool group_call = false;
+};
 enum class View : uint8_t { explore, live, last_heard, systems, signal, setup, count };
 enum class Density : uint8_t { discovery_first, analysis_first };
 // Scanner state is a presentation snapshot owned by the existing receiver/scan service.
@@ -144,6 +160,8 @@ struct Snapshot {
   // Discovery database totals for the table shown in Systems (live database, or the replay's own RAM-only one).
   bool db_available = false;
   uint16_t db_systems = 0, db_talkgroups = 0, db_subscribers = 0;
+  VoiceAudioView voice{};
+  uint32_t audio_revision = 0;           // moves when the voice panel's content changes; the page revision does not
 };
 struct UiState {
   View view = View::explore;
@@ -155,7 +173,7 @@ struct UiState {
 };
 enum class ActionKind : uint8_t { none, switch_view, selected_history, save_channel, scan, setup_protocol,
                                   toggle_hold, skip_frequency, toggle_density, select_scan_hit,
-                                  select_system, page_history, plan_prev, plan_next };
+                                  select_system, page_history, plan_prev, plan_next, set_listen };
 // Why a control is unavailable, in words the screen can show. `none` = the control is usable.
 enum class Disabled : uint8_t { none, no_receiver, no_plan, not_scanning, no_signal_selected, not_verified, already_saved,
                                 list_full, no_storage, scan_running, single_plan, no_frequency };
@@ -181,4 +199,6 @@ ActionState action_state(ActionKind kind, const Snapshot& s, const UiState& u);
 const char* disabled_text(Disabled d);
 const char* scan_stage_name(ScanStage s);
 const char* scan_mode_name(ScanMode m);
+const char* voice_phase_name(VoicePhase p);
+const char* listen_mode_name(ListenMode m);
 }

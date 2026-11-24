@@ -83,6 +83,48 @@ void nav(Paint& p,const UiState& state) {
   for(int i=0;i<layout::kTabCount;++i)
     p.button(kTabs[i],layout::tab(i),true,state.view==static_cast<View>(i));
 }
+// ---- Voice audio panel (LIVE page). Retained widget: repainted alone, inside its own rectangle, when audio_revision moves.
+Rect voice_rect(Density d) {
+  const auto a=layout::kBasicHero,b=layout::kAdvancedFacts;
+  return d==Density::discovery_first?Rect{a.x+12,a.y+372,a.w-24,100}:Rect{b.x+12,b.y+330,b.w-24,100};
+}
+constexpr int kListenBtnW=96,kListenBtnStep=100;
+Rect listen_button(Rect r,int i) {return {r.x+r.w-4*kListenBtnStep+i*kListenBtnStep,r.y+8,kListenBtnW,40};}
+uint16_t phase_color(VoicePhase ph) {
+  switch(ph) {
+    case VoicePhase::decoding:return kGreen;
+    case VoicePhase::silence_frame:case VoicePhase::buffering:case VoicePhase::acquiring:case VoicePhase::call_ended:return kCyan;
+    case VoicePhase::degraded:case VoicePhase::privacy_unknown:case VoicePhase::muted:return kAmber;
+    case VoicePhase::protected_voice:return kRed;
+    case VoicePhase::listening:return kWhite;
+    default:return kMuted;
+  }
+}
+void voice_panel(Paint& p,const Snapshot& s,Density d) {
+  const Rect r=voice_rect(d);
+  const VoiceAudioView& v=s.voice;
+  p.g.fillRect(r.x,r.y,r.w,r.h,kPanel);
+  p.g.drawFastHLine(r.x+6,r.y-2,r.w-12,kEdge);
+  p.text(voice_phase_name(v.phase),r.x+8,r.y+28,phase_color(v.phase),2,r);
+  char t[80];
+  if(v.active_slot&&v.phase!=VoicePhase::protected_voice&&v.source_id)
+    std::snprintf(t,sizeof(t),"SLOT %u  %lu>%lu  %s",static_cast<unsigned>(v.active_slot),static_cast<unsigned long>(v.source_id),
+                  static_cast<unsigned long>(v.destination_id),v.group_call?"GROUP":"PRIVATE");
+  else if(v.privacy_ts1==2||v.privacy_ts2==2)std::snprintf(t,sizeof(t),"AUDIO WITHHELD - NO DECODE");
+  else std::snprintf(t,sizeof(t),"%s  SLOT1 %s  SLOT2 %s",listen_mode_name(v.listen),v.privacy_ts1==1?"CLEAR":"-",v.privacy_ts2==1?"CLEAR":"-");
+  p.label(t,r.x+8,r.y+58,r);
+  std::snprintf(t,sizeof(t),"SP %lu SIL %lu ERR %lu BUF %ums",static_cast<unsigned long>(v.speech_frames),
+                static_cast<unsigned long>(v.silence_frames),static_cast<unsigned long>(v.error_frames),static_cast<unsigned>(v.buffered_ms));
+  p.label(t,r.x+8,r.y+86,r);
+  for(int i=0;i<4;++i) {
+    const bool sel=static_cast<int>(v.listen)==i;
+    p.button(i==0?"AUTO":i==1?"SLOT 1":i==2?"SLOT 2":"MUTE",listen_button(r,i),v.available,sel);
+  }
+  // 8-segment level meter under the buttons (coarse: one repaint per segment change at most)
+  const int bx=r.x+r.w-4*kListenBtnStep,by=r.y+62;
+  for(int i=0;i<8;++i)
+    p.g.fillRect(bx+i*24,by,20,26,i<v.level?(i<6?kGreen:kAmber):kEdge);
+}
 void live_discovery(Paint& p,const Snapshot& s) {
   const auto a=layout::kBasicHero,b=layout::kBasicFacts;
   p.card(a);p.card(b);
@@ -92,9 +134,7 @@ void live_discovery(Paint& p,const Snapshot& s) {
   p.hr(a.x+18,a.y+160,a.w-36);
   call_identity(p,s,a,a.x+20,a.y+197);
   p.hr(a.x+18,a.y+368,a.w-36);
-  p.text(audio_name(s.audio),a.x+20,a.y+407,
-         s.audio==Audio::clear_available?kGreen:kAmber,2,a);
-  p.text(origin_name(s.origin),a.x+20,a.y+443,s.origin==Origin::live?kMuted:kAmber,2,a);
+  voice_panel(p,s,Density::discovery_first);
 
   protocol_facts(p,s,b,b.x+18,b.y+32);
   p.hr(b.x+18,b.y+218,b.w-36);
@@ -110,7 +150,7 @@ void live_analysis(Paint& p,const Snapshot& s) {
   call_identity(p,s,a,a.x+18,a.y+32);
   p.hr(a.x+18,a.y+203,a.w-36);
   p.fact("PROTOCOL",protocol_name(s.protocol),a.x+18,a.y+245,a);
-  p.fact("VOICE",audio_name(s.audio),a.x+18,a.y+292,a,kAmber);
+  p.fact("VOICE",voice_phase_name(s.voice.phase),a.x+18,a.y+292,a,phase_color(s.voice.phase));
   p.fact("ENC",s.encryption_known?(s.is_encrypted?"ENCRYPTED":"CLEAR FLAG"):"UNKNOWN",
          a.x+18,a.y+339,a,s.encryption_known?(s.is_encrypted?kRed:kGreen):kAmber);
   p.label(origin_name(s.origin),a.x+18,a.y+426,a);
@@ -119,9 +159,7 @@ void live_analysis(Paint& p,const Snapshot& s) {
   p.title("INTEGRITY",b.x+18,b.y+252,b);
   p.fact("IDENTITY GATE",trusted_identity(s)?"PASSED":"NOT MET",b.x+18,b.y+302,b,
          trusted_identity(s)?kGreen:kAmber);
-  p.fact("TAB5",integration_name(s.protocol),b.x+18,b.y+348,b,kAmber);
-  p.label(s.protocol==Protocol::nxdn48||s.protocol==Protocol::nxdn96?
-          "RAN alone is not proof of a site":"Unknown slot/identity stays unknown",b.x+18,b.y+424,b);
+  voice_panel(p,s,Density::analysis_first);
 }
 void last_heard(Paint& p,const Snapshot& s,Density mode,uint8_t offset,uint8_t selected) {
   const auto a=mode==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
@@ -318,8 +356,14 @@ bool Dashboard::present(lgfx::LovyanGFX& display,const Snapshot& s,
   const bool entry = !ready_ || last_state_.view!=state.view || last_state_.density!=state.density;
   if(!entry && old_.revision==s.revision &&
      last_state_.history_offset==state.history_offset && last_state_.selected_history==state.selected_history &&
-     last_state_.selected_scan_hit==state.selected_scan_hit && last_state_.selected_system==state.selected_system)
+     last_state_.selected_scan_hit==state.selected_scan_hit && last_state_.selected_system==state.selected_system) {
+    if(old_.audio_revision!=s.audio_revision) {
+      // Only the voice panel changed: repaint that one rectangle, nothing else on the page.
+      if(state.view==View::live) {Paint pv{display};voice_panel(pv,s,state.density);}
+      old_.voice=s.voice;old_.audio_revision=s.audio_revision;
+    }
     return true; // idle means zero drawing
+  }
   Paint p{display};
   if(entry) {
     // Screen owner already painted shared audio/header chrome. Never touch y < 104.
@@ -347,6 +391,11 @@ Action Dashboard::handle_touch(int32_t x,int32_t y,const Snapshot& s,
   for (int i=0;i<layout::kTabCount;++i)
     if(layout::tab(i).contains(x,y))return {ActionKind::switch_view,static_cast<uint8_t>(i)};
   if(state.view==View::explore)return scan_.touch(x,y,s,state);
+  if(state.view==View::live&&s.voice.available) {
+    const Rect vr=voice_rect(state.density);
+    for(int i=0;i<4;++i)
+      if(listen_button(vr,i).contains(x,y))return {ActionKind::set_listen,static_cast<uint8_t>(i)};
+  }
   if(state.view==View::systems) {
     const auto b=state.density==Density::discovery_first?layout::kBasicFacts:layout::kAdvancedFacts;
     if(Rect{b.x+18,b.y+334,242,48}.contains(x,y)&&s.can_save_channel)

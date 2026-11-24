@@ -9,9 +9,11 @@ set(UI ${CMAKE_CURRENT_LIST_DIR}/../../apps/orcsdr-tab5/ui)
 set(SOURCES ${UI}/digital_voice_dashboard.cpp ${UI}/digital_voice_scan_view.cpp
             ${UI}/digital_voice_dashboard_model.cpp
             ${UI}/digital_voice_dashboard_demo.cpp)
-foreach(test_target IN ITEMS dv_dashboard_host_contract dv_dashboard_surface_contract dv_dashboard_decoded_fields dv_dashboard_scan)
+foreach(test_target IN ITEMS dv_dashboard_host_contract dv_dashboard_surface_contract dv_dashboard_decoded_fields dv_dashboard_scan dv_dashboard_voice)
   if(test_target STREQUAL dv_dashboard_host_contract)
     set(TEST_SOURCE ${CMAKE_CURRENT_LIST_DIR}/dashboard_host_contract_tests.cpp)
+  elseif(test_target STREQUAL dv_dashboard_voice)
+    set(TEST_SOURCE ${CMAKE_CURRENT_LIST_DIR}/dashboard_voice_tests.cpp)
   elseif(test_target STREQUAL dv_dashboard_scan)
     set(TEST_SOURCE ${CMAKE_CURRENT_LIST_DIR}/dashboard_scan_tests.cpp)
   elseif(test_target STREQUAL dv_dashboard_decoded_fields)
@@ -39,3 +41,5 @@ add_test(NAME digital_voice_surface_contract COMMAND dv_dashboard_surface_contra
 add_test(NAME digital_voice_decoded_fields COMMAND dv_dashboard_decoded_fields)
 
 add_test(NAME digital_voice_scan COMMAND dv_dashboard_scan)
+
+add_test(NAME digital_voice_voice_panel COMMAND dv_dashboard_voice)

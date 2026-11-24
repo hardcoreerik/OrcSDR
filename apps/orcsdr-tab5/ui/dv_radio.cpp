@@ -7,6 +7,7 @@
 
 #include "dv_channelizer.hpp"
 #include "orcsdr_dmr/d1_bridge.hpp"
+#include "orcsdr_dmr/d1_call.hpp"
 #include "orcsdr_nxdn/decoder.hpp"
 #include "orcsdr_nxdn/frontend.hpp"
 
@@ -25,6 +26,7 @@ constexpr uint32_t kStatsPeriodMs = 250;
 constexpr size_t kSlicePairs = 2048;     // input pairs per DSP slice (bounds stack and latency)
 constexpr size_t kOutPerSlice = kSlicePairs / dv::Channelizer::kDecimation + 2;
 constexpr size_t kRing = 32;             // event ring
+constexpr size_t kVoiceRing = 12;        // qualified voice groups waiting for the voice task (12 x 360 ms = 4.3 s)
 constexpr uint32_t kSampleRing = 32768;  // 48 kS/s samples between the DSP task and the worker (0.68 s, 256 KiB PSRAM)
 constexpr size_t kWorkerChunk = 512;     // samples per worker step (keeps the worker preemptible and the timing fine-grained)
 static_assert((kSampleRing & (kSampleRing - 1)) == 0, "ring size must be a power of two");
@@ -33,6 +35,7 @@ static_assert((kSampleRing & (kSampleRing - 1)) == 0, "ring size must be a power
 // internal RAM when the heap has room (PSRAM shares its bandwidth with the display), and falls back to PSRAM otherwise.
 struct Decoders {
   dmr1::Receiver dmr;
+  dmr::d1::CallManager calls;   // privacy / identity / continuity gate between D1 voice groups and the voice task
   nxdn::Frontend f48{nxdn::Mode::nxdn48, 24000.0};   // fed through dec2 (half rate): NXDN48 at 48 kS/s exceeds one core
   dv::Decimator2 dec2;
   nxdn::Decoder d48{nxdn::Mode::nxdn48};
@@ -47,6 +50,7 @@ struct State {
   dmr::d1::ComplexSample dmr_in[kWorkerChunk];   // decode side (worker, or the DSP task when there is no worker)
   nxdn::IQSample nx_in[kWorkerChunk];
   Event ring[kRing];
+  VoiceMsg vring[kVoiceRing];
   uint32_t last_stats_ms = 0;
 };
 
@@ -71,6 +75,12 @@ std::atomic<uint32_t> g_verified_ms{0};
 std::atomic<uint32_t> g_dmr_acq{0}, g_dmr_id{0}, g_dmr_ev{0};
 std::atomic<uint32_t> g_n48_frames{0}, g_n48_valid{0}, g_n96_frames{0}, g_n96_valid{0};
 std::atomic<uint32_t> g_ring_head{0}, g_ring_tail{0};
+std::atomic<uint32_t> g_vring_head{0}, g_vring_tail{0}, g_voice_dropped{0}, g_voice_flushes{0}, g_voice_pending_lost{0};
+std::atomic<bool> g_voice_queue_on{false};
+uint32_t g_call_serial = 0;
+// Snapshot of decoder-owned voice counters, published by the decode side (the worker) for any reader thread.
+std::atomic<uint32_t> g_vs[16];
+std::atomic<uint8_t> g_vpriv[3], g_vactive[3];
 std::atomic<bool> g_candidate{false}, g_replay{false};
 uint64_t g_last_lost = 0;
 uint32_t g_tune_calls = 0, g_tune_refused = 0, g_alloc_failed = 0;
@@ -126,8 +136,52 @@ void push(const Event& base) {
   g_candidate.store(true, std::memory_order_relaxed);   // a verified event is more than a candidate
 }
 
+void push_voice(const VoiceMsg& m) {
+  if (!g_state || !g_voice_queue_on.load(std::memory_order_relaxed)) return;
+  const uint32_t head = g_vring_head.load(std::memory_order_relaxed);
+  const uint32_t tail = g_vring_tail.load(std::memory_order_acquire);
+  if (head - tail >= kVoiceRing) {
+    g_voice_dropped.fetch_add(1, std::memory_order_relaxed);
+    if (m.kind == VoiceKind::group) g_voice_pending_lost.fetch_add(1u + m.lost_superframes, std::memory_order_relaxed);
+    return;
+  }
+  VoiceMsg& slot = g_state->vring[head % kVoiceRing];
+  slot = m;
+  slot.t_ms = now();
+  slot.frequency_hz = g_channel_hz.load(std::memory_order_relaxed);
+  if (m.kind == VoiceKind::group) {
+    const uint32_t extra = g_voice_pending_lost.exchange(0, std::memory_order_relaxed);
+    slot.lost_superframes = static_cast<uint16_t>(slot.lost_superframes + extra);
+  }
+  g_vring_head.store(head + 1, std::memory_order_release);
+}
+void on_voice_group(const dmr::d1::VoiceGroup& g, void*) noexcept { g_state->dec->calls.on_group(g); }
+void on_qualified(const dmr::d1::QualifiedGroup& q, void*) noexcept {
+  VoiceMsg m;
+  m.kind = VoiceKind::group;
+  m.slot = q.slot; m.colour_code = q.colour_code; m.group_call = q.group_call; m.new_call = q.new_call;
+  m.lost_superframes = static_cast<uint16_t>(q.lost_superframes > 0xffffu ? 0xffffu : q.lost_superframes);
+  m.source_id = q.source_id; m.destination_id = q.destination_id;
+  if (q.new_call) ++g_call_serial;
+  m.call_serial = g_call_serial;
+  for (size_t i = 0; i < kVoicePayloadBytes; ++i) m.payload[i] = q.group->payload[i];
+  // A qualified voice group is verified activity: it extends the scanner's hold for as long as the call lasts.
+  g_verified_ms.store(now() ? now() : 1u, std::memory_order_release);
+  g_candidate.store(true, std::memory_order_relaxed);
+  push_voice(m);
+}
+void on_voice_notice(const dmr::d1::Notice& n, void*) noexcept {
+  VoiceMsg m;
+  m.kind = n.kind == dmr::d1::NoticeKind::call_ended ? VoiceKind::call_ended
+         : n.kind == dmr::d1::NoticeKind::protected_voice ? VoiceKind::protected_voice : VoiceKind::unqualified;
+  m.slot = n.slot;
+  m.call_serial = g_call_serial;
+  push_voice(m);
+}
+
 void on_dmr(const dmr1::Event& ev, void*) noexcept {
   const dmr::d1::Event& d = ev.decoded;
+  g_state->dec->calls.on_data(d);
   g_dmr_ev.fetch_add(1, std::memory_order_relaxed);
   // Only events that passed RS/CRC (integrity_valid) become UI events; sync/slot-type alone stay counters.
   if (!d.integrity_valid) return;
@@ -143,7 +197,7 @@ void on_dmr(const dmr1::Event& ev, void*) noexcept {
     g_dmr_id.fetch_add(1, std::memory_order_relaxed);
   }
   e.colour_code = d.colour_code;
-  e.colour_code_valid = d.golay_valid;       // CC comes from the Golay-checked slot type
+  e.colour_code_valid = d.golay_valid || d.late_entry;   // CC comes from the Golay-checked slot type, or from the QR(16,7,6)-checked EMB of a checksummed late-entry LC
   e.slot = d.slot;
   e.slot_valid = d.slot != 0;                 // 0 stays UNKNOWN; never defaulted to TS1
   push(e);
@@ -173,6 +227,15 @@ void on_dibit_96(std::uint8_t d, void*) noexcept {
 void reset_channelizer() { g_state->channelizer.reset(); }
 void reset_decoders() {
   g_state->dec->dmr.reset();
+  g_state->dec->calls.reset();
+  g_state->dec->dmr.set_voice_sink(on_voice_group, nullptr);
+  g_state->dec->calls.set_sinks(on_qualified, on_voice_notice, nullptr);
+  {   // the voice task must drop whatever speech it is holding: nothing may bridge a stream discontinuity
+    VoiceMsg flush;
+    flush.kind = VoiceKind::flush;
+    push_voice(flush);
+    g_voice_flushes.fetch_add(1, std::memory_order_relaxed);
+  }
   g_state->dec->f48.reset();
   g_state->dec->dec2.reset();
   g_state->dec->d48.reset();
@@ -181,6 +244,20 @@ void reset_decoders() {
 }
 
 void publish_stats() {
+  {
+    const auto& c = g_state->dec->calls.stats();
+    const auto& v = g_state->dec->dmr.voice_stats();
+    const uint32_t vals[16] = {static_cast<uint32_t>(v.anchors), static_cast<uint32_t>(c.groups_seen),
+        static_cast<uint32_t>(c.groups_qualified), static_cast<uint32_t>(c.groups_protected), static_cast<uint32_t>(c.groups_unqualified),
+        static_cast<uint32_t>(c.calls_started), static_cast<uint32_t>(c.calls_ended), static_cast<uint32_t>(c.lost_superframes),
+        static_cast<uint32_t>(v.abandoned_emb), static_cast<uint32_t>(v.abandoned_sync), static_cast<uint32_t>(v.embedded_lc_ok),
+        static_cast<uint32_t>(v.embedded_lc_bad), 0, 0, 0, 0};
+    for (int i = 0; i < 16; ++i) g_vs[i].store(vals[i], std::memory_order_relaxed);
+    for (unsigned sl = 1; sl <= 2; ++sl) {
+      g_vpriv[sl].store(static_cast<uint8_t>(g_state->dec->calls.privacy(sl)), std::memory_order_relaxed);
+      g_vactive[sl].store(g_state->dec->calls.active(sl) ? 1 : 0, std::memory_order_relaxed);
+    }
+  }
   const auto& s = g_state->dec->dmr.stats();
   g_dmr_acq.store(static_cast<uint32_t>(s.acquisitions), std::memory_order_relaxed);
   const uint32_t acq = static_cast<uint32_t>(s.acquisitions);
@@ -196,6 +273,7 @@ void decode_samples(const dv::Iq48* in, size_t n, uint8_t mask) {
   if (mask & kMaskDmr) {
     for (size_t i = 0; i < n; ++i) st.dmr_in[i] = {in[i].re, in[i].im};
     (void)st.dec->dmr.process(st.dmr_in, n, on_dmr, nullptr);
+    st.dec->calls.on_time(st.dec->dmr.protocol_dibits());
   }
   uint32_t b = micros32();
   g_us_dmr.fetch_add(b - a, std::memory_order_relaxed);
@@ -306,6 +384,7 @@ bool start() {
   reset_decoders();
   g_ring_w = g_ring_r = 0; g_reset_gen = g_reset_pos = 0; g_ring_drops = g_ring_fill_max = 0; g_worker_busy_us = 0;
   g_ring_head.store(0); g_ring_tail.store(0);
+  g_vring_head.store(0); g_vring_tail.store(0); g_voice_dropped = g_voice_flushes = g_voice_pending_lost = 0; g_call_serial = 0;
   g_blocks = g_wrong_rate = g_settle_skipped = g_gaps = g_loss_events = 0;
   g_events = g_dropped = g_seq = 0;
   g_max_us = g_level_milli = 0; g_total_us = 0; g_samples = 0; g_verified_ms = 0;
@@ -385,6 +464,29 @@ bool tune_channel(uint32_t channel_hz) {
 }
 
 void service() {}
+
+bool pop_voice(VoiceMsg* out) {
+  if (!g_state || !out) return false;
+  const uint32_t tail = g_vring_tail.load(std::memory_order_relaxed);
+  if (tail == g_vring_head.load(std::memory_order_acquire)) return false;
+  *out = g_state->vring[tail % kVoiceRing];
+  g_vring_tail.store(tail + 1, std::memory_order_release);
+  return true;
+}
+void set_voice_queue_enabled(bool enabled) { g_voice_queue_on.store(enabled, std::memory_order_release); }
+VoiceStatus voice_status() {
+  VoiceStatus v;
+  v.anchors = g_vs[0].load(std::memory_order_relaxed); v.groups_seen = g_vs[1].load(std::memory_order_relaxed);
+  v.qualified = g_vs[2].load(std::memory_order_relaxed); v.protected_groups = g_vs[3].load(std::memory_order_relaxed);
+  v.unqualified = g_vs[4].load(std::memory_order_relaxed); v.calls_started = g_vs[5].load(std::memory_order_relaxed);
+  v.calls_ended = g_vs[6].load(std::memory_order_relaxed); v.lost_superframes = g_vs[7].load(std::memory_order_relaxed);
+  v.emb_abandoned = g_vs[8].load(std::memory_order_relaxed); v.sync_abandoned = g_vs[9].load(std::memory_order_relaxed);
+  v.embedded_lc_ok = g_vs[10].load(std::memory_order_relaxed); v.embedded_lc_bad = g_vs[11].load(std::memory_order_relaxed);
+  v.queue_drops = g_voice_dropped.load(std::memory_order_relaxed); v.flushes = g_voice_flushes.load(std::memory_order_relaxed);
+  v.queue_pending = g_vring_head.load(std::memory_order_acquire) - g_vring_tail.load(std::memory_order_relaxed);
+  for (unsigned i = 1; i <= 2; ++i) { v.privacy[i] = g_vpriv[i].load(std::memory_order_relaxed); v.active[i] = g_vactive[i].load(std::memory_order_relaxed) != 0; }
+  return v;
+}
 
 bool pop_event(Event* out) {
   if (!g_state || !out) return false;

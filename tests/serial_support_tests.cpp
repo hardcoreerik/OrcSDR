@@ -243,7 +243,20 @@ void test_no_match_and_null_hooks() {
 
 }  // namespace
 
+void test_dv_audio_line_is_optional() {
+  g_next_snapshot = Snapshot{};
+  CHECK(run("RTL_SUPPORT REPORT"));
+  const size_t base = g_out.size();
+  for (const auto& l : g_out) CHECK(l.find("ORC_SUPPORT_DV_AUDIO") == std::string::npos);   // default report is unchanged
+  g_next_snapshot = Snapshot{};
+  std::snprintf(g_next_snapshot.dv_audio, sizeof(g_next_snapshot.dv_audio), "ORC_SUPPORT_DV_AUDIO enabled=1 phase=\"LISTENING\"");
+  CHECK(run("RTL_SUPPORT REPORT"));
+  CHECK(g_out.size() == base + 1);
+  CHECK(g_out.size() >= 2 && g_out[g_out.size() - 2].rfind("ORC_SUPPORT_DV_AUDIO", 0) == 0 && g_out.back() == "ORC_SUPPORT_END");
+}
+
 int main() {
+  test_dv_audio_line_is_optional();
   test_attached_and_auth_independence();
   test_disconnected_snapshot();
   test_extremes_bounds_and_null_strings();
