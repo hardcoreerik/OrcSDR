@@ -1,0 +1,5 @@
+terra_152p685_call_cc8 anchors=5 groups_seen=5 qualified=5 protected=0 unqualified=0 calls=2 lost_sf=0 emb_abandon=0 sync_abandon=0 elc_ok=4 elc_bad=1 drops=0
+  engine groups=5 frames=90 speech=50 silence=40 error=0 concealed=0 underruns=1 overruns=0 synth_us last/max/avg=796/958/811 latency_ms=68 buffered_peak_ms=448 clipped=0
+  call ts2 #1 frames=54 corrected=12 total=31 err=0 silence=10
+  call ts2 #2 frames=36 corrected=1 total=4 err=0 silence=30
+  speaker 48k samples=86400 (1.80 s) groups_handled=5 notices=3

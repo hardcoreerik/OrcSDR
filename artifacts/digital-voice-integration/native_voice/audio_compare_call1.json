@@ -1,0 +1,39 @@
+{
+  "native": {
+    "seconds": 7.56,
+    "rms": 487.6,
+    "peak": 5709,
+    "clipped": 0,
+    "zero_frames": 104
+  },
+  "sandbox_v2": {
+    "seconds": 7.56,
+    "rms": 487.7,
+    "peak": 5709,
+    "clipped": 0,
+    "zero_frames": 104
+  },
+  "dsdfme": {
+    "seconds": 7.56,
+    "rms": 354.8,
+    "peak": 3811,
+    "clipped": 0,
+    "zero_frames": 2
+  },
+  "native_vs_sandbox_v2": {
+    "samples_compared": 60480,
+    "identical_samples": 59115,
+    "max_abs_diff": 52,
+    "length_equal": true
+  },
+  "native_vs_dsdfme": {
+    "frame_envelope_correlation": 0.963,
+    "rms_ratio": 1.374,
+    "voiced_frames_native": 155,
+    "voiced_frames_dsdfme": 157,
+    "voiced_both": 128,
+    "median_f0_ratio_where_both": 1.0,
+    "f0_jump_rate_native": 0.11038961038961038,
+    "f0_jump_rate_dsdfme": 0.16025641025641027
+  }
+}

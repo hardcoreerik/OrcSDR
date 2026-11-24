@@ -1,0 +1,4 @@
+terra_153p068_call_cc8 anchors=1 groups_seen=1 qualified=1 protected=0 unqualified=0 calls=1 lost_sf=0 emb_abandon=0 sync_abandon=0 elc_ok=1 elc_bad=0 drops=0
+  engine groups=1 frames=18 speech=3 silence=15 error=0 concealed=0 underruns=0 overruns=0 synth_us last/max/avg=977/977/977 latency_ms=102 buffered_peak_ms=326 clipped=0
+  call ts1 #1 frames=18 corrected=0 total=0 err=0 silence=15
+  speaker 48k samples=17280 (0.36 s) groups_handled=1 notices=2

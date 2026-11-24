@@ -1,0 +1,5 @@
+terra_152p1575_call_cc13 anchors=26 groups_seen=26 qualified=26 protected=0 unqualified=0 calls=2 lost_sf=0 emb_abandon=0 sync_abandon=0 elc_ok=19 elc_bad=3 drops=0
+  engine groups=26 frames=468 speech=301 silence=167 error=0 concealed=0 underruns=0 overruns=0 synth_us last/max/avg=801/1628/999 latency_ms=68 buffered_peak_ms=454 clipped=0
+  call ts2 #1 frames=378 corrected=4 total=4 err=0 silence=104
+  call ts2 #2 frames=90 corrected=1 total=1 err=0 silence=63
+  speaker 48k samples=449280 (9.36 s) groups_handled=26 notices=3

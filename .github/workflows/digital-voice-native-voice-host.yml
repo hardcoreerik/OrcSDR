@@ -1,0 +1,56 @@
+name: Digital Voice native voice audio host regression
+on:
+  push:
+    branches:
+      - feature/dmr-digital-voice-foundation
+    paths:
+      - 'apps/orcsdr-tab5/ui/dv_*'
+      - 'apps/orcsdr-tab5/ui/digital_voice_*'
+      - 'components/orcsdr_dmr/**'
+      - 'components/mbelib/**'
+      - 'components/orcsdr_vocoder/**'
+      - 'tests/digital_voice_live/**'
+      - 'tests/digital_voice_corpus/**'
+      - 'tests/digital_voice_dashboard_preview/**'
+      - '.github/workflows/digital-voice-native-voice-host.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  native-voice:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        variant: [Release, Sanitizers]
+    steps:
+      - uses: actions/checkout@v4
+      - name: Production chain on the real captures, call manager, voice engine, corpus
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.variant }}" = Sanitizers ]; then
+            cmake -S tests/digital_voice_live -B build/dv-live -DCMAKE_BUILD_TYPE=Debug -DORC_DV_LIVE_SANITIZERS=ON
+          else
+            cmake -S tests/digital_voice_live -B build/dv-live -DCMAKE_BUILD_TYPE=Release
+          fi
+          cmake --build build/dv-live --parallel 2
+          ctest --test-dir build/dv-live --output-on-failure -V
+      - name: Decoded WAVs from the three real calls (native chain, no reference audio)
+        if: matrix.variant == 'Release'
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p out
+          B=build/dv-live/dv_voice_replay; C=tests/digital_voice_corpus/iq
+          $B $C/terra_152p1575_call_cc13.cu8 152157500 out call1 | tee out/call1.txt
+          $B $C/terra_152p685_call_cc8.cu8 152685000 out call2 | tee out/call2.txt
+          $B $C/terra_153p068_call_cc8.cu8 153068000 out call3 | tee out/call3.txt
+          $B $C/terra_152p1575_control_only.cu8 152157500 out control | tee out/control.txt
+          grep -q "groups_seen=0" out/control.txt
+          grep -q "qualified=26" out/call1.txt
+      - name: State the acceptance boundary
+        if: always()
+        run: |
+          echo "Host replay of recorded IQ only. NOT Tab5 firmware, NOT live RF, NOT a listening test." >> "$GITHUB_STEP_SUMMARY"

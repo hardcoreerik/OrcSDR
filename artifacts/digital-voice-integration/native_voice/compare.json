@@ -1,0 +1,35 @@
+{
+  "terra_152p1575_call_cc13": {
+    "native_params_vs_dsdfme": 374,
+    "v2_params_vs_dsdfme": 374,
+    "native": 468,
+    "v2": 468,
+    "dsdfme": 468,
+    "native_vs_v2_exact_sequence": 466,
+    "native_subset_of_v2": false,
+    "native_not_in_v2": 2,
+    "v2_not_in_native": 2
+  },
+  "terra_152p685_call_cc8": {
+    "native_params_vs_dsdfme": 56,
+    "v2_params_vs_dsdfme": 71,
+    "native": 90,
+    "v2": 198,
+    "dsdfme": 153,
+    "native_vs_v2_exact_sequence": 76,
+    "native_subset_of_v2": false,
+    "native_not_in_v2": 14,
+    "v2_not_in_native": 119
+  },
+  "terra_153p068_call_cc8": {
+    "native_params_vs_dsdfme": 17,
+    "v2_params_vs_dsdfme": 17,
+    "native": 18,
+    "v2": 18,
+    "dsdfme": 18,
+    "native_vs_v2_exact_sequence": 18,
+    "native_subset_of_v2": true,
+    "native_not_in_v2": 0,
+    "v2_not_in_native": 0
+  }
+}
