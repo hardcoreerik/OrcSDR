@@ -5,6 +5,7 @@ add_library(orcsdr_dmr_d1_integration STATIC
     src/d1_bridge.cpp
     ../d1_frontend/src/frontend.cpp
     ../d1_protocol/src/d1.cpp
+    ../d1_protocol/src/d1_call.cpp
     ../src/d0.cpp)
 target_compile_features(orcsdr_dmr_d1_integration PUBLIC cxx_std_17)
 target_include_directories(orcsdr_dmr_d1_integration PUBLIC

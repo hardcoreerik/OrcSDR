@@ -121,13 +121,17 @@ std::uint16_t crc_ccitt(const std::uint8_t* bytes, std::size_t count) noexcept {
     return static_cast<std::uint16_t>(crc ^ 0xffffU);
 }
 
-// BPTC(128,72): 7 rows of 11 LC/checksum bits + H(16,11,4),
-// one parity row, then column-major transmission over four embedded bursts.
+// Embedded LC, ETSI TS 102 361-1 B.2.2.1: 8 rows x 16 columns, transmitted column by column over four bursts.
+// Rows 0..6 are Hamming(16,11,4) words, row 7 is column even parity. The 72 LC bits occupy rows 0-1 (all 11
+// information columns) and rows 2-6 (columns 0..9); the 5-bit checksum (sum of the nine LC octets mod 31) sits in
+// column 10 of rows 2..6, MSB first. Layout verified against real captures by tests/digital_voice_live (the earlier
+// layout, a plain 7x11 row-major fill with the checksum in the last five positions, never validated real data).
+// Strict: any row or column parity inconsistency fails (no speculative correction). Measured on the corpus, correcting a
+// single bit per row would have recovered one more LC in 22 (20 vs 19 validated) and was not worth the false-accept risk.
 bool decode_embedded_lc(const std::array<std::uint8_t, 128>& wire,
                         std::array<std::uint8_t, 9>& lc) noexcept {
     std::uint8_t matrix[8][16]{};
     for (unsigned i = 0; i < 128; ++i) matrix[i % 8][i / 8] = wire[i];
-    // For this phase, fail on any FEC inconsistency. No speculative correction.
     for (unsigned r = 0; r < 7; ++r) {
         if (parity_syndrome(matrix[r], 11, 5, kRow16) != 0) return false;
     }
@@ -136,14 +140,16 @@ bool decode_embedded_lc(const std::array<std::uint8_t, 128>& wire,
         for (unsigned r = 0; r < 8; ++r) parity ^= matrix[r][col];
         if (parity != 0) return false;
     }
-    std::uint8_t bits[77]{};
-    for (unsigned i = 0; i < 77; ++i) bits[i] = matrix[i / 11][i % 11];
     std::array<std::uint8_t, 9> received{};
-    for (unsigned i = 0; i < 72; ++i) set_bit(received.data(), i, bits[i] != 0);
+    unsigned n = 0;
+    for (unsigned r = 0; r < 2; ++r)
+        for (unsigned c = 0; c < 11; ++c) set_bit(received.data(), n++, matrix[r][c] != 0);
+    for (unsigned r = 2; r < 7; ++r)
+        for (unsigned c = 0; c < 10; ++c) set_bit(received.data(), n++, matrix[r][c] != 0);
     unsigned sum = 0;
     for (auto byte : received) sum += byte;
     unsigned check = 0;
-    for (unsigned i = 72; i < 77; ++i) check = (check << 1U) | bits[i];
+    for (unsigned r = 2; r < 7; ++r) check = (check << 1U) | matrix[r][10];
     if (check != (sum % 31U)) return false;
     lc = received;
     return true;
@@ -288,6 +294,7 @@ void Decoder::reset() noexcept {
     history_.fill(0);
     consumed_ = 0;
     late_ = {};
+    tracks_ = {};
     cach_cadence_.reset();
 }
 void Decoder::burst_bits(std::uint64_t start, std::uint8_t (&bits)[264]) const noexcept {
@@ -404,6 +411,7 @@ void Decoder::scan(EventSink sink, void* user) noexcept {
                 target.cach_checks = 1;
             }
         }
+        if (kind == SyncKind::bs_voice && sync_bit_errors == 0) begin_voice(start);
         if (sink) sink(e, user);
         return;
     }
@@ -523,7 +531,107 @@ bool Decoder::feed(const std::uint8_t* dibits, std::size_t count,
         ++consumed_;
         scan(sink, user);
         scan_embedded(sink, user);
+        scan_voice();
     }
     return true;
+}
+
+// ---- BS voice superframe extraction (bursts A..F, 288 dibits apart) --------------------------------------------
+void Decoder::begin_voice(std::uint64_t start) noexcept {
+    ++voice_stats_.anchors;
+    Track* slot = nullptr;
+    for (auto& t : tracks_) {
+        if (t.active && t.base == start) return;
+        if (!slot && !t.active) slot = &t;
+    }
+    if (!slot) slot = &tracks_[0];   // four tracks always suffice for two slots; never reached on well-formed input
+    *slot = {};
+    slot->active = true;
+    slot->base = start;
+    if (!take_voice_burst(*slot, start, 0)) slot->active = false;
+}
+
+bool Decoder::take_voice_burst(Track& track, std::uint64_t start, unsigned k) noexcept {
+    std::uint8_t bits[264]{};
+    burst_bits(start, bits);
+    std::uint8_t slot = 0;
+    if (start >= kCachDibits) {
+        CachWire cach{};
+        for (unsigned i = 0; i < kCachDibits; ++i) {
+            const auto dibit = at(start - kCachDibits + i);
+            cach[i / 4] = static_cast<std::uint8_t>(cach[i / 4] | (dibit << (6U - 2U * (i % 4U))));
+        }
+        CachFields fields{};
+        std::uint8_t corrected = 0;
+        if (unpack_cach(cach, fields, corrected) && corrected == 0) slot = fields.tdma_channel ? 2U : 1U;
+    }
+    track.slot[k] = slot;
+    if (k > 0) {
+        std::uint64_t centre = 0;
+        for (unsigned i = 54; i < 78; ++i) centre = (centre << 2U) | at(start + i);
+        for (std::size_t i = 0; i < kSyncCount; ++i) {
+            if (weight(static_cast<std::uint32_t>(((centre ^ kSyncWords[i]) >> 24U) & 0xffffffU)) +
+                weight(static_cast<std::uint32_t>((centre ^ kSyncWords[i]) & 0xffffffU)) <= 2) { last_voice_fail_ = 1; return false; }
+        }
+        std::uint16_t qr = 0;
+        for (unsigned i = 108; i < 116; ++i) qr = static_cast<std::uint16_t>((qr << 1U) | bits[i]);
+        for (unsigned i = 148; i < 156; ++i) qr = static_cast<std::uint16_t>((qr << 1U) | bits[i]);
+        std::uint8_t info = 0, repairs = 0;
+        if (!decode_emb(qr, info, repairs) ||
+            (k > 1 && (info >> 3U) != (track.emb[1] >> 3U))) {
+            last_voice_fail_ = 2;
+            return false;
+        }
+        track.emb[k] = info;
+        if (((info >> 2U) & 1U) != 0) track.pi_seen = true;
+        if (k >= 1 && k <= 4)
+            for (unsigned i = 0; i < 32; ++i) track.fragments[(k - 1) * 32 + i] = bits[116 + i];
+    }
+    std::uint8_t* out = track.payload.data() + k * kVoiceBurstBytes;
+    for (unsigned i = 0; i < 216; ++i) {
+        const unsigned src = i < 108 ? i : i + 48;
+        if (bits[src]) out[i / 8] = static_cast<std::uint8_t>(out[i / 8] | (0x80U >> (i % 8U)));
+    }
+    track.taken = static_cast<std::uint8_t>(k + 1);
+    return true;
+}
+
+void Decoder::scan_voice() noexcept {
+    if (consumed_ < kBurstDibits) return;
+    const auto start = consumed_ - kBurstDibits;
+    for (auto& track : tracks_) {
+        if (!track.active || track.taken == 0) continue;
+        // Exact cadence: bursts B..F sit 288 dibits apart. A +-1 dibit search was tried and measured (drift 50..200 ppm,
+        // splices): it recovered nothing, because the superframes lost there lose their voice SYNC first. Not kept.
+        const auto next = track.base + static_cast<std::uint64_t>(track.taken) * 2U * kFrameDibits;
+        if (start != next) continue;
+        if (!take_voice_burst(track, start, track.taken)) {
+            if (last_voice_fail_ == 1) ++voice_stats_.abandoned_sync; else ++voice_stats_.abandoned_emb;
+            track.active = false;
+            continue;
+        }
+        if (track.taken < kVoiceBursts) continue;
+        track.active = false;
+        VoiceGroup g{};
+        g.start_dibit = track.base;
+        g.colour_code = static_cast<std::uint8_t>(track.emb[1] >> 3U);
+        unsigned clean = 0;
+        std::uint8_t first = 0;
+        bool same = true;
+        for (std::size_t i = 0; i < kVoiceBursts; ++i) {
+            if (!track.slot[i]) continue;
+            if (!clean++) first = track.slot[i]; else if (track.slot[i] != first) same = false;
+        }
+        g.slot = (clean >= 5 && same) ? first : 0;
+        g.pi_seen = track.pi_seen;
+        g.payload = track.payload;
+        if ((track.emb[1] & 3U) == 1 && (track.emb[2] & 3U) == 3 && (track.emb[3] & 3U) == 3 &&
+            (track.emb[4] & 3U) == 2) {
+            if (decode_embedded_lc(track.fragments, g.lc)) { g.lc_valid = true; ++voice_stats_.embedded_lc_ok; }
+            else ++voice_stats_.embedded_lc_bad;
+        }
+        ++voice_stats_.groups;
+        if (voice_sink_) voice_sink_(g, voice_user_);
+    }
 }
 } // namespace orcsdr::dmr::d1

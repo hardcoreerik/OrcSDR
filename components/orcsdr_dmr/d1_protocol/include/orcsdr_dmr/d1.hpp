@@ -55,6 +55,30 @@ struct Event {
 
 using EventSink = void (*)(const Event&, void*) noexcept;
 
+// One complete BS voice superframe (bursts A..F, 18 AMBE+2 frames) whose five EMB fields all decoded.
+// This is NOT call qualification: the call manager decides privacy, identity and continuity.
+// Payload is the 216 over-the-air voice bits of each burst (108 before + 108 after the 48-bit centre), MSB first,
+// i.e. three 72-bit frames per burst, in over-the-air order, before any deinterleave or FEC.
+inline constexpr std::size_t kVoiceBursts = 6;
+inline constexpr std::size_t kVoiceBurstBytes = 27;
+struct VoiceGroup {
+    std::uint64_t start_dibit = 0;     // burst A, same clock as Event::burst_start_dibit
+    std::uint8_t slot = 0;             // 1/2 only if >=5 of 6 CACH TACTs were clean AND identical, else 0
+    std::uint8_t colour_code = 0;      // identical in all five EMBs (guaranteed)
+    bool pi_seen = false;              // any EMB Privacy Indicator bit set: treat the whole group as PROTECTED
+    bool lc_valid = false;             // embedded LC (EMB LCSS 1,3,3,2) passed row/column FEC and checksum
+    std::array<std::uint8_t, 9> lc{};  // valid only when lc_valid
+    std::array<std::uint8_t, kVoiceBursts * kVoiceBurstBytes> payload{};
+};
+using VoiceSink = void (*)(const VoiceGroup&, void*) noexcept;
+struct VoiceStats {
+    std::uint64_t anchors = 0;         // exact BS voice SYNC starts
+    std::uint64_t groups = 0;          // delivered superframes
+    std::uint64_t abandoned_sync = 0;  // later burst looked like a SYNC (frame boundary, not voice)
+    std::uint64_t abandoned_emb = 0;   // EMB QR(16,7,6) not uniquely decodable / PI set / colour code changed
+    std::uint64_t embedded_lc_ok = 0, embedded_lc_bad = 0;
+};
+
 // No dynamic allocation or owned pointers. Input is a sequence of hard-sliced
 // DMR dibits 0..3 (MSB transmitted first). Not an IQ or 4FSK demodulator.
 class Decoder final {
@@ -64,6 +88,9 @@ public:
               EventSink sink, void* user = nullptr) noexcept;
     void reset() noexcept;
     std::uint64_t dibits_consumed() const noexcept { return consumed_; }
+    // Optional. Called from feed() on the same thread.
+    void set_voice_sink(VoiceSink sink, void* user) noexcept { voice_sink_ = sink; voice_user_ = user; }
+    [[nodiscard]] const VoiceStats& voice_stats() const noexcept { return voice_stats_; }
 
 private:
     struct Late {
@@ -81,6 +108,24 @@ private:
     std::array<Late, 3> late_{};  // separate unknown, TS1, TS2 collections
     CachCadence cach_cadence_{};   // one BS channel sequence, no heap or history growth
 
+    struct Track {
+        bool active = false;
+        bool pi_seen = false;
+        std::uint8_t taken = 0;                       // bursts collected so far
+        std::uint64_t base = 0;
+        std::array<std::uint8_t, kVoiceBursts * kVoiceBurstBytes> payload{};
+        std::array<std::uint8_t, kVoiceBursts> emb{};  // 7-bit info word per burst B..F (index 1..5)
+        std::array<std::uint8_t, kVoiceBursts> slot{}; // 0 = TACT not clean
+        std::array<std::uint8_t, 128> fragments{};     // embedded LC bits of bursts B..E
+    };
+    std::array<Track, 3> tracks_{};   // two slots interleave; a third covers a restart before the old track expires
+    VoiceSink voice_sink_ = nullptr;
+    void* voice_user_ = nullptr;
+    VoiceStats voice_stats_{};
+    std::uint8_t last_voice_fail_ = 0;
+    void begin_voice(std::uint64_t start) noexcept;
+    void scan_voice() noexcept;
+    bool take_voice_burst(Track& track, std::uint64_t start, unsigned k) noexcept;
     std::uint8_t at(std::uint64_t index) const noexcept {
         return history_[static_cast<std::size_t>(index % kRingCapacity)];
     }

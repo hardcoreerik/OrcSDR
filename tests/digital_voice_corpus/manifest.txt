@@ -1,9 +1,11 @@
 # Frozen expectations for the real-capture regression corpus. Run: dv_corpus_tests <this dir> (ctest: digital_voice_corpus).
 # case <name> <iq file> <channel_hz> <protocol mask 1=DMR 2=NXDN48 4=NXDN96> <min events> <max identity events> <exact identity set src>dst@colourcode,... or -> <db=systems/talkgroups/subscribers the discovery database must hold after the run>
 # Events are the dv_radio events (integrity or identity validated). Counts below are the measured values on 2026-11-23; they only move with a decoder change.
-case terra_call_cc13 iq/terra_152p1575_call_cc13.cu8 152157500 1 186 11 4106011>6011885@13,4106019>6011885@13 db=1/1/2
-case terra_call_cc8 iq/terra_152p685_call_cc8.cu8 152685000 1 136 13 4106019>6011885@8 db=1/1/1
-case terra_call_153p068_cc8 iq/terra_153p068_call_cc8.cu8 153068000 1 24 24 4106001>6011885@8,4106008>6011885@8 db=1/1/2
+# 2026-11-24: the embedded-LC layout fix (ETSI B.2.2.1; the old layout validated 0 of 22 real LCs) makes late-entry identities real: more identity
+# events (11->21, 13->15, 24->25; strict decoding, no single-bit row correction), the exact identity sets and the discovery database are unchanged.
+case terra_call_cc13 iq/terra_152p1575_call_cc13.cu8 152157500 1 196 21 4106011>6011885@13,4106019>6011885@13 db=1/1/2
+case terra_call_cc8 iq/terra_152p685_call_cc8.cu8 152685000 1 138 15 4106019>6011885@8 db=1/1/1
+case terra_call_153p068_cc8 iq/terra_153p068_call_cc8.cu8 153068000 1 25 25 4106001>6011885@8,4106008>6011885@8 db=1/1/2
 case terra_control_only iq/terra_152p1575_control_only.cu8 152157500 1 98 0 - db=1/0/0
 # Known limitation, frozen on purpose: Capacity Max control CSBKs fail CRC in this decoder AND in DSD-FME. If this ever yields events, update deliberately.
 case capmax_control_crcfail iq/capmax_451p9125_control_crcfail.cu8 451912500 1 0 0 - db=0/0/0

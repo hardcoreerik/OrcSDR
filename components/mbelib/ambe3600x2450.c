@@ -509,7 +509,7 @@ mbe_decodeAmbe2450Parms (char *ambe_d, mbe_parms * cur_mp, mbe_parms * prev_mp)
       printf ("delta%i: %f ", l, deltal[l]);
 #endif
       // eq 43
-      Sum43 = Sum43 + ((((float) 1 - deltal[l]) * prev_mp->log2Ml[intkl[l]]) + (deltal[l] * prev_mp->log2Ml[intkl[l] + 1]));
+      Sum43 = Sum43 + ((((float) 1 - deltal[l]) * prev_mp->log2Ml[intkl[l]]) + (deltal[l] * prev_mp->log2Ml[intkl[l] + 1 > 56 ? 56 : intkl[l] + 1]));
     }
   Sum43 = (((float) 0.65 / (float) cur_mp->L) * Sum43);
 #ifdef AMBE_DEBUG
@@ -531,7 +531,7 @@ mbe_decodeAmbe2450Parms (char *ambe_d, mbe_parms * cur_mp, mbe_parms * prev_mp)
   for (l = 1; l <= cur_mp->L; l++)
     {
       c1 = ((float) 0.65 * ((float) 1 - deltal[l]) * prev_mp->log2Ml[intkl[l]]);
-      c2 = ((float) 0.65 * deltal[l] * prev_mp->log2Ml[intkl[l] + 1]);
+      c2 = ((float) 0.65 * deltal[l] * prev_mp->log2Ml[intkl[l] + 1 > 56 ? 56 : intkl[l] + 1]);
       cur_mp->log2Ml[l] = Tl[l] + c1 + c2 - Sum43 + BigGamma;
       // inverse log to generate spectral amplitudes
       if (cur_mp->Vl[l] == 1)

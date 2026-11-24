@@ -314,11 +314,17 @@ bool test_payload_verified_sync_tolerance() {
   return true;
 }
 std::array<std::uint8_t, 128> embedded_payload(const Bytes12& full) {
+  // Layout per ETSI TS 102 361-1 B.2.2.1 (verified on real captures, see d1.cpp): the 72 LC bits fill rows 0-1 (11 columns)
+  // and rows 2-6 (columns 0..9); the 5-bit checksum is column 10 of rows 2..6, MSB first. An earlier version of this encoder
+  // used a plain 7x11 row-major fill with the checksum in the last five positions: the decoder had the same mistake, so the
+  // two agreed with each other while validating 0 of 22 real embedded LCs.
   std::uint8_t matrix[8][16]{};
-  for(unsigned i=0;i<72;++i)matrix[i/11][i%11]=bitat(full.data(),i);
+  unsigned n=0;
+  for(unsigned r=0;r<2;++r)for(unsigned c=0;c<11;++c)matrix[r][c]=bitat(full.data(),n++);
+  for(unsigned r=2;r<7;++r)for(unsigned c=0;c<10;++c)matrix[r][c]=bitat(full.data(),n++);
   unsigned sum=0;for(unsigned i=0;i<9;++i)sum+=full[i];
   const auto checksum=sum%31;
-  for(unsigned i=0;i<5;++i)matrix[(72+i)/11][(72+i)%11]=static_cast<std::uint8_t>((checksum>>(4-i))&1U);
+  for(unsigned r=2;r<7;++r)matrix[r][10]=static_cast<std::uint8_t>((checksum>>(6-r))&1U);
   for(unsigned r=0;r<7;++r){const auto p=parity(matrix[r],11,h16);
     for(unsigned i=0;i<5;++i)matrix[r][11+i]=static_cast<std::uint8_t>((p>>(4-i))&1U);}
   for(unsigned i=0;i<16;++i){unsigned check=0;for(unsigned r=0;r<7;++r)check^=matrix[r][i];
@@ -360,12 +366,91 @@ bool test_late_entry() {
   for(const auto& e:events) CHECK(!e.late_entry);
   return true;
 }
+// ---- voice superframe extraction (bursts A..F) ------------------------------------------------------------------
+struct VoiceCollect { std::vector<VoiceGroup> groups; };
+void collect_voice(const VoiceGroup& g, void* u) noexcept { static_cast<VoiceCollect*>(u)->groups.push_back(g); }
+// Burst whose 216 voice bits follow a known pattern; centre = SYNC (stage 0) or EMB + embedded fragment.
+Burst voice_burst(unsigned stage, unsigned colour, const std::array<std::uint8_t,128>& frag, unsigned pattern, bool pi=false) {
+  std::array<std::uint8_t,264> bits{};
+  for(unsigned i=0;i<216;++i){const unsigned pos=i<108?i:i+48;bits[pos]=static_cast<std::uint8_t>(((i*7U+pattern)>>1U)&1U);}
+  if(stage==0){
+    const auto sync=voice_sync(SyncKind::bs_voice);
+    Burst b{};
+    for(unsigned i=0;i<132;++i)b[i]=static_cast<std::uint8_t>((bits[2*i]<<1U)|bits[2*i+1]);
+    for(unsigned i=54;i<78;++i)b[i]=sync[i];
+    return b;
+  }
+  const unsigned lcss=stage==1?1U:stage==4?2U:stage==5?0U:3U;
+  const auto emb=qr(static_cast<std::uint8_t>((colour<<3U)|(pi?4U:0U)|lcss));
+  for(unsigned i=0;i<8;++i)bits[108+i]=static_cast<std::uint8_t>((emb>>(15-i))&1U);
+  for(unsigned i=0;i<32;++i)bits[116+i]=(stage>=1&&stage<=4)?frag[(stage-1)*32+i]:0;
+  for(unsigned i=0;i<8;++i)bits[148+i]=static_cast<std::uint8_t>((emb>>(7-i))&1U);
+  Burst b{};for(unsigned i=0;i<132;++i)b[i]=static_cast<std::uint8_t>((bits[2*i]<<1U)|bits[2*i+1]);
+  return b;
+}
+std::vector<std::uint8_t> superframe(const std::array<std::uint8_t,128>& frag, unsigned colour, bool pi=false, int break_stage=-1) {
+  std::vector<std::uint8_t> wire;
+  for(unsigned stage=0;stage<6;++stage){
+    auto b=voice_burst(stage,colour,frag,stage*13U+5U,pi);
+    if(static_cast<int>(stage)==break_stage)for(unsigned i=54;i<78;++i)b[i]=voice_sync(SyncKind::bs_data)[i];   // another SYNC where EMB belongs
+    add(wire,cach(1),b);
+    add(wire,cach(2),voice_sync(SyncKind::ms_voice));   // the other slot's burst between ours
+  }
+  return wire;
+}
+bool test_voice_superframe() {
+  const auto raw=make_lc(77,1234567);
+  const auto frag=embedded_payload(raw);
+  auto feed=[&](const std::vector<std::uint8_t>& wire, VoiceCollect& vc){
+    Decoder d; d.set_voice_sink(collect_voice,&vc);
+    for(std::size_t i=0;i<wire.size();i+=32)d.feed(wire.data()+i,std::min<std::size_t>(32,wire.size()-i),nullptr,nullptr);
+    return d.voice_stats();
+  };
+  { // clean superframe: one group, payload bits in order, colour code, slot from CACH, embedded LC valid
+    VoiceCollect vc; auto st=feed(superframe(frag,7),vc);
+    CHECK(vc.groups.size()==1&&st.groups==1&&st.anchors==1);
+    if(vc.groups.size()==1){
+      const auto& g=vc.groups[0];
+      CHECK(g.colour_code==7&&g.slot==1&&g.lc_valid&&!g.pi_seen);
+      CHECK(g.lc[8]==static_cast<std::uint8_t>(1234567&255)&&g.lc[5]==77);
+      for(unsigned stage=0;stage<6;++stage)for(unsigned i=0;i<216;++i){
+        const bool want=(((i*7U+stage*13U+5U)>>1U)&1U)!=0;
+        const bool got=(g.payload[stage*27+i/8]>>(7-i%8)&1U)!=0;
+        if(want!=got){CHECK(want==got);stage=6;break;}
+      }
+    }
+  }
+  { // the superseded layout (plain 7x11 fill) never validates as an embedded LC
+    std::array<std::uint8_t,128> old{};
+    { std::uint8_t m[8][16]{}; unsigned sum=0;for(unsigned i=0;i<9;++i)sum+=raw[i];
+      for(unsigned i=0;i<72;++i)m[i/11][i%11]=bitat(raw.data(),i);
+      for(unsigned i=0;i<5;++i)m[(72+i)/11][(72+i)%11]=static_cast<std::uint8_t>(((sum%31)>>(4-i))&1U);
+      for(unsigned r=0;r<7;++r){const auto p=parity(m[r],11,h16);for(unsigned i=0;i<5;++i)m[r][11+i]=static_cast<std::uint8_t>((p>>(4-i))&1U);}
+      for(unsigned c=0;c<16;++c){unsigned k=0;for(unsigned r=0;r<7;++r)k^=m[r][c];m[7][c]=static_cast<std::uint8_t>(k);}
+      for(unsigned i=0;i<128;++i)old[i]=m[i%8][i/8]; }
+    VoiceCollect vc; feed(superframe(old,7),vc);
+    CHECK(vc.groups.size()==1&&!vc.groups[0].lc_valid);
+  }
+  { // privacy indicator in EMB is reported, never hidden
+    VoiceCollect vc; feed(superframe(frag,7,true),vc);
+    CHECK(vc.groups.size()==1&&vc.groups[0].pi_seen);
+  }
+  { // a SYNC where an EMB belongs, or a bad EMB, abandons the group: no partial superframe is ever delivered
+    VoiceCollect vc; auto st=feed(superframe(frag,7,false,3),vc);
+    CHECK(vc.groups.empty()&&st.abandoned_sync==1);
+  }
+  { // noise and data-only streams produce no voice group
+    VoiceCollect vc; std::vector<std::uint8_t> noise(4000);unsigned x=12345;for(auto& v:noise){x=x*1103515245U+12345U;v=static_cast<std::uint8_t>((x>>16)&3U);}
+    feed(noise,vc);CHECK(vc.groups.empty());
+  }
+  return true;
+}
 } // namespace
 int main(){
   struct T {const char* name;bool (*fn)();};
   constexpr T tests[]={{"golay_matrix",test_golay_matrix},{"rs_and_parsing",test_rs_and_parsing},
     {"bptc",test_bptc},{"crc_blocks",test_crc_blocks},{"dual_slot_chunk",test_stream},{"corruption",test_errors},
-    {"late_entry",test_late_entry},{"payload_verified_sync_tolerance",test_payload_verified_sync_tolerance}};
+    {"late_entry",test_late_entry},{"voice_superframe",test_voice_superframe},{"payload_verified_sync_tolerance",test_payload_verified_sync_tolerance}};
   unsigned pass=0;
   for(const auto& t:tests){if(!t.fn()){std::fprintf(stderr,"FAILED: %s\n",t.name);return 1;}
     std::printf("PASS %s\n",t.name);++pass;}

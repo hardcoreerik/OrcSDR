@@ -2,7 +2,7 @@ cmake_minimum_required(VERSION 3.16)
 project(orcsdr_dmr_d1 LANGUAGES CXX)
 
 # Standalone host-only build; owns no changes to parent D0 or firmware CMake.
-add_library(orcsdr_dmr_d1 STATIC src/d1.cpp ../src/d0.cpp)
+add_library(orcsdr_dmr_d1 STATIC src/d1.cpp src/d1_call.cpp ../src/d0.cpp)
 target_include_directories(orcsdr_dmr_d1 PUBLIC include ../include)
 target_compile_features(orcsdr_dmr_d1 PUBLIC cxx_std_17)
 if(MSVC)

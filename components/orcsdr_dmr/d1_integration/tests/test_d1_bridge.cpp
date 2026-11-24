@@ -317,7 +317,8 @@ void test_noise_and_empty(){
 }
 
 int main(){
-    CHECK(bridge::Receiver::static_storage_bytes()<8192U);
+    // 8 KiB before the voice-superframe tracks (3 x ~330 B) were added to the D1 decoder.
+    CHECK(bridge::Receiver::static_storage_bytes()<10240U);
     test_first_burst_recovery();
     test_stream_alignment();
     test_reset_and_discontinuity();

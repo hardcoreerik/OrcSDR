@@ -49,6 +49,8 @@ public:
     Receiver() noexcept = default;
     void reset() noexcept;
     void discontinuity() noexcept;
+    void set_voice_sink(d1::VoiceSink sink, void* user) noexcept { protocol_.set_voice_sink(sink, user); }
+    [[nodiscard]] const d1::VoiceStats& voice_stats() const noexcept { return protocol_.voice_stats(); }
     Result process(const ComplexSample* input, std::size_t count,
                    EventSink callback = nullptr, void* user = nullptr) noexcept;
     [[nodiscard]] const Stats& stats() const noexcept { return stats_; }
