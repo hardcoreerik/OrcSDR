@@ -257,6 +257,7 @@ bool check_crc16(const std::array<std::uint8_t, 12>& data, std::uint8_t type) no
     std::uint16_t mask = 0;
     switch (type) {
         case 3: mask = 0xa5a5U; break;
+        case 4: mask = 0xaaaaU; break;
         case 6: mask = 0xccccU; break;
         case 11: mask = 0x3333U; break;
         default: return false;
@@ -419,7 +420,7 @@ void Decoder::scan(EventSink sink, void* user) noexcept {
     e.data_type = type;
     e.golay_corrected_bits = corrected;
     e.evidence = Evidence::slot_type;
-    if (type == 1 || type == 2 || type == 3 || type == 6 || type == 11) {
+    if (type == 1 || type == 2 || type == 3 || type == 4 || type == 5 || type == 6 || type == 11) {
         BptcWire tx{};
         for (unsigned i = 0; i < 196; ++i) {
             const unsigned pos = i < 98 ? i : i + 68;
@@ -431,7 +432,13 @@ void Decoder::scan(EventSink sink, void* user) noexcept {
             e.bptc_valid = true;
             e.bptc_corrected_bits = repairs;
             e.evidence = Evidence::fec_valid;
-            const bool check = (type <= 2) ? check_full_lc(content, type) : check_crc16(content, type);
+            if (type == 3 || type == 4 || type == 5) {
+                e.control_payload_valid = true;
+                e.control_payload = content;
+            }
+            // A continuation may be part of a longer MBC: never promote it here.
+            // The bounded trunk parser independently validates the complete pair.
+            const bool check = (type <= 2) ? check_full_lc(content, type) : (type != 5 && check_crc16(content, type));
             if (check) {
                 e.integrity_valid = true;
                 e.evidence = Evidence::check_valid;

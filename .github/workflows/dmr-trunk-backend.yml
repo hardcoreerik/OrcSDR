@@ -27,7 +27,7 @@ jobs:
           ctest --test-dir build/trunk --output-on-failure 2>&1 | tee output/test.log
       - name: Package sources
         if: always()
-        run: tar -czf output/trunk-source.tar.gz components/orcsdr_dmr_trunk tests/dmr_trunk docs/dmr/TRUNK_FOLLOW_BACKEND.md
+        run: tar -czf output/trunk-source.tar.gz components/orcsdr_dmr_trunk tests/dmr_trunk docs/dmr/TRUNK_FOLLOW_BACKEND.md components/orcsdr_dmr apps/orcsdr-tab5/ui/dv_channelizer.cpp apps/orcsdr-tab5/ui/dv_channelizer.hpp
       - uses: actions/upload-artifact@v4
         if: always()
         with:

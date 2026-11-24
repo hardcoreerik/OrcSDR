@@ -51,6 +51,9 @@ struct Event {
     // independently valid Golay, BPTC and RS/CRC. Never promote a fuzzy
     // voice-sync-only hit or an unchecked payload into a decoder event.
     std::uint8_t sync_bit_errors = 0;
+    // Post-BPTC control block including wire CRC. FEC validity is NOT a complete MBC CRC.
+    bool control_payload_valid = false;
+    std::array<std::uint8_t,12> control_payload{};
 };
 
 using EventSink = void (*)(const Event&, void*) noexcept;
@@ -99,7 +102,7 @@ bool decode_bptc(const BptcWire& transmitted, std::array<std::uint8_t, 12>& data
                  std::uint16_t& corrected_bits) noexcept;
 // Checks the RS(12,9) checksum unmasked by ETSI voice LC type mask.
 bool check_full_lc(const std::array<std::uint8_t, 12>& lc, std::uint8_t data_type) noexcept;
-// 80-bit data + masked 16-bit CRC, for CSBK (3), Data Header (6), USBD (11).
+// 80-bit data + masked 16-bit CRC, for CSBK (3), MBC Header (4), Data Header (6), USBD (11).
 bool check_crc16(const std::array<std::uint8_t, 12>& data, std::uint8_t data_type) noexcept;
 // Requires event.integrity_valid=true from prior RS/embedded-LC validation.
 // Returns identity only for ETSI standard group (FLCO 0)/unit-to-unit (FLCO 3).
