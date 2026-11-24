@@ -15,7 +15,7 @@ int main(int argc,char **argv) {
         int16_t pcm[160]; orc_vocoder_result r;
         if(!orc_vocoder_dmr(&v,wire,ORC_PRIVACY_CLEAR,pcm,&r))return 6;
         errors+=(unsigned)r.total;
-        if(strchr(r.flags,'E')||strchr(r.flags,'M')||strchr(r.flags,'T'))muted++;
+        if(strchr(r.flags,'E')||strchr(r.flags,'M')||strchr(r.flags,'T')||strchr(r.flags,'S'))muted++;
         // Write little-endian explicitly.
         for(unsigned i=0;i<160;i++){uint16_t s=(uint16_t)pcm[i]; fputc(s&255,out);fputc(s>>8,out);}
         n++; last=t;

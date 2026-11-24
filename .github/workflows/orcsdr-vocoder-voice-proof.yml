@@ -19,15 +19,25 @@ jobs:
           mkdir -p output
           gcc -O2 -Wall -Wextra -Icomponents/mbelib -Icomponents/orcsdr_vocoder components/mbelib/{mbelib,ambe3600x2450,ecc}.c components/orcsdr_vocoder/orcsdr_vocoder.c tools/orcsdr_vocoder/voice_cli.c -lm -o output/voice_cli
           gcc -O2 -fPIC -shared -Icomponents/mbelib -Icomponents/orcsdr_vocoder components/mbelib/{mbelib,ambe3600x2450,ecc}.c components/orcsdr_vocoder/orcsdr_vocoder.c -lm -o output/liborcsdr_vocoder.so
-      - name: Decode real IQ (strict clear-LC)
+      - name: Replay actual IQ with V2
         run: |
           set -o pipefail
-          python tools/orcsdr_vocoder/replay.py tests/digital_voice_corpus/iq output output/voice_cli 2>&1 | tee output/voice-proof.log
-          test -s output/terra_152p1575_call_cc13.wav
-          test ! -e output/terra_152p1575_control_only.wav
+          python tools/orcsdr_vocoder/replay_v2.py tests/digital_voice_corpus/iq output output/voice_cli output/liborcsdr_vocoder.so 2>&1 | tee output/voice-proof.log
+          python - <<'PY'
+          import json
+          r=json.load(open('output/results.json'))
+          expected={'terra_152p1575_call_cc13.cu8':468,'terra_152p685_call_cc8.cu8':198,'terra_153p068_call_cc8.cu8':18,'terra_152p1575_control_only.cu8':0}
+          for name,n in expected.items():
+              assert r[name]['accepted_frames']==n,(name,r[name]['accepted_frames'],n)
+          for name,row in r.items():
+              if name not in expected:
+                  assert row['accepted_frames']==0,(name,row['accepted_frames'])
+              for audio in row['audio']:
+                  assert audio['clipped_samples']==0,audio
+          PY
           tar -czf output/vocoder-source.tar.gz components/mbelib components/orcsdr_vocoder tools/orcsdr_vocoder
       - uses: actions/upload-artifact@v4
         if: always()
         with:
-          name: orcsdr-vocoder-voice-proof
+          name: orcsdr-vocoder-voice-proof-v2
           path: output/
