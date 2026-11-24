@@ -23,5 +23,10 @@ Raw log: `device_session.jsonl`. Screenshots: `png/` (physical Tab5 framebuffer,
 
 ## Still outstanding (needs a person looking at the panel)
 1. **Physical flicker acceptance.** The host tests prove which rectangles are drawn; only the panel shows whether anything still flickers. Watch SCAN while scanning at least one full pass with live activity, in both densities (SETUP toggles the density), and while the shared volume tray opens and closes.
-2. Analysis-first density was exercised on the host only.
+2. Analysis-first density: exercised on the device once (`png/09_analysis_first_scan.png`, abbreviated evidence chips fit and nothing overlaps); a full scan pass in that density has not been watched.
 3. A long soak (hours) with the screen on, comparing `loss`/`ring_drops` before and after.
+
+## Update after the text-size and tag fixes (final firmware, 2026-11-23 22:51)
+- Ladder chips and counts now use the normal text size (full words in discovery density, `CAND/SYNC/INTEG/IDENT/REC` in analysis density); NEW/SAVED tags moved to the first row line so they cannot overlap the last-seen time.
+- Re-run of `scan_device_session.py`: render about 1.0 to 1.3 ms average per repaint (max 30 ms, once), `loss` 0, `gaps` 0, `ring_drops` 0 across ~4 minutes of scanning; the scanner again held on live DMR at 152.1575 MHz and discovered 153.068 and 152.685 MHz.
+- Physical flicker acceptance is still outstanding (a person has to watch the panel).
