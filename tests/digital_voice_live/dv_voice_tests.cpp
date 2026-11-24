@@ -2,6 +2,7 @@
 // Real IQ drives the corpus section; the gate scenarios are synthetic structures (no RF), clearly labelled.
 #undef NDEBUG
 #include <cmath>
+#include <iostream>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -14,6 +15,7 @@
 #include "dv_voice_service.hpp"
 #include "dv_speech_rec.hpp"
 #include "dv_scanner.hpp"
+#include "dv_iq_rec.hpp"
 #include "dv_bandplan.hpp"
 #include "orcsdr_dmr/d1.hpp"
 #include "orcsdr_dmr/d1_call.hpp"
@@ -309,9 +311,49 @@ static void corpus_tests(const char* dir) {
     CHECK(run_corpus((d + "/iq/" + n + ".cu8").c_str(), hz, z));
     CHECK(z.groups == 0 && z.frames == 0);     // control/data-only and idle NXDN: never any speech
   }
+  { // IQ capture end to end: a real call triggers it, the capture is 12 s of that stream
+    dv_radio::iq_set_enabled(true);
+    Corpus ic; CHECK(run_corpus((d + "/iq/terra_152p1575_call_cc13.cu8").c_str(), 152157500, ic));
+    g_now += 12000;
+    const uint8_t* data = nullptr; size_t bytes = 0; char name[64];
+    CHECK(dv_radio::iq_ready(&data, &bytes, name, sizeof(name)) && bytes >= 10 * dv_iq_rec::kBytesPerSec && bytes <= dv_iq_rec::kRingBytes);   // 8 s after the first trigger plus whatever pre-roll existed
+    CHECK(std::strstr(name, "_152157.cu8") != nullptr && dv_radio::iq_stats().triggers >= 1);
+    dv_radio::iq_saving(); dv_radio::iq_release(true); dv_radio::iq_set_enabled(false);
+  }
   Corpus off;
   CHECK(run_corpus((d + "/iq/terra_152p1575_call_cc13.cu8").c_str(), 152157500, off, false));
   CHECK(off.groups == 0);                         // queue disabled: counters only, nothing delivered
+}
+
+// ---- IQ capture (development) --------------------------------------------------------------------------------------------
+static void iq_tests() {
+  using namespace dv_iq_rec;
+  Recorder r; CHECK(r.begin());
+  std::vector<uint8_t> blk(kBytesPerSec / 10);                 // 100 ms of IQ
+  auto feed = [&](int n, uint8_t v) { std::fill(blk.begin(), blk.end(), v); for (int i = 0; i < n; ++i) r.feed(blk.data(), blk.size()); };
+  const uint8_t* d = nullptr; size_t n = 0; char name[64];
+  feed(100, 1); r.trigger(1000, 152157500, 7); r.service(20000);
+  CHECK(!r.ready(&d, &n, name, sizeof(name)));                 // disabled: nothing happens
+  r.set_enabled(true);
+  r.trigger(1000, 152157500, 7); CHECK(!r.busy());             // no pre-roll yet
+  feed(50, 1);                                                 // 5 s of pre-roll
+  r.trigger(2000, 152157500, 1795541906u); CHECK(r.busy());
+  r.service(9000); CHECK(!r.ready(&d, &n, name, sizeof(name)));   // post-roll (8 s) still running
+  feed(80, 2);                                                 // 8 s after the trigger
+  r.service(10001);
+  CHECK(r.ready(&d, &n, name, sizeof(name)) && n == kRingBytes);   // 12 s ring, full
+  CHECK(std::strcmp(name, "/orcsdr/dviq_1795541906_152157.cu8") == 0);
+  CHECK(d[0] == 1 && d[4 * kBytesPerSec - 1] == 1 && d[4 * kBytesPerSec] == 2);   // 4 s before the trigger, then 8 s after, oldest first
+  CHECK(d[n - 1] == 2);                                        // newest last, post-roll included
+  CHECK(r.ready(&d, &n, name, sizeof(name)) && d[n - 1] == 2); // idempotent until saving()
+  const size_t before = n;
+  r.saving(); feed(10, 9); CHECK(d[n - 1] == 2 && n == before);   // frozen: the card is reading the buffer
+  r.trigger(10500, 1, 1); CHECK(r.stats().skipped_busy >= 1);
+  r.release(true, 12000); CHECK(r.stats().saved == 1 && !r.busy());
+  feed(30, 3); r.trigger(30000, 152157500, 5); CHECK(!r.busy() && r.stats().skipped_cooldown >= 1);   // 60 s cooldown
+  feed(30, 3); r.trigger(80000, 152157500, 5); CHECK(r.busy());
+  r.reset(); CHECK(!r.busy());                                  // an IQ discontinuity drops an armed capture
+  r.end();
 }
 
 // ---- Scanner: multi-band plans, quick skip, control-only hold release ---------------------------------------------------
@@ -478,6 +520,7 @@ int main(int argc, char** argv) {
   service_tests();
   speech_tests();
   scanner_tests();
+  iq_tests();
   // encoder self-consistency (guards the fixture, not the decoder)
   { uint8_t lc[9] = {0, 0, 0x20, 0, 0, 100, 0x3e, 0x99, 0x9b}; std::array<uint8_t, 128> w; encode_lc(lc, w, false); CHECK(row_ok(w)); encode_lc(lc, w, true); CHECK(row_ok(w)); }
   if (argc > 1) corpus_tests(argv[1]);

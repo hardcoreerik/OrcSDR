@@ -30,7 +30,7 @@ while not (D / "STOP").exists():
         c = connect()
         try:
             if not open_dash(c): time.sleep(20); continue
-            run(c, "RTL_DV MASK 1", 1.2); run(c, "RTL_DV AUDIO SAVE ON", 1.2)
+            run(c, "RTL_DV MASK 1", 1.2); run(c, "RTL_DV AUDIO SAVE ON", 1.2); run(c, "RTL_DV IQ ON", 1.2)   # DEV: 12 s IQ around call-like events, /orcsdr/dviq_*.cu8
             for mhz, gain in CH:
                 if (D / "STOP").exists(): break
                 run(c, "RTL_DV SCAN STOP", 4.0); run(c, f"RTL_DV PLAN {mhz}", 1.5); run(c, "RTL_DV MASK 1", 1.2); run(c, "RTL_DV SCAN START", 5.0); time.sleep(4)
@@ -43,11 +43,13 @@ while not (D / "STOP").exists():
                 while time.time() - t0 < SECS and not (D / "STOP").exists():
                     time.sleep(5); ui, r = dv(c)
                     aud = kv(find(run(c, "RTL_DV AUDIO STATUS", 1.0), "RTL_DV_AUDIO "))
+                    iqs = kv(find(run(c, "RTL_DV IQ STATUS", 1.0), "RTL_DV_IQ "))
                     if r: last = r
                     if first is None and int(last.get("dmr_ev", 0)) > 0: first = round(time.time() - t0, 1)
                 rec = dict(config=os.environ.get("DV_CONFIG", "Tab5 V4L + indoor 140/440 whip"), t=time.strftime("%Y-%m-%d %H:%M:%S"), mhz=mhz, gain=gain if gain else "auto", secs=round(time.time() - t0), source="tab5_live_antenna", replay=False,
                            link=last.get("link"), loss=last.get("loss"), level_milli=last.get("level_milli"), dmr_acq=last.get("dmr_acq"), dmr_ev=last.get("dmr_ev"),
                            dmr_id=last.get("dmr_id"), events=last.get("events"), first_dmr_event_s=first, hist=(re.search(r"hist=(\d+)", ui) or [None, None])[1],
+                           iq={k: (locals().get('iqs') or {}).get(k) for k in ("triggers", "saved", "failed", "skipped_busy", "skipped_cooldown")},
                            audio={k: aud.get(k) for k in ("phase", "groups", "speech", "qual", "prot", "unq", "calls", "nfm_blocked", "rec", "rec_saved", "rec_discarded", "rec_busy")} if (aud := locals().get('aud')) else None,
                            db=(re.search(r"db_sys=\d+ db_tg=\d+ db_units=\d+", ui) or [None])[0])
                 for p in (D / "tab5live.jsonl", ARCH / "tab5live.jsonl"):

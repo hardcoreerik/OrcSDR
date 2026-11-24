@@ -16,6 +16,7 @@
 #include <cstdint>
 
 #include "digital_voice_dashboard_model.hpp"
+#include "dv_iq_rec.hpp"
 
 namespace orcsdr::dv_radio {
 
@@ -30,6 +31,7 @@ struct Hooks {
   uint32_t (*now_ms)() = nullptr;
   uint32_t (*micros)() = nullptr;
   uint64_t (*lost_samples)() = nullptr;                                // monotonic count of IQ samples lost upstream
+  uint32_t (*utc_epoch)() = nullptr;                                   // wall-clock seconds for IQ file names, 0 = unknown
   // Optional decode worker on another core/thread. spawn runs fn(arg) until it returns; join waits for that return.
   bool (*spawn_worker)(void (*fn)(void*), void* arg) = nullptr;
   void (*join_worker)() = nullptr;
@@ -104,6 +106,15 @@ struct VoiceStatus {
 bool pop_voice(VoiceMsg* out);                   // voice task: oldest queued item
 void set_voice_queue_enabled(bool enabled);      // false = qualify and count but do not queue (no audio consumer running)
 VoiceStatus voice_status();
+
+// DEVELOPMENT: live IQ capture around call-like events (SETUP toggle "SAVE DMR IQ (DEV)"). See dv_iq_rec.hpp. The UI task writes the file.
+void iq_set_enabled(bool on);
+bool iq_enabled();
+bool iq_ready(const uint8_t** data, size_t* bytes, char* name, size_t name_size);
+void iq_saving();
+void iq_snap();                  // development: capture around now on the live channel (RTL_DV IQ SNAP)
+void iq_release(bool saved);
+dv_iq_rec::Stats iq_stats();
 
 void install(const Hooks& hooks);
 bool start();                          // UI task: allocate PSRAM state. False without hooks/memory (link() says which).

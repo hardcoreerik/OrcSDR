@@ -62,7 +62,9 @@ struct State {
   bool learn_replay = false;         // RTL_DV DB LEARN_REPLAY ON: the owner chose to let recorded captures feed the persistent database
   uint32_t db_saved_revision = 0, db_saved_structure = 0, db_last_save_ms = 0, db_saves = 0, db_save_failures = 0;
   bool db_saving = false;
-  bool rec_saving = false;           // a speech recording is being written by the shared SD writer
+  bool rec_saving = false;           // a speech recording or IQ capture is being written by the shared SD writer
+  bool rec_is_iq = false;            // which of the two
+  uint16_t iq_files = 0;
   uint16_t speech_files = 0;
   bool have_identity = false;        // the current-activity fields hold an identity-validated call (kept over later control bursts)
   uint32_t last_identity_ms = 0, identity_freq = 0;
@@ -103,7 +105,7 @@ void start_voice_service() {
   h.utc_epoch = g_hooks.utc_epoch;
   dv_voice_service::fill_platform_hooks(h);   // pump task on core 1, PSRAM stack
   dv_voice_service::install(h);
-  if (g_hooks.flag_load) dv_voice_service::set_save_speech(g_hooks.flag_load("dv_rec"));   // off unless the owner turned it on
+  if (g_hooks.flag_load) { dv_voice_service::set_save_speech(g_hooks.flag_load("dv_rec")); dv_radio::iq_set_enabled(g_hooks.flag_load("dv_iq")); }   // off unless the owner turned it on
   (void)dv_voice_service::start();            // false = no memory: the LIVE page then says AUDIO UNAVAILABLE
 }
 
@@ -161,6 +163,7 @@ void install_radio_hooks() {
   h.now_ms = g_hooks.now_ms;
   h.micros = g_hooks.micros;
   h.lost_samples = g_hooks.lost_samples;
+  h.utc_epoch = g_hooks.utc_epoch;
   dv_radio::fill_platform_hooks(h);   // decode worker on core 0: the DSP task never decodes
   dv_radio::install(h);
 }
@@ -573,6 +576,8 @@ void refresh(State& st) {
     const bool can = g_hooks.file_save && g_hooks.file_save_result && g_hooks.flag_store;
     const bool on = dv_voice_service::save_speech();
     if (s.can_save_speech != can || s.save_speech != on || s.speech_files != st.speech_files) ++s.revision;
+    if (s.save_iq != dv_radio::iq_enabled() || s.iq_files != st.iq_files) ++s.revision;
+    s.save_iq = dv_radio::iq_enabled(); s.iq_files = st.iq_files;
     s.can_save_speech = can; s.save_speech = on; s.speech_files = st.speech_files;
     const uint16_t ch = static_cast<uint16_t>(std::min<size_t>(my_bands_channels(st), 65535));
     const uint16_t mins = static_cast<uint16_t>((my_bands_channels(st) * 1300u + 59999u) / 60000u);
@@ -749,6 +754,14 @@ void apply_radio_action(State& st, const Action& a) {
       ++st.snapshot.revision;
       break;
     }
+    case ActionKind::toggle_save_iq: {
+      if (!g_hooks.flag_store) { ++g_unapplied_actions; return; }
+      const bool on = !dv_radio::iq_enabled();
+      dv_radio::iq_set_enabled(on);
+      g_hooks.flag_store("dv_iq", dv_radio::iq_enabled());
+      ++st.snapshot.revision;
+      break;
+    }
     case ActionKind::toggle_save_speech: {
       if (!g_hooks.flag_store) { ++g_unapplied_actions; return; }
       const bool on = !dv_voice_service::save_speech();
@@ -810,9 +823,12 @@ void close() {
   stop_replay(*g_state);
   service_persistence(*g_state, true);        // flush what was learned; the buffer outlives this call
   g_state->scanner.stop();
-  for (uint32_t t0 = now(); g_state->rec_saving && now() - t0 < 2500u;) {   // let a recording being written finish: the writer reads the buffer
+  for (uint32_t t0 = now(); g_state->rec_saving && now() - t0 < (g_state->rec_is_iq ? 20000u : 2500u);) {   // let a recording being written finish: the writer reads the buffer
     const int r = g_hooks.file_save_result ? g_hooks.file_save_result() : 2;
-    if (r != 0) { dv_voice_service::speech_release(r == 1); g_state->rec_saving = false; }
+    if (r != 0) {
+      if (g_state->rec_is_iq) dv_radio::iq_release(r == 1); else dv_voice_service::speech_release(r == 1);
+      g_state->rec_saving = false;
+    }
   }
   dv_voice_service::stop();                   // releases the analogue audio path before the receiver is given back
   dv_radio::stop();
@@ -852,9 +868,9 @@ void service_speech_save(State& st) {
   if (st.rec_saving) {
     const int r = g_hooks.file_save_result();
     if (r == 0) return;
-    dv_voice_service::speech_release(r == 1);
+    if (st.rec_is_iq) { dv_radio::iq_release(r == 1); if (r == 1) ++st.iq_files; }
+    else { dv_voice_service::speech_release(r == 1); if (r == 1) ++st.speech_files; }
     st.rec_saving = false;
-    if (r == 1) ++st.speech_files;
     return;
   }
   if (st.db_saving) return;
@@ -862,8 +878,16 @@ void service_speech_save(State& st) {
   size_t n = 0;
   char name[72];
   uint8_t header[dv_speech_rec::kHeaderBytes];
-  if (!dv_voice_service::speech_ready(&pcm, &n, name, sizeof(name), header)) return;
-  if (g_hooks.file_save(name, header, sizeof(header), pcm, n * sizeof(int16_t))) st.rec_saving = true;   // busy: retried on the next tick
+  if (dv_voice_service::speech_ready(&pcm, &n, name, sizeof(name), header)) {
+    if (g_hooks.file_save(name, header, sizeof(header), pcm, n * sizeof(int16_t))) { st.rec_saving = true; st.rec_is_iq = false; }   // busy: retried on the next tick
+    return;
+  }
+  const uint8_t* iq = nullptr;
+  size_t iq_bytes = 0;
+  if (dv_radio::iq_ready(&iq, &iq_bytes, name, sizeof(name)) && g_hooks.file_save(name, nullptr, 0, iq, iq_bytes)) {
+    dv_radio::iq_saving();
+    st.rec_saving = true; st.rec_is_iq = true;
+  }
 }
 
 void tick() {
@@ -1031,6 +1055,24 @@ bool handle_command(const char* command, bool authenticated, void (*write_line)(
     dv_radio::set_protocol_mask(static_cast<uint8_t>(m));
     dv_radio::request_decoder_reset();
     write_line("RTL_DV_MASK_OK (override: forces these decoders on every channel)");
+    return true;
+  }
+  if (std::strncmp(arg, "IQ ", 3) == 0) {          // development IQ capture: RTL_DV IQ ON|OFF|SNAP|STATUS
+    const char* op = arg + 3;
+    if (std::strcmp(op, "ON") == 0 || std::strcmp(op, "OFF") == 0) {
+      dv_radio::iq_set_enabled(op[1] == 'N');
+      if (g_hooks.flag_store) g_hooks.flag_store("dv_iq", dv_radio::iq_enabled());
+      ++st.snapshot.revision;
+    } else if (std::strcmp(op, "SNAP") == 0) {
+      if (!dv_radio::iq_enabled()) { write_line("RTL_DV_IQ_REFUSED turn it on first: RTL_DV IQ ON"); return true; }
+      dv_radio::iq_snap();
+    }
+    const auto q = dv_radio::iq_stats();
+    std::snprintf(line, sizeof(line), "RTL_DV_IQ enabled=%d triggers=%lu saved=%lu failed=%lu skipped_busy=%lu skipped_cooldown=%lu skipped_limit=%lu files_this_visit=%u",
+                  dv_radio::iq_enabled() ? 1 : 0, static_cast<unsigned long>(q.triggers), static_cast<unsigned long>(q.saved), static_cast<unsigned long>(q.failed),
+                  static_cast<unsigned long>(q.skipped_busy), static_cast<unsigned long>(q.skipped_cooldown), static_cast<unsigned long>(q.skipped_limit),
+                  static_cast<unsigned>(st.iq_files));
+    write_line(line);
     return true;
   }
   if (std::strncmp(arg, "SCAN ", 5) == 0) {

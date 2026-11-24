@@ -10,7 +10,7 @@ set(DMR ${ROOT}/components/orcsdr_dmr)
 set(NXDN ${ROOT}/components/orcsdr_nxdn)
 # The production sources under test (strict flags) ...
 add_library(dv_live STATIC
-  ${UI}/dv_channelizer.cpp ${UI}/dv_scanner.cpp ${UI}/dv_radio.cpp ${UI}/dv_discovery.cpp
+  ${UI}/dv_iq_rec.cpp ${UI}/dv_channelizer.cpp ${UI}/dv_scanner.cpp ${UI}/dv_radio.cpp ${UI}/dv_discovery.cpp
   ${DMR}/d1_integration/src/d1_bridge.cpp ${DMR}/d1_frontend/src/frontend.cpp
   ${DMR}/d1_protocol/src/d1.cpp ${DMR}/d1_protocol/src/d1_call.cpp ${DMR}/src/d0.cpp
   ${NXDN}/src/decoder.cpp ${NXDN}/src/frontend.cpp)

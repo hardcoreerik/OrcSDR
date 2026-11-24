@@ -207,6 +207,7 @@ idf_component_register(
         "../ui/dv_radio_task.cpp"
         "../ui/dv_voice_audio.cpp"
         "../ui/dv_speech_rec.cpp"
+        "../ui/dv_iq_rec.cpp"
         "../ui/dv_voice_service.cpp"
         "../ui/dv_voice_service_task.cpp"
         "../ui/dv_scanner.cpp"

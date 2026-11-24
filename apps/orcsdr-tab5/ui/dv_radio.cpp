@@ -55,6 +55,7 @@ struct State {
 };
 
 Hooks g_hooks{};
+dv_iq_rec::Recorder g_iq;                          // DEVELOPMENT IQ capture; its 5.76 MB ring is allocated only while enabled
 State* g_state = nullptr;
 dv::Iq48* g_ring = nullptr;                      // sample ring (PSRAM), producer = DSP task, consumer = worker
 std::atomic<uint32_t> g_ring_w{0}, g_ring_r{0};  // monotonic positions
@@ -135,7 +136,10 @@ void push(const Event& base) {
   g_ring_head.store(head + 1, std::memory_order_release);
   g_events.fetch_add(1, std::memory_order_relaxed);
   g_verified_ms.store(e.t_ms ? e.t_ms : 1u, std::memory_order_release);
-  if (e.evidence == ui::Evidence::identity_valid) g_identity_ms.store(e.t_ms ? e.t_ms : 1u, std::memory_order_release);
+  if (e.evidence == ui::Evidence::identity_valid) {
+    g_identity_ms.store(e.t_ms ? e.t_ms : 1u, std::memory_order_release);
+    g_iq.trigger(e.t_ms, e.frequency_hz, g_hooks.utc_epoch ? g_hooks.utc_epoch() : 0u);
+  }
   g_candidate.store(true, std::memory_order_relaxed);   // a verified event is more than a candidate
 }
 
@@ -171,6 +175,7 @@ void on_qualified(const dmr::d1::QualifiedGroup& q, void*) noexcept {
   // A qualified voice group is verified activity: it extends the scanner's hold for as long as the call lasts.
   g_verified_ms.store(now() ? now() : 1u, std::memory_order_release);
   g_identity_ms.store(now() ? now() : 1u, std::memory_order_release);   // a qualified call is the strongest evidence there is
+  g_iq.trigger(now(), g_channel_hz.load(std::memory_order_relaxed), g_hooks.utc_epoch ? g_hooks.utc_epoch() : 0u);
   g_candidate.store(true, std::memory_order_relaxed);
   push_voice(m);
 }
@@ -180,6 +185,7 @@ void on_voice_notice(const dmr::d1::Notice& n, void*) noexcept {
          : n.kind == dmr::d1::NoticeKind::protected_voice ? VoiceKind::protected_voice : VoiceKind::unqualified;
   m.slot = n.slot;
   m.call_serial = g_call_serial;
+  if (n.kind != dmr::d1::NoticeKind::call_ended) g_iq.trigger(now(), g_channel_hz.load(std::memory_order_relaxed), g_hooks.utc_epoch ? g_hooks.utc_epoch() : 0u);   // voice we could not qualify: the cases worth keeping
   push_voice(m);
 }
 
@@ -248,6 +254,14 @@ void reset_decoders() {
 }
 
 void publish_stats() {
+  {
+    static uint64_t prev_anchors = 0;                      // a voice SYNC that never became a complete superframe also triggers
+    const uint64_t a = g_state->dec->dmr.voice_stats().anchors;
+    if (a < prev_anchors) prev_anchors = a;
+    if (a > prev_anchors) g_iq.trigger(now(), g_channel_hz.load(std::memory_order_relaxed), g_hooks.utc_epoch ? g_hooks.utc_epoch() : 0u);
+    prev_anchors = a;
+    g_iq.service(now());
+  }
   {
     const auto& c = g_state->dec->calls.stats();
     const auto& v = g_state->dec->dmr.voice_stats();
@@ -488,6 +502,13 @@ bool pop_voice(VoiceMsg* out) {
   g_voice_readers.fetch_sub(1, std::memory_order_acq_rel);
   return got;
 }
+void iq_set_enabled(bool on) { g_iq.set_enabled(on); }
+bool iq_enabled() { return g_iq.enabled(); }
+bool iq_ready(const uint8_t** data, size_t* bytes, char* name, size_t name_size) { g_iq.service(now()); return g_iq.ready(data, bytes, name, name_size); }
+void iq_saving() { g_iq.saving(); }
+void iq_snap() { g_iq.trigger(now(), g_channel_hz.load(std::memory_order_relaxed), g_hooks.utc_epoch ? g_hooks.utc_epoch() : 0u); }
+void iq_release(bool saved) { g_iq.release(saved, now()); }
+dv_iq_rec::Stats iq_stats() { return g_iq.stats(); }
 void set_voice_queue_enabled(bool enabled) { g_voice_queue_on.store(enabled, std::memory_order_release); }
 VoiceStatus voice_status() {
   VoiceStatus v;
@@ -559,7 +580,9 @@ void offer_internal(const uint8_t* cu8, size_t bytes, uint32_t sample_rate, bool
     request_decoder_reset();
     if (!g_apply_pending.load()) g_epoch.fetch_add(1, std::memory_order_relaxed);
   }
+  if (reset || gap) g_iq.reset();
   g_last_block_ms.store(t, std::memory_order_release);
+  if (!from_replay) g_iq.feed(cu8, bytes);
   g_blocks.fetch_add(1, std::memory_order_relaxed);
   const size_t pairs_total = bytes / 2;
   g_samples.fetch_add(pairs_total, std::memory_order_relaxed);

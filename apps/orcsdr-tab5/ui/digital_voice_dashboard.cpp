@@ -333,7 +333,14 @@ void setup(Paint& p,const Snapshot& s,Density mode) {
     else std::snprintf(t,sizeof(t),"SAVE DMR SPEECH: OFF");
     p.button(t,{a.x+408,a.y+322,376,44},s.can_save_speech,s.save_speech);
   }
-  p.label("Decoded clear speech only",a.x+408,a.y+398,a);
+  {
+    char t[48];
+    if(!s.can_save_speech)std::snprintf(t,sizeof(t),"SAVE DMR IQ (DEV): N/A");
+    else if(s.save_iq)std::snprintf(t,sizeof(t),"SAVE DMR IQ (DEV): ON (%u)",static_cast<unsigned>(s.iq_files));
+    else std::snprintf(t,sizeof(t),"SAVE DMR IQ (DEV): OFF");
+    p.button(t,{a.x+408,a.y+376,376,44},s.can_save_speech,s.save_iq);
+  }
+  p.label("Speech: decoded clear calls only",a.x+408,a.y+440,a);
   p.title("SCAN BANDS (MY BANDS)",b.x+18,b.y+32,b);
   for(unsigned i=0;i<dv::kBandPresetCount;++i)
     p.button(dv::kBandPresets[i].label,band_button(b,i),true,(s.band_mask>>i)&1U);
@@ -416,6 +423,7 @@ Action Dashboard::handle_touch(int32_t x,int32_t y,const Snapshot& s,
     const auto a=state.density==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
     if(Rect{a.x+18,a.y+376,370,44}.contains(x,y))return {ActionKind::toggle_density};
     if(s.can_save_speech&&Rect{a.x+408,a.y+322,376,44}.contains(x,y))return {ActionKind::toggle_save_speech};
+    if(s.can_save_speech&&Rect{a.x+408,a.y+376,376,44}.contains(x,y))return {ActionKind::toggle_save_iq};
     {
       const auto b=state.density==Density::discovery_first?layout::kBasicFacts:layout::kAdvancedFacts;
       for(unsigned i=0;i<dv::kBandPresetCount;++i)

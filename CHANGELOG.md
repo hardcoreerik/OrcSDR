@@ -2,6 +2,11 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Digital Voice: SAVE DMR IQ (DEV) capture around call-like events — 2026-11-24
+
+- **Development toggle "SAVE DMR IQ (DEV)"** on SETUP (off by default, persisted as `dv_iq`; `RTL_DV IQ ON|OFF|SNAP|STATUS`). While on, the live 240 kS/s CU8 stream (channel 60 kHz above the stream centre, the corpus layout) is kept in a 12 s PSRAM ring (5.76 MB, allocated only while enabled). A call-like event (an identity-valid event, a qualified group, voice the call manager could not qualify, or a voice SYNC that never became a full superframe) arms a capture; 8 s later the ring (up to 4 s before and 8 s after) is written to `/orcsdr/dviq_<epoch>_<kHz>.cu8` through the shared background SD writer. One capture at a time, 60 s cooldown, 40 files per card visit. Recorded-IQ replays are never captured. Purpose: real weak-signal recordings to tune the decoder on. New `dv_iq_rec.{hpp,cpp}`.
+- **Verified:** host tests (ring, post-roll, rotation, freeze, cooldown, end to end with the real call capture; 157 checks) and on the Tab5: a live snapshot on 152.1575 MHz saved a 5,760,000-byte file while the receiver kept running (0 IQ loss, 0 ring drops), fetched over serial and decoded on the host (142 DMR events, colour code 13). **Not verified:** a capture triggered by a real call (none arrived since).
+
 ## Unreleased — Digital Voice: scan band picker, quick skip, control-only hold release — 2026-11-24
 
 - **Band picker (SETUP, right card):** nine built-in bands as toggle buttons (2 m 144-148, VHF business 150-158, VHF public 158-174, 70 cm 430-450, UHF business 450-470, 800 MHz 806-824, plus new VHF GOV 136-144, 220 MHz 222-225 and 900 MHz 896-901), with the channel count and an estimated time for one pass. The selection is persisted (`dv_bands`; default VHF business + UHF business). SCAN > PLAN > **MY BANDS** scans the picked bands in order as one plan (`Scanner::set_ranges`, up to 12 ranges and 8192 channels in total). `RTL_DV PRESET <n>` also selects it.

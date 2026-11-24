@@ -77,7 +77,8 @@ int main() {
     ui.view = View::setup; ui.density = Density::discovery_first; dash = Dashboard();
     Snapshot q; q.revision = 1; q.can_save_speech = true;
     host_stub::reset(); CHECK(dash.present(display, q, ui, true, false));
-    CHECK(host_stub::contains("SAVE DMR SPEECH: OFF") && host_stub::contains("Decoded clear speech only"));
+    CHECK(host_stub::contains("SAVE DMR SPEECH: OFF") && host_stub::contains("SAVE DMR IQ (DEV): OFF") && host_stub::contains("Speech: decoded clear calls only"));
+    CHECK(dash.handle_touch(32 + 408 - 20 + 100, 158 + 376 + 20, q, ui).kind == ActionKind::toggle_save_iq);
     CHECK(dash.handle_touch(32 + 408 - 20 + 100, 158 + 322 + 20, q, ui).kind == ActionKind::toggle_save_speech);
     q.revision = 2; q.save_speech = true; q.speech_files = 3;
     host_stub::reset(); CHECK(dash.present(display, q, ui, true, false));
