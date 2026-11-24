@@ -1,5 +1,5 @@
 idf_component_register(
-    SRCS "mbelib.c" "imbe7200x4400.c" "ecc.c"
+    SRCS "mbelib.c" "imbe7200x4400.c" "ecc.c" "ambe3600x2450.c"
     INCLUDE_DIRS "."
 )
 

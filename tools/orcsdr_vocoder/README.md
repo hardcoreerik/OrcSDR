@@ -1,0 +1,5 @@
+# Experimental OrcSDR vocoder voice proof
+
+This isolated branch adds pinned mbelib AMBE+2 and a bounded caller-owned decoder context. It does not wire the UI, radio owner or speaker. The independent Python proof uses the known 240 kS/s CU8/+60 kHz capture layout, exact positive-polarity BS voice sync, QR EMB and a complete same-colour clear embedded LC with row and column parity and checksum. It exports only strict accepted superframes, concatenated; it is not a production streaming/slot implementation. No privacy bypass. The control-only file must have no WAV. Real intelligibility requires listening and comparing with an independent decoder. The upstream codec uses process-global rand(); serialize or replace RNG before concurrent use. Device and licensing qualification remain pending.
+
+Run the workflow or build the CLI with its documented gcc command, then python tools/orcsdr_vocoder/replay.py tests/digital_voice_corpus/iq output output/voice_cli. Output includes log, WAVs, and protected frame traces. Do not treat sync or PCM generation alone as intelligibility.
