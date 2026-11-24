@@ -10,6 +10,7 @@
 #include <new>
 
 #include "digital_voice_dashboard_surface.hpp"
+#include "dv_discovery_bridge.hpp"
 #include "dv_radio.hpp"
 #include "dv_scanner.hpp"
 #include "screen_controller.hpp"
@@ -38,7 +39,18 @@ struct State {
   uint8_t mask_override = 0;                   // RTL_DV MASK: forces one mask on every channel
   uint8_t auto_phase = 0;
   uint32_t auto_switch_ms = 0;
+  dv::Discovery db;                  // persistent: live observations only (what the Tab5's own receiver validated)
+  dv::Discovery replay_db;           // RAM only: recorded-IQ replays never touch the persistent database
+  bool show_replay_db = false;       // the newest event came from a replay (and is not being learned)
+  bool learn_replay = false;         // RTL_DV DB LEARN_REPLAY ON: the owner chose to let recorded captures feed the persistent database
+  uint32_t db_saved_revision = 0, db_saved_structure = 0, db_last_save_ms = 0, db_saves = 0, db_save_failures = 0;
+  bool db_saving = false;
+  bool have_identity = false;        // the current-activity fields hold an identity-validated call (kept over later control bursts)
+  uint32_t last_identity_ms = 0, identity_freq = 0;
 };
+constexpr uint32_t kIdentityStickyMs = 15000;
+void service_persistence(State& st, bool final_flush);
+char* g_persist = nullptr;           // SD write buffer: allocated once in PSRAM and never freed (the writer may still read it)
 State* g_state = nullptr;
 Hooks g_hooks{};
 uint32_t g_open_failed = 0, g_unapplied_actions = 0, g_repaints = 0, g_painted_revision = 0;
@@ -132,8 +144,60 @@ bool same_activity(const Heard& h, const dv_radio::Event& e) {
          h.destination_id == e.destination_id && h.has_source == e.has_source && h.ran == e.ran;
 }
 
+// Rebuild the Systems table and totals from the database that matches what is on screen (live, or the replay's own).
+void fill_systems(State& st) {
+  Snapshot& s = st.snapshot;
+  const dv::Discovery& d = st.show_replay_db ? st.replay_db : st.db;
+  s.db_available = true;
+  s.db_systems = static_cast<uint16_t>(d.system_count());
+  s.db_talkgroups = static_cast<uint16_t>(d.talkgroup_count());
+  s.db_subscribers = static_cast<uint16_t>(d.subscriber_count());
+  s.observed_system_count = 0;
+  for (size_t n = 0; n < kObservedSystems; ++n) {
+    const size_t i = d.nth_newest_system(n);
+    if (i == static_cast<size_t>(-1)) break;
+    const dv::SystemRec& r = d.system(i);
+    ObservedSystem& o = s.observed_systems[s.observed_system_count++];
+    o = {};
+    o.protocol = static_cast<Protocol>(r.protocol);
+    o.evidence = static_cast<Evidence>(r.best_evidence);
+    o.frequency_hz = r.frequency_hz; o.has_frequency = true;
+    if (r.area_kind == dv::AreaKind::colour_code) { o.colour_code = r.area; o.colour_code_valid = true; }
+    if (r.area_kind == dv::AreaKind::ran) { o.ran = r.area; o.ran_valid = true; }
+    o.slots_seen = r.slots_seen;
+    o.heard_count = r.count;
+    o.talkgroup_count = static_cast<uint16_t>(d.talkgroups_of(r.uid));
+    o.subscriber_count = static_cast<uint16_t>(d.subscribers_of(r.uid));
+    for (size_t k = 0; k < kTopIds; ++k) {
+      const size_t t = d.nth_newest_talkgroup(r.uid, k);
+      if (t == static_cast<size_t>(-1)) break;
+      o.top_talkgroups[o.top_talkgroup_n++] = d.talkgroup(t).id;
+    }
+    for (size_t k = 0; k < kTopIds; ++k) {
+      const size_t u = d.nth_newest_subscriber(r.uid, k);
+      if (u == static_cast<size_t>(-1)) break;
+      o.top_subscribers[o.top_subscriber_n++] = d.subscriber(u).id;
+    }
+    if (r.last_utc) format_utc(r.last_utc, o.last_time, sizeof(o.last_time));
+  }
+}
+
 void note_event(State& st, const dv_radio::Event& e) {
   Snapshot& s = st.snapshot;
+  const uint32_t clock_utc = g_hooks.utc_epoch ? g_hooks.utc_epoch() : 0;
+  const bool identity = e.evidence == Evidence::identity_valid;
+  // Discovery: validated observations only. Replays go to their own RAM table, never the persistent one.
+  const bool to_replay_table = e.replay && !st.learn_replay;
+  (to_replay_table ? st.replay_db : st.db).record(dv::observation_from(e, clock_utc));
+  st.show_replay_db = to_replay_table;
+  // A later control burst on the same channel must not wipe a verified call off the Live view for a few seconds.
+  const uint32_t t = now();
+  if (!identity && st.have_identity && e.frequency_hz == st.identity_freq && t - st.last_identity_ms < kIdentityStickyMs) {
+    fill_systems(st);
+    ++s.revision;
+    return;
+  }
+  if (identity) { st.have_identity = true; st.last_identity_ms = t; st.identity_freq = e.frequency_hz; }
   // Live call = the newest verified event on the CURRENT channel visit; a retune clears it (no stale metadata).
   s.protocol = e.protocol;
   s.evidence = e.evidence;
@@ -167,20 +231,10 @@ void note_event(State& st, const dv_radio::Event& e) {
   h.source_id = e.source_id; h.destination_id = e.destination_id;
   h.has_source = e.has_source; h.has_destination = e.has_destination;
   h.ran = e.ran; h.ran_valid = e.ran_valid;
-  const uint32_t utc = g_hooks.utc_epoch ? g_hooks.utc_epoch() : 0;
-  if (utc) { h.has_time = true; format_utc(utc, h.time_utc, sizeof(h.time_utc)); }
-  // Systems: distinct (protocol, frequency, RAN/CC) observations, bounded.
-  bool found = false;
-  for (size_t i = 0; i < s.observed_system_count; ++i) {
-    const ObservedSystem& o = s.observed_systems[i];
-    if (o.protocol == e.protocol && o.frequency_hz == e.frequency_hz && o.ran == e.ran) { found = true; break; }
-  }
-  if (!found && s.observed_system_count < kObservedSystems) {
-    ObservedSystem& o = s.observed_systems[s.observed_system_count++];
-    o = {};
-    o.protocol = e.protocol; o.evidence = e.evidence; o.frequency_hz = e.frequency_hz; o.has_frequency = true;
-    o.ran = e.ran; o.ran_valid = e.ran_valid;
-  }
+  h.colour_code = e.colour_code; h.colour_code_valid = e.colour_code_valid;
+  h.timeslot = e.slot; h.timeslot_valid = e.slot_valid; h.group_call = e.group_call;
+  if (clock_utc) { h.has_time = true; format_utc(clock_utc, h.time_utc, sizeof(h.time_utc)); }
+  fill_systems(st);
   ++s.revision;
 }
 
@@ -191,6 +245,7 @@ void clear_call(State& st) {
   s.colour_code = s.timeslot = s.ran = 0; s.colour_code_valid = s.timeslot_valid = s.ran_valid = false;
   s.nxdn = {};
   st.have_call = false;
+  st.have_identity = false;
   ++s.revision;
 }
 
@@ -261,6 +316,7 @@ void refresh(State& st) {
       ScanHit& hit = s.scan_hits[s.scan_hit_count++];
       hit.protocol = s.protocol; hit.evidence = s.evidence; hit.frequency_hz = s.frequency_hz; hit.has_frequency = true;
       hit.ran = s.ran; hit.ran_valid = s.ran_valid;
+      hit.colour_code = s.colour_code; hit.colour_code_valid = s.colour_code_valid;
     }
   }
   if (changed) ++s.revision;
@@ -325,6 +381,9 @@ bool start_replay(State& st, const char* path, uint32_t channel_hz) {
   if (!g_hooks.replay_open(path)) { dv_radio::stop(); return false; }
   if (!dv_radio::begin_replay(channel_hz)) { g_hooks.replay_close(); dv_radio::stop(); return false; }
   clear_call(st);
+  st.replay_db.clear();             // a replay starts from an empty RAM table; the persistent database is untouched
+  st.show_replay_db = true;
+  fill_systems(st);
   st.replay_fed = 0;
   st.replay_start_ms = now();
   st.replaying = true;
@@ -412,6 +471,17 @@ void open() {
   new (&g_state->snapshot) Snapshot();
   g_state->scanner = dv::Scanner();
   load_saved_plan();
+  g_state->db.clear();
+  if (g_hooks.db_load) {
+    if (!g_persist) g_persist = static_cast<char*>(heap_caps_malloc(dv::kMaxSerializedBytes + 64, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (g_persist) {
+      const size_t n = g_hooks.db_load(g_persist, dv::kMaxSerializedBytes);
+      if (n && n <= dv::kMaxSerializedBytes) (void)g_state->db.parse(g_persist, n);     // a corrupt file leaves the table empty
+    }
+  }
+  g_state->db_saved_revision = g_state->db.revision();
+  g_state->db_saved_structure = g_state->db.structure_revision();
+  fill_systems(*g_state);
   refresh(*g_state);
   g_state->snapshot.revision = 1;
   screens::begin_transition(screens::Id::digital_voice, now());
@@ -425,14 +495,42 @@ void open() {
 void close() {
   if (!g_state) return;
   stop_replay(*g_state);
+  service_persistence(*g_state, true);        // flush what was learned; the buffer outlives this call
   g_state->scanner.stop();
   dv_radio::stop();
   g_state->surface.leave();
   free_state();
 }
 
+namespace {
+void service_persistence(State& st, bool final_flush) {
+  if (!g_hooks.db_save || !g_hooks.db_save_result) return;
+  if (st.db_saving) {
+    const int r = g_hooks.db_save_result();
+    if (r == 0) return;
+    st.db_saving = false;
+    if (r == 1) ++st.db_saves; else ++st.db_save_failures;
+  }
+  if (st.db.revision() == st.db_saved_revision) return;
+  // A new system, talkgroup or unit is written within 15 s; plain re-hearing (counts, last-seen) at most every 10 minutes.
+  const uint32_t since = now() - st.db_last_save_ms;
+  const bool structural = st.db.structure_revision() != st.db_saved_structure;
+  if (!final_flush && (structural ? since < 15000u : since < 600000u)) return;
+  if (!g_persist) g_persist = static_cast<char*>(heap_caps_malloc(dv::kMaxSerializedBytes + 64, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!g_persist) return;
+  const size_t n = st.db.serialize(g_persist, dv::kMaxSerializedBytes + 64);
+  if (n && g_hooks.db_save(g_persist, n)) {
+    st.db_saving = true;
+    st.db_saved_revision = st.db.revision();
+    st.db_saved_structure = st.db.structure_revision();
+    st.db_last_save_ms = now();
+  }
+}
+}  // namespace
+
 void tick() {
   if (!g_state) return;
+  service_persistence(*g_state, false);
   run_scanner(*g_state);
   refresh(*g_state);
   // update() also returns true when it correctly drew nothing; count only real model changes as repaints.
@@ -472,7 +570,8 @@ void describe(char* out, size_t size) {
   const auto ss = g_state->scanner.status();
   std::snprintf(out, size,
                 "RTL_DV_UI open=1 view=%u density=%u receiver=%s scan=%s plan=%u idx=%u visited=%lu holds=%lu passes=%lu "
-                "manual_hold=%d can_scan=%u hist=%u systems=%u rev=%lu repaints=%lu applied=%lu unapplied=%lu",
+                "manual_hold=%d can_scan=%u hist=%u systems=%u rev=%lu repaints=%lu applied=%lu unapplied=%lu "
+                "db_sys=%u db_tg=%u db_units=%u db_saves=%lu db_save_fail=%lu db_saving=%d",
                 static_cast<unsigned>(ui.view), static_cast<unsigned>(ui.density),
                 receiver_name(g_state->snapshot.receiver), scan_phase_name(g_state->snapshot.scan.phase),
                 static_cast<unsigned>(ss.count), static_cast<unsigned>(ss.index), static_cast<unsigned long>(ss.visited),
@@ -480,7 +579,10 @@ void describe(char* out, size_t size) {
                 g_state->snapshot.can_scan ? 1u : 0u, static_cast<unsigned>(g_state->snapshot.history_count),
                 static_cast<unsigned>(g_state->snapshot.observed_system_count),
                 static_cast<unsigned long>(g_state->snapshot.revision), static_cast<unsigned long>(g_repaints),
-                static_cast<unsigned long>(g_state->actions_applied), static_cast<unsigned long>(g_unapplied_actions));
+                static_cast<unsigned long>(g_state->actions_applied), static_cast<unsigned long>(g_unapplied_actions),
+                static_cast<unsigned>(g_state->db.system_count()), static_cast<unsigned>(g_state->db.talkgroup_count()),
+                static_cast<unsigned>(g_state->db.subscriber_count()), static_cast<unsigned long>(g_state->db_saves),
+                static_cast<unsigned long>(g_state->db_save_failures), g_state->db_saving ? 1 : 0);
 }
 
 bool handle_command(const char* command, bool authenticated, void (*write_line)(const char*)) {
@@ -503,6 +605,22 @@ bool handle_command(const char* command, bool authenticated, void (*write_line)(
     return true;
   }
   State& st = *g_state;
+  if (std::strcmp(arg, "DB CLEAR") == 0) {      // owner action: forget everything learned (and the file at the next save)
+    st.db.clear(); st.replay_db.clear(); fill_systems(st); ++st.snapshot.revision;
+    write_line("RTL_DV_DB_OK cleared");
+    return true;
+  }
+  if (std::strcmp(arg, "DB LEARN_REPLAY ON") == 0 || std::strcmp(arg, "DB LEARN_REPLAY OFF") == 0) {
+    st.learn_replay = std::strcmp(arg, "DB LEARN_REPLAY ON") == 0;
+    write_line(st.learn_replay ? "RTL_DV_DB_OK replay_learning_on (recorded captures now feed the persistent database)"
+                               : "RTL_DV_DB_OK replay_learning_off");
+    return true;
+  }
+  if (std::strcmp(arg, "DB SAVE") == 0) {
+    service_persistence(st, true);
+    write_line(st.db_saving ? "RTL_DV_DB_OK save_started" : "RTL_DV_DB_OK nothing_to_save_or_busy");
+    return true;
+  }
   if (std::strncmp(arg, "PLAN ", 5) == 0) {
     uint32_t plan[dv::kMaxScanChannels];
     uint8_t masks[dv::kMaxScanChannels];

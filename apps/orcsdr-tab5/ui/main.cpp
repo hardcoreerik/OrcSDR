@@ -13335,6 +13335,26 @@ void open_digital_voice_dashboard() {
     return got > 0 ? static_cast<size_t>(got) > capacity ? capacity : static_cast<size_t>(got) : 0u;
   };
   app.replay_close = [] { if (dv_replay_file()) dv_replay_file().close(); };
+  // Discovery database: a few KB, written by the shared background SD writer, read once when the dashboard opens.
+  app.db_load = [](char* out, size_t capacity) -> size_t {
+    if (!ensure_tab5_sd() || g_sd_fs == nullptr) return 0u;
+    File f = g_sd_fs->open("/orcsdr/dv_discovery.txt", FILE_READ);
+    if (!f) return 0u;
+    const int got = static_cast<int>(f.read(reinterpret_cast<uint8_t*>(out), capacity));
+    f.close();
+    return got > 0 ? static_cast<size_t>(got) : 0u;
+  };
+  app.db_save = [](const char* data, size_t length) {
+    if (!ensure_tab5_sd()) return false;
+    return orcsdr::sd_writer::shared().submit("/orcsdr/dv_discovery.txt", nullptr, 0, data, length);
+  };
+  app.db_save_result = []() -> int {
+    orcsdr::sd_writer::Writer& w = orcsdr::sd_writer::shared();
+    const orcsdr::sd_writer::State st = w.result().state;
+    if (st == orcsdr::sd_writer::State::done) { w.acknowledge(); return 1; }
+    if (st == orcsdr::sd_writer::State::failed) { w.acknowledge(); return 2; }
+    return 0;
+  };
   orcsdr::digital_voice_app::install(app);
   orcsdr::digital_voice_app::open();
 }
@@ -17185,7 +17205,8 @@ __attribute__((noinline)) bool ui_doc_render(const char* screen_id, bool demo) {
     // Real renderer and real receiver state (no injected data); tabs are chosen by tapping the same hit areas.
     static constexpr const char* names[] = {"scan", "live", "heard", "systems", "signal", "setup"};
     // Already open: keep its receiver state (events, Last Heard, replay) and only switch view and repaint.
-    if (!orcsdr::digital_voice_app::active()) {
+    bool was_open = orcsdr::digital_voice_app::active();
+    if (!was_open) {
       open_digital_voice_dashboard();
     } else {
       // The previous documentation request handed screen ownership to the documentation screen; take it back so the
@@ -17194,7 +17215,7 @@ __attribute__((noinline)) bool ui_doc_render(const char* screen_id, bool demo) {
       orcsdr::screens::finish_transition();
     }
     for (size_t i = 0; i < std::size(names); ++i)
-      if (strcmp(screen_id + 14, names[i]) == 0 && i != 0) {
+      if (strcmp(screen_id + 14, names[i]) == 0 && (i != 0 || was_open)) {
         orcsdr::digital_voice_app::touch(static_cast<int32_t>(i * 213 + 106), 675);
       }
     orcsdr::digital_voice_app::tick();

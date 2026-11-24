@@ -202,6 +202,7 @@ idf_component_register(
         "../ui/dashboard_audio_control.cpp"
         "../ui/digital_voice_app.cpp"
         "../ui/dv_channelizer.cpp"
+        "../ui/dv_discovery.cpp"
         "../ui/dv_radio.cpp"
         "../ui/dv_radio_task.cpp"
         "../ui/dv_scanner.cpp"

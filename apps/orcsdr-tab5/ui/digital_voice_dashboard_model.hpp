@@ -33,8 +33,11 @@ struct ScanHit {
   bool has_frequency = false;
   uint8_t ran = 0;
   bool ran_valid = false;
+  uint8_t colour_code = 0;
+  bool colour_code_valid = false;
 };
 constexpr size_t kObservedSystems = 4;
+constexpr size_t kTopIds = 3;
 struct ObservedSystem {
   Protocol protocol = Protocol::unknown;
   NxdnTopology topology = NxdnTopology::unknown;
@@ -45,6 +48,14 @@ struct ObservedSystem {
   bool ran_valid = false;
   uint16_t site = 0;
   bool site_valid = false;
+  uint8_t colour_code = 0;
+  bool colour_code_valid = false;
+  uint8_t slots_seen = 0;                // DMR: bit0 TS1, bit1 TS2
+  uint32_t heard_count = 0;
+  uint16_t talkgroup_count = 0, subscriber_count = 0;
+  uint32_t top_talkgroups[kTopIds]{}, top_subscribers[kTopIds]{};   // newest first, identity-validated only
+  uint8_t top_talkgroup_n = 0, top_subscriber_n = 0;
+  char last_time[12]{};                  // receiver-provided time, empty when unknown
 };
 struct ScanStatus {
   ScanPhase phase = ScanPhase::unavailable;
@@ -64,6 +75,8 @@ struct Heard {
   bool has_source = false, has_destination = false, has_time = false;
   uint8_t ran = 0;
   bool ran_valid = false;
+  uint8_t colour_code = 0, timeslot = 0;
+  bool colour_code_valid = false, timeslot_valid = false, group_call = false;
   char time_utc[12]{}; // time from receiver with known provenance, not guessed host time
 };
 struct Snapshot {
@@ -99,6 +112,9 @@ struct Snapshot {
   ObservedSystem observed_systems[kObservedSystems]{};
   uint8_t history_count = 0;
   Heard history[kHistory]{};
+  // Discovery database totals for the table shown in Systems (live database, or the replay's own RAM-only one).
+  bool db_available = false;
+  uint16_t db_systems = 0, db_talkgroups = 0, db_subscribers = 0;
 };
 struct UiState {
   View view = View::explore;

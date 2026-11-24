@@ -28,6 +28,12 @@ struct Hooks {
   bool (*replay_open)(const char* path) = nullptr;
   size_t (*replay_read)(uint8_t* buffer, size_t capacity) = nullptr;
   void (*replay_close)() = nullptr;
+  // Persistent discovery database (text, <= 24 KB). load returns the byte count (0 = no file). save hands the buffer to the
+  // background SD writer and returns false while that is busy; the buffer stays valid and untouched until save_result()
+  // reports 1 (done) or 2 (failed); 0 = still writing.
+  size_t (*db_load)(char* out, size_t capacity) = nullptr;
+  bool (*db_save)(const char* data, size_t length) = nullptr;
+  int (*db_save_result)() = nullptr;
 };
 
 void install(const Hooks& hooks);

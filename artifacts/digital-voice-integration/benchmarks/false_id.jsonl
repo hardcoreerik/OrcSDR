@@ -1,0 +1,8 @@
+{"mask":1,"seed":1,"result":{"mode":"noise","seconds":900.0,"added_noise_db":null,"events":0,"identity_events":0,"first_event_s":-1.00,"first_identity_s":-1.00,"ids":""}}
+{"mask":1,"seed":2,"result":{"mode":"noise","seconds":900.0,"added_noise_db":null,"events":0,"identity_events":0,"first_event_s":-1.00,"first_identity_s":-1.00,"ids":""}}
+{"mask":2,"seed":1,"result":{"mode":"noise","seconds":900.0,"added_noise_db":null,"events":0,"identity_events":0,"first_event_s":-1.00,"first_identity_s":-1.00,"ids":""}}
+{"mask":2,"seed":2,"result":{"mode":"noise","seconds":900.0,"added_noise_db":null,"events":0,"identity_events":0,"first_event_s":-1.00,"first_identity_s":-1.00,"ids":""}}
+{"mask":4,"seed":1,"result":{"mode":"noise","seconds":900.0,"added_noise_db":null,"events":0,"identity_events":0,"first_event_s":-1.00,"first_identity_s":-1.00,"ids":""}}
+{"mask":4,"seed":2,"result":{"mode":"noise","seconds":900.0,"added_noise_db":null,"events":0,"identity_events":0,"first_event_s":-1.00,"first_identity_s":-1.00,"ids":""}}
+{"mask":7,"seed":1,"result":{"mode":"noise","seconds":900.0,"added_noise_db":null,"events":0,"identity_events":0,"first_event_s":-1.00,"first_identity_s":-1.00,"ids":""}}
+{"mask":7,"seed":2,"result":{"mode":"noise","seconds":900.0,"added_noise_db":null,"events":0,"identity_events":0,"first_event_s":-1.00,"first_identity_s":-1.00,"ids":""}}

@@ -57,6 +57,12 @@ void freq(char (&out)[32], const Snapshot& s) {
     static_cast<unsigned long>(hz%1000000u));
 }
 void number(char (&out)[36],uint32_t n) {std::snprintf(out,sizeof(out),"%lu",static_cast<unsigned long>(n));}
+// The protocol's area code, shown with the same widget for every protocol: DMR colour code, NXDN RAN (RAN 0 is valid).
+void area_text(char (&out)[16],Protocol pr,uint8_t cc,bool ccv,uint8_t ran,bool ranv) {
+  out[0]=0;
+  if(pr==Protocol::dmr&&ccv)std::snprintf(out,sizeof(out),"CC%u",static_cast<unsigned>(cc));
+  else if((pr==Protocol::nxdn48||pr==Protocol::nxdn96)&&ranv)std::snprintf(out,sizeof(out),"RAN %u",static_cast<unsigned>(ran));
+}
 void call_identity(Paint& p,const Snapshot& s,Rect card,int x,int y) {
   char v[36]{};
   p.title("CALL / IDENTITY",x,y,card);
@@ -137,6 +143,8 @@ void scan_hits(Paint& p,const Snapshot& s,const UiState& u,Rect b) {
     if(i==u.selected_scan_hit)p.g.fillRoundRect(b.x+10,yy-15,b.w-20,65,4,kSelected);
     p.text(protocol_name(h.protocol),b.x+18,yy,
            h.evidence>=Evidence::integrity_valid?kGreen:kAmber,2,b);
+    char area[16];area_text(area,h.protocol,h.colour_code,h.colour_code_valid,h.ran,h.ran_valid);
+    if(area[0])p.text(area,b.x+200,yy,kWhite,2,b);
     char f[42];
     if(h.has_frequency)
       std::snprintf(f,sizeof(f),"%lu.%06lu MHz",static_cast<unsigned long>(h.frequency_hz/1000000),
@@ -268,8 +276,14 @@ void last_heard(Paint& p,const Snapshot& s,Density mode,uint8_t offset,uint8_t s
     for(size_t row=0;row<6&&row+offset<size;++row) {
       const Heard& h=s.history[row+offset];
       int y=a.y+113+int(row)*52;
-      char v[94];std::snprintf(v,sizeof(v),"%s  %s  %s",h.has_time?h.time_utc:"TIME ?",protocol_name(h.protocol),
-         h.has_source&&h.evidence==Evidence::identity_valid?"ID VERIFIED":"ID UNKNOWN");
+      char who[40],area[16],slot[8]{};
+      if(h.evidence==Evidence::identity_valid&&h.has_source&&h.has_destination)
+        std::snprintf(who,sizeof(who),"%lu>%lu",static_cast<unsigned long>(h.source_id),static_cast<unsigned long>(h.destination_id));
+      else if(h.evidence==Evidence::identity_valid&&h.has_source)std::snprintf(who,sizeof(who),"%lu",static_cast<unsigned long>(h.source_id));
+      else std::snprintf(who,sizeof(who),"ID UNKNOWN");
+      area_text(area,h.protocol,h.colour_code,h.colour_code_valid,h.ran,h.ran_valid);
+      if(h.timeslot_valid&&(h.timeslot==1||h.timeslot==2))std::snprintf(slot,sizeof(slot),"TS%u",static_cast<unsigned>(h.timeslot));
+      char v[96];std::snprintf(v,sizeof(v),"%s  %s  %s  %s %s",h.has_time?h.time_utc:"TIME ?",protocol_name(h.protocol),who,area,slot);
       if(row+offset==selected)p.g.fillRoundRect(a.x+12,y-17,a.w-24,40,4,kSelected);
       p.text(v,a.x+20,y,(h.evidence==Evidence::identity_valid)?kGreen:kMuted,2,a);
       p.hr(a.x+18,y+24,a.w-36);
@@ -290,10 +304,13 @@ void last_heard(Paint& p,const Snapshot& s,Density mode,uint8_t offset,uint8_t s
       number(v,h.destination_id);p.fact("DEST",v,b.x+18,b.y+252,b,kGreen);
     } else p.fact("DEST","UNKNOWN",b.x+18,b.y+252,b,kAmber);
     p.fact("EVIDENCE",evidence_name(h.evidence),b.x+18,b.y+301,b);
-    if ((h.protocol==Protocol::nxdn48 || h.protocol==Protocol::nxdn96) &&
-        h.ran_valid && h.evidence>=Evidence::integrity_valid) {
-      std::snprintf(v,sizeof(v),"%u",h.ran);
-      p.fact("RAN",v,b.x+18,b.y+352,b,kGreen);
+    char area[16];area_text(area,h.protocol,h.colour_code,h.colour_code_valid,h.ran,h.ran_valid);
+    if(area[0]&&h.evidence>=Evidence::integrity_valid) {
+      char slot[24];
+      if(h.timeslot_valid&&(h.timeslot==1||h.timeslot==2))
+        std::snprintf(slot,sizeof(slot),"%s  TS%u  %s",area,static_cast<unsigned>(h.timeslot),h.has_destination?(h.group_call?"GROUP":"PRIVATE"):"");
+      else std::snprintf(slot,sizeof(slot),"%s",area);
+      p.fact(h.protocol==Protocol::dmr?"COLOUR":"AREA",slot,b.x+18,b.y+352,b,kGreen);
     }
   }
   if(s.history_count>6 && s.last_heard_available) {
@@ -318,11 +335,14 @@ void systems(Paint& p,const Snapshot& s,const UiState& u) {
     p.text(protocol_name(sys.protocol),a.x+18,yy,
            sys.evidence>=Evidence::integrity_valid?kGreen:kAmber,2,a);
     const bool verified=sys.evidence>=Evidence::integrity_valid;
-    const char* top=sys.topology_valid&&verified?nxdn_topology_name(sys.topology):"SYSTEM TYPE UNKNOWN";
-    p.label(top,a.x+240,yy,a);
-    char val[44];
-    if(sys.has_frequency)std::snprintf(val,sizeof(val),"%lu.%06lu MHz",
-        static_cast<unsigned long>(sys.frequency_hz/1000000),static_cast<unsigned long>(sys.frequency_hz%1000000));
+    char area[16];area_text(area,sys.protocol,sys.colour_code,sys.colour_code_valid,sys.ran,sys.ran_valid);
+    if(area[0]&&verified)p.text(area,a.x+240,yy,kWhite,2,a);
+    else p.label(sys.topology_valid&&verified?nxdn_topology_name(sys.topology):"SYSTEM TYPE UNKNOWN",a.x+240,yy,a);
+    char val[96];
+    if(sys.has_frequency)std::snprintf(val,sizeof(val),"%lu.%06lu MHz  TG %u  UNITS %u  HEARD %lu%s%s",
+        static_cast<unsigned long>(sys.frequency_hz/1000000),static_cast<unsigned long>(sys.frequency_hz%1000000),
+        static_cast<unsigned>(sys.talkgroup_count),static_cast<unsigned>(sys.subscriber_count),
+        static_cast<unsigned long>(sys.heard_count),sys.last_time[0]?"  ":"",sys.last_time);
     else std::snprintf(val,sizeof(val),"FREQUENCY UNKNOWN");
     p.label(val,a.x+18,yy+31,a);
     p.hr(a.x+18,yy+51,a.w-36);
@@ -330,14 +350,28 @@ void systems(Paint& p,const Snapshot& s,const UiState& u) {
   p.label("Directory matches never become RF evidence",a.x+18,a.y+432,a);
   p.title("SAVE / DISCOVERY",b.x+18,b.y+32,b);
   p.fact("RF LOCK",evidence_name(s.evidence),b.x+18,b.y+110,b);
-  p.fact("DIRECTORY","NOT LINKED",b.x+18,b.y+156,b,kAmber);
-  p.fact("PROFILE","PREVIEW NOT INTEGRATED",b.x+18,b.y+202,b,kAmber);
+  if(s.db_available) {
+    char t[40];std::snprintf(t,sizeof(t),"%u SYS  %u TG  %u UNITS",static_cast<unsigned>(s.db_systems),
+                             static_cast<unsigned>(s.db_talkgroups),static_cast<unsigned>(s.db_subscribers));
+    p.fact("DATABASE",t,b.x+18,b.y+156,b,kGreen);
+  } else p.fact("DATABASE","NOT AVAILABLE",b.x+18,b.y+156,b,kAmber);
   if(count) {
     const auto& sys=s.observed_systems[std::min<unsigned>(u.selected_system,count-1)];
-    if(sys.ran_valid && sys.evidence>=Evidence::integrity_valid) {
-      char value[20];std::snprintf(value,sizeof(value),"%u",sys.ran);
-      p.fact("OBSERVED RAN",value,b.x+18,b.y+258,b,kGreen);
-    }
+    char t[24],ids[64];
+    std::snprintf(t,sizeof(t),"%u",static_cast<unsigned>(sys.talkgroup_count));
+    p.fact("TALKGROUPS",t,b.x+18,b.y+202,b,sys.talkgroup_count?kGreen:kMuted);
+    ids[0]=0;
+    for(unsigned i=0;i<sys.top_talkgroup_n&&i<kTopIds;++i){
+      char one[16];std::snprintf(one,sizeof(one),"%s%lu",i?"  ":"",static_cast<unsigned long>(sys.top_talkgroups[i]));
+      std::strncat(ids,one,sizeof(ids)-std::strlen(ids)-1);}
+    if(ids[0])p.label(ids,b.x+18,b.y+228,b);
+    std::snprintf(t,sizeof(t),"%u",static_cast<unsigned>(sys.subscriber_count));
+    p.fact("UNITS",t,b.x+18,b.y+266,b,sys.subscriber_count?kGreen:kMuted);
+    ids[0]=0;
+    for(unsigned i=0;i<sys.top_subscriber_n&&i<kTopIds;++i){
+      char one[16];std::snprintf(one,sizeof(one),"%s%lu",i?"  ":"",static_cast<unsigned long>(sys.top_subscribers[i]));
+      std::strncat(ids,one,sizeof(ids)-std::strlen(ids)-1);}
+    if(ids[0])p.label(ids,b.x+18,b.y+292,b);
   }
   p.button("SAVE CHANNEL",{b.x+18,b.y+334,242,48},s.can_save_channel);
   p.label("No guessed repeater locations",b.x+18,b.y+422,b);

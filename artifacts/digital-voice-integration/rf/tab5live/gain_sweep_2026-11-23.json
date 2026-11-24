@@ -1,0 +1,102 @@
+[
+ {
+  "gain": "auto",
+  "ch": "terra",
+  "mhz": 152.1575,
+  "level_milli": "89",
+  "dmr_acq": "0",
+  "dmr_ev": "0",
+  "dmr_id": "0",
+  "loss": "0"
+ },
+ {
+  "gain": "auto",
+  "ch": "quiet",
+  "mhz": 153.5,
+  "level_milli": "81",
+  "dmr_acq": "1",
+  "dmr_ev": "39",
+  "dmr_id": "0",
+  "loss": "0"
+ },
+ {
+  "gain": 150,
+  "ch": "terra",
+  "mhz": 152.1575,
+  "level_milli": "10",
+  "dmr_acq": "0",
+  "dmr_ev": "0",
+  "dmr_id": "0",
+  "loss": "0"
+ },
+ {
+  "gain": 150,
+  "ch": "quiet",
+  "mhz": 153.5,
+  "level_milli": "10",
+  "dmr_acq": "1",
+  "dmr_ev": "39",
+  "dmr_id": "0",
+  "loss": "0"
+ },
+ {
+  "gain": 250,
+  "ch": "terra",
+  "mhz": 152.1575,
+  "level_milli": "23",
+  "dmr_acq": "0",
+  "dmr_ev": "0",
+  "dmr_id": "0",
+  "loss": "0"
+ },
+ {
+  "gain": 250,
+  "ch": "quiet",
+  "mhz": 153.5,
+  "level_milli": "20",
+  "dmr_acq": "1",
+  "dmr_ev": "39",
+  "dmr_id": "0",
+  "loss": "0"
+ },
+ {
+  "gain": 350,
+  "ch": "terra",
+  "mhz": 152.1575,
+  "level_milli": "40",
+  "dmr_acq": "0",
+  "dmr_ev": "0",
+  "dmr_id": "0",
+  "loss": "0"
+ },
+ {
+  "gain": 350,
+  "ch": "quiet",
+  "mhz": 153.5,
+  "level_milli": "37",
+  "dmr_acq": "1",
+  "dmr_ev": "39",
+  "dmr_id": "0",
+  "loss": "0"
+ },
+ {
+  "gain": 496,
+  "ch": "terra",
+  "mhz": 152.1575,
+  "level_milli": "162",
+  "dmr_acq": "0",
+  "dmr_ev": "0",
+  "dmr_id": "0",
+  "loss": "0"
+ },
+ {
+  "gain": 496,
+  "ch": "quiet",
+  "mhz": 153.5,
+  "level_milli": "139",
+  "dmr_acq": "1",
+  "dmr_ev": "39",
+  "dmr_id": "0",
+  "loss": "0"
+ }
+]
