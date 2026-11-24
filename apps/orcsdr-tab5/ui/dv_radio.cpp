@@ -77,6 +77,8 @@ std::atomic<uint32_t> g_n48_frames{0}, g_n48_valid{0}, g_n96_frames{0}, g_n96_va
 std::atomic<uint32_t> g_ring_head{0}, g_ring_tail{0};
 std::atomic<uint32_t> g_vring_head{0}, g_vring_tail{0}, g_voice_dropped{0}, g_voice_flushes{0}, g_voice_pending_lost{0};
 std::atomic<bool> g_voice_queue_on{false};
+std::atomic<uint32_t> g_voice_readers{0};      // pop_voice() calls in flight: stop() waits for them before freeing the queue
+std::atomic<bool> g_state_stopping{false};
 uint32_t g_call_serial = 0;
 // Snapshot of decoder-owned voice counters, published by the decode side (the worker) for any reader thread.
 std::atomic<uint32_t> g_vs[16];
@@ -418,6 +420,8 @@ void stop() {
     g_worker_on.store(false, std::memory_order_release);
   }
   if (!g_state) return;
+  g_state_stopping.store(true, std::memory_order_release);
+  for (uint32_t waited = now(); g_voice_readers.load(std::memory_order_acquire) != 0 && now() - waited < 100u;) {}   // bounded
   const uint32_t from = now();
   while (g_in_offer.load(std::memory_order_acquire)) {   // bounded wait for a block that is mid-flight
     if (now() - from > 100u) break;
@@ -429,6 +433,7 @@ void stop() {
   g_state->~State();
   free_state(g_state);
   g_state = nullptr;
+  g_state_stopping.store(false, std::memory_order_release);
   g_channel_hz = 0;
 }
 
@@ -466,12 +471,19 @@ bool tune_channel(uint32_t channel_hz) {
 void service() {}
 
 bool pop_voice(VoiceMsg* out) {
-  if (!g_state || !out) return false;
-  const uint32_t tail = g_vring_tail.load(std::memory_order_relaxed);
-  if (tail == g_vring_head.load(std::memory_order_acquire)) return false;
-  *out = g_state->vring[tail % kVoiceRing];
-  g_vring_tail.store(tail + 1, std::memory_order_release);
-  return true;
+  // The voice task may call this while the UI task stops the receiver and frees the state: register as a reader first.
+  g_voice_readers.fetch_add(1, std::memory_order_acq_rel);
+  bool got = false;
+  if (g_state && out && !g_state_stopping.load(std::memory_order_acquire)) {
+    const uint32_t tail = g_vring_tail.load(std::memory_order_relaxed);
+    if (tail != g_vring_head.load(std::memory_order_acquire)) {
+      *out = g_state->vring[tail % kVoiceRing];
+      g_vring_tail.store(tail + 1, std::memory_order_release);
+      got = true;
+    }
+  }
+  g_voice_readers.fetch_sub(1, std::memory_order_acq_rel);
+  return got;
 }
 void set_voice_queue_enabled(bool enabled) { g_voice_queue_on.store(enabled, std::memory_order_release); }
 VoiceStatus voice_status() {

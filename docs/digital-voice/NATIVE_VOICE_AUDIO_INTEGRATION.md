@@ -10,10 +10,12 @@ This is the record of integrating the OrcSDR AMBE+2 vocoder (Codex branch `agent
 |---|---|---|
 | A | Reproduce the imported V2 host results | **Done.** Same counts as the Codex README (468 / 198 / 18 frames, 0 on control-only). `artifacts/digital-voice-integration/stageA_voice_proof.log`. |
 | B | Production chain (channelizer, 4FSK frontend, D1, call manager, vocoder, resampler) on the three real calls | **Done.** 468 / 90 / 18 frames; call 1 and call 3 are bit-identical to V2 (466/468 and 18/18 frame matches, the other two are bit-error differences); control-only, idle NXDN and noise-only give no speech. Call 2 is the weakest capture: native qualifies 90 of V2's 198 frames. |
-| C | Speaker path isolation with known-good PCM | **Host done** (tone through the same resampler and ring). **Device:** see "Device results". |
-| D | On-device SD replay of recorded IQ | See "Device results". |
-| E | Live RF, RTL-SDR V4L, authorised unencrypted channel | See "Device results". |
-| F | Scanner-integrated live reception | See "Device results". |
+| C | Speaker path isolation with known-good PCM | **Done on the Tab5** (host and device): the speaker accepted 800 ms of a 1 kHz tone through the same resampler and ring, 0 dropped chunks. Nobody has listened, so "audible" is unconfirmed. |
+| D | On-device SD replay of recorded IQ | **Done on the Tab5**: the recorded call played from the SD card through the production chain on the P4 gives exactly the host result (26 groups, 301 speech and 167 silence frames, 0 errors, 216 speaker chunks, 0 dropped). Nobody has listened. |
+| E | Live RF, RTL-SDR V4L, authorised unencrypted channel | **Not achieved.** 40 minutes on 152.1575 MHz (plus about 10 minutes earlier) produced control-channel traffic only: 0 voice groups. The receive chain, scanner and service ran stable (see "Device results"). |
+| F | Scanner-integrated live reception | **Not achieved**, for the same reason; the hold-on-voice path is exercised only by host tests and by the SD replay. |
+
+**The highest stage genuinely completed is D (on-device replay of real recorded IQ to the speaker path).** Live speech and a human listening test remain open.
 
 Nothing in the table above is claimed beyond what its row says. A host build is not a firmware build, and a firmware build is not live reception.
 
@@ -84,9 +86,9 @@ Rules (ported from the offline proof's gate and extended): a data burst on the s
 
 ## Audio engine
 
-One codec context per slot, one call voiced at a time. Selection: AUTO (first active slot, sticky until its call ends), TS1, TS2, MUTE. The other slot is metadata only. Silence frames (AMBE types 124 and 125) are muted but still run the codec so predictors stay continuous. Uncorrectable frames are silence, not static; gaps are silence, never repeated speech. Synthesis is serialized (mbelib uses `rand()`). No allocation per frame. Playout starts 100 ms after the first qualified group lands (`target_buffer_ms`; a 100 ms hold was enough at 360 ms group spacing with zero underruns in the replays, to be confirmed live) and the engine reports underruns, overruns, latency, buffered milliseconds, clipping, synthesis time and the corrected-versus-uncorrectable bit counts separately. The speaker volume and mute stay the existing ones: the user's sound switch is the master mute.
+One codec context per slot, one call voiced at a time. Selection: AUTO (first active slot, sticky until its call ends), TS1, TS2, MUTE. The other slot is metadata only. Silence frames (AMBE types 124 and 125) are muted but still run the codec so predictors stay continuous. Uncorrectable frames are silence, not static; gaps are silence, never repeated speech. Synthesis is serialized (mbelib uses `rand()`). No allocation per frame. Playout starts 250 ms after the first qualified group lands (`target_buffer_ms`, `RTL_DV AUDIO BUFFER <ms>`). Measured on the Tab5 with an SD replay whose group spacing varied between 362 and 443 ms: a 100 ms hold underran on 18 of 20 groups, 250 ms on 2 of 26, 400 ms on 1 of 26 (latency 219 ms). The jitter to absorb is the spread of the group spacing plus the synthesis time of the first slice; the live value has not been measured because no live voice arrived. The engine reports underruns, overruns, latency, buffered milliseconds, clipping, synthesis time and the corrected-versus-uncorrectable bit counts separately. The speaker volume and mute stay the existing ones: the user's sound switch is the master mute.
 
-Latency is dominated by the superframe: audio of a group exists only after the sixth burst (about 360 ms) plus the 100 ms hold. Measured on host replay: 68 ms from group arrival to first sample, plus the 360 ms superframe assembly.
+Latency is dominated by the superframe: audio of a group exists only after the sixth burst (about 360 ms) plus the hold. On the Tab5 the group-arrival-to-first-sample time was 82 to 136 ms at a 100 ms hold and 105 ms at 250 ms, so a heard word lags the air by roughly 0.7 s.
 
 ## Serial interface
 
@@ -153,6 +155,19 @@ RTL_DV AUDIO STATUS          # nfm_blocked rising means the analogue NFM audio (
 6. If audio stutters, raise the hold: `RTL_DV AUDIO BUFFER 400` (default 250 ms). `RTL_DV AUDIO STATUS` reports `gap_ms` (group spacing seen: ideal 360), `underruns`, `latency_ms`.
 7. Protected or unidentifiable voice is never played; PROTECTED VOICE or PRIVACY UNKNOWN is shown instead. `RTL_SUPPORT REPORT` includes an `ORC_SUPPORT_DV_AUDIO` line while the service runs.
 
+## Device results (M5Stack Tab5, COM17, RTL-SDR V4L with the 140/440 MHz antenna, bias tee off)
+
+Firmware `v0.6.0` build `Nov 24 2026`, ESP-IDF 5.5.4, flashed app-only. Raw logs: `artifacts/digital-voice-integration/audio/` (`device_session.jsonl`, `tone_replay.jsonl`, `live_session.jsonl`).
+
+- **Boot loop and fix.** The first image aborted at boot (`Could not reserve internal/DMA pool`) because the self test used a 38 KB static buffer; large buffers and the resampler taps now live in PSRAM. After the fix the boot is clean and internal free RAM after Digital Voice opens is about 36 to 54 KB (largest block 15 to 31 KB).
+- **Static source confirmed on the device.** With the radio running on the browse band, `nfm_blocked` rose by about 50 blocks per second (949 in the first 18 s, 17,447 by the end of the replay run): that analogue audio previously reached the speaker.
+- **Self test on the P4:** 13 checks, 0 failed; the recorded superframe decodes to 3 speech and 15 silence frames, identical to the host.
+- **Stage C:** `RTL_DV AUDIO TONE 800`: speaker chunks 0 to 18, dropped 0, 6,400 test samples; the voice counters stayed at zero (not counted as decoding).
+- **Stage D:** `RTL_DV REPLAY /orcsdr/dv_live_call_152p1575.cu8 152157500`: 26 qualified groups, 468 frames (301 speech, 167 silence, 0 errors), 2 calls, 216 speaker chunks, 0 chunk drops, 0 voice queue drops, 0 ring drops, no IQ loss. Same numbers on every run.
+- **Cost on the P4:** synthesis about 6.5 ms per frame, about 110 ms of CPU per 360 ms superframe (about 31 percent of one core; the host needs 0.7 ms per frame); the decode worker (core 0) about 25 percent of a core; the DSP channelizer about 20 percent of core 1. Longest pump step 41 ms after slicing the synthesis into 3-frame steps (it was 161 ms when a whole group was synthesized in one go). Voice task stack: 5.4 KB of 12 KB still free at the lowest point (a single 18-frame group needs about 7 KB of stack). The decoders are in PSRAM (`dec_internal=0`) because the largest internal block is smaller than they are; this was already the case before this work.
+- **Live, 40 minutes (00:23 to 01:03 by the PC clock, after midnight) plus about 10 minutes earlier:** scanner plan 152.1575, 152.685, 152.345 and 153.068 MHz, DMR only. The scanner stayed on 152.1575 MHz in "HOLD ON VERIFIED ACTIVITY" for the whole run because control-channel integrity events keep renewing the hold (existing scanner behaviour, not changed here). Result: 55,904 decoder events, 132 acquisitions, 0 identities, **0 voice groups, 0 speaker chunks**; the antenna sees the channel only about 1 dB above the noise and it was after midnight. Worker 25 to 26 percent, 0 ring drops, 0 IQ loss, no reboot (uptime 2,497 s). An earlier live run right after a boot showed the worker at 93 percent with ring drops; the same plan measured again minutes later was 26 to 30 percent with none, so that was contention in the first minutes after boot (Wi-Fi and storage on core 0) and is not proven further.
+- **Not done on the device:** a human listening to the speaker, speech from live RF, a protected or unknown-privacy voice call (only host tests), two simultaneous slots, the physical flicker check of the new panel, a screenshot of the voice panel in DECODING state.
+
 ## Known limitations
 
 - A superframe is all-or-nothing: one bad EMB or a missed voice SYNC drops 360 ms of speech. A weak signal therefore has gaps rather than degraded speech. Single-slot capture (the other slot's audio is metadata only).
@@ -160,7 +175,7 @@ RTL_DV AUDIO STATUS          # nfm_blocked rising means the analogue NFM audio (
 - Positive sample-clock drift of 50 ppm or more loses voice SYNCs (see table).
 - Silence frames are muted, not comfort noise.
 - No transcript or listening evaluation exists. Intelligibility is unmeasured by a human.
-- Device results below are what was actually done; everything else is not verified.
+- The device results above are what was actually done; everything else is not verified.
 - Licence and patent status of AMBE+2 is unassessed (owner decision).
 
 ## Next priorities
