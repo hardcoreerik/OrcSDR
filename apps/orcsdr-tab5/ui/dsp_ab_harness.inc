@@ -220,7 +220,7 @@ void demodulate_fm_ref(const uint8_t* iq, size_t bytes, float audio_scale, bool 
 }
 
 void demodulate_am_ref(const uint8_t* iq, size_t bytes, float audio_scale,
-                   uint32_t sample_rate_sps) {
+                   uint32_t sample_rate_sps, RtlBand band) {
   int16_t* audio = rtl_audio_buffers[rtl_audio.buffer];
   size_t audio_count = 0;
   const uint8_t rf_decimation = rtl_rf_decimation(sample_rate_sps);
@@ -260,7 +260,7 @@ void demodulate_am_ref(const uint8_t* iq, size_t bytes, float audio_scale,
       ++rtl_audio.samples;
     }
   }
-  if (g_stream_band == RtlBand::shortwave)
+  if (band == RtlBand::shortwave)
     orcsdr::shortwave::audio_dsp::process(audio, audio_count,
                                          rtl_signal_dbfs_smooth);
   queue_audio_samples(audio, audio_count);
@@ -332,6 +332,7 @@ struct DspAbBlockMeta {
   float audio_scale;
   uint32_t sample_rate_sps;
   CbMode cb_mode;
+  HomeDemod demod;
 };
 
 struct DspAbPass {
@@ -353,6 +354,7 @@ struct DspAbCapture {
   size_t count = 0;
   size_t target = 0;
   RtlAudioState start{};
+  orcsdr::shortwave::audio_dsp::State sw_audio_start{};
   float level_start[3]{};
   std::atomic<bool> armed{false};
   std::atomic<bool> run_requested{false};
@@ -394,6 +396,12 @@ bool dsp_ab_take_mpx(float phase, float pilot) {
 
 bool dsp_ab_arm(size_t blocks) {
   if (blocks == 0 || blocks > kDspAbMaxBlocks) return false;
+  // Shortwave A/B only covers AM (Shortwave USB/LSB uses demodulate_shortwave_ssb,
+  // which has no pre-optimization reference function).
+  if (g_stream_band == RtlBand::shortwave &&
+      effective_demod(RtlBand::shortwave) != HomeDemod::am) {
+    return false;
+  }
   if (!g_dsp_ab.blocks)
     g_dsp_ab.blocks = static_cast<uint8_t*>(
         heap_caps_malloc(kDspAbMaxBlocks * kDspAbBlockBytes, MALLOC_CAP_SPIRAM));
@@ -407,16 +415,24 @@ bool dsp_ab_arm(size_t blocks) {
 // DSP task, before the block is processed live.
 void dsp_ab_on_block(const RtlIqBlock& block) {
   if (!g_dsp_ab.armed.load(std::memory_order_acquire)) return;
+  const HomeDemod demod = effective_demod(block.band);
+  if (block.band == RtlBand::shortwave && demod != HomeDemod::am) {
+    g_dsp_ab.armed.store(false, std::memory_order_release);
+    g_dsp_ab.count = 0;
+    Serial.println("RTL_DSP_AB_ERROR unsupported_shortwave_demod");
+    return;
+  }
   const size_t k = g_dsp_ab.count;
   if (k == 0) {
     g_dsp_ab.start = rtl_audio;
+    g_dsp_ab.sw_audio_start = orcsdr::shortwave::audio_dsp::snapshot_state();
     g_dsp_ab.level_start[0] = rtl_signal_dbfs.load(std::memory_order_relaxed);
     g_dsp_ab.level_start[1] = rtl_signal_dbfs_smooth;
     g_dsp_ab.level_start[2] = rtl_iq_clipping_percent.load(std::memory_order_relaxed);
   }
   memcpy(g_dsp_ab.blocks + k * kDspAbBlockBytes, block.data, block.bytes);
   g_dsp_ab.meta[k] = {block.bytes, block.band, block.audio_scale, block.sample_rate_sps,
-                      cb_mode.load(std::memory_order_relaxed)};
+                      cb_mode.load(std::memory_order_relaxed), demod};
   if (++g_dsp_ab.count >= g_dsp_ab.target) {
     g_dsp_ab.armed.store(false, std::memory_order_release);
     Serial.printf("RTL_DSP_AB_CAPTURED blocks=%u band=%s rate=%lu\n",
@@ -426,11 +442,13 @@ void dsp_ab_on_block(const RtlIqBlock& block) {
 }
 
 void dsp_ab_demod(bool ref, const uint8_t* iq, const DspAbBlockMeta& m) {
-  const bool am = m.band == RtlBand::am || m.band == RtlBand::shortwave ||
+  // Shortwave A/B is AM-only (USB/LSB Shortwave is rejected during arm/capture).
+  const bool am = m.band == RtlBand::am ||
+                  (m.band == RtlBand::shortwave && m.demod == HomeDemod::am) ||
                   (m.band == RtlBand::cb && m.cb_mode == CbMode::am);
   if (am) {
-    if (ref) demodulate_am_ref(iq, m.bytes, m.audio_scale, m.sample_rate_sps);
-    else demodulate_am(iq, m.bytes, m.audio_scale, m.sample_rate_sps);
+    if (ref) demodulate_am_ref(iq, m.bytes, m.audio_scale, m.sample_rate_sps, m.band);
+    else demodulate_am(iq, m.bytes, m.audio_scale, m.sample_rate_sps, m.band);
   } else if (m.band == RtlBand::cb) {
     if (ref) demodulate_ssb_ref(iq, m.bytes, m.audio_scale, m.cb_mode, m.sample_rate_sps);
     else demodulate_ssb(iq, m.bytes, m.audio_scale, m.cb_mode, m.sample_rate_sps);
@@ -443,6 +461,7 @@ void dsp_ab_demod(bool ref, const uint8_t* iq, const DspAbBlockMeta& m) {
 
 void dsp_ab_pass(bool ref, DspAbPass& p) {
   rtl_audio = g_dsp_ab.start;
+  orcsdr::shortwave::audio_dsp::restore_state(g_dsp_ab.sw_audio_start);
   rtl_signal_dbfs.store(g_dsp_ab.level_start[0], std::memory_order_relaxed);
   rtl_signal_dbfs_smooth = g_dsp_ab.level_start[1];
   rtl_iq_clipping_percent.store(g_dsp_ab.level_start[2], std::memory_order_relaxed);
@@ -665,18 +684,27 @@ void dsp_ab_run_if_requested() {
     Serial.println("RTL_DSP_AB_ERROR no_capture");
     return;
   }
+  for (size_t k = 0; k < g_dsp_ab.count; ++k) {
+    if (g_dsp_ab.meta[k].band == RtlBand::shortwave &&
+        g_dsp_ab.meta[k].demod != HomeDemod::am) {
+      Serial.println("RTL_DSP_AB_ERROR unsupported_shortwave_demod");
+      return;
+    }
+  }
   static DspAbPass ref_pass, new_pass;
   if (!dsp_ab_alloc(ref_pass) || !dsp_ab_alloc(new_pass)) {
     Serial.println("RTL_DSP_AB_ERROR alloc");
     return;
   }
   const RtlAudioState live = rtl_audio;
+  const auto live_sw_audio = orcsdr::shortwave::audio_dsp::snapshot_state();
   const float live_level[3] = {rtl_signal_dbfs.load(std::memory_order_relaxed),
                                rtl_signal_dbfs_smooth,
                                rtl_iq_clipping_percent.load(std::memory_order_relaxed)};
   dsp_ab_pass(true, ref_pass);
   dsp_ab_pass(false, new_pass);
   rtl_audio = live;
+  orcsdr::shortwave::audio_dsp::restore_state(live_sw_audio);
   rtl_signal_dbfs.store(live_level[0], std::memory_order_relaxed);
   rtl_signal_dbfs_smooth = live_level[1];
   rtl_iq_clipping_percent.store(live_level[2], std::memory_order_relaxed);
@@ -718,6 +746,7 @@ void dsp_ab_run_if_requested() {
     const DspAbBlockMeta& m = g_dsp_ab.meta[k];
     memcpy(rtl_iq_processing, ps, m.bytes);
     rtl_audio = g_dsp_ab.start;
+    orcsdr::shortwave::audio_dsp::restore_state(g_dsp_ab.sw_audio_start);
     new_pass.audio_n = new_pass.mpx_n = 0;
     uint32_t t0 = micros();
     update_signal_level_from_iq(ps, m.bytes);
@@ -729,6 +758,7 @@ void dsp_ab_run_if_requested() {
     dsp_ab_demod(false, ps, m);
     demod_psram_us += micros() - t0;
     rtl_audio = g_dsp_ab.start;
+    orcsdr::shortwave::audio_dsp::restore_state(g_dsp_ab.sw_audio_start);
     new_pass.audio_n = new_pass.mpx_n = 0;
     t0 = micros();
     dsp_ab_demod(false, rtl_iq_processing, m);
@@ -738,6 +768,7 @@ void dsp_ab_run_if_requested() {
   dsp_ab_cycle_bench(g_dsp_ab.meta[0].bytes);
   dsp_ab_rds_compare(ref_pass);
   rtl_audio = live;
+  orcsdr::shortwave::audio_dsp::restore_state(live_sw_audio);
   rtl_signal_dbfs.store(live_level[0], std::memory_order_relaxed);
   rtl_signal_dbfs_smooth = live_level[1];
   rtl_iq_clipping_percent.store(live_level[2], std::memory_order_relaxed);

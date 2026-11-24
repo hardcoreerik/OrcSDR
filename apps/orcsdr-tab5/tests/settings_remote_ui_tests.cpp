@@ -29,6 +29,16 @@ static bool visible(const char* s) {
   return std::find(M5.Display.strings.begin(), M5.Display.strings.end(), s) != M5.Display.strings.end();
 }
 
+static bool visible_in_rail(const char* s) {
+  for (size_t i = 0; i < M5.Display.strings.size() && i < M5.Display.positions.size(); ++i) {
+    if (M5.Display.strings[i] == s && M5.Display.positions[i].first >= 0 &&
+        M5.Display.positions[i].first < 286) {
+      return true;
+    }
+  }
+  return false;
+}
+
 static settings::State base_state() {
   settings::State s;
   std::strcpy(s.default_band, "FM");
@@ -71,7 +81,8 @@ int main() {
   M5.Display.positions.clear();
   action = settings::handle_touch(180, 653);  // CANCEL
   assert(action.kind == settings::ActionKind::none && !text_editor::active());
-  assert(visible("CLOSE") && visible("RTL_TCP") && visible("RECEIVER SOURCE"));
+  assert(visible("CLOSE") && visible_in_rail("RTL_TCP") && visible("RTL_TCP") &&
+         visible("RECEIVER SOURCE"));
   char taken[72]{};
   assert(!settings::take_remote_server(taken, sizeof(taken)));
 
@@ -81,7 +92,8 @@ int main() {
   M5.Display.positions.clear();
   action = settings::handle_touch(1100, 653);  // SAVE
   assert(action.kind == settings::ActionKind::remote_server_changed);
-  assert(visible("CLOSE") && visible("RTL_TCP") && visible("RECEIVER SOURCE"));
+  assert(visible("CLOSE") && visible_in_rail("RTL_TCP") && visible("RTL_TCP") &&
+         visible("RECEIVER SOURCE"));
   assert(settings::take_remote_server(taken, sizeof(taken)) && std::strcmp(taken, "192.168.1.15:5000") == 0);
   assert(!settings::take_remote_server(taken, sizeof(taken)));  // consumed
 

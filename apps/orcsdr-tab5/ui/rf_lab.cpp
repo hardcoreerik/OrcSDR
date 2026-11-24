@@ -35,6 +35,7 @@ constexpr int kSideX = 870, kSideW = 388;
 constexpr int kFooterY = 650, kFooterH = 56;
 constexpr uint32_t kBiasHoldMs = 2000;
 constexpr size_t kActionCapacity = 32;
+constexpr size_t kReservedCloseSlots = 9;
 constexpr size_t kMaxReadings = 3600;
 constexpr size_t kScreenPixels = 1280u * 720u;
 
@@ -57,6 +58,7 @@ EXT_RAM_BSS_ATTR plot::WaterfallClock g_waterfall_clock;
 bool g_waterfall_ready = false;
 Action g_actions[kActionCapacity]{};
 size_t g_action_read = 0, g_action_write = 0;
+bool g_close_pending = false;
 bool g_pressed = false;
 int32_t g_press_x = 0, g_press_y = 0;
 uint32_t g_press_ms = 0;
@@ -161,11 +163,19 @@ void message(const char* value) {
   g_dirty = true;
 }
 
-bool queue(ActionKind kind, int32_t value) {
-  const size_t next = (g_action_write + 1) % kActionCapacity;
-  if (next == g_action_read) return false;
+size_t action_count() {
+  return (g_action_write + kActionCapacity - g_action_read) % kActionCapacity;
+}
+
+size_t action_free_slots() {
+  return (kActionCapacity - 1) - action_count();
+}
+
+bool queue(ActionKind kind, int32_t value, bool allow_reserved = false) {
+  const size_t min_free = allow_reserved ? 1 : (kReservedCloseSlots + 1);
+  if (action_free_slots() < min_free) return false;
   g_actions[g_action_write] = {kind, value};
-  g_action_write = next;
+  g_action_write = (g_action_write + 1) % kActionCapacity;
   return true;
 }
 
@@ -812,28 +822,46 @@ void draw_live_dynamic() {
   snprintf(line, sizeof(line), "%+.2f dB", g_snapshot.iq_imbalance_db); metric("IQ BALANCE", line);
 }
 
-void queue_restore() {
-  if (g_keep_settings) return;
-  queue(ActionKind::ppm, g_initial.ppm);
-  queue(ActionKind::sample_rate_sps, static_cast<int32_t>(g_initial.sample_rate_sps));
-  queue(ActionKind::tune_hz, static_cast<int32_t>(g_initial.frequency_hz));
-  queue(ActionKind::gain_mode, g_initial.gain_mode == GainMode::automatic ? 0 : 1);
-  if (g_initial.gain_mode == GainMode::manual)
-    queue(ActionKind::gain_tenth_db, g_initial.gain_tenth_db);
-  queue(ActionKind::rtl_agc, g_initial.rtl_agc ? 1 : 0);
-  // Exit restore may turn bias OFF but never back ON: by exit the attached
-  // receiver or antenna may not be the one bias was enabled for.
-  if (runtime().bias_tee || pending_bias_enable()) queue(ActionKind::bias_tee, 0);
+size_t restore_action_count() {
+  if (g_keep_settings) return 0;
+  size_t count = 5;  // ppm, sample_rate_sps, tune_hz, gain_mode, rtl_agc
+  if (g_initial.gain_mode == GainMode::manual) ++count;
+  if (runtime().bias_tee || pending_bias_enable()) ++count;
   if ((g_initial.capabilities & ESP_RTL_SDR_CAP_TUNER_BANDWIDTH) &&
-      g_initial.sample_rate_sps == 2400000)
-    queue(ActionKind::tuner_bandwidth_hz,
-          static_cast<int32_t>(g_initial.tuner_bandwidth_requested_hz));
+      g_initial.sample_rate_sps == 2400000) {
+    ++count;
+  }
+  return count;
 }
 
-void request_close() {
+bool queue_restore() {
+  if (g_keep_settings) return true;
+  bool ok = true;
+  ok = queue(ActionKind::ppm, g_initial.ppm, true) && ok;
+  ok = queue(ActionKind::sample_rate_sps, static_cast<int32_t>(g_initial.sample_rate_sps), true) && ok;
+  ok = queue(ActionKind::tune_hz, static_cast<int32_t>(g_initial.frequency_hz), true) && ok;
+  ok = queue(ActionKind::gain_mode, g_initial.gain_mode == GainMode::automatic ? 0 : 1, true) && ok;
+  if (g_initial.gain_mode == GainMode::manual)
+    ok = queue(ActionKind::gain_tenth_db, g_initial.gain_tenth_db, true) && ok;
+  ok = queue(ActionKind::rtl_agc, g_initial.rtl_agc ? 1 : 0, true) && ok;
+  // Exit restore may turn bias OFF but never back ON: by exit the attached
+  // receiver or antenna may not be the one bias was enabled for.
+  if (runtime().bias_tee || pending_bias_enable())
+    ok = queue(ActionKind::bias_tee, 0, true) && ok;
+  if ((g_initial.capabilities & ESP_RTL_SDR_CAP_TUNER_BANDWIDTH) &&
+      g_initial.sample_rate_sps == 2400000)
+    ok = queue(ActionKind::tuner_bandwidth_hz,
+          static_cast<int32_t>(g_initial.tuner_bandwidth_requested_hz), true) && ok;
+  return ok;
+}
+
+bool request_close() {
+  if (g_close_pending) return true;
+  if (action_free_slots() < restore_action_count() + 1) return false;
   if (g_run_active && !finish_run("CANCELLED_EXIT")) cancel_run();
-  queue_restore();
-  queue(ActionKind::close, 0);
+  const bool ok = queue_restore() && queue(ActionKind::close, 0, true);
+  if (ok) g_close_pending = true;
+  return ok;
 }
 
 uint32_t next_rate(uint32_t current) {
@@ -997,6 +1025,7 @@ bool enter(uint8_t origin_screen_value, uint8_t origin_tab_value) {
   g_initial = runtime();
   g_keep_settings = false;
   g_bias_ack = false;
+  g_close_pending = false;
   g_page = Page::live;
   g_last_revision = 0;
   g_waterfall_clock.reset(millis());
@@ -1019,6 +1048,7 @@ bool enter(uint8_t origin_screen_value, uint8_t origin_tab_value) {
 
 void leave() {
   g_active.store(false, std::memory_order_release);
+  g_close_pending = false;
   rf_analysis::set_enabled(false);
   if (g_waterfall_ready) {
     g_waterfall.deleteSprite();
@@ -1139,6 +1169,7 @@ bool take_action(Action* action) {
   if (!action || g_action_read == g_action_write) return false;
   *action = g_actions[g_action_read];
   g_action_read = (g_action_read + 1) % kActionCapacity;
+  if (action->kind == ActionKind::close) g_close_pending = false;
   return true;
 }
 
@@ -1148,7 +1179,10 @@ bool process_command(const char* command, char* response, size_t response_size) 
     strlcpy(response, "RTL_LAB_OPEN_REQUEST", response_size); return true;
   }
   if (strcmp(command, "RTL_LAB CLOSE") == 0) {
-    request_close(); strlcpy(response, "RTL_LAB_OK close=queued", response_size); return true;
+    strlcpy(response,
+            request_close() ? "RTL_LAB_OK close=queued" : "RTL_LAB_ERROR close=queue_full",
+            response_size);
+    return true;
   }
   if (strcmp(command, "RTL_LAB STATUS") == 0) {
     const Runtime r = runtime();
@@ -1473,7 +1507,9 @@ bool process_command(const char* command, char* response, size_t response_size) 
     if (kind == ActionKind::none) {
       strlcpy(response, "RTL_LAB_ERROR invalid_or_unsafe", response_size); return true;
     }
-    queue(kind, static_cast<int32_t>(value));
+    if (!queue(kind, static_cast<int32_t>(value))) {
+      strlcpy(response, "RTL_LAB_ERROR queue_full", response_size); return true;
+    }
     snprintf(response, response_size, "RTL_LAB_OK id=%s queued=1", id); return true;
   }
   return false;
@@ -1499,10 +1535,69 @@ bool self_check() {
       bias_voltage_pass(0.0f, 3.9f, 0.0f)) return false;
   if (!same_calibration_state(a, b)) return false;
   b.ppm = 1;
-  return !same_calibration_state(a, b) && parse_page("measurements", &parsed) &&
-         parsed == Page::measurements && kPlotY + kPlotH < kFooterY &&
-         sizeof(g_pending_marker) == 48 &&
-         rf_analysis::self_check();
+  if (same_calibration_state(a, b) || !parse_page("measurements", &parsed) ||
+      parsed != Page::measurements || kPlotY + kPlotH >= kFooterY ||
+      sizeof(g_pending_marker) != 48 || !rf_analysis::self_check()) {
+    return false;
+  }
+
+  struct ScopeRestore {
+    Action actions[kActionCapacity]{};
+    size_t read = g_action_read;
+    size_t write = g_action_write;
+    Runtime initial = g_initial;
+    bool keep = g_keep_settings;
+    bool close_pending = g_close_pending;
+    bool run_active = g_run_active;
+    Runtime rt = runtime();
+    ScopeRestore() { std::copy(std::begin(g_actions), std::end(g_actions), std::begin(actions)); }
+    ~ScopeRestore() {
+      std::copy(std::begin(actions), std::end(actions), std::begin(g_actions));
+      g_action_read = read;
+      g_action_write = write;
+      g_initial = initial;
+      g_keep_settings = keep;
+      g_close_pending = close_pending;
+      g_run_active = run_active;
+      portENTER_CRITICAL(&g_runtime_mux);
+      g_runtime = rt;
+      portEXIT_CRITICAL(&g_runtime_mux);
+    }
+  } restore;
+
+  g_action_read = g_action_write = 0;
+  g_close_pending = false;
+  g_keep_settings = false;
+  g_run_active = false;
+  const size_t normal_cap = kActionCapacity - 1 - kReservedCloseSlots;
+  for (size_t i = 0; i < normal_cap; ++i) {
+    if (!queue(ActionKind::ppm, 0)) return false;
+  }
+  if (queue(ActionKind::ppm, 0)) return false;
+  g_initial = {};
+  g_initial.sample_rate_sps = 2400000;
+  g_initial.gain_mode = GainMode::manual;
+  g_initial.capabilities = ESP_RTL_SDR_CAP_TUNER_BANDWIDTH;
+  g_initial.tuner_bandwidth_requested_hz = 300000;
+  g_initial.bias_tee = true;
+  Runtime test_rt = restore.rt;
+  test_rt.bias_tee = true;
+  portENTER_CRITICAL(&g_runtime_mux);
+  g_runtime = test_rt;
+  portEXIT_CRITICAL(&g_runtime_mux);
+
+  if (!request_close()) return false;
+  const size_t after_first = action_count();
+  if (!request_close() || action_count() != after_first) return false;
+
+  bool saw_bias_off = false, saw_bw = false, saw_close = false;
+  Action act{};
+  while (take_action(&act)) {
+    if (act.kind == ActionKind::bias_tee && act.value == 0) saw_bias_off = true;
+    if (act.kind == ActionKind::tuner_bandwidth_hz && act.value == 300000) saw_bw = true;
+    if (act.kind == ActionKind::close) saw_close = true;
+  }
+  return saw_bias_off && saw_bw && saw_close && action_count() == 0 && !g_close_pending;
 }
 
 }  // namespace orcsdr::rf_lab

@@ -21,6 +21,7 @@ struct Hooks {
   bool (*capture_ready)(size_t* bytes) = nullptr;
   size_t (*capture_bytes)() = nullptr;
   const uint8_t* (*capture_data)() = nullptr;
+  uint32_t (*capture_generation)() = nullptr;
   // Replay upload.
   size_t (*replay_max_bytes)() = nullptr;        // kIqRecMaxBytes
   uint32_t (*sample_rate)() = nullptr;           // the only accepted rate
