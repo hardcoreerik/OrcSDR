@@ -2787,3 +2787,1017 @@
 22:34:44 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=31 dsd=-2 kept=False
 22:35:03 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=34 dsd=-2 kept=False
 22:35:03 stopped
+07:30:13 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+07:30:32 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+07:30:51 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+07:31:09 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+07:31:28 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+07:31:47 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=302 id=0 level=9 dsd=-2 kept=False
+07:32:06 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+07:32:24 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=28 dsd=-2 kept=False
+07:32:43 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=26 dsd=-2 kept=False
+07:33:01 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+07:33:20 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=26 dsd=-2 kept=False
+07:33:38 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=30 dsd=-2 kept=False
+07:33:56 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=30 dsd=-2 kept=False
+07:34:15 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=29 dsd=-2 kept=False
+07:34:33 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+07:34:52 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+07:35:11 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+07:35:35 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=69 dsd=0 kept=False
+07:35:54 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+07:36:12 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+07:36:31 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+07:36:49 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+07:37:08 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+07:37:26 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+07:37:45 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=104 id=0 level=5 dsd=-2 kept=False
+07:38:04 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+07:38:22 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+07:38:41 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+07:38:59 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+07:39:18 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+07:39:36 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+07:39:55 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+07:40:14 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+07:40:32 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+07:40:51 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+07:41:10 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+07:41:31 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=63 dsd=0 kept=False
+07:41:50 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+07:42:08 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+07:42:27 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+07:42:46 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+07:43:04 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+07:43:23 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+07:43:42 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=11 id=0 level=15 dsd=-2 kept=False
+07:44:00 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+07:44:19 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=27 dsd=-2 kept=False
+07:44:38 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+07:44:56 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+07:45:15 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+07:45:34 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+07:45:52 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=26 dsd=-2 kept=False
+07:46:11 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+07:46:30 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+07:46:48 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+07:47:07 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+07:47:28 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=67 dsd=0 kept=False
+07:47:47 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+07:48:05 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+07:48:24 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+07:48:43 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+07:49:01 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+07:49:20 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+07:49:39 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=1 id=0 level=10 dsd=-2 kept=False
+07:49:57 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+07:50:16 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=31 dsd=-2 kept=False
+07:50:35 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=27 dsd=-2 kept=False
+07:50:53 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+07:51:12 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+07:51:31 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+07:51:49 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+07:52:08 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+07:52:27 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+07:52:46 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+07:53:04 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+07:53:25 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=66 dsd=0 kept=False
+07:53:44 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+07:54:02 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+07:54:21 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+07:54:40 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+07:54:58 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+07:55:17 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+07:55:36 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=45 id=0 level=17 dsd=-2 kept=False
+07:55:54 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+07:56:13 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+07:56:32 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+07:56:50 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+07:57:09 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+07:57:28 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+07:57:46 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+07:58:05 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+07:58:24 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+07:58:43 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+07:59:01 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+07:59:22 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=65 dsd=0 kept=False
+07:59:41 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+08:00:00 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:00:18 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:00:37 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:00:56 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:01:15 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:01:33 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=229 id=0 level=16 dsd=-2 kept=False
+08:01:52 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:02:11 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+08:02:30 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+08:02:48 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+08:03:07 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+08:03:26 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+08:03:44 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+08:04:03 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+08:04:22 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:04:40 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:04:59 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:05:20 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=72 dsd=0 kept=False
+08:05:39 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+08:05:58 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:06:16 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+08:06:35 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+08:06:54 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:07:13 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+08:07:34 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=4 id=0 level=106 dsd=0 kept=False
+08:07:52 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:08:11 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=26 dsd=-2 kept=False
+08:08:30 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+08:08:49 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+08:09:07 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+08:09:26 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+08:09:45 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+08:10:03 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+08:10:22 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+08:10:41 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+08:10:59 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+08:11:21 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=74 dsd=0 kept=False
+08:11:39 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+08:11:58 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:12:17 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+08:12:35 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:12:54 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:13:13 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+08:13:34 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=0 id=0 level=91 dsd=0 kept=False
+08:13:53 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:14:14 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=131 dsd=0 kept=False
+08:14:33 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+08:14:52 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+08:15:10 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+08:15:29 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+08:15:48 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+08:16:06 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+08:16:25 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:16:52 441.6760 sweep 441.676: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:17:29 441.0500 sweep 441.050: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:18:31 431998000 error TimeoutExpired: Command '['wsl', '-e', '/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-rev
+08:19:38 438026000 error TimeoutExpired: Command '['wsl', '-e', '/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-rev
+08:20:01 442.9625 PNW DMR Eugene CC1 (RRDB): events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:21:03 442887500 error TimeoutExpired: Command '['wsl', '-e', '/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-rev
+08:22:10 442750000 error TimeoutExpired: Command '['wsl', '-e', '/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-rev
+08:23:16 442812500 error TimeoutExpired: Command '['wsl', '-e', '/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-rev
+08:24:23 444025000 error TimeoutExpired: Command '['wsl', '-e', '/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-rev
+08:25:30 451912500 error TimeoutExpired: Command '['wsl', '-e', '/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-rev
+08:26:22 442.4250 ham CC1 (unverified): events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:27:08 152.1575 Terra T3 ctrl: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:27:55 152.3450 Terra Oakridge: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:28:42 152.1060 candidate voice 152.106: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:29:29 152.2190 candidate voice 152.219: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:30:16 152.6850 candidate 152.685: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:31:02 152.8950 candidate 152.895: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:31:49 153.0680 candidate 153.068: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:32:36 441.7440 sweep 441.744: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:33:23 441.6760 sweep 441.676: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:34:09 441.0500 sweep 441.050: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:34:56 431.9980 sweep 431.998: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:35:43 438.0260 sweep 438.026: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:36:30 442.9625 PNW DMR Eugene CC1 (RRDB): events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:37:16 442.8875 PNW DMR Salem CC1: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:38:03 442.7500 PNW DMR Colton CC1: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:38:50 442.8125 PNW DMR Mt Hebo CC1: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:39:37 444.0250 PNW DMR Buxton CC9: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:40:23 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:41:10 442.4250 ham CC1 (unverified): events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:41:57 152.1575 Terra T3 ctrl: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+08:42:59 152345000 error TimeoutExpired: Command '['wsl', '-e', '/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-rev
+08:43:38 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+08:43:55 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+08:44:14 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+08:44:32 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+08:44:51 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+08:45:10 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:45:29 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+08:45:47 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+08:46:09 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=67 dsd=0 kept=False
+08:46:27 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+08:46:46 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:47:05 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:47:24 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:47:42 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+08:48:01 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+08:48:22 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=200 id=0 level=106 dsd=0 kept=False
+08:48:41 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:49:00 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+08:49:18 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=26 dsd=-2 kept=False
+08:49:37 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+08:49:56 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+08:50:15 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+08:50:34 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+08:50:52 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=15 dsd=-2 kept=False
+08:51:11 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:51:30 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+08:51:49 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:52:10 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=66 dsd=0 kept=False
+08:52:29 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+08:52:47 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:53:06 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:53:25 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:53:44 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:54:03 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+08:54:24 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=112 id=0 level=117 dsd=0 kept=False
+08:54:43 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:55:02 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+08:55:21 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+08:55:39 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+08:55:58 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+08:56:17 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+08:56:36 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+08:56:55 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+08:57:14 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+08:57:33 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+08:57:51 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+08:58:13 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=72 dsd=0 kept=False
+08:58:31 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+08:58:50 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:59:09 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+08:59:28 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+08:59:47 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:00:06 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:00:27 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=103 id=0 level=54 dsd=0 kept=False
+09:00:46 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:01:05 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+09:01:24 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+09:01:42 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+09:02:01 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+09:02:20 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+09:02:39 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+09:02:58 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=15 dsd=-2 kept=False
+09:03:17 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:03:35 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:03:54 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:04:16 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=74 dsd=0 kept=False
+09:04:34 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:04:53 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:05:12 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:05:31 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:05:50 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+09:06:09 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:06:30 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=266 id=0 level=112 dsd=0 kept=False
+09:06:48 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:07:09 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=121 dsd=0 kept=False
+09:07:27 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+09:07:46 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+09:08:04 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+09:08:22 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=26 dsd=-2 kept=False
+09:08:41 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+09:08:59 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=16 dsd=-2 kept=False
+09:09:18 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:09:36 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:09:55 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:10:16 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=71 dsd=0 kept=False
+09:10:34 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+09:10:52 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:11:10 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:11:29 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:11:47 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:12:05 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:12:24 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=445 id=0 level=17 dsd=-2 kept=False
+09:12:42 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+09:13:03 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=136 dsd=0 kept=False
+09:13:21 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+09:13:39 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+09:13:57 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+09:14:15 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+09:14:33 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+09:14:52 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=16 dsd=-2 kept=False
+09:15:10 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:15:28 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:15:46 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:16:07 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=62 dsd=0 kept=False
+09:16:25 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+09:16:44 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:17:02 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:17:20 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:17:39 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:17:57 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:18:15 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=465 id=0 level=19 dsd=-2 kept=False
+09:18:33 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:18:52 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+09:19:10 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+09:19:28 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+09:19:47 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+09:20:05 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+09:20:23 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+09:20:41 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+09:21:00 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:21:18 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:21:36 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:21:57 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=65 dsd=0 kept=False
+09:22:15 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+09:22:33 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:22:51 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:23:10 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:23:28 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:23:46 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:24:04 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=347 id=0 level=18 dsd=-2 kept=False
+09:24:23 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:24:41 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+09:25:00 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+09:25:18 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+09:25:36 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+09:25:55 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+09:26:13 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+09:26:31 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+09:26:50 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:27:08 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:27:26 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:27:47 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=62 dsd=0 kept=False
+09:28:05 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+09:28:24 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:28:42 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:29:00 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:29:19 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:29:37 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:29:56 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=149 id=0 level=16 dsd=-2 kept=False
+09:30:14 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:30:31 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+09:30:48 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+09:31:05 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+09:31:23 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+09:31:41 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+09:32:03 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+09:32:21 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+09:32:39 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:32:58 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:33:16 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+09:33:37 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=69 dsd=0 kept=False
+09:33:55 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:34:14 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:34:32 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:34:50 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:35:09 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:35:27 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:35:45 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=37 id=0 level=15 dsd=-2 kept=False
+09:36:04 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:36:24 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=124 dsd=0 kept=False
+09:36:43 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+09:37:01 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+09:37:19 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+09:37:37 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+09:37:55 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+09:38:14 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+09:38:32 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:38:50 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:39:09 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+09:39:30 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=73 dsd=0 kept=False
+09:39:47 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+09:40:05 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:40:23 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:40:42 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:41:00 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:41:18 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:41:37 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=0 id=0 level=41 dsd=-2 kept=False
+09:41:55 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:42:13 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+09:42:32 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=31 dsd=-2 kept=False
+09:42:50 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+09:43:08 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+09:43:26 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+09:43:45 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+09:44:03 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+09:44:21 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:44:39 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:44:58 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:45:17 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=64 dsd=0 kept=False
+09:45:35 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+09:45:54 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:46:12 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:46:30 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:46:48 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:47:06 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:47:25 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=97 id=0 level=15 dsd=-2 kept=False
+09:47:43 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:48:01 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+09:48:19 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+09:48:37 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+09:48:56 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+09:49:14 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+09:49:32 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+09:49:51 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+09:50:09 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:50:27 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:50:46 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:51:06 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=69 dsd=0 kept=False
+09:51:25 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:51:43 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:52:01 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:52:20 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:52:38 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:52:57 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:53:18 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=180 id=0 level=87 dsd=0 kept=False
+09:53:36 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:53:57 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=135 dsd=0 kept=False
+09:54:15 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+09:54:33 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+09:54:52 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+09:55:10 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+09:55:28 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+09:55:47 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=16 dsd=-2 kept=False
+09:56:05 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:56:24 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:56:42 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:57:03 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=64 dsd=0 kept=False
+09:57:21 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:57:39 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:57:58 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:58:16 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:58:34 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+09:58:53 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:59:14 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=188 id=0 level=109 dsd=0 kept=False
+09:59:32 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+09:59:51 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+10:00:09 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+10:00:27 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+10:00:45 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+10:01:04 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+10:01:22 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+10:01:40 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=16 dsd=-2 kept=False
+10:01:59 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:02:17 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:02:35 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:02:56 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=64 dsd=0 kept=False
+10:03:14 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:03:33 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:03:51 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:04:09 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:04:28 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:04:46 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:05:04 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=166 id=0 level=16 dsd=-2 kept=False
+10:05:23 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:05:41 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+10:06:00 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+10:06:18 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+10:06:36 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+10:06:55 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+10:07:13 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+10:07:31 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=16 dsd=-2 kept=False
+10:07:50 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:08:08 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:08:27 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:08:47 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=72 dsd=0 kept=False
+10:09:06 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+10:09:24 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:09:42 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:10:01 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:10:19 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:10:37 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:10:56 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=353 id=0 level=46 dsd=-2 kept=False
+10:11:14 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:11:32 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+10:11:51 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+10:12:09 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+10:12:27 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+10:12:46 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+10:13:04 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+10:13:22 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+10:13:41 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:13:59 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:14:17 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:14:38 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=66 dsd=0 kept=False
+10:14:56 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+10:15:15 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:15:33 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:15:51 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:16:09 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:16:27 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:16:46 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=41 id=0 level=14 dsd=-2 kept=False
+10:17:04 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:17:22 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+10:17:41 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+10:17:59 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+10:18:17 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+10:18:35 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+10:18:54 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+10:19:12 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+10:19:31 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:19:49 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:20:07 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:20:28 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=70 dsd=0 kept=False
+10:20:47 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:21:05 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:21:23 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:21:42 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:22:00 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:22:18 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:22:39 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=82 id=0 level=102 dsd=0 kept=False
+10:22:58 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:23:16 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+10:23:34 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+10:23:52 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+10:24:11 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+10:24:29 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+10:24:47 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+10:25:06 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+10:25:24 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:25:42 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:26:01 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:26:22 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=68 dsd=0 kept=False
+10:26:40 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+10:26:58 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:27:17 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:27:35 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:27:53 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:28:12 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:28:30 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=271 id=0 level=15 dsd=-2 kept=False
+10:28:48 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:29:07 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+10:29:25 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+10:29:43 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+10:30:01 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+10:30:20 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+10:30:38 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+10:30:57 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=16 dsd=-2 kept=False
+10:31:15 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:31:33 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:31:52 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:32:13 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=72 dsd=0 kept=False
+10:32:31 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+10:32:49 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:33:08 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:33:26 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:33:44 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:34:03 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:34:21 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=55 id=0 level=38 dsd=-2 kept=False
+10:34:40 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:34:58 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+10:35:16 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=26 dsd=-2 kept=False
+10:35:35 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+10:35:53 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+10:36:12 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+10:36:30 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+10:36:48 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+10:37:06 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:37:25 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:37:43 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:38:04 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=70 dsd=0 kept=False
+10:38:22 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+10:38:41 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:38:59 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:39:17 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:39:36 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:39:54 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:40:12 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=0 id=0 level=40 dsd=-2 kept=False
+10:40:31 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:40:49 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+10:41:08 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+10:41:26 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+10:41:44 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+10:42:02 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+10:42:21 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+10:42:39 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+10:42:58 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:43:16 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:43:34 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:43:55 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=71 dsd=0 kept=False
+10:44:14 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:44:32 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:44:50 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:45:09 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:45:27 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:45:45 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:46:06 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=63 id=0 level=80 dsd=0 kept=False
+10:46:25 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:46:43 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+10:47:02 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+10:47:20 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+10:47:38 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+10:47:57 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+10:48:15 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+10:48:33 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+10:48:52 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:49:10 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:49:28 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:49:49 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=70 dsd=0 kept=False
+10:50:08 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:50:26 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:50:44 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:51:03 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+10:51:21 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:51:40 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:51:58 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=47 id=0 level=30 dsd=-2 kept=False
+10:52:16 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:52:37 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=123 dsd=0 kept=False
+10:52:56 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=29 dsd=-2 kept=False
+10:53:14 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+10:53:33 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+10:53:51 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+10:54:10 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+10:54:28 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+10:54:46 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:55:03 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:55:20 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:55:42 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=70 dsd=0 kept=False
+10:56:01 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:56:21 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:56:39 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:56:57 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+10:57:16 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:57:34 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:57:55 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=187 id=0 level=96 dsd=0 kept=False
+10:58:14 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+10:58:34 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=137 dsd=0 kept=False
+10:58:53 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+10:59:11 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+10:59:29 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+10:59:48 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+11:00:06 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+11:00:25 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=16 dsd=-2 kept=False
+11:00:42 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:01:00 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:01:19 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:01:40 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=66 dsd=0 kept=False
+11:01:59 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+11:02:17 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:02:36 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:02:54 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:03:12 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:03:31 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:03:52 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=136 id=0 level=110 dsd=0 kept=False
+11:04:10 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:04:31 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=131 dsd=0 kept=False
+11:04:50 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+11:05:08 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+11:05:26 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+11:05:45 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=26 dsd=-2 kept=False
+11:06:03 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+11:06:21 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+11:06:40 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:06:58 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:07:17 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:07:38 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=53 dsd=0 kept=False
+11:07:56 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+11:08:15 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+11:08:33 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:08:52 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:09:10 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+11:09:28 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:09:50 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=311 id=0 level=127 dsd=0 kept=False
+11:10:08 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+11:10:29 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=128 dsd=0 kept=False
+11:10:47 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+11:11:06 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+11:11:24 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+11:11:42 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+11:12:01 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=26 dsd=-2 kept=False
+11:12:19 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+11:12:38 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+11:12:56 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:13:14 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:13:36 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=55 dsd=0 kept=False
+11:13:54 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+11:14:12 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:14:31 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:14:49 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:15:08 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:15:26 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+11:15:45 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=94 id=0 level=10 dsd=-2 kept=False
+11:16:03 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+11:16:22 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+11:16:40 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+11:16:59 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+11:17:17 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+11:17:35 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=26 dsd=-2 kept=False
+11:17:54 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+11:18:12 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+11:18:31 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:18:49 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:19:08 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:19:28 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=55 dsd=0 kept=False
+11:19:47 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+11:20:05 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:20:24 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:20:42 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:21:01 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+11:21:19 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:21:40 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=63 id=0 level=97 dsd=0 kept=False
+11:21:59 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:22:18 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+11:22:36 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+11:22:55 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+11:23:12 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+11:23:29 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+11:23:46 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+11:24:03 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+11:24:20 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:24:37 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:24:54 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:25:13 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=55 dsd=0 kept=False
+11:25:30 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+11:25:49 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:26:09 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:26:28 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+11:26:47 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:27:05 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:27:24 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=131 id=0 level=38 dsd=-2 kept=False
+11:27:43 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:28:04 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=124 dsd=0 kept=False
+11:28:22 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+11:28:41 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+11:29:00 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+11:29:18 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+11:29:37 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+11:29:57 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=16 dsd=-2 kept=False
+11:30:17 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+11:30:35 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:30:54 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+11:31:15 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=67 dsd=0 kept=False
+11:31:32 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+11:31:51 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:32:09 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:32:28 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:32:47 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:33:05 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:33:24 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=192 id=0 level=20 dsd=-2 kept=False
+11:33:43 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:34:01 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+11:34:20 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+11:34:39 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+11:34:57 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+11:35:16 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+11:35:35 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+11:35:53 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+11:36:12 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:36:30 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:36:49 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:37:10 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=65 dsd=0 kept=False
+11:37:29 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+11:37:47 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+11:38:06 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:38:25 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:38:43 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+11:39:02 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:39:20 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=183 id=0 level=15 dsd=-2 kept=False
+11:39:39 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:39:58 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+11:40:16 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+11:40:35 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+11:40:54 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+11:41:12 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+11:41:31 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+11:41:50 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+11:42:09 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:42:27 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:42:46 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:43:10 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=68 dsd=0 kept=False
+11:43:28 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+11:43:47 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+11:44:06 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:44:24 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:44:43 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:45:01 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:45:23 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=10 id=0 level=93 dsd=0 kept=False
+11:45:41 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:46:00 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+11:46:19 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+11:46:37 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+11:47:04 152.2190 candidate voice 152.219: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+11:47:41 152.6850 candidate 152.685: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+11:48:43 152895000 error TimeoutExpired: Command '['wsl', '-e', '/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-rev
+11:49:50 153068000 error TimeoutExpired: Command '['wsl', '-e', '/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-rev
+11:50:13 441.7440 sweep 441.744: events=-1 dmr_ev=0 id=0 level=None dsd=-2 kept=True
+11:51:15 441676000 error TimeoutExpired: Command '['wsl', '-e', '/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-rev
+11:52:22 441050000 error TimeoutExpired: Command '['wsl', '-e', '/mnt/f/Ai/OrcSDR/.claude/worktrees/dmr-digital-voice-rev
+11:52:50 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=71 dsd=0 kept=False
+11:53:08 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+11:53:27 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:53:45 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:54:04 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+11:54:23 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:54:41 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:55:00 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=118 id=0 level=19 dsd=-2 kept=False
+11:55:19 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+11:55:38 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+11:55:56 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+11:56:15 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+11:56:34 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+11:56:53 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=26 dsd=-2 kept=False
+11:57:11 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+11:57:30 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+11:57:49 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:58:08 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:58:27 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:58:48 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=69 dsd=0 kept=False
+11:59:07 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+11:59:25 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+11:59:44 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:00:03 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:00:22 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:00:41 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:01:02 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=115 id=0 level=94 dsd=0 kept=False
+12:01:21 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+12:01:40 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+12:01:58 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+12:02:17 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+12:02:36 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+12:02:55 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+12:03:14 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+12:03:32 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+12:03:51 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:04:10 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:04:29 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:04:50 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=69 dsd=0 kept=False
+12:05:09 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+12:05:28 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:05:47 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:06:06 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:06:24 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:06:43 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:07:05 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=38 id=0 level=100 dsd=0 kept=False
+12:07:24 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:07:42 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+12:08:01 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+12:08:20 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+12:08:39 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+12:08:58 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+12:09:17 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+12:09:36 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+12:09:54 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:10:13 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:10:32 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:10:53 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=68 dsd=0 kept=False
+12:11:12 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+12:11:31 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:11:50 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:12:09 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:12:27 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:12:46 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:13:08 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=309 id=0 level=137 dsd=0 kept=False
+12:13:27 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+12:13:46 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+12:14:04 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=26 dsd=-2 kept=False
+12:14:23 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+12:14:42 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+12:15:01 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+12:15:20 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+12:15:39 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+12:15:58 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+12:16:16 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:16:35 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+12:16:57 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=67 dsd=0 kept=False
+12:17:15 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+12:17:34 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:17:53 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:18:12 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:18:31 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:18:49 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:19:11 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=7 id=0 level=118 dsd=0 kept=False
+12:19:30 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:19:49 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+12:20:07 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+12:20:26 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+12:20:45 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+12:21:04 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+12:21:23 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+12:21:41 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+12:22:00 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+12:22:19 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:22:38 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:22:59 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=65 dsd=0 kept=False
+12:23:18 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+12:23:37 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:23:56 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:24:15 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:24:34 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:24:53 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:25:12 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=25 id=0 level=17 dsd=-2 kept=False
+12:25:31 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:25:50 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+12:26:09 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+12:26:28 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+12:26:47 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+12:27:06 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+12:27:25 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+12:27:44 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+12:28:03 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:28:22 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:28:41 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:29:02 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=70 dsd=0 kept=False
+12:29:21 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+12:29:41 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+12:29:59 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:30:18 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:30:37 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:30:56 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:31:18 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=270 id=0 level=110 dsd=0 kept=False
+12:31:37 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:31:56 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+12:32:16 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+12:32:34 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+12:32:53 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+12:33:12 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+12:33:31 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+12:33:50 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+12:34:09 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:34:28 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:34:47 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:35:09 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=65 dsd=0 kept=False
+12:35:28 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+12:35:46 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:36:05 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+12:36:24 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:36:43 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+12:37:02 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:37:24 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=179 id=0 level=137 dsd=0 kept=False
+12:37:44 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:38:03 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+12:38:21 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+12:38:40 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+12:38:59 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+12:39:18 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=20 dsd=-2 kept=False
+12:39:37 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+12:39:56 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+12:40:15 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:40:34 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+12:40:53 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+12:41:15 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=66 dsd=0 kept=False
+12:41:34 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+12:41:53 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:42:12 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:42:31 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:42:50 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:43:08 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:43:27 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=51 id=0 level=19 dsd=-2 kept=False
+12:43:47 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=6 dsd=-2 kept=False
+12:44:05 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+12:44:24 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+12:44:43 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=21 dsd=-2 kept=False
+12:45:02 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=18 dsd=-2 kept=False
+12:45:21 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=26 dsd=-2 kept=False
+12:45:40 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+12:45:59 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=17 dsd=-2 kept=False
+12:46:19 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:46:37 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:46:54 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:47:14 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=71 dsd=0 kept=False
+12:47:33 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+12:47:52 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:48:11 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:48:30 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:48:50 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:49:09 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:49:30 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=178 id=0 level=99 dsd=0 kept=False
+12:49:49 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+12:50:06 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=29 dsd=-2 kept=False
+12:50:25 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=28 dsd=-2 kept=False
+12:50:45 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=26 dsd=-2 kept=False
+12:51:01 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+12:51:20 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=28 dsd=-2 kept=False
+12:51:37 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=28 dsd=-2 kept=False
+12:51:57 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=22 dsd=-2 kept=False
+12:52:16 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:52:35 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:52:54 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:53:16 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=50 dsd=0 kept=False
+12:53:35 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+12:53:54 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:54:13 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:54:32 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:54:51 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+12:55:10 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+12:55:31 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=1 id=0 level=82 dsd=0 kept=False
+12:55:53 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=69 dsd=0 kept=False
+12:56:12 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=31 dsd=-2 kept=False
+12:56:31 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=30 dsd=-2 kept=False
+12:56:50 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+12:57:10 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+12:57:28 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=27 dsd=-2 kept=False
+12:57:48 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=29 dsd=-2 kept=False
+12:58:07 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=25 dsd=-2 kept=False
+12:58:26 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+12:58:45 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+12:59:04 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+12:59:23 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=48 dsd=-2 kept=False
+12:59:42 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+13:00:00 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+13:00:19 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+13:00:38 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+13:00:58 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+13:01:17 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+13:01:35 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=0 id=0 level=10 dsd=-2 kept=False
+13:01:54 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+13:02:14 152.1575 Terra T3 ctrl: events=0 dmr_ev=0 id=0 level=26 dsd=-2 kept=False
+13:02:33 152.3450 Terra Oakridge: events=0 dmr_ev=0 id=0 level=26 dsd=-2 kept=False
+13:02:52 152.1060 candidate voice 152.106: events=0 dmr_ev=0 id=0 level=23 dsd=-2 kept=False
+13:03:11 152.2190 candidate voice 152.219: events=0 dmr_ev=0 id=0 level=24 dsd=-2 kept=False
+13:03:30 152.6850 candidate 152.685: events=0 dmr_ev=0 id=0 level=27 dsd=-2 kept=False
+13:03:48 152.8950 candidate 152.895: events=0 dmr_ev=0 id=0 level=31 dsd=-2 kept=False
+13:04:07 153.0680 candidate 153.068: events=0 dmr_ev=0 id=0 level=19 dsd=-2 kept=False
+13:04:26 441.7440 sweep 441.744: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+13:04:46 441.6760 sweep 441.676: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+13:05:05 441.0500 sweep 441.050: events=0 dmr_ev=0 id=0 level=9 dsd=-2 kept=False
+13:05:26 431.9980 sweep 431.998: events=0 dmr_ev=0 id=0 level=53 dsd=0 kept=False
+13:05:45 438.0260 sweep 438.026: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+13:06:04 442.9625 PNW DMR Eugene CC1 (RRDB): events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+13:06:23 442.8875 PNW DMR Salem CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+13:06:42 442.7500 PNW DMR Colton CC1: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+13:07:01 442.8125 PNW DMR Mt Hebo CC1: events=0 dmr_ev=0 id=0 level=7 dsd=-2 kept=False
+13:07:20 444.0250 PNW DMR Buxton CC9: events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False
+13:07:39 451.9125 TRBOWest CapMax Blanton Ridge ctrl: events=0 dmr_ev=83 id=0 level=16 dsd=-2 kept=False
+13:07:58 442.4250 ham CC1 (unverified): events=0 dmr_ev=0 id=0 level=8 dsd=-2 kept=False

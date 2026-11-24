@@ -39,7 +39,7 @@ while not (D / "STOP").exists():
                 else: run(c, "RTL_DRIVER GAINMODE MANUAL", 1.5); run(c, f"RTL_DRIVER GAIN {gain}", 1.5)
                 run(c, "RTL_DV SCAN HOLD", 1.5)
                 # Decoded DMR speech is saved by the firmware itself (SETUP > SAVE DMR SPEECH, persistent; RTL_DV AUDIO SAVE ON): /orcsdr/dmr_*.wav
-                t0 = time.time(); first = None; last = {}; ui = ""
+                t0 = time.time(); first = None; last = {}; ui = ""; iqs = {}
                 while time.time() - t0 < SECS and not (D / "STOP").exists():
                     time.sleep(5); ui, r = dv(c)
                     aud = kv(find(run(c, "RTL_DV AUDIO STATUS", 1.0), "RTL_DV_AUDIO "))
@@ -49,7 +49,7 @@ while not (D / "STOP").exists():
                 rec = dict(config=os.environ.get("DV_CONFIG", "Tab5 V4L + indoor 140/440 whip"), t=time.strftime("%Y-%m-%d %H:%M:%S"), mhz=mhz, gain=gain if gain else "auto", secs=round(time.time() - t0), source="tab5_live_antenna", replay=False,
                            link=last.get("link"), loss=last.get("loss"), level_milli=last.get("level_milli"), dmr_acq=last.get("dmr_acq"), dmr_ev=last.get("dmr_ev"),
                            dmr_id=last.get("dmr_id"), events=last.get("events"), first_dmr_event_s=first, hist=(re.search(r"hist=(\d+)", ui) or [None, None])[1],
-                           iq={k: (locals().get('iqs') or {}).get(k) for k in ("triggers", "saved", "failed", "skipped_busy", "skipped_cooldown")},
+                           iq={k: iqs.get(k) for k in ("triggers", "saved", "failed", "skipped_busy", "skipped_cooldown")},
                            audio={k: aud.get(k) for k in ("phase", "groups", "speech", "qual", "prot", "unq", "calls", "nfm_blocked", "rec", "rec_saved", "rec_discarded", "rec_busy")} if (aud := locals().get('aud')) else None,
                            db=(re.search(r"db_sys=\d+ db_tg=\d+ db_units=\d+", ui) or [None])[0])
                 for p in (D / "tab5live.jsonl", ARCH / "tab5live.jsonl"):
