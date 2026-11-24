@@ -1,0 +1,858 @@
+ ██████╗  ██████╗██████╗     ███████╗███╗   ███╗███████╗
+ ██╔══██╗██╔════╝██╔══██╗    ██╔════╝████╗ ████║██╔════╝
+ ██║  ██║╚█████╗ ██║  ██║    █████╗  ██╔████╔██║█████╗  
+ ██║  ██║ ╚═══██╗██║  ██║    ██╔══╝  ██║╚██╔╝██║██╔══╝  
+ ██████╔╝██████╔╝██████╔╝    ██║     ██║ ╚═╝ ██║███████╗
+ ╚═════╝ ╚═════╝ ╚═════╝     ╚═╝     ╚═╝     ╚═╝╚══════╝
+Build Version: AW 2026-34-g69d3115 (CYGWIN)
+MBElib Version: 1.3.4
+CODEC2 Support Enabled
+Decoding AUTO P25, YSF, DSTAR, X2-TDMA, and DMR
+Logging Frame Payload to console
+Audio In Device: F:\Ai\OrcSDR\.claude\worktrees\dmr-digital-voice-review-dde01d\artifacts\digital-voice-integration\rf\hunt\cap_152345000_1795483152.wav
+17:19:31 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:31 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=35501 SRC=8524288 FLCO=0x08 FID=0x08 SVC=0x22 Group Priority 2 Call  
+ DMR PDU Payload [48][08][22][00][8A][AD][82][12][00][06][B8][33]
+17:19:31 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:31 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [AE][0A][08][80][5E][A8][E0][81][81][92][88][22]
+17:19:31 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:31 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:31 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCC
+ DMR PDU Payload [A8][00][00][35][C9][DE][BA][13][15][54][2A][80]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1   slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][40][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ Announcements (C_BCAST) Mass Registration (MassReg)
+ Reg Window: D; Aloha Mask: 00; Target: 0; 
+  SYS: 2C21; Reg: 1; Backoff: 6; BParms1: 11A0; BParms2: 000000;
+ DMR PDU Payload [A8][08][22][34][16][B0][87][00][00][00][BD][1C]
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (FEC ERR)
+ DMR PDU Payload [91][20][09][00][DF][30][87][00][4E][50][3A][39]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (FEC ERR)
+ DMR PDU Payload [99][00][21][82][D2][A0][07][00][00][21][F4][1B]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][21][00][96][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][40][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][21][02][D2][F0][07][01][00][00][BC][3A]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][A1][00][D4][B0][87][00][02][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][10][21][00][D6][A4][87][00][00][0E][B9][73]
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCH
+ DMR PDU Payload [28][08][35][81][76][B0][87][FF][FC][80][70][07]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCC
+ Announcements (C_BCAST) Adjacent Site Information (Adjacent_Site)
+ Large; Net ID: 13; Site ID: 1.12; SYS: 2C0B; Online; CC Pri: 7; AC Pri: 7; Res: F; LPCN: 3200;
+  SYS: 2C21; Reg: 1; Backoff: 6; BParms1: 2C0B; BParms2: FFFC80;
+  MBC Op: 28; RES1: 0; RES2: 0; CDEFTYPE: 0; CDEFPARMS: 03249DBEA130FB4;
+ Slot 1 - Multi Block Control Message
+  2808358176B087FFFC807007
+  A800003249DBEA130FB4A91F
+   
+ DMR PDU Payload [A8][00][00][32][49][DB][EA][13][0F][B4][A9][1F]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ Protected Control Signalling Block(s) (CRC ERR) 
+ DMR PDU Payload [D9][28][21][00][96][B0][87][00][00][08][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLC_C_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Reg Req: 1; CSC: 241; SYS: 2C21;
+ SLCO Completed Block [2B][08][6F][1D][70]
+
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B0][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCH
+ DMR PDU Payload [28][08][35][81][36][B0][87][FF][FC][80][1A][17]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLC_C_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Reg Req: 1; CSC: 243; SYS: 2C21;
+ SLCO Completed Block [2B][08][6F][3D][90]
+
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCC
+ Announcements (C_BCAST) Adjacent Site Information (Adjacent_Site)
+ Large; Net ID: 13; Site ID: 1.10; SYS: 2C09; Online; CC Pri: 7; AC Pri: 7; Res: F; LPCN: 3200;
+  SYS: 2C21; Reg: 1; Backoff: 6; BParms1: 2C09; BParms2: FFFC80;
+  MBC Op: 28; RES1: 0; RES2: 0; CDEFTYPE: 0; CDEFPARMS: 1D0C9FC6C15A708;
+ Slot 1 - Multi Block Control Message
+  2808358136B087FFFC801A17
+  A80001D0C9FC6C15A708970D
+   
+ DMR PDU Payload [A8][00][01][D0][C9][FC][6C][15][A7][08][97][0D]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [88][01][01][4C][DB][B0][87][04][00][00][20][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLC_C_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Reg Req: 1; CSC: 244; SYS: 2C21;
+ SLCO Completed Block [2B][08][6F][4C][C0]
+
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCH
+ DMR PDU Payload [28][08][35][82][56][B0][87][FF][FC][80][9D][8D]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCC
+ Slot 1 - Multi Block Control Message CRC16 ERR 3DEA - 8C22
+ Slot 1 - Multi Block Control Message
+  2808358256B087FFFC809D8D
+  A800002109FD201272883DEA
+  MBC/UDT Blocks CRC ERR  
+ DMR PDU Payload [A8][00][00][21][09][FD][20][12][72][88][3D][EA]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (FEC ERR)
+ DMR PDU Payload [C9][08][00][00][3E][00][83][80][20][06][38][23]
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | CSBK
+ Announcements (C_BCAST) Broadcast Local Time (Local_Time)
+ Date: 11.23; Sunday; UTC Time: 16:43:12;
+  SYS: 2C21; Reg: 1; Backoff: 6; BParms1: 2F7F; BParms2: 856610;
+ DMR PDU Payload [A8][00][1D][EF][F6][B0][87][85][66][10][E9][93]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCH (FEC ERR)
+ DMR PDU Payload [65][08][35][81][90][F4][47][7D][FC][A0][FF][3F]
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCC
+ Slot 1 - Multi Block Control Message CRC16 ERR D680 - 1CFA
+ Slot 1 - Multi Block Control Message
+  6508358190F4477DFCA0FF3F
+  A8004490C9F8A8000F28D680
+  MBC/UDT Header CRC ERR MBC/UDT Blocks CRC ERR  
+ DMR PDU Payload [A8][00][44][90][C9][F8][A8][00][0F][28][D6][80]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][21][00][D6][A0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLC_C_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Reg Req: 1; CSC: 253; SYS: 2C21;
+ SLCO Completed Block [2B][08][6F][DF][30]
+
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCH
+ DMR PDU Payload [28][08][35][81][16][B0][87][FF][FC][80][2F][1F]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLC_C_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Reg Req: 1; CSC: 255; SYS: 2C21;
+ SLCO Completed Block [2B][08][6F][FF][D0]
+
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCC
+ Slot 1 - Multi Block Control Message CRC16 ERR 3381 - 6875
+ Slot 1 - Multi Block Control Message
+  2808358116B087FFFC802F1F
+  A8A04035C9DEBA13157C3381
+  MBC/UDT Blocks CRC ERR  
+ DMR PDU Payload [A8][A0][40][35][C9][DE][BA][13][15][7C][33][81]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][21][00][DE][B0][87][20][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [89][80][21][40][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLC_C_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Reg Req: 1; CSC: 259; SYS: 2C21;
+ SLCO Completed Block [2B][08][70][31][20]
+
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][01][10][D7][F0][CF][01][50][C0][B8][32]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ Protected Control Signalling Block(s) (CRC ERR) 
+ DMR PDU Payload [D9][4D][61][03][C3][B1][85][0A][41][61][B4][37]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [19][00][21][00][D6][B8][A7][00][20][04][A8][30]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | MBCH (CRC ERR) 
+ DMR PDU Payload [68][08][35][81][52][B0][87][FF][FC][80][70][07]
+ SLCO CRC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ Protected Control Signalling Block(s) (CRC ERR) 
+ DMR PDU Payload [6C][50][00][CC][56][08][01][05][11][C8][F8][3F]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][40][81][00][D6][18][27][00][00][04][E2][39]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (FEC ERR)
+ DMR PDU Payload [9D][00][21][00][D6][B0][C7][00][00][00][98][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (FEC ERR)
+ DMR PDU Payload [6F][09][21][00][D6][B9][2F][B8][18][82][2C][03]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ Protected Control Signalling Block(s) (CRC ERR) 
+ DMR PDU Payload [D5][00][21][10][F2][B4][07][00][00][00][B8][32]
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][21][00][D6][30][8F][02][00][00][BC][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCH (CRC ERR) 
+ DMR PDU Payload [2A][08][75][82][56][B0][87][FF][FC][80][9D][8D]
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCC
+ DMR PDU Payload [2E][10][C0][20][09][FD][60][12][F2][98][3D][EA]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [15][10][21][00][D6][A0][C7][10][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][21][00][56][B0][15][00][00][00][F0][3A]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ Announcements (C_BCAST) General Site Parameters (Gen_Site_Params)
+ Hibernate Flag: 0; Reg Flag: 0; RES1: 0; RES2: 14; RES3: 7; BPARMS1: 520
+  SYS: 2C21; Reg: 1; Backoff: 6; BParms1: 0520; BParms2: 904007;
+ DMR PDU Payload [A8][08][38][A4][16][B0][87][90][40][07][88][44]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [93][00][21][00][D6][B0][83][14][00][00][B8][33]
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ Protected Control Signalling Block(s) (CRC ERR) 
+ DMR PDU Payload [58][02][04][02][57][B0][8C][21][10][2C][BC][32]
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCH
+ DMR PDU Payload [28][08][35][81][96][B0][87][FF][FC][80][FB][3F]
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCC
+ Slot 1 - Multi Block Control Message CRC16 ERR D197 - B711
+ Slot 1 - Multi Block Control Message
+  2808358196B087FFFC80FB3F
+  AB8041F1C9FC64140F4ED197
+  MBC/UDT Blocks CRC ERR  
+ DMR PDU Payload [AB][80][41][F1][C9][FC][64][14][0F][4E][D1][97]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLC_C_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Reg Req: 1; CSC: 276; SYS: 2C21;
+ SLCO Completed Block [2B][08][71][47][70]
+
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][20][04][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCH (CRC ERR) 
+ DMR PDU Payload [0A][0D][35][89][16][B0][87][FF][FE][80][2F][1F]
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCC
+ DMR PDU Payload [28][02][40][35][C8][C6][B8][17][1D][5C][B3][81]
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [9D][00][21][10][D6][B0][87][00][40][00][B8][33]
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (FEC ERR)
+ DMR PDU Payload [19][00][21][00][D6][38][87][02][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (FEC ERR)
+ DMR PDU Payload [19][00][21][00][D6][B8][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][68][22][7C][16][B0][87][FF][80][04][D3][88]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][23][00][D6][B8][A7][00][00][02][A8][71]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLC_C_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Reg Req: 1; CSC: 284; SYS: 2C21;
+ SLCO Completed Block [2B][08][71][C4][F0]
+
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCH (CRC ERR) 
+ DMR PDU Payload [28][08][35][81][62][B0][87][FF][F6][81][70][07]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLC_C_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Reg Req: 1; CSC: 286; SYS: 2C21;
+ SLCO Completed Block [2B][08][71][E4][10]
+
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | MBCH
+ Slot 2 - Multi Block Control Message CRC16 ERR 0 - FFFF
+ Slot 2 - Multi Block Control Message
+  EE5C53F4FED0DF7CF8A9661F
+  000000000000000000000000
+  MBC/UDT Header CRC ERR MBC/UDT Blocks CRC ERR MBC/UDT Header/Blocks Protected   (FEC ERR)
+ DMR PDU Payload [EE][5C][53][F4][FE][D0][DF][7C][F8][A9][66][1F]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCC
+ DMR PDU Payload [A8][00][04][D0][C9][FC][6C][15][A7][00][97][0D]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCH (CRC ERR) 
+ DMR PDU Payload [28][08][35][82][56][B0][8F][BD][FC][80][99][AC]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCC
+ Slot 1 - Multi Block Control Message CRC16 ERR 3DEA - 3DEA
+ Slot 1 - Multi Block Control Message
+  2808358256B08FBDFC8099AC
+  A800002009FD2012F2983DEA
+  MBC/UDT Header CRC ERR  
+ DMR PDU Payload [A8][00][00][20][09][FD][20][12][F2][98][3D][EA]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][61][00][D6][B0][07][00][00][00][A8][33]
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [AC][01][01][C0][5E][20][05][1A][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [B1][38][3E][A5][5E][B1][F4][AA][ED][0E][09][6C]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [0C][82][61][01][07][A8][C7][42][80][11][8A][11]
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][28][00][C6][B0][87][00][00][00][BA][53]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (FEC ERR)
+ DMR PDU Payload [99][10][21][01][9F][B0][87][20][00][14][B2][31]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCH
+ DMR PDU Payload [28][08][35][81][96][B0][87][FF][FC][80][FB][3F]
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [9C][98][0D][3B][F6][FC][96][2D][69][10][FD][B1]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCC
+ Slot 1 - Multi Block Control Message CRC16 ERR 6D98 - DBE7
+ Slot 1 - Multi Block Control Message
+  2808358196B087FFFC80FB3F
+  A80260D1C8F8AC140F286D98
+  MBC/UDT Blocks CRC ERR  
+ DMR PDU Payload [A8][02][60][D1][C8][F8][AC][14][0F][28][6D][98]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [98][0C][21][00][D6][B6][87][C2][00][00][B0][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][21][58][D6][B0][87][4C][03][80][38][13]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ Protected Control Signalling Block(s) (CRC ERR) 
+ DMR PDU Payload [D8][00][21][00][D6][B0][87][80][00][48][B8][32]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCH
+ DMR PDU Payload [28][08][35][81][16][B0][87][FF][FC][80][2F][1F]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLC_C_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Reg Req: 1; CSC: 301; SYS: 2C21;
+ SLCO Completed Block [2B][08][72][DD][80]
+
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [9B][00][A1][00][D6][B0][87][04][01][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (FEC ERR)
+ DMR PDU Payload [70][38][09][00][F6][18][03][92][68][30][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLC_C_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Reg Req: 1; CSC: 303; SYS: 2C21;
+ SLCO Completed Block [2B][08][72][FD][60]
+
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ Announcements (C_BCAST) Mass Registration (MassReg)
+ Reg Window: D; Aloha Mask: 00; Target: 0; 
+  SYS: 2C21; Reg: 1; Backoff: 6; BParms1: 11A0; BParms2: 000000;
+ DMR PDU Payload [A8][08][22][34][16][B0][87][00][00][00][BD][1C]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLC_C_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Reg Req: 1; CSC: 306; SYS: 2C21;
+ SLCO Completed Block [2B][08][73][28][50]
+
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][68][20][74][36][30][87][7D][80][00][C3][88]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][31][54][D6][B4][9F][29][05][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCH (CRC ERR) 
+ DMR PDU Payload [28][08][35][81][76][F2][97][FF][FC][A1][7C][26]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLC_C_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Reg Req: 1; CSC: 309; SYS: 2C21;
+ SLCO Completed Block [2B][08][73][59][00]
+
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCC
+ DMR PDU Payload [28][04][C0][B0][89][9B][E8][57][0E][B0][B9][9D]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [1B][04][A0][30][A2][BC][05][18][00][80][B9][3D]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCC
+ DMR PDU Payload [A8][00][01][D0][C9][FC][6C][15][A7][08][97][0D]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [BB][00][69][10][D7][B0][87][4C][00][10][98][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCH
+ DMR PDU Payload [28][08][35][82][56][B0][87][FF][FC][80][9D][8D]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [9D][00][29][5C][D6][B0][87][26][04][C0][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLC_C_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Reg Req: 1; CSC: 317; SYS: 2C21;
+ SLCO Completed Block [2B][08][73][DA][80]
+
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][88][70][A4][16][B0][87][90][40][87][88][44]
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [98][00][01][00][56][20][87][02][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (FEC ERR)
+ DMR PDU Payload [E7][00][25][62][80][62][47][F4][20][D4][F1][03]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCH (CRC ERR) 
+ DMR PDU Payload [08][2C][31][81][82][A0][07][FF][BE][80][FB][17]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][25][A1][A0][C7][B0][C7][0C][42][08][F8][1B]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][00][1D][EF][F6][A0][87][85][6A][98][3C][3A]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCC
+ DMR PDU Payload [A8][00][00][35][C9][DE][BA][13][15][54][23][81]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ Announcements (C_BCAST) Mass Registration (MassReg)
+ Reg Window: D; Aloha Mask: 00; Target: 0; 
+  SYS: 2C21; Reg: 1; Backoff: 6; BParms1: 11A0; BParms2: 000000;
+ DMR PDU Payload [A8][08][22][34][16][B0][87][00][00][00][BD][1C]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (FEC ERR)
+ DMR PDU Payload [19][00][61][04][D6][B4][B7][01][20][80][BC][B1]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][21][00][C2][A0][87][00][0A][01][F8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][88][21][02][F2][B0][87][00][12][00][F8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (FEC ERR)
+ DMR PDU Payload [91][00][21][00][D3][90][83][00][00][04][F8][39]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][08][01][08][D6][B5][AB][90][00][00][F6][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCC
+ DMR PDU Payload [A8][00][00][32][49][DB][CA][13][0F][B4][A9][1F]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:32 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:32 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [98][04][71][A4][C2][B0][85][36][04][00][25][91]
+17:19:33 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:33 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:33 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:33 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCC
+ DMR PDU Payload [A8][00][01][D0][C9][FC][6C][15][A7][08][97][0D]
+17:19:33 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:33 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [B9][00][21][00][D6][B0][87][00][00][01][88][33]
+17:19:33 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:33 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:33 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:33 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:33 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:33 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:33 Sync: +DMR  [slot1]  slot2  | Color Code=13 | MBCH (CRC ERR) 
+ DMR PDU Payload [2D][08][25][A2][56][F0][07][FF][BD][C0][98][80]
+17:19:33 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:33 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:33 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:33 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [B9][00][21][80][D6][B0][85][00][00][00][B8][33]
+17:19:33 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:33 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:33 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:33 Sync: +DMR  [slot1]  slot2  | Color Code=13 | IDLE 
+17:19:33 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:33 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:33 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [A8][08][38][A4][16][B0][87][90][40][07][8C][44]
+17:19:33 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:33 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (FEC ERR)
+ DMR PDU Payload [C9][00][20][00][F6][B0][87][A0][00][00][B8][33]
+17:19:33 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:33 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:33 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLC_C_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Reg Req: 1; CSC: 342; SYS: 2C21;
+ SLCO Completed Block [2B][08][75][6B][E0]
+
+17:19:33 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:33 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:33 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK
+ C_ALOHA_SYS_PARMS: Large; Net ID: 13; Site ID: 1.34; Cat: AB; SYS: 2C21;
+ Sync; Ver: 0; Active Connection; SF: 0; NR: 6; Reg Required; Backoff: 6;
+ DMR PDU Payload [99][00][21][00][D6][B0][87][00][00][00][B8][33]
+17:19:33 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:33 Sync: +DMR   slot1  [slot2] | Color Code=13 | MBCH (CRC ERR) 
+ DMR PDU Payload [28][08][25][80][96][B0][83][FD][FC][80][FF][3E]
+17:19:33 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:19:33 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:33 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:33 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [99][00][21][00][D6][B4][A7][00][00][00][B8][33]
+17:19:33 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+ SLCO CRC ERR
+17:19:33 Sync: +DMR  [slot1]  slot2  | Color Code=13 | CSBK (CRC ERR) 
+ DMR PDU Payload [BF][00][21][00][C7][B2][E7][00][00][00][B8][33]
+17:19:33 Sync: +DMR   slot1  [slot2] | Color Code=13 | IDLE 
+17:19:33 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:19:33 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+
+End of F:\Ai\OrcSDR\.claude\worktrees\dmr-digital-voice-review-dde01d\artifacts\digital-voice-integration\rf\hunt\cap_152345000_1795483152.wav
+
+Total audio errors: 0
+Total header errors: 0
+Total irrecoverable header errors: 0
+Exiting.

@@ -23,9 +23,10 @@ while not (D / "STOP").exists():
             run(c, "RTL_DV MASK 1", 1.2)
             for mhz, gain in CH:
                 if (D / "STOP").exists(): break
+                run(c, "RTL_DV SCAN STOP", 4.0); run(c, f"RTL_DV PLAN {mhz}", 1.5); run(c, "RTL_DV MASK 1", 1.2); run(c, "RTL_DV SCAN START", 5.0); time.sleep(4)
+                # The driver only accepts gain commands while the receiver is claimed, i.e. after the scan has started it.
                 if gain is None: run(c, "RTL_DRIVER GAINMODE AUTO", 1.5)
                 else: run(c, "RTL_DRIVER GAINMODE MANUAL", 1.5); run(c, f"RTL_DRIVER GAIN {gain}", 1.5)
-                run(c, "RTL_DV SCAN STOP", 4.0); run(c, f"RTL_DV PLAN {mhz}", 1.5); run(c, "RTL_DV MASK 1", 1.2); run(c, "RTL_DV SCAN START", 5.0); time.sleep(4)
                 run(c, "RTL_DV SCAN HOLD", 1.5)
                 t0 = time.time(); first = None; last = {}; ui = ""
                 while time.time() - t0 < SECS and not (D / "STOP").exists():
