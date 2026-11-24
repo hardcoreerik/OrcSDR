@@ -1,0 +1,1426 @@
+ ██████╗  ██████╗██████╗     ███████╗███╗   ███╗███████╗
+ ██╔══██╗██╔════╝██╔══██╗    ██╔════╝████╗ ████║██╔════╝
+ ██║  ██║╚█████╗ ██║  ██║    █████╗  ██╔████╔██║█████╗  
+ ██║  ██║ ╚═══██╗██║  ██║    ██╔══╝  ██║╚██╔╝██║██╔══╝  
+ ██████╔╝██████╔╝██████╔╝    ██║     ██║ ╚═╝ ██║███████╗
+ ╚═════╝ ╚═════╝ ╚═════╝     ╚═╝     ╚═╝     ╚═╝╚══════╝
+Build Version: AW 2026-34-g69d3115 (CYGWIN)
+MBElib Version: 1.3.4
+CODEC2 Support Enabled
+Decoding AUTO P25, YSF, DSTAR, X2-TDMA, and DMR
+Logging Frame Payload to console
+Audio In Device: C:\Users\hardc\AppData\Local\Temp\claude\d15739b94789b7e4\f1e7b073-d808-4cda-94b9-310faed44d50\scratchpad\c3.wav
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=05 | MBCC
+ DMR PDU Payload [1D][2B][27][63][62][FB][95][0E][3B][E0][76][50]
+17:17:50 Sync: +DMR   slot1  [slot2] | CACH/Burst FEC ERR
+17:17:50 Sync: +DMR  [slot1]  slot2  | CACH/Burst FEC ERR
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ SLCO CRC ERR
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ SLCO CRC ERR
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][A6][C0][DF][FF][FF][FE][00][38][40]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EBA6C0DFFFFFFE003840
+  2C0D002B49E9A61304EC0000
+  AC0D002B49E9A61304EC8F9C
+   
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][A6][C0][DF][FF][FF][FE][00][38][40]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EBA6C0DFFFFFFE003840
+  2C0D002B49E9A61304EC0000
+  AC0D002B49E9A61304EC8F9C
+   
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ SLCO Unknown - 14 
+ SLCO Completed Block [E1][0A][00][07][E0]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ SLCO Unknown - 14 
+ SLCO Completed Block [E1][0A][00][07][E0]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ SLCO Unknown - 14 
+ SLCO Completed Block [E1][0A][00][07][E0]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][A6][C0][DF][FF][FF][FE][00][38][40]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EBA6C0DFFFFFFE003840
+  2C0D002B49E9A61304EC0000
+  AC0D002B49E9A61304EC8F9C
+   
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][A6][C0][DF][FF][FF][FE][00][38][40]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:50 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:50 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EBA6C0DFFFFFFE003840
+  2C0D002B49E9A61304EC0000
+  AC0D002B49E9A61304EC8F9C
+   
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][A6][C0][DF][FF][FF][FE][00][38][40]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EBA6C0DFFFFFFE003840
+  2C0D002B49E9A61304EC0000
+  AC0D002B49E9A61304EC8F9C
+   
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ SLCO CRC ERR
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][A6][C0][DF][FF][FF][FE][00][38][40]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EBA6C0DFFFFFFE003840
+  2C0D002B49E9A61304EC0000
+  AC0D002B49E9A61304EC8F9C
+   
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][A6][C0][DF][FF][FF][FE][00][38][40]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EBA6C0DFFFFFFE003840
+  2C0D002B49E9A61304EC0000
+  AC0D002B49E9A61304EC8F9C
+   
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ SLCO Unknown - 14 
+ SLCO Completed Block [E1][07][00][0C][40]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ SLCO Unknown - 14 
+ SLCO Completed Block [E1][07][00][0C][40]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ SLCO Unknown - 14 
+ SLCO Completed Block [E1][07][00][0C][40]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][A6][C0][DF][FF][FF][FE][00][38][40]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EBA6C0DFFFFFFE003840
+  2C0D002B49E9A61304EC0000
+  AC0D002B49E9A61304EC8F9C
+   
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][A6][C0][DF][FF][FF][FE][00][38][40]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EBA6C0DFFFFFFE003840
+  2C0D002B49E9A61304EC0000
+  AC0D002B49E9A61304EC8F9C
+   
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][A6][C0][DF][FF][FF][FE][00][38][40]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EBA6C0DFFFFFFE003840
+  2C0D002B49E9A61304EC0000
+  AC0D002B49E9A61304EC8F9C
+   
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][A6][C0][DF][FF][FF][FE][00][38][40]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EBA6C0DFFFFFFE003840
+  2C0D002B49E9A61304EC0000
+  AC0D002B49E9A61304EC8F9C
+   
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | VLC  
+ SLOT 1 TGT=6011885 SRC=4106008 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][18][B0][0C][DD]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [SLOT1]  slot2  | Color Code=08 | VC1*
+ AMBE F801A99F8CE080 err = [0] [0] 
+ AMBE F801A99F8CE080 err = [0] [0] 
+ AMBE F801A99F8CE080 err = [0] [0] 
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [SLOT1]  slot2  | Color Code=08 | VC2 
+ AMBE F801A99F8CE080 err = [0] [0] 
+ AMBE F801A99F8CE080 err = [0] [0] 
+ AMBE F801A99F8CE080 err = [0] [0] 
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [SLOT1]  slot2  | Color Code=08 | VC3 
+ AMBE F8FF934F8C2B80 err = [0] [0] 
+ AMBE F8FF939F8CF180 err = [0] [0] 
+ AMBE F8FE034F8E6980 err = [0] [0] 
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [SLOT1]  slot2  | Color Code=08 | VC4 
+ AMBE B87E0296694C00 err = [0] [0] 
+ AMBE C82F1A3027CE00 err = [0] [1] 
+ AMBE D82CC8120B8B00 err = [0] [0] 
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:51 Sync: +DMR  [SLOT1]  slot2  | Color Code=08 | VC5 
+ AMBE F801A99F8CE080 err = [0] [0] 
+ AMBE F801A99F8CE080 err = [0] [0] 
+ AMBE F801A99F8CE080 err = [0] [0] 
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [SLOT1]  slot2  | Color Code=08 | VC6 
+ SLOT 1 TGT=6011885 SRC=4106008 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][18]
+ AMBE F801A99F8CE080 err = [0] [0] 
+ AMBE F801A99F8CE080 err = [0] [0] 
+ AMBE F801A99F8CE080 err = [0] [0] 
+ SB: 00000000000 - 000; 
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ SLCO Unknown - 14 
+ SLCO Completed Block [E1][04][00][03][D0]
+
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106008 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][18][BF][03][D2]
+17:17:51 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:51 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ SLCO Unknown - 14 
+ SLCO Completed Block [E1][04][00][03][D0]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ SLCO Unknown - 14 
+ SLCO Completed Block [E1][04][00][03][D0]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][A6][C0][DF][FF][FF][FE][00][38][40]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EBA6C0DFFFFFFE003840
+  2C0D002B49E9A61304EC0000
+  AC0D002B49E9A61304EC8F9C
+   
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][A6][C0][DF][FF][FF][FE][00][38][40]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EBA6C0DFFFFFFE003840
+  2C0D002B49E9A61304EC0000
+  AC0D002B49E9A61304EC8F9C
+   
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][A6][C0][DF][FF][FF][FE][00][38][40]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EBA6C0DFFFFFFE003840
+  2C0D002B49E9A61304EC0000
+  AC0D002B49E9A61304EC8F9C
+   
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][A6][C0][DF][FF][FF][FE][00][38][40]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EBA6C0DFFFFFFE003840
+  2C0D002B49E9A61304EC0000
+  AC0D002B49E9A61304EC8F9C
+   
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][A6][C0][DF][FF][FF][FE][00][38][40]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EBA6C0DFFFFFFE003840
+  2C0D002B49E9A61304EC0000
+  AC0D002B49E9A61304EC8F9C
+   
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ SLCO Unknown - 14 
+ SLCO Completed Block [E1][01][00][03][10]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ SLCO Unknown - 14 
+ SLCO Completed Block [E1][01][00][03][10]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ SLCO Unknown - 14 
+ SLCO Completed Block [E1][01][00][03][10]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][A6][C0][DF][FF][FF][FE][00][38][40]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EBA6C0DFFFFFFE003840
+  2C0D002B49E9A61304EC0000
+  AC0D002B49E9A61304EC8F9C
+   
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][A6][C0][DF][FF][FF][FE][00][38][40]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EBA6C0DFFFFFFE003840
+  2C0D002B49E9A61304EC0000
+  AC0D002B49E9A61304EC8F9C
+   
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][A6][C0][DF][FF][FF][FE][00][38][40]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EBA6C0DFFFFFFE003840
+  2C0D002B49E9A61304EC0000
+  AC0D002B49E9A61304EC8F9C
+   
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:52 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:52 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:53 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][A6][C0][DF][FF][FF][FE][00][38][40]
+17:17:53 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:53 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:53 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:53 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EBA6C0DFFFFFFE003840
+  2C0D002B49E9A61304EC0000
+  AC0D002B49E9A61304EC8F9C
+   
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:53 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:53 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:53 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:53 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:53 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:53 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:53 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:53 Sync: +DMR  [slot1]  slot2  | Color Code=08 | TLC  
+ SLOT 1 TGT=6011885 SRC=4106001 FLCO=0x00 FID=0x00 SVC=0x00 Group Call  
+ DMR PDU Payload [00][00][00][5B][BB][ED][3E][A7][11][C1][E6][A8]
+17:17:53 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:53 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][26][C0][9F][FF][FF][FE][00][82][D1]
+17:17:53 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:53 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][09][01][D0][C9][FC][6C][15][A7][08][00][00]
+17:17:53 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:53 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB26C09FFFFFFE0082D1
+  2C0901D0C9FC6C15A7080000
+  AC09004AC9FE881336A8CB64
+   
+ DMR PDU Payload [AC][09][00][4A][C9][FE][88][13][36][A8][CB][64]
+17:17:53 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:53 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][A6][C0][DF][FF][FF][FE][00][38][40]
+17:17:53 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:53 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0D][00][2B][49][E9][A6][13][04][EC][00][00]
+17:17:53 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:53 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EBA6C0DFFFFFFE003840
+  2C0D002B49E9A61304EC0000
+  AC0D002B49E9A61304EC8F9C
+   
+ DMR PDU Payload [AC][0D][00][2B][49][E9][A6][13][04][EC][8F][9C]
+17:17:53 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ Activity Update TS1: Group Voice; Hash: 157; TS2: Idle; Hash: 0;
+ SLCO Completed Block [18][09][D0][01][50]
+
+17:17:53 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCH
+ DMR PDU Payload [2C][08][EB][66][C0][BF][FF][FF][FE][00][57][89]
+17:17:53 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:53 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ DMR PDU Payload [2C][0B][00][32][49][DB][EA][13][0F][B4][00][00]
+17:17:53 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+ SLCO Unknown - 14 
+ SLCO Completed Block [E0][FE][00][0C][00]
+
+17:17:53 Sync: +DMR  [slot1]  slot2  | Color Code=08 | MBCC
+ Slot 1 - Multi Block Control Message
+  2C08EB66C0BFFFFFFE005789
+  2C0B003249DBEA130FB40000
+  AC0B003249DBEA130FB43A23
+   
+ DMR PDU Payload [AC][0B][00][32][49][DB][EA][13][0F][B4][3A][23]
+17:17:53 Sync: +DMR   slot1  [slot2] | Color Code=08 | IDLE 
+17:17:53 Sync: +DMR  [slot1]  slot2  
+End of C:\Users\hardc\AppData\Local\Temp\claude\d15739b94789b7e4\f1e7b073-d808-4cda-94b9-310faed44d50\scratchpad\c3.wav
+
+Total audio errors: 1
+Total header errors: 0
+Total irrecoverable header errors: 0
+Exiting.

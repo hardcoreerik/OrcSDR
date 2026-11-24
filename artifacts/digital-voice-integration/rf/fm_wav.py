@@ -7,6 +7,8 @@ z = ((raw[0::2] - 127.5) + 1j * (raw[1::2] - 127.5)) / 127.5
 n = np.arange(len(z)); z = z * np.exp(-2j * np.pi * (60e3 / 240e3) * n)
 z = signal.lfilter(signal.firwin(129, 8000, fs=240000), 1.0, z)[::5]
 d = np.angle(z[1:] * np.conj(z[:-1]))
+if len(sys.argv) > 3 and sys.argv[3] == '--remove-offset':     # carrier offset (tuner/transmitter error) would bias the slicer of a decoder with no AFC
+    amp = np.abs(z[1:]); d = d - np.mean(d[amp > np.percentile(amp, 60)])
 pcm = np.clip(d / np.pi * 32768, -32768, 32767).astype('<i2')
 w = wave.open(sys.argv[2], 'wb'); w.setnchannels(1); w.setsampwidth(2); w.setframerate(48000); w.writeframes(pcm.tobytes()); w.close()
 print(len(pcm) / 48000, "s", "rms", float(np.sqrt(np.mean(pcm.astype(np.float64) ** 2))))
