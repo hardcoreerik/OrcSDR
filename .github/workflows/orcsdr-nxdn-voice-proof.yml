@@ -1,0 +1,45 @@
+name: NXDN half-rate voice proof
+on:
+  push:
+    branches: [agents/orcsdr-nxdn-voice-proof-20261124]
+  workflow_dispatch:
+jobs:
+  proof:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build and verify gate
+        run: |
+          set -euo pipefail
+          mkdir -p /tmp/nxdn-proof
+          I=components/orcsdr_nxdn_voice/include
+          S=components/orcsdr_nxdn_voice/voice_gate.cpp
+          g++ -std=c++17 -O2 -Wall -Wextra -I"$I" "$S" tests/nxdn_voice/gate_tests.cpp -o /tmp/nxdn-proof/gate
+          /tmp/nxdn-proof/gate
+          g++ -std=c++17 -O1 -g -fsanitize=address,undefined -fno-omit-frame-pointer -fno-pie -no-pie -I"$I" "$S" tests/nxdn_voice/gate_tests.cpp -o /tmp/nxdn-proof/gate-san
+          /tmp/nxdn-proof/gate-san
+          for src in components/mbelib/mbelib.c components/mbelib/ecc.c components/mbelib/ambe3600x2450.c components/mbelib/imbe7200x4400.c components/orcsdr_vocoder/orcsdr_vocoder.c; do
+            gcc -std=gnu11 -O2 -Icomponents/mbelib -Icomponents/orcsdr_vocoder -c "$src" -o "/tmp/nxdn-proof/$(basename "$src" .c).o"
+          done
+          g++ -std=c++17 -O2 -I"$I" -Icomponents/orcsdr_vocoder -Icomponents/mbelib "$S" tools/nxdn_voice/replay.cpp /tmp/nxdn-proof/*.o -lm -o /tmp/nxdn-proof/replay
+      - name: Pinned real IQ replay
+        run: |
+          set -euo pipefail
+          python -m pip install numpy scipy
+          cd /tmp/nxdn-proof
+          BASE=https://raw.githubusercontent.com/MattCheramie/GopherTrunk/f06bfff493f47fdeb69807c8b08b2b32a253839f/internal/radio/nxdn/testdata
+          run_case() {
+            local rate="$1" file="$2" hash="$3" expected="$4"
+            curl -fsSL --retry 3 "$BASE/$file" -o "$file"
+            python "$GITHUB_WORKSPACE/tools/nxdn_voice/iq_extract.py" "$rate" "$file" frames.txt --git-blob-sha1 "$hash"
+            ./replay "$rate" frames.txt out.pcm 2> replay.log
+            tail -n 1 replay.log
+            python -c 'import sys,struct,pathlib; a=pathlib.Path("out.pcm").read_bytes(); n=int(sys.argv[1]); assert len(a)==n*320,(len(a),n); assert not a or (any(a) and max(map(abs,struct.unpack("<"+"h"*(len(a)//2),a)))<32767)' "$expected"
+            rm -f "$file" frames.txt out.pcm replay.log
+          }
+          run_case 48 nxdn48_rdch_voice_447100_16oct_48k.cs16 26aed395774380be0cf6a0ebdf391723a9335e00 16
+          run_case 96 nxdn96_rdch_voice_447100_15oct_48k.cs16 01845523c82df3a279712b577a0f0180653f981f 32
+          run_case 96 nxdn96_rcch_cc_453775_19oct_48k.cs16 c4a1bdb2fdd36cc316877982781c99bc7043462d 0
