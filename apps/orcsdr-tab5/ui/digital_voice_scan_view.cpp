@@ -168,8 +168,9 @@ void draw_counts(Paint& p, Rect r, const Snapshot& s, Density d) {
   for (int i = 0; i < items; ++i) {
     const Rect cell{r.x + i * cw, r.y, cw, r.h};
     char v[12]; std::snprintf(v, sizeof(v), "%u", vals[i]);
-    p.text(names[i], cell.x + 6, cell.y + 9, kMuted, 1, cell);
-    p.text(v, cell.x + 6, cell.y + 24, vals[i] ? cols[i] : kMuted, 2, cell);
+    // Label and value on one line at the normal text size (the old two-line, size-1 labels were too small to read).
+    p.text(names[i], cell.x + 6, cell.y + cell.h / 2, kMuted, 2, cell);
+    p.text(v, cell.x + 6 + static_cast<int>(std::strlen(names[i])) * 12 + 10, cell.y + cell.h / 2, vals[i] ? cols[i] : kMuted, 2, cell);
   }
 }
 Evidence ladder_level(const Snapshot& s) { return s.scan.stage == ScanStage::unavailable || s.scan.stage == ScanStage::ready ? Evidence::none : s.evidence; }
@@ -178,7 +179,8 @@ uint32_t sig_ladder(const Snapshot& s) {
 }
 void draw_ladder(Paint& p, Rect r, const Snapshot& s) {
   p.g.fillRect(r.x, r.y, r.w, r.h, kPanel);
-  static const char* names[5] = {"CANDIDATE", "SYNC", "INTEGRITY", "IDENTITY", "RECORDED"};
+  static const char* full[5] = {"CANDIDATE", "SYNC", "INTEGRITY", "IDENTITY", "RECORDED"};
+  static const char* brief[5] = {"CAND", "SYNC", "INTEG", "IDENT", "REC"};       // when the full word does not fit the chip at the normal text size
   const Evidence lvl = ladder_level(s);
   bool k; const bool rec = recorded_here(s, current_frequency(s, &k));
   const bool reached[5] = {lvl >= Evidence::candidate, lvl >= Evidence::sync, lvl >= Evidence::integrity_valid, lvl >= Evidence::identity_valid, rec};
@@ -188,7 +190,8 @@ void draw_ladder(Paint& p, Rect r, const Snapshot& s) {
     const Rect c{r.x + i * cw + 2, r.y + 2, cw - 6, r.h - 4};
     p.g.fillRoundRect(c.x, c.y, c.w, c.h, 5, reached[i] ? kSelected : kPanel);
     p.g.drawRoundRect(c.x, c.y, c.w, c.h, 5, reached[i] ? col[i] : kEdge);
-    p.text(names[i], c.x + 8, c.y + c.h / 2, reached[i] ? col[i] : kMuted, 1, c);
+    const bool fits = static_cast<int>(std::strlen(full[i])) * 12 + 16 <= c.w;
+    p.text(fits ? full[i] : brief[i], c.x + 8, c.y + c.h / 2, reached[i] ? col[i] : kMuted, 2, c);
   }
 }
 struct Reason { Disabled d; const char* what; };
