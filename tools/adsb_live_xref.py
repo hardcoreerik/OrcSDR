@@ -11,7 +11,7 @@ Research use only; no credentials are involved (adsb.lol needs none).
 import json, os, re, sys, time, urllib.request
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 import tab5_ft8 as t
-import tab5_ft8_shot as sh
+import tab5_png_screenshot as sh
 
 MAX_FRAME_AGE_S = 15        # a frame older than this is not compared with the live feed (the aircraft has moved on)
 MAX_LOOKUPS_PER_PASS = 10   # feed lookups block; aircraft beyond the cap are carried into the next pass, not dropped

@@ -55,7 +55,7 @@ class Drive:
         self.key = t.find_key(os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "..", "..", "..", ".orclink", "ui-doc.key")) \
             if False else t.find_key(key_file or r"F:\Ai\OrcSDR\.orclink\ui-doc.key")
         self.last = 0.0
-        self.shot_py = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tab5_ft8_shot.py")
+        self.shot_py = os.path.join(os.path.dirname(os.path.abspath(__file__)), "tab5_png_screenshot.py")
 
     def close(self):
         try: self.dev.s.close()

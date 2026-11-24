@@ -18059,7 +18059,7 @@ static constexpr orcsdr::serial_ft8_data::Hooks kSerialFt8DataHooks{
     ft8_hook_wav_write,
     ft8_hook_save_screen,
     [] {
-      // The screen as a PNG over serial: no SD card, no RTL_STOP, no retune (tools/tab5_ft8_shot.py uses this).
+      // The screen as a PNG over serial: no SD card, no RTL_STOP, no retune (tools/tab5_png_screenshot.py uses this).
       (void)orcsdr::ui_capture::stream_png(M5.Display, [](const char* data, size_t size, void*) {
         // Blocking (never drops while the host reads); a short write means the host stopped reading, so the capture aborts.
         return Serial.writeBytes(reinterpret_cast<const uint8_t*>(data), size) == size;

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Capture the Tab5 screen to a PNG over serial, without pausing the radio, the decoder or the SD card.
 
-  python tools/tab5_ft8_shot.py --port COM17 [--tab HEARD] name        -> name.png
+  python tools/tab5_png_screenshot.py --port COM17 [--tab HEARD] name        -> name.png
 
 Uses the firmware's `FT8 SNAP` (M5GFX's PNG encoder; the PNG is streamed as base64 lines and checked against a SHA-256). Nothing is stopped
 or retuned. Older firmware without FT8 SNAP can still be captured with --sd, which saves a BMP on the SD card, STOPS THE RADIO to copy it,

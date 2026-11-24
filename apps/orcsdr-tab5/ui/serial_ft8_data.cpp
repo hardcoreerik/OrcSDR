@@ -149,7 +149,7 @@ bool handle(const char* verb, const char* rest, bool authenticated, const Hooks&
   }
 
   if (strcmp(verb, "SNAP") == 0) {
-    // The screen as a PNG over serial: no SD card, no RTL_STOP, no retune (tools/tab5_ft8_shot.py uses this).
+    // The screen as a PNG over serial: no SD card, no RTL_STOP, no retune (tools/tab5_png_screenshot.py uses this).
     hooks.stream_screen_png();
     return true;
   }

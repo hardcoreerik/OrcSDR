@@ -137,7 +137,7 @@ class Dev:
             pass
         if os.path.exists(path):
             os.remove(path)                     # a stale screenshot from an earlier run must never pass for this capture
-        cmd = [sys.executable, os.path.join(HERE, "tab5_ft8_shot.py"), "--port", self.port]
+        cmd = [sys.executable, os.path.join(HERE, "tab5_png_screenshot.py"), "--port", self.port]
         if self.keyfile:
             cmd += ["--key", self.keyfile]
         res = subprocess.run(cmd + [path[:-4]], capture_output=True, text=True, timeout=180)

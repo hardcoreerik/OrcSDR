@@ -185,7 +185,7 @@ def main():
         report['repository_head'] = subprocess.check_output(['git', '-C', str(Path(__file__).resolve().parent),
                                                             'rev-parse', 'HEAD'], text=True).strip()
         import tab5_ft8 as control
-        from tab5_ft8_shot import snap_png
+        from tab5_png_screenshot import snap_png
         key = control.find_key(args.key)
         for port in (args.tab5_port, args.dial_port):
             device = control.Tab5(port)

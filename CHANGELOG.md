@@ -2,6 +2,10 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Screenshot tool renamed — 2026-11-23
+
+- **`tools/tab5_ft8_shot.py` is now `tools/tab5_png_screenshot.py`.** It was never FT8-specific: the firmware's `FT8 SNAP` streams whatever screen is showing as a PNG, with no documentation mode, no SD card and no radio stop. Callers, comments and current docs were updated; older dated notes in `docs/ft8/CHANGELOG.md` and a validation README keep the old name as history. Behaviour unchanged.
+
 ## Unreleased — Digital Voice (DMR / NXDN) dashboard, scanner, discovery database — 2026-11-23
 
 - **Digital Voice dashboard and receive chain (`digital_voice_app`, `dv_radio`, `dv_scanner`, `dv_channelizer`):** six views (Scan, Live, Last Heard, Systems, Signal, Setup) fed by a read-only IQ attachment on the existing receiver owner (no second RTL-SDR owner). DMR (D1) and NXDN48/96 decoders run on a core-0 worker behind a bounded ring; the DSP task only channelizes 240 -> 48 kS/s. Serial family `RTL_DV` (STATUS, PLAN, SCAN, MASK, REPLAY, DB). Only integrity- or identity-validated events reach the screen; unknown stays unknown.

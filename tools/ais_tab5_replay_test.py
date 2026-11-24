@@ -78,7 +78,7 @@ class Tab5Session:
 
     def shot(self, path):
         self.close()
-        subprocess.run([sys.executable, os.path.join(HERE, "tab5_ft8_shot.py"), "--port", self.port, path[:-4]],
+        subprocess.run([sys.executable, os.path.join(HERE, "tab5_png_screenshot.py"), "--port", self.port, path[:-4]],
                        capture_output=True, text=True, timeout=180)
         self.reopen()
         return os.path.exists(path)
