@@ -1,0 +1,33 @@
+name: Vocoder voice proof (isolated)
+on:
+  push:
+    branches: ["agents/orcsdr-vocoder-voice-proof-20261124"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  speech:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: python -m pip install numpy scipy
+      - name: Build pinned AMBE+2 backend
+        run: |
+          mkdir -p output
+          gcc -O2 -Wall -Wextra -Icomponents/mbelib -Icomponents/orcsdr_vocoder components/mbelib/{mbelib,ambe3600x2450,ecc}.c components/orcsdr_vocoder/orcsdr_vocoder.c tools/orcsdr_vocoder/voice_cli.c -lm -o output/voice_cli
+          gcc -O2 -fPIC -shared -Icomponents/mbelib -Icomponents/orcsdr_vocoder components/mbelib/{mbelib,ambe3600x2450,ecc}.c components/orcsdr_vocoder/orcsdr_vocoder.c -lm -o output/liborcsdr_vocoder.so
+      - name: Decode real IQ (strict clear-LC)
+        run: |
+          set -o pipefail
+          python tools/orcsdr_vocoder/replay.py tests/digital_voice_corpus/iq output output/voice_cli 2>&1 | tee output/voice-proof.log
+          test -s output/terra_152p1575_call_cc13.wav
+          test ! -e output/terra_152p1575_control_only.wav
+          tar -czf output/vocoder-source.tar.gz components/mbelib components/orcsdr_vocoder tools/orcsdr_vocoder
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: orcsdr-vocoder-voice-proof
+          path: output/
