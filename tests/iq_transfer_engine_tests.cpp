@@ -20,6 +20,7 @@ std::vector<uint8_t> g_bin_out;
 std::vector<uint8_t> g_capture;
 bool g_capture_ok = true;
 bool g_null_data = false;
+uint32_t g_generation = 1;
 
 void reset_state() {
   g_text_out.clear();
@@ -27,6 +28,7 @@ void reset_state() {
   g_capture.clear();
   g_capture_ok = true;
   g_null_data = false;
+  g_generation = 1;
   orcsdr::test_sha::fail_start = false;
   orcsdr::test_sha::fail_update = false;
   orcsdr::test_sha::fail_finish = false;
@@ -54,6 +56,7 @@ const orcsdr::iq_transfer_engine::Hooks kHooks{
     },
     []() -> size_t { return g_capture.size(); },
     []() -> const uint8_t* { return g_null_data ? nullptr : g_capture.data(); },
+    []() -> uint32_t { return g_generation; },
     []() -> size_t { return 4 * 1024 * 1024; },
     []() -> uint32_t { return 250000; },
     []() -> bool { return false; },
@@ -130,6 +133,20 @@ int main() {
   get_chunk(kHooks);
   CHECK(!get_active());
   CHECK(g_text_out == "RTL_IQ_GET_ERROR sha_update\n");
+
+  // 7. Capture replaced with same byte count mid-download aborts cleanly on generation mismatch.
+  reset_state();
+  g_capture.assign(orcsdr::sd_transfer::kGetChunkBytes * 2, 0x24);
+  get_begin(kHooks);
+  CHECK(get_active());
+  get_chunk(kHooks);
+  CHECK(get_active());
+  ++g_generation;
+  std::fill(g_capture.begin(), g_capture.end(), 0x99);
+  g_text_out.clear();
+  get_chunk(kHooks);
+  CHECK(!get_active());
+  CHECK(g_text_out == "RTL_IQ_GET_ERROR capture_changed\n");
 
   if (failures == 0) std::printf("iq_transfer_engine: all checks passed\n");
   return failures == 0 ? 0 : 1;

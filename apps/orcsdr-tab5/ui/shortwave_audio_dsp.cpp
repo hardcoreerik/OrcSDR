@@ -272,4 +272,70 @@ void process(int16_t* samples, size_t count, float rf_dbfs) {
   }
 }
 
+#if ORCSDR_DSP_AB
+State snapshot_state() {
+  State s{};
+  s.squelch_open = g_squelch_open.load(std::memory_order_relaxed);
+  s.notch_active = g_notch_active.load(std::memory_order_relaxed);
+  s.notch_hz = g_notch_hz.load(std::memory_order_relaxed);
+  s.input_rms_dbfs = g_input_rms_dbfs.load(std::memory_order_relaxed);
+  s.last_rf_dbfs = g_last_rf_dbfs.load(std::memory_order_relaxed);
+  s.reset_requested = g_reset_requested.load(std::memory_order_relaxed);
+  s.notch_reset_requested = g_notch_reset_requested.load(std::memory_order_relaxed);
+  s.auto_floor_reset_requested =
+      g_auto_floor_reset_requested.load(std::memory_order_relaxed);
+  s.low = g_low;
+  s.voice = g_voice;
+  s.env = g_env;
+  s.noise = g_noise;
+  s.gain = g_gain;
+  s.goertzel1 = g_goertzel1;
+  s.goertzel2 = g_goertzel2;
+  s.tone_samples = g_tone_samples;
+  s.candidate_bin = g_candidate_bin;
+  s.candidate_frames = g_candidate_frames;
+  s.missed_frames = g_missed_frames;
+  s.notch_x1 = g_notch_x1;
+  s.notch_x2 = g_notch_x2;
+  s.notch_y1 = g_notch_y1;
+  s.notch_y2 = g_notch_y2;
+  s.notch_cosine = g_notch_cosine;
+  s.gate = g_gate;
+  s.auto_floor = g_auto_floor;
+  s.squelch_hang = g_squelch_hang;
+  return s;
+}
+
+void restore_state(const State& s) {
+  g_squelch_open.store(s.squelch_open, std::memory_order_relaxed);
+  g_notch_active.store(s.notch_active, std::memory_order_relaxed);
+  g_notch_hz.store(s.notch_hz, std::memory_order_relaxed);
+  g_input_rms_dbfs.store(s.input_rms_dbfs, std::memory_order_relaxed);
+  g_last_rf_dbfs.store(s.last_rf_dbfs, std::memory_order_relaxed);
+  g_reset_requested.store(s.reset_requested, std::memory_order_relaxed);
+  g_notch_reset_requested.store(s.notch_reset_requested, std::memory_order_relaxed);
+  g_auto_floor_reset_requested.store(s.auto_floor_reset_requested,
+                                     std::memory_order_relaxed);
+  g_low = s.low;
+  g_voice = s.voice;
+  g_env = s.env;
+  g_noise = s.noise;
+  g_gain = s.gain;
+  g_goertzel1 = s.goertzel1;
+  g_goertzel2 = s.goertzel2;
+  g_tone_samples = s.tone_samples;
+  g_candidate_bin = s.candidate_bin;
+  g_candidate_frames = s.candidate_frames;
+  g_missed_frames = s.missed_frames;
+  g_notch_x1 = s.notch_x1;
+  g_notch_x2 = s.notch_x2;
+  g_notch_y1 = s.notch_y1;
+  g_notch_y2 = s.notch_y2;
+  g_notch_cosine = s.notch_cosine;
+  g_gate = s.gate;
+  g_auto_floor = s.auto_floor;
+  g_squelch_hang = s.squelch_hang;
+}
+#endif
+
 }  // namespace orcsdr::shortwave::audio_dsp
