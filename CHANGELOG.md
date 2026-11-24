@@ -2,6 +2,15 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Digital Voice (DMR / NXDN) dashboard, scanner, discovery database — 2026-11-23
+
+- **Digital Voice dashboard and receive chain (`digital_voice_app`, `dv_radio`, `dv_scanner`, `dv_channelizer`):** six views (Scan, Live, Last Heard, Systems, Signal, Setup) fed by a read-only IQ attachment on the existing receiver owner (no second RTL-SDR owner). DMR (D1) and NXDN48/96 decoders run on a core-0 worker behind a bounded ring; the DSP task only channelizes 240 -> 48 kS/s. Serial family `RTL_DV` (STATUS, PLAN, SCAN, MASK, REPLAY, DB). Only integrity- or identity-validated events reach the screen; unknown stays unknown.
+- **Persistent discovery database (`dv_discovery`):** systems (protocol + frequency + colour code or RAN), talkgroups and unit IDs from identity-validated events, saved to `/orcsdr/dv_discovery.txt` through the shared SD writer and reloaded on open. Recorded-IQ replays use a RAM-only table unless the owner opts in (`RTL_DV DB LEARN_REPLAY ON`).
+- **Real DMR verified:** three live group calls on Fleetnet Terra (152.1575, 152.685 and 153.068 MHz, TG 6011885) captured with the PC dongle and confirmed by DSD-FME. Preserved as a permanent corpus (`tests/digital_voice_corpus`, ctest `digital_voice_corpus`) with raw IQ, parameters, frozen expectations and the DSD-FME logs.
+- **Benchmarks (`artifacts/digital-voice-integration/benchmarks`):** CPU, memory, acquisition, weak-signal and false-identification results; 0 false events in 7,200 s of noise.
+- **Not done:** the Tab5's own antenna does not decode the Terra channels (about 1 dB above noise); it frame-locks DMR live only on the strong 451.9125 MHz Capacity Max control channel, whose messages fail their integrity check in both our decoder and DSD-FME. NXDN yields RAN only (no unit IDs). First dashboard open after a boot sometimes closes.
+- **Verified:** host suites (live chain, corpus, discovery database, decoded-field rendering, dashboard contracts) in Release and ASan/UBSan; firmware built with ESP-IDF 5.5.4 and flashed to COM17 (app only, settings kept), replay results matching the host exactly. Not tested on a second Tab5. Branch `local/digital-voice-integration`; not merged.
+
 ## Unreleased — Home PPA review fixes (CodeRabbit, PR 262) — 2026-11-22
 
 - **`RTL_DISPLAY_BENCH` no longer times failed scrolls as PPA scrolls.** A `ppa_scroll_up` that returns an error did not scroll; any failure now replaces the `ppa_scroll` result with `RTL_DISPLAY_BENCH_ERROR method=ppa_scroll failed=N ...`.
