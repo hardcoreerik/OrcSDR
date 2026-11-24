@@ -41,10 +41,10 @@ int main(){
   assert(ui.touch(65,675,s,false).kind==ActionKind::none);
   assert(ui.state().view==View::explore);
   assert(ui.update(display,scan,false));
-  assert(ui.touch(60,577,scan,false).kind==ActionKind::scan); // returned, no IO performed
+  assert(ui.touch(60,550,scan,false).kind==ActionKind::scan); // returned, no IO performed
   orcsdr::screens::g_owns=false;
   assert(!ui.update(display,scan,false));
-  assert(ui.touch(60,577,scan,false).kind==ActionKind::none);
+  assert(ui.touch(60,550,scan,false).kind==ActionKind::none);
   ui.leave();assert(!ui.active());
   std::puts("PASS ScreenController owner, shared header, overlay, navigation and scan dispatch");
 }

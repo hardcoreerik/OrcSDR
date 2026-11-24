@@ -1,4 +1,5 @@
 #include "digital_voice_dashboard.hpp"
+#include "digital_voice_dashboard_paint.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -6,56 +7,10 @@
 namespace orcsdr::digital_voice_ui {
 namespace {
 using layout::Rect;
-// Existing OrcSDR RGB565 palette, taken from main's AIS/Dead Air source.
-constexpr uint16_t kBg=TFT_BLACK, kPanel=0x0841, kEdge=0x2945, kCyan=0x2e7f,
-                   kGreen=0x6fe8, kMuted=0x8c71, kAmber=0xfd20, kRed=0xf800,
-                   kWhite=TFT_WHITE, kSelected=0x1264;
+using namespace paint;
 constexpr const char* kTabs[]={"SCAN","LIVE","LAST HEARD","SYSTEMS","SIGNAL","SETUP"};
 static_assert(sizeof(kTabs)/sizeof(kTabs[0]) == layout::kTabCount);
 
-struct Paint {
-  lgfx::LovyanGFX& g;
-  void text(const char* s, int x, int y, uint16_t color=kWhite, int size=2,
-            Rect clip={20,104,1240,616}) {
-    if (!s) return;
-    g.setClipRect(clip.x,clip.y,clip.w,clip.h);
-    g.setFont(nullptr);
-    g.setTextSize(size);
-    g.setTextDatum(middle_left);
-    g.setTextColor(color);
-    g.drawString(s,x,y);
-    g.clearClipRect();
-  }
-  void card(Rect r) {
-    g.fillRoundRect(r.x,r.y,r.w,r.h,9,kPanel);
-    g.drawRoundRect(r.x,r.y,r.w,r.h,9,kEdge);
-  }
-  void label(const char* s,int x,int y,Rect c={20,104,1240,616}) {
-    text(s,x,y,kMuted,2,c);
-  }
-  void title(const char* s,int x,int y,Rect c={20,104,1240,616}) {
-    text(s,x,y,kCyan,2,c);
-  }
-  void hr(int x,int y,int width) {g.drawFastHLine(x,y,width,kEdge);}
-  void button(const char* label,Rect r,bool enabled,bool selected=false) {
-    g.fillRoundRect(r.x,r.y,r.w,r.h,7,selected?kSelected:kPanel);
-    g.drawRoundRect(r.x,r.y,r.w,r.h,7,!enabled?kEdge:selected?kGreen:kCyan);
-    text(label,r.x+10,r.y+r.h/2,!enabled?kMuted:selected?kGreen:kWhite,2,r);
-  }
-  void fact(const char* key,const char* value,int x,int y,Rect clip,uint16_t value_color=kWhite) {
-    text(key,x,y,kMuted,2,clip);
-    text(value,x+190,y,value_color,2,clip);
-  }
-};
-
-void freq(char (&out)[32], const Snapshot& s) {
-  const bool current_scan=s.can_scan && s.scan.current_frequency_valid;
-  if (!s.has_frequency && !current_scan) {std::snprintf(out,sizeof(out),"FREQUENCY UNKNOWN");return;}
-  const uint32_t hz=s.has_frequency?s.frequency_hz:s.scan.current_frequency_hz;
-  std::snprintf(out,sizeof(out),"%lu.%06lu MHz",
-    static_cast<unsigned long>(hz/1000000u),
-    static_cast<unsigned long>(hz%1000000u));
-}
 void number(char (&out)[36],uint32_t n) {std::snprintf(out,sizeof(out),"%lu",static_cast<unsigned long>(n));}
 // The protocol's area code, shown with the same widget for every protocol: DMR colour code, NXDN RAN (RAN 0 is valid).
 void area_text(char (&out)[16],Protocol pr,uint8_t cc,bool ccv,uint8_t ran,bool ranv) {
@@ -127,99 +82,6 @@ void nav(Paint& p,const UiState& state) {
   p.g.fillRect(0,642,1280,78,kBg);
   for(int i=0;i<layout::kTabCount;++i)
     p.button(kTabs[i],layout::tab(i),true,state.view==static_cast<View>(i));
-}
-bool scan_enabled(const Snapshot& s) {
-  return s.can_scan && (s.receiver==Receiver::ready || s.receiver==Receiver::receiving);
-}
-void scan_hits(Paint& p,const Snapshot& s,const UiState& u,Rect b) {
-  p.title("DETECTED / RECENT SIGNALS",b.x+18,b.y+32,b);
-  if (!s.scan_hit_count) {
-    p.text("NO VERIFIED SCAN HITS",b.x+18,b.y+90,kMuted,2,b);
-  }
-  const unsigned count=std::min<unsigned>(s.scan_hit_count,kScanHits);
-  for(unsigned i=0;i<count;++i) {
-    const auto& h=s.scan_hits[i];
-    const int yy=b.y+87+static_cast<int>(i)*72;
-    if(i==u.selected_scan_hit)p.g.fillRoundRect(b.x+10,yy-15,b.w-20,65,4,kSelected);
-    p.text(protocol_name(h.protocol),b.x+18,yy,
-           h.evidence>=Evidence::integrity_valid?kGreen:kAmber,2,b);
-    char area[16];area_text(area,h.protocol,h.colour_code,h.colour_code_valid,h.ran,h.ran_valid);
-    if(area[0])p.text(area,b.x+200,yy,kWhite,2,b);
-    char f[42];
-    if(h.has_frequency)
-      std::snprintf(f,sizeof(f),"%lu.%06lu MHz",static_cast<unsigned long>(h.frequency_hz/1000000),
-                    static_cast<unsigned long>(h.frequency_hz%1000000));
-    else std::snprintf(f,sizeof(f),"FREQUENCY UNKNOWN");
-    p.label(f,b.x+18,yy+27,b);
-    p.hr(b.x+18,yy+46,b.w-36);
-  }
-  p.label("Candidate != decoded identity",b.x+18,b.y+421,b);
-}
-void explore_discovery(Paint& p,const Snapshot& s,const UiState& u) {
-  const auto a=layout::kBasicHero,b=layout::kBasicFacts;
-  p.card(a);p.card(b);
-  p.title("SCAN / DISCOVER",a.x+18,a.y+32,a);
-  char f[32];freq(f,s);
-  p.text(f,a.x+24,a.y+108,s.has_frequency?kWhite:kAmber,3,a);
-  p.text(receiver_name(s.receiver),a.x+24,a.y+166,
-         s.receiver==Receiver::error?kRed:kMuted,2,a);
-  p.hr(a.x+20,a.y+203,a.w-40);
-  p.text(evidence_name(s.evidence),a.x+24,a.y+256,
-         s.evidence==Evidence::identity_valid?kGreen:s.evidence==Evidence::none?kMuted:kAmber,3,a);
-  p.label(s.evidence==Evidence::identity_valid?"A valid protocol event was received":"A signal is not an identity until validated",a.x+24,a.y+316,a);
-  const bool scan_ok=scan_enabled(s);
-  p.text(scan_ok?scan_phase_name(s.scan.phase):"DIGITAL VOICE SCANNER NOT CONNECTED",
-         a.x+24,a.y+382,scan_ok?kCyan:kAmber,2,a);
-  if(scan_ok && s.scan.progress_valid && s.scan.planned) {
-    char progress[52];
-    std::snprintf(progress,sizeof(progress),"CHANNEL %u / %u  VERIFIED %lu",
-                  static_cast<unsigned>(s.scan.visited),
-                  static_cast<unsigned>(s.scan.planned),
-                  static_cast<unsigned long>(s.scan.validated_hits));
-    p.label(progress,a.x+395,a.y+382,a);
-  }
-  p.button(scan_ok && s.scan.phase==ScanPhase::scanning?"STOP SCAN":"START SCAN",
-           {a.x+24,a.y+419,170,44},scan_ok);
-  p.button(s.scan_on_hold?"RESUME":"HOLD",{a.x+202,a.y+419,132,44},scan_ok&&s.can_hold);
-  p.button("SKIP",{a.x+342,a.y+419,106,44},scan_ok&&s.can_skip);
-  p.button("SAVE",{a.x+456,a.y+419,112,44},s.can_save_channel);
-
-  scan_hits(p,s,u,b);
-}
-void explore_analysis(Paint& p,const Snapshot& s) {
-  const auto a=layout::kAdvancedMain,b=layout::kAdvancedFacts;
-  p.card(a);p.card(b);
-  p.title("SCAN / ACQUISITION",a.x+18,a.y+32,a);
-  char f[32];freq(f,s);
-  p.text(f,a.x+18,a.y+90,s.has_frequency?kWhite:kAmber,3,a);
-  p.fact("RECEIVER",receiver_name(s.receiver),a.x+18,a.y+153,a);
-  p.fact("DETECTION",evidence_name(s.evidence),a.x+18,a.y+197,a,
-      s.evidence==Evidence::identity_valid?kGreen:kAmber);
-  p.fact("PROTOCOL",protocol_name(s.protocol),a.x+18,a.y+241,a);
-  p.hr(a.x+18,a.y+282,a.w-36);
-  p.fact("SCANNER",scan_enabled(s)?scan_phase_name(s.scan.phase):"NOT CONNECTED",a.x+18,a.y+328,a);
-  if (s.scan.progress_valid && s.scan.planned) {
-    char progress[48];std::snprintf(progress,sizeof(progress),"%u / %u  HITS %lu",
-        static_cast<unsigned>(s.scan.visited),static_cast<unsigned>(s.scan.planned),
-        static_cast<unsigned long>(s.scan.validated_hits));
-    p.label(progress,a.x+18,a.y+375,a);
-  }
-  const bool ok=scan_enabled(s);
-  p.button(ok&&s.scan.phase==ScanPhase::scanning?"STOP SCAN":"START SCAN",
-           {a.x+18,a.y+396,170,44},ok);
-  p.button(s.scan_on_hold?"RESUME":"HOLD",{a.x+196,a.y+396,122,44},ok&&s.can_hold);
-  p.button("SKIP",{a.x+326,a.y+396,98,44},ok&&s.can_skip);
-  p.button("SAVE",{a.x+432,a.y+396,110,44},s.can_save_channel);
-
-  p.title("EVIDENCE / SERVICE STATUS",b.x+18,b.y+32,b);
-  p.text(integration_name(s.protocol),b.x+18,b.y+78,kAmber,2,b);
-  p.fact("ORIGIN",origin_name(s.origin),b.x+18,b.y+133,b,s.origin==Origin::live?kWhite:kAmber);
-  p.fact("CRC / FEC",s.diagnostics_valid?"CHECK METRICS BELOW":"NOT MEASURED",b.x+18,b.y+185,b);
-  p.fact("VOICE",audio_name(s.audio),b.x+18,b.y+237,b,kAmber);
-  p.hr(b.x+18,b.y+281,b.w-36);
-  p.label("Integrity-checked metadata only",b.x+18,b.y+324,b);
-  p.label("Unsupported decoder remains unavailable",b.x+18,b.y+368,b);
-  p.label("RECEIVE ONLY  |  PROVENANCE FIRST",b.x+18,b.y+419,b);
 }
 void live_discovery(Paint& p,const Snapshot& s) {
   const auto a=layout::kBasicHero,b=layout::kBasicFacts;
@@ -306,7 +168,7 @@ void last_heard(Paint& p,const Snapshot& s,Density mode,uint8_t offset,uint8_t s
     p.fact("EVIDENCE",evidence_name(h.evidence),b.x+18,b.y+301,b);
     char area[16];area_text(area,h.protocol,h.colour_code,h.colour_code_valid,h.ran,h.ran_valid);
     if(area[0]&&h.evidence>=Evidence::integrity_valid) {
-      char slot[24];
+      char slot[48];
       if(h.timeslot_valid&&(h.timeslot==1||h.timeslot==2))
         std::snprintf(slot,sizeof(slot),"%s  TS%u  %s",area,static_cast<unsigned>(h.timeslot),h.has_destination?(h.group_call?"GROUP":"PRIVATE"):"");
       else std::snprintf(slot,sizeof(slot),"%s",area);
@@ -337,8 +199,9 @@ void systems(Paint& p,const Snapshot& s,const UiState& u) {
     const bool verified=sys.evidence>=Evidence::integrity_valid;
     char area[16];area_text(area,sys.protocol,sys.colour_code,sys.colour_code_valid,sys.ran,sys.ran_valid);
     if(area[0]&&verified)p.text(area,a.x+240,yy,kWhite,2,a);
-    else p.label(sys.topology_valid&&verified?nxdn_topology_name(sys.topology):"SYSTEM TYPE UNKNOWN",a.x+240,yy,a);
-    char val[96];
+    if(sys.topology_valid&&verified)p.label(nxdn_topology_name(sys.topology),a.x+(area[0]&&verified?400:240),yy,a);
+    else if(!(area[0]&&verified))p.label("SYSTEM TYPE UNKNOWN",a.x+240,yy,a);
+    char val[160];
     if(sys.has_frequency)std::snprintf(val,sizeof(val),"%lu.%06lu MHz  TG %u  UNITS %u  HEARD %lu%s%s",
         static_cast<unsigned long>(sys.frequency_hz/1000000),static_cast<unsigned long>(sys.frequency_hz%1000000),
         static_cast<unsigned>(sys.talkgroup_count),static_cast<unsigned>(sys.subscriber_count),
@@ -435,10 +298,7 @@ void setup(Paint& p,const Snapshot& s,Density mode) {
 }
 void page(Paint& p,const Snapshot& s,const UiState& u) {
   switch(u.view) {
-    case View::explore:
-      if(u.density==Density::discovery_first)explore_discovery(p,s,u);
-      else explore_analysis(p,s);
-      break;
+    case View::explore:break;   // the SCAN view is retained widgets (ScanView), never repainted as a page
     case View::live:
       if(u.density==Density::discovery_first)live_discovery(p,s);
       else live_analysis(p,s);
@@ -465,10 +325,17 @@ bool Dashboard::present(lgfx::LovyanGFX& display,const Snapshot& s,
     // Screen owner already painted shared audio/header chrome. Never touch y < 104.
     display.fillRect(0,104,1280,616,kBg);
     nav(p,state);
+    scan_.reset();
   }
-  // Context strip and content-card regions only; no full-screen clear on data updates.
-  context(p,s,state.density);
-  page(p,s,state);
+  // The context strip shows only the origin and the density: repaint it when one of those changed, not on every revision.
+  const uint32_t ctx=static_cast<uint32_t>(s.origin)|(static_cast<uint32_t>(state.density)<<8)|0x10000u;
+  if(entry||ctx!=ctx_sig_) {context(p,s,state.density);ctx_sig_=ctx;}
+  if(state.view==View::explore) {
+    if(entry)scan_.enter(display,s,state);
+    else scan_.update(display,s,state);          // changed widgets only, each inside its own rectangle
+  } else {
+    page(p,s,state);                              // other pages: whole-page repaint on a changed revision (see docs)
+  }
   last_state_=state;
   old_=s;
   ready_=true;
@@ -479,27 +346,10 @@ Action Dashboard::handle_touch(int32_t x,int32_t y,const Snapshot& s,
   if (!ready_)return {};
   for (int i=0;i<layout::kTabCount;++i)
     if(layout::tab(i).contains(x,y))return {ActionKind::switch_view,static_cast<uint8_t>(i)};
-  if(state.view==View::explore || state.view==View::systems) {
+  if(state.view==View::explore)return scan_.touch(x,y,s,state);
+  if(state.view==View::systems) {
     const auto b=state.density==Density::discovery_first?layout::kBasicFacts:layout::kAdvancedFacts;
-    if(state.view==View::explore && state.density==Density::analysis_first) {
-      const auto a=layout::kAdvancedMain;
-      if(Rect{a.x+18,a.y+396,170,44}.contains(x,y) && scan_enabled(s))return {ActionKind::scan};
-      if(Rect{a.x+196,a.y+396,122,44}.contains(x,y) && scan_enabled(s) && s.can_hold)return {ActionKind::toggle_hold};
-      if(Rect{a.x+326,a.y+396,98,44}.contains(x,y) && scan_enabled(s) && s.can_skip)return {ActionKind::skip_frequency};
-      if(Rect{a.x+432,a.y+396,110,44}.contains(x,y) && s.can_save_channel)return {ActionKind::save_channel};
-    }
-    if(state.view==View::explore && state.density==Density::discovery_first) {
-      if(Rect{44,577,170,44}.contains(x,y) && scan_enabled(s))return {ActionKind::scan};
-      if(Rect{222,577,132,44}.contains(x,y) && scan_enabled(s) && s.can_hold)return {ActionKind::toggle_hold};
-      if(Rect{362,577,106,44}.contains(x,y) && scan_enabled(s) && s.can_skip)return {ActionKind::skip_frequency};
-      if(Rect{476,577,112,44}.contains(x,y) && s.can_save_channel)return {ActionKind::save_channel};
-      const Rect b=layout::kBasicFacts;
-      const unsigned n=std::min<unsigned>(s.scan_hit_count,kScanHits);
-      for(unsigned i=0;i<n;++i)
-        if(Rect{b.x+12,b.y+61+static_cast<int>(i)*72,b.w-24,62}.contains(x,y))
-          return {ActionKind::select_scan_hit,static_cast<uint8_t>(i)};
-    }
-    if(state.view==View::systems&&Rect{b.x+18,b.y+334,242,48}.contains(x,y)&&s.can_save_channel)
+    if(Rect{b.x+18,b.y+334,242,48}.contains(x,y)&&s.can_save_channel)
       return {ActionKind::save_channel};
   }
   if(state.view==View::setup) {

@@ -1,12 +1,12 @@
 # UI-DV1 — native M5GFX Digital Voice pages and scanner-first workflow
 
-**Branch:** `feature/dmr-digital-voice-foundation` · **Status:** native renderer + host behavioral contracts; **NOT yet wired to the firmware's main app/navigation and RF event services.** The dashboard is intentionally marked `available=false` in the registry so a dead-end screen cannot be selected as a functioning scanner.
+**Branch:** `feature/dmr-digital-voice-foundation` · **Status:** native renderer + host behavioral contracts; **Wired into the Tab5 firmware** (see the Digital Voice integration records under `artifacts/digital-voice-integration/`); the original statement that it was not wired described the first renderer-only commit.
 
 ## Pages (one shared dashboard, not one app per decoder)
 
 | Tab | Main intent | Content and permitted actions |
 |---|---|---|
-| SCAN | Discover first, always | Current tuned/scan frequency, receiver and integrity evidence, scan progress, up to four protocol-qualified or candidate hits. START/STOP, HOLD/RESUME, SKIP, SAVE controls **only when app-supplied capability flags permit**. Source of these capabilities is the existing scan/radio owner, not this renderer. |
+| SCAN | Discover first, always | Status banner (ready / scanning / sync / integrity / identity / hold / paused / error), current frequency, plan (list or range) and position, counts, evidence ladder, up to four discovered signals with a selected-signal detail panel. START/STOP, HOLD/RESUME, SKIP, SAVE and plan selection, each enabled only when a real handler exists, with the reason shown when not. Drawn as retained widgets. Details: `SCAN_SCREEN.md`. |
 | LIVE | Understand a call | Source/destination only on validated identity; DMR CC and independently verified TS, P25 NAC, D-STAR verified callsigns, YSF integrity-checked FICH. NXDN48/96: validated RAN (including 0), RDCH/RCCH/RTCH, independently justified conventional/Type-C/Type-D topology and channel number. Unsupported voice stays unavailable. |
 | LAST HEARD | Review evidence | Bounded 8-entry history, scroll/page through all entries, selected-event details, provenance, no invented UTC, aliases or IDs; only validated RAN shown. Storage not fabricated. |
 | SYSTEMS | Identify sites without guessing | Up to four observed system candidates, protocol and channel frequency, verified NXDN Type-C/Type-D field only if supplied by an integrity-qualified decoder. Directory names, frequency plan and site geography remain unlinked. Save action disabled until storage owner supports it. |

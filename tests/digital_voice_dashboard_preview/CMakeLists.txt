@@ -6,12 +6,14 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 set(UI ${CMAKE_CURRENT_LIST_DIR}/../../apps/orcsdr-tab5/ui)
 # This suite uses command-recording M5Unified stand-ins; not native pixel parity.
-set(SOURCES ${UI}/digital_voice_dashboard.cpp
+set(SOURCES ${UI}/digital_voice_dashboard.cpp ${UI}/digital_voice_scan_view.cpp
             ${UI}/digital_voice_dashboard_model.cpp
             ${UI}/digital_voice_dashboard_demo.cpp)
-foreach(test_target IN ITEMS dv_dashboard_host_contract dv_dashboard_surface_contract dv_dashboard_decoded_fields)
+foreach(test_target IN ITEMS dv_dashboard_host_contract dv_dashboard_surface_contract dv_dashboard_decoded_fields dv_dashboard_scan)
   if(test_target STREQUAL dv_dashboard_host_contract)
     set(TEST_SOURCE ${CMAKE_CURRENT_LIST_DIR}/dashboard_host_contract_tests.cpp)
+  elseif(test_target STREQUAL dv_dashboard_scan)
+    set(TEST_SOURCE ${CMAKE_CURRENT_LIST_DIR}/dashboard_scan_tests.cpp)
   elseif(test_target STREQUAL dv_dashboard_decoded_fields)
     set(TEST_SOURCE ${CMAKE_CURRENT_LIST_DIR}/dashboard_decoded_fields_tests.cpp)
   else()
@@ -35,3 +37,5 @@ add_test(NAME digital_voice_pages COMMAND dv_dashboard_host_contract)
 add_test(NAME digital_voice_surface_contract COMMAND dv_dashboard_surface_contract)
 
 add_test(NAME digital_voice_decoded_fields COMMAND dv_dashboard_decoded_fields)
+
+add_test(NAME digital_voice_scan COMMAND dv_dashboard_scan)

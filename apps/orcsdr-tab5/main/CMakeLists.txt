@@ -213,6 +213,7 @@ idf_component_register(
         "../../../components/orcsdr_nxdn/src/decoder.cpp"
         "../../../components/orcsdr_nxdn/src/frontend.cpp"
         "../ui/digital_voice_dashboard.cpp"
+        "../ui/digital_voice_scan_view.cpp"
         "../ui/digital_voice_dashboard_model.cpp"
         "../ui/digital_voice_dashboard_surface.cpp"
         "../ui/dashboard_registry.cpp"

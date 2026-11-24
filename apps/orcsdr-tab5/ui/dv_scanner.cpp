@@ -2,12 +2,23 @@
 
 namespace orcsdr::dv {
 
+bool Scanner::set_range(uint32_t start_hz, uint32_t step_hz, size_t count) noexcept {
+  if (active() || count == 0 || count > kMaxRangeChannels || step_hz < kMinStepHz) return false;
+  const uint64_t last = static_cast<uint64_t>(start_hz) + static_cast<uint64_t>(step_hz) * (count - 1);
+  if (start_hz < kMinChannelHz || last > kMaxChannelHz) return false;
+  kind_ = PlanKind::range;
+  range_start_ = start_hz; range_step_ = step_hz; count_ = count;
+  index_ = 0; state_ = ScanState::idle; fail_ = FailReason::none;
+  return true;
+}
+
 bool Scanner::set_plan(const uint32_t* channels_hz, size_t count) noexcept {
   if (channels_hz == nullptr || count == 0 || count > kMaxScanChannels || active()) return false;
   for (size_t i = 0; i < count; ++i)
     if (channels_hz[i] < kMinChannelHz || channels_hz[i] > kMaxChannelHz) return false;
   for (size_t i = 0; i < count; ++i) channels_[i] = channels_hz[i];
   count_ = count;
+  kind_ = PlanKind::list;
   index_ = 0;
   return true;
 }
@@ -112,7 +123,7 @@ ScanStep Scanner::service(uint32_t now_ms, const ScanInputs& in) noexcept {
       if (!tune_issued_) {
         tune_issued_ = true;
         step.tune = true;
-        step.tune_hz = channels_[index_];
+        step.tune_hz = plan_at(index_);
       }
       break;
     case ScanState::settling:
@@ -159,7 +170,10 @@ ScanStatus Scanner::status() const noexcept {
   s.fail = fail_;
   s.index = index_;
   s.count = count_;
-  s.frequency_hz = count_ ? channels_[index_] : 0;
+  s.frequency_hz = count_ ? plan_at(index_) : 0;
+  s.kind = kind_;
+  s.range_start_hz = kind_ == PlanKind::range ? range_start_ : 0;
+  s.range_step_hz = kind_ == PlanKind::range ? range_step_ : 0;
   s.passes = passes_;
   s.visited = visited_;
   s.holds = holds_;
@@ -187,7 +201,24 @@ bool Scanner::self_check() noexcept {
   if (s.status().state != ScanState::sampling) return false;
   in.verified_ms = 800;
   s.service(800, in);
-  return s.status().state == ScanState::holding;
+  if (s.status().state != ScanState::holding) return false;
+  {   // frequency range: computed channels, validated like a list
+    Scanner r;
+    if (r.set_range(100u, 12500u, 10) || r.set_range(150000000u, 1000u, 10) || r.set_range(150000000u, 12500u, 0) ||
+        r.set_range(150000000u, 12500u, kMaxRangeChannels + 1) || r.set_range(1765990000u, 12500u, 10))
+      return false;
+    if (!r.set_range(150000000u, 12500u, 100) || r.plan_kind() != PlanKind::range || r.plan_count() != 100 ||
+        r.plan_at(0) != 150000000u || r.plan_at(99) != 150000000u + 99u * 12500u || r.plan_at(100) != 0)
+      return false;
+    if (!r.start(0)) return false;
+    ScanInputs ri;
+    ri.receiver_ready = true;
+    const ScanStep rs = r.service(0, ri);
+    if (!rs.tune || rs.tune_hz != 150000000u || r.status().kind != PlanKind::range || r.status().range_step_hz != 12500u) return false;
+    r.stop();
+    if (!r.set_plan(plan, 2) || r.plan_kind() != PlanKind::list) return false;     // a list replaces a range
+  }
+  return true;
 }
 
 }  // namespace orcsdr::dv

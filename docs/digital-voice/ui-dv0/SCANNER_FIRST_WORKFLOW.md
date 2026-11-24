@@ -21,7 +21,7 @@ Digital Voice uses **SCAN / LIVE / LAST HEARD / SYSTEMS / SIGNAL / SETUP** as si
 
 `apps/orcsdr-tab5/ui/scan_engine.hpp` already defines `scan::Engine`, `Plan`, `Progress`, and channel-list/frequency-range/window-sweep modes. OrcSDR also has functional P25 survey/follow controls. **Neither alone proves working multi-protocol Digital Voice auto-identification.**
 
-The C++ `ScanStatus` in this commit is bounded presentation data only. `can_scan` is false unless a future authorized receiver adapter explicitly enables it; the START/STOP action is additionally gated on receiver ready/receiving. No scan thread, scan-plan persistence, P25 forwarding, decoder event adapter, or live USB/DSP integration is created by this patch. The normal first view clearly states `DIGITAL VOICE SCANNER NOT CONNECTED`. Host tests exercise a deterministic capability-enabled test state but this does **not** prove a real scan.
+**Update 2026-11-23 (branch `local/digital-voice-integration`, now carried by the feature branch):** the scanner is connected. `dv::Scanner` (settle, dwell, hold, skip, pause, plans) drives the existing radio hooks; decoders run on a core-0 worker; events feed Last Heard, Systems and a persistent discovery database. Plans are the saved channel list or a frequency range (built-in presets or `RTL_DV RANGE`). Window sweep and an energy stage are **not** built. See `SCAN_SCREEN.md` for the SCAN screen, its data sources and the rendering contract. The generic `scan::Engine` is a single-pass sweep without hold/pause/skip, so Digital Voice uses `dv::Scanner` for scanner semantics rather than a second engine alongside it.
 
 ## Protocol-aware LIVE cards, common workflow
 
@@ -43,6 +43,6 @@ No DMR-shaped universal metadata struct should force unrelated protocol semantic
 3. Define cross-protocol event envelope plus typed DMR, P25, D-STAR, YSF, NXDN details; evidence-gated historical logging and source-tagged candidates.
 4. Extend offline Last Heard, source-qualified channel-learning, and non-destructive import/export with content-based duplicate detection. Use `sd_writer` for large SD writes.
 5. Integrate protocol IQ frontends and any lawful clear-voice codec paths behind their own validated gates; NXDN Type-C and Type-D need separate acceptance.
-6. Qualify on Tab5: native M5GFX capture from `UI_DOC_SHOW` / `UI_CAPTURE`, 1280x720 pixels and repeatable hashes, touch, shared header/volume tray, memory, flicker and IQ continuity.
+6. Qualify on Tab5: native M5GFX capture with `tools/tab5_png_screenshot.py` (not documentation mode), 1280x720 pixels and repeatable hashes, touch, shared header/volume tray, memory, flicker and IQ continuity.
 
 The six generated visual designs are **AI-created concept mockups, not the byte/pixel output of this M5GFX code**. They must not be treated as native screenshots or placed in hardware-verified gallery folders. The stored manifest keeps `verified_images: []` until physical-device captures are completed. Unregistered module only: no dashboard ID, `main.cpp`, CMake firmware or decoder core modified; no PR/merge to `main`.

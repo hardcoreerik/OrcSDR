@@ -14,6 +14,13 @@ enum class Density : uint8_t { discovery_first, analysis_first };
 // Scanner state is a presentation snapshot owned by the existing receiver/scan service.
 // No scan engine or radio ownership is created by this UI.
 enum class ScanPhase : uint8_t { unavailable, idle, settling, scanning, holding, paused, failed };
+// What the scanner is working through. window_sweep needs a wideband survey stage that does not exist yet: it is reported
+// as unavailable, never faked.
+enum class ScanMode : uint8_t { unavailable, channel_list, frequency_range, window_sweep };
+// The single status the SCAN screen leads with. Derived only from facts the receiver owner reports; there is no energy
+// detector in the decoder chain, so no stage below `scanning` is ever shown without a decoder having said so.
+enum class ScanStage : uint8_t { unavailable, ready, scanning, candidate, sync, integrity, identity, hold, paused, error };
+constexpr size_t kPlanNameMax = 30;
 enum class NxdnChannel : uint8_t { unknown, rdch, rcch, rtch, other };
 enum class NxdnTopology : uint8_t { unknown, conventional, type_c, type_d };
 struct NxdnFacts {
@@ -35,6 +42,16 @@ struct ScanHit {
   bool ran_valid = false;
   uint8_t colour_code = 0;
   bool colour_code_valid = false;
+  uint8_t timeslot = 0;
+  bool timeslot_valid = false;
+  uint32_t source_id = 0, destination_id = 0;
+  bool has_source = false, has_destination = false, group_call = false;
+  NxdnChannel nxdn_channel = NxdnChannel::unknown;
+  bool nxdn_channel_valid = false;
+  uint16_t seen_count = 0;               // times this channel produced this evidence (this table's own count)
+  char first_time[12]{}, last_time[12]{};  // receiver-provided clock times; empty = unknown, never guessed
+  bool is_new = false;                   // first observation happened during this visit to the dashboard
+  bool saved = false;                    // already in the saved scan list
 };
 constexpr size_t kObservedSystems = 4;
 constexpr size_t kTopIds = 3;
@@ -64,6 +81,18 @@ struct ScanStatus {
   bool current_frequency_valid = false;
   uint32_t validated_hits = 0;
   bool progress_valid = false;
+  ScanMode mode = ScanMode::unavailable;
+  ScanStage stage = ScanStage::unavailable;
+  uint16_t channel_index = 0;            // 1-based position in the plan; 0 = not scanning
+  uint32_t passes = 0;
+  uint16_t candidates = 0;               // channels that showed sync-level activity but nothing verified
+  uint16_t validated = 0;                // channels with integrity- or identity-validated activity
+  uint16_t new_this_session = 0;
+  char plan_name[kPlanNameMax]{};        // "SAVED LIST" or the range preset name
+  uint8_t plan_option = 0, plan_options = 0;
+  uint32_t range_start_hz = 0, range_end_hz = 0, range_step_hz = 0;
+  uint32_t est_pass_seconds = 0;         // channels x (settle + dwell): an estimate, shown as such
+  uint8_t saved_channels = 0, saved_capacity = 0;
 };
 constexpr size_t kHistory = 8;
 struct Heard {
@@ -126,7 +155,11 @@ struct UiState {
 };
 enum class ActionKind : uint8_t { none, switch_view, selected_history, save_channel, scan, setup_protocol,
                                   toggle_hold, skip_frequency, toggle_density, select_scan_hit,
-                                  select_system, page_history };
+                                  select_system, page_history, plan_prev, plan_next };
+// Why a control is unavailable, in words the screen can show. `none` = the control is usable.
+enum class Disabled : uint8_t { none, no_receiver, no_plan, not_scanning, no_signal_selected, not_verified, already_saved,
+                                list_full, no_storage, scan_running, single_plan, no_frequency };
+struct ActionState { bool enabled = false; Disabled reason = Disabled::none; };
 struct Action { ActionKind kind = ActionKind::none; uint8_t value = 0; };
 const char* protocol_name(Protocol p);
 const char* receiver_name(Receiver r);
@@ -143,4 +176,9 @@ bool apply_ui_action(UiState& ui, Action action, const Snapshot& snapshot);
 const char* integration_name(Protocol p);
 // Do not show metadata unless its field-level validity and event confidence suffice.
 bool trusted_identity(const Snapshot& s);
+// Single source of truth for whether a SCAN control is usable (the renderer draws it and the touch handler honours it).
+ActionState action_state(ActionKind kind, const Snapshot& s, const UiState& u);
+const char* disabled_text(Disabled d);
+const char* scan_stage_name(ScanStage s);
+const char* scan_mode_name(ScanMode m);
 }

@@ -113,6 +113,78 @@ const char* integration_name(Protocol p) {
     default:return "NO VERIFIED PROTOCOL";
   }
 }
+const char* scan_stage_name(ScanStage s) {
+  switch (s) {
+    case ScanStage::ready:return "READY";
+    case ScanStage::scanning:return "SCANNING";
+    case ScanStage::candidate:return "PROTOCOL CANDIDATE";
+    case ScanStage::sync:return "SYNC ACQUIRED";
+    case ScanStage::integrity:return "INTEGRITY VALIDATED";
+    case ScanStage::identity:return "IDENTITY VERIFIED";
+    case ScanStage::hold:return "HOLD";
+    case ScanStage::paused:return "PAUSED";
+    case ScanStage::error:return "ERROR";
+    default:return "SCANNER NOT CONNECTED";
+  }
+}
+const char* scan_mode_name(ScanMode m) {
+  switch (m) {
+    case ScanMode::channel_list:return "CHANNEL LIST";
+    case ScanMode::frequency_range:return "FREQUENCY RANGE";
+    case ScanMode::window_sweep:return "WINDOW SWEEP";
+    default:return "NO SCAN PLAN";
+  }
+}
+const char* disabled_text(Disabled d) {
+  switch (d) {
+    case Disabled::no_receiver:return "NO RECEIVER";
+    case Disabled::no_plan:return "NO SCAN PLAN";
+    case Disabled::not_scanning:return "SCAN NOT RUNNING";
+    case Disabled::no_signal_selected:return "SELECT A SIGNAL";
+    case Disabled::not_verified:return "NOT VERIFIED YET";
+    case Disabled::already_saved:return "ALREADY SAVED";
+    case Disabled::list_full:return "SAVED LIST FULL";
+    case Disabled::no_storage:return "STORAGE NOT CONNECTED";
+    case Disabled::scan_running:return "STOP SCAN FIRST";
+    case Disabled::single_plan:return "ONLY ONE PLAN";
+    case Disabled::no_frequency:return "NO FREQUENCY";
+    default:return "";
+  }
+}
+ActionState action_state(ActionKind kind, const Snapshot& s, const UiState& u) {
+  // A receiver in the error state is still present: START retries (the app reports the real failure again if it persists).
+  const bool receiver_ok = s.receiver == Receiver::ready || s.receiver == Receiver::receiving || s.receiver == Receiver::paused || s.receiver == Receiver::error;
+  const bool running = s.scan.phase == ScanPhase::settling || s.scan.phase == ScanPhase::scanning ||
+                       s.scan.phase == ScanPhase::holding || s.scan.phase == ScanPhase::paused;
+  switch (kind) {
+    case ActionKind::scan:
+      if (!s.can_scan && !running) return {false, receiver_ok ? Disabled::no_plan : Disabled::no_receiver};
+      if (!receiver_ok && !running) return {false, Disabled::no_receiver};
+      return {true, Disabled::none};
+    case ActionKind::toggle_hold:
+      if (!running || !s.can_hold) return {false, Disabled::not_scanning};
+      return {true, Disabled::none};
+    case ActionKind::skip_frequency:
+      if (!running || !s.can_skip) return {false, Disabled::not_scanning};
+      return {true, Disabled::none};
+    case ActionKind::save_channel: {
+      if (!s.can_save_channel) return {false, Disabled::no_storage};
+      if (s.scan_hit_count == 0 || u.selected_scan_hit >= s.scan_hit_count) return {false, Disabled::no_signal_selected};
+      const ScanHit& h = s.scan_hits[u.selected_scan_hit];
+      if (h.evidence < Evidence::integrity_valid) return {false, Disabled::not_verified};
+      if (!h.has_frequency) return {false, Disabled::no_frequency};
+      if (h.saved) return {false, Disabled::already_saved};
+      if (s.scan.saved_capacity && s.scan.saved_channels >= s.scan.saved_capacity) return {false, Disabled::list_full};
+      return {true, Disabled::none};
+    }
+    case ActionKind::plan_prev:
+    case ActionKind::plan_next:
+      if (running) return {false, Disabled::scan_running};
+      if (s.scan.plan_options < 2) return {false, Disabled::single_plan};
+      return {true, Disabled::none};
+    default:return {true, Disabled::none};
+  }
+}
 bool trusted_identity(const Snapshot& s) {
   return s.evidence == Evidence::identity_valid;
 }

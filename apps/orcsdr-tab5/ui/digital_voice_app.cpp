@@ -10,6 +10,7 @@
 #include <new>
 
 #include "digital_voice_dashboard_surface.hpp"
+#include "dv_bandplan.hpp"
 #include "dv_discovery_bridge.hpp"
 #include "dv_radio.hpp"
 #include "dv_scanner.hpp"
@@ -36,6 +37,19 @@ struct State {
   uint64_t replay_fed = 0;          // bytes fed so far
   uint8_t replay_buf[16384];
   uint8_t plan_mask[dv::kMaxScanChannels]{};   // per plan entry: decoders to run (0 = auto: rotate within the dwell)
+  uint32_t saved_hz[dv::kMaxScanChannels]{};   // the saved channel list (persisted as the `dv_plan` setting)
+  uint8_t saved_mask[dv::kMaxScanChannels]{};
+  uint8_t saved_n = 0;
+  uint8_t plan_option = 0;                     // 0 = saved list, 1..kBandPresetCount = a band preset, then the custom range
+  uint32_t custom_start = 0, custom_step = 0;  // RTL_DV RANGE; 0 = none
+  size_t custom_count = 0;
+  // Session ledger of channels that showed activity: what the SCAN counters report (the Last Heard list holds only the newest few).
+  uint32_t led_hz[64]{};
+  uint8_t led_proto[64]{}, led_level[64]{};    // level 1 = sync only, 2 = integrity, 3 = identity
+  bool led_new[64]{};
+  uint8_t led_n = 0;
+  bool visit_sync_logged = false, visit_counted = false;
+  uint32_t base_dmr = 0, base_n48 = 0, base_n96 = 0;      // decoder counters when the current channel visit began
   uint8_t mask_override = 0;                   // RTL_DV MASK: forces one mask on every channel
   uint8_t auto_phase = 0;
   uint32_t auto_switch_ms = 0;
@@ -54,6 +68,8 @@ char* g_persist = nullptr;           // SD write buffer: allocated once in PSRAM
 State* g_state = nullptr;
 Hooks g_hooks{};
 uint32_t g_open_failed = 0, g_unapplied_actions = 0, g_repaints = 0, g_painted_revision = 0;
+uint64_t g_render_us_total = 0;                 // time spent in Surface::update when it drew something (UI task), from the micros hook
+uint32_t g_render_n = 0, g_render_us_max = 0;
 
 uint32_t now() { return g_hooks.now_ms ? g_hooks.now_ms() : 0; }
 bool overlay() { return g_hooks.overlay_open && g_hooks.overlay_open(); }
@@ -114,14 +130,63 @@ size_t parse_plan(const char* csv, uint32_t* out, uint8_t* masks, size_t capacit
   return n;
 }
 
+uint8_t mask_for_protocol(Protocol p) {
+  switch (p) {
+    case Protocol::dmr: return dv_radio::kMaskDmr;
+    case Protocol::nxdn48: return dv_radio::kMaskNxdn48;
+    case Protocol::nxdn96: return dv_radio::kMaskNxdn96;
+    default: return 0;
+  }
+}
+Protocol protocol_for_mask(uint8_t m) {
+  if (m == dv_radio::kMaskDmr) return Protocol::dmr;
+  if (m == dv_radio::kMaskNxdn48) return Protocol::nxdn48;
+  if (m == dv_radio::kMaskNxdn96) return Protocol::nxdn96;
+  return Protocol::unknown;
+}
+size_t plan_option_count(const State& st) { return 1 + dv::kBandPresetCount + (st.custom_start ? 1 : 0); }
+
+// The scan plan follows the selected option: the saved channel list, a built-in band range, or the custom range.
+void apply_plan_option(State& st) {
+  if (st.scanner.active()) return;
+  if (st.plan_option >= plan_option_count(st)) st.plan_option = 0;
+  if (st.plan_option == 0) {
+    if (st.saved_n && st.scanner.set_plan(st.saved_hz, st.saved_n)) std::memcpy(st.plan_mask, st.saved_mask, sizeof(st.plan_mask));
+    else st.scanner.clear_plan();
+  } else if (st.plan_option <= dv::kBandPresetCount) {
+    const dv::BandPreset& p = dv::kBandPresets[st.plan_option - 1];
+    if (!st.scanner.set_range(p.start_hz, p.step_hz, dv::channel_count(p))) st.scanner.clear_plan();
+  } else if (!st.scanner.set_range(st.custom_start, st.custom_step, st.custom_count)) {
+    st.scanner.clear_plan();
+  }
+}
+
+void save_list(State& st) {
+  if (!g_hooks.save_plan) return;
+  char csv[400];
+  size_t w = 0;
+  csv[0] = 0;
+  for (size_t i = 0; i < st.saved_n && w + 28 < sizeof(csv); ++i) {
+    const uint8_t m = st.saved_mask[i];
+    const char* tok = m == dv_radio::kMaskDmr ? "dmr" : m == dv_radio::kMaskNxdn48 ? "nxdn48" : m == dv_radio::kMaskNxdn96 ? "nxdn96" : "auto";
+    w += static_cast<size_t>(std::snprintf(csv + w, sizeof(csv) - w, "%s%lu.%06lu:%s", i ? "," : "", static_cast<unsigned long>(st.saved_hz[i] / 1000000u),
+                                           static_cast<unsigned long>(st.saved_hz[i] % 1000000u), tok));
+  }
+  g_hooks.save_plan(csv);
+}
+
 void load_saved_plan() {
   if (!g_state || !g_hooks.load_plan) return;
-  char csv[160];
+  char csv[400];
   if (!g_hooks.load_plan(csv, sizeof(csv))) return;
   uint32_t plan[dv::kMaxScanChannels];
   uint8_t masks[dv::kMaxScanChannels];
   const size_t n = parse_plan(csv, plan, masks, dv::kMaxScanChannels);
-  if (n && g_state->scanner.set_plan(plan, n)) std::memcpy(g_state->plan_mask, masks, sizeof(masks));
+  if (!n) return;
+  std::memcpy(g_state->saved_hz, plan, sizeof(plan));
+  std::memcpy(g_state->saved_mask, masks, sizeof(masks));
+  g_state->saved_n = static_cast<uint8_t>(n);
+  apply_plan_option(*g_state);
 }
 
 void format_utc(uint32_t epoch, char* out, size_t cap) {
@@ -142,6 +207,53 @@ NxdnChannel nxdn_channel(uint8_t rfct) {
 bool same_activity(const Heard& h, const dv_radio::Event& e) {
   return h.protocol == e.protocol && h.frequency_hz == e.frequency_hz && h.source_id == e.source_id &&
          h.destination_id == e.destination_id && h.has_source == e.has_source && h.ran == e.ran;
+}
+
+uint8_t entry_mask(const State& st) {
+  const auto ss = st.scanner.status();
+  return ss.kind == dv::PlanKind::list && ss.index < dv::kMaxScanChannels ? st.plan_mask[ss.index] : 0;   // a range always rotates (auto)
+}
+
+// Session ledger: the channels that showed activity this visit to the dashboard, with the best evidence each reached.
+void ledger_note(State& st, uint32_t hz, Protocol pr, uint8_t level, bool is_new) {
+  size_t i = 0;
+  while (i < st.led_n && !(st.led_hz[i] == hz && st.led_proto[i] == static_cast<uint8_t>(pr))) ++i;
+  if (i == st.led_n) {
+    if (st.led_n == 64) return;                     // a very long scan: later channels are still decoded, just not counted here
+    st.led_hz[i] = hz; st.led_proto[i] = static_cast<uint8_t>(pr); st.led_level[i] = 0; st.led_new[i] = is_new; ++st.led_n;
+  }
+  if (level > st.led_level[i]) st.led_level[i] = level;
+}
+
+// The discovered-signals list (newest first, kScanHits long): one entry per (protocol, frequency). Evidence only ever rises, and every
+// field comes from the event that produced it; a sync-only entry carries no identity at all.
+void upsert_hit(State& st, Protocol pr, uint32_t hz, Evidence ev, const dv_radio::Event* e, bool is_new, uint32_t clock_utc) {
+  Snapshot& s = st.snapshot;
+  size_t i = 0;
+  while (i < s.scan_hit_count && !(s.scan_hits[i].protocol == pr && s.scan_hits[i].frequency_hz == hz)) ++i;
+  ScanHit h{};
+  if (i < s.scan_hit_count) h = s.scan_hits[i];
+  else {
+    h.protocol = pr; h.frequency_hz = hz; h.has_frequency = true; h.is_new = is_new;
+    if (clock_utc) format_utc(clock_utc, h.first_time, sizeof(h.first_time));
+  }
+  if (ev > h.evidence) h.evidence = ev;
+  if (e) {
+    if (e->colour_code_valid) { h.colour_code = e->colour_code; h.colour_code_valid = true; }
+    if (e->slot_valid) { h.timeslot = e->slot; h.timeslot_valid = true; }
+    if (e->ran_valid) { h.ran = e->ran; h.ran_valid = true; }
+    if (e->nxdn_rf_valid) { h.nxdn_channel = nxdn_channel(e->nxdn_rf_channel); h.nxdn_channel_valid = true; }
+    if (e->evidence == Evidence::identity_valid) {
+      h.source_id = e->source_id; h.has_source = e->has_source; h.destination_id = e->destination_id; h.has_destination = e->has_destination;
+      h.group_call = e->group_call;
+    }
+  }
+  if (!st.visit_counted) { if (h.seen_count < 65535) ++h.seen_count; st.visit_counted = true; }   // once per visit to the channel
+  if (clock_utc) format_utc(clock_utc, h.last_time, sizeof(h.last_time));
+  size_t from = i < s.scan_hit_count ? i : (s.scan_hit_count < kScanHits ? s.scan_hit_count++ : kScanHits - 1);
+  for (size_t k = from; k > 0; --k) s.scan_hits[k] = s.scan_hits[k - 1];
+  s.scan_hits[0] = h;
+  ledger_note(st, hz, pr, ev == Evidence::identity_valid ? 3 : ev == Evidence::integrity_valid ? 2 : 1, is_new);
 }
 
 // Rebuild the Systems table and totals from the database that matches what is on screen (live, or the replay's own).
@@ -188,8 +300,12 @@ void note_event(State& st, const dv_radio::Event& e) {
   const bool identity = e.evidence == Evidence::identity_valid;
   // Discovery: validated observations only. Replays go to their own RAM table, never the persistent one.
   const bool to_replay_table = e.replay && !st.learn_replay;
-  (to_replay_table ? st.replay_db : st.db).record(dv::observation_from(e, clock_utc));
+  dv::Discovery& table = to_replay_table ? st.replay_db : st.db;
+  const dv::Observation obs = dv::observation_from(e, clock_utc);
+  const bool existed = table.find_system(obs.protocol, obs.frequency_hz, obs.area, obs.area_kind) != static_cast<size_t>(-1);
+  table.record(obs);
   st.show_replay_db = to_replay_table;
+  upsert_hit(st, e.protocol, e.frequency_hz, e.evidence, &e, !existed, clock_utc);
   // A later control burst on the same channel must not wipe a verified call off the Live view for a few seconds.
   const uint32_t t = now();
   if (!identity && st.have_identity && e.frequency_hz == st.identity_freq && t - st.last_identity_ms < kIdentityStickyMs) {
@@ -246,6 +362,9 @@ void clear_call(State& st) {
   s.nxdn = {};
   st.have_call = false;
   st.have_identity = false;
+  st.visit_sync_logged = st.visit_counted = false;
+  const auto rs0 = dv_radio::status();
+  st.base_dmr = rs0.dmr_acquisitions; st.base_n48 = rs0.nxdn48_frames; st.base_n96 = rs0.nxdn96_frames;   // sync evidence is judged against these
   ++s.revision;
 }
 
@@ -284,13 +403,68 @@ void refresh(State& st) {
   scan.current_frequency_valid = active && ss.frequency_hz != 0;
   scan.validated_hits = ss.holds;
   scan.progress_valid = active && ss.count > 0;     // the position in a repeating plan; not a completion percentage
+  // Plan facts: what the scanner is actually working through.
+  scan.mode = ss.count == 0 ? ScanMode::unavailable : ss.kind == dv::PlanKind::range ? ScanMode::frequency_range : ScanMode::channel_list;
+  scan.channel_index = active && ss.count ? static_cast<uint16_t>(ss.index + 1) : 0;
+  scan.passes = ss.passes;
+  scan.plan_option = st.plan_option;
+  scan.plan_options = static_cast<uint8_t>(plan_option_count(st));
+  if (ss.count == 0) std::snprintf(scan.plan_name, sizeof(scan.plan_name), "%s", st.plan_option == 0 ? "SAVED LIST" : "");
+  else if (st.plan_option == 0) std::snprintf(scan.plan_name, sizeof(scan.plan_name), "SAVED LIST");
+  else if (st.plan_option <= dv::kBandPresetCount) std::snprintf(scan.plan_name, sizeof(scan.plan_name), "%s", dv::kBandPresets[st.plan_option - 1].name);
+  else std::snprintf(scan.plan_name, sizeof(scan.plan_name), "CUSTOM RANGE");
+  if (ss.kind == dv::PlanKind::range && ss.count) {
+    scan.range_start_hz = ss.range_start_hz; scan.range_step_hz = ss.range_step_hz;
+    scan.range_end_hz = ss.range_start_hz + static_cast<uint32_t>(ss.count - 1) * ss.range_step_hz;
+  }
+  scan.est_pass_seconds = static_cast<uint32_t>(ss.count * (700u + 1500u) / 1000u);    // settle + dwell per channel; an estimate
+  scan.saved_channels = st.saved_n;
+  scan.saved_capacity = dv::kMaxScanChannels;
+  // Evidence on the current channel: sync-level means a decoder reported synchronisation since this visit began (never an identity).
+  bool synced = false;
+  Protocol sync_protocol = Protocol::unknown;
+  if (active && !st.have_call) {
+    if (rs.dmr_acquisitions > st.base_dmr) { synced = true; sync_protocol = Protocol::dmr; }
+    else if (rs.nxdn96_frames > st.base_n96) { synced = true; sync_protocol = Protocol::nxdn96; }
+    else if (rs.nxdn48_frames > st.base_n48) { synced = true; sync_protocol = Protocol::nxdn48; }
+  }
+  if (synced && !st.visit_sync_logged && ss.frequency_hz) {
+    st.visit_sync_logged = true;
+    upsert_hit(st, sync_protocol, ss.frequency_hz, Evidence::sync, nullptr, true, g_hooks.utc_epoch ? g_hooks.utc_epoch() : 0);
+  }
+  const Evidence cur_evidence = st.have_call ? s.evidence : synced ? Evidence::sync : Evidence::none;
+  if (ss.state == dv::ScanState::failed) scan.stage = ScanStage::error;
+  else if (ss.state == dv::ScanState::paused) scan.stage = ScanStage::paused;
+  else if (ss.state == dv::ScanState::holding) scan.stage = ScanStage::hold;
+  else if (active) scan.stage = !st.have_call ? (synced ? ScanStage::sync : ScanStage::scanning)
+                                              : (s.evidence == Evidence::identity_valid ? ScanStage::identity : ScanStage::integrity);
+  else scan.stage = can_scan ? ScanStage::ready : ScanStage::unavailable;
+  for (uint8_t i = 0; i < st.led_n; ++i) {
+    if (st.led_level[i] >= 2) { ++scan.validated; if (st.led_new[i]) ++scan.new_this_session; }
+    else ++scan.candidates;
+  }
   const bool diag = rs.running;
   const int32_t level = rs.level_milli > 0 ? static_cast<int32_t>(std::lround(200.0 * std::log10(rs.level_milli / 1000.0))) : 0;
+  const bool saved_flags_changed = [&] {
+    bool ch = false;
+    for (size_t i = 0; i < s.scan_hit_count && i < kScanHits; ++i) {
+      bool sv = false;
+      for (uint8_t k = 0; k < st.saved_n; ++k) sv = sv || st.saved_hz[k] == s.scan_hits[i].frequency_hz;
+      if (sv != s.scan_hits[i].saved) { s.scan_hits[i].saved = sv; ch = true; }
+    }
+    return ch;
+  }();
   const bool changed = s.receiver != rx || s.scan.phase != scan.phase || s.scan.visited != scan.visited ||
       s.scan.current_frequency_hz != scan.current_frequency_hz || s.can_scan != can_scan || s.can_hold != active ||
       s.scan_on_hold != ss.manual_hold || s.sync_count != rs.dmr_acquisitions + rs.nxdn48_frames + rs.nxdn96_frames ||
       s.integrity_frames != rs.events || s.iq_drops != rs.loss_events || s.diagnostics_valid != diag ||
-      s.relative_level_valid != (rs.level_milli > 0) || (rs.level_milli > 0 && std::abs(s.relative_level_tenths_db - level) >= 10);
+      s.relative_level_valid != (rs.level_milli > 0) || (rs.level_milli > 0 && std::abs(s.relative_level_tenths_db - level) >= 10) ||
+      s.scan.stage != scan.stage || s.scan.mode != scan.mode || s.scan.channel_index != scan.channel_index ||
+      s.scan.validated != scan.validated || s.scan.candidates != scan.candidates || s.scan.new_this_session != scan.new_this_session ||
+      s.scan.passes != scan.passes || s.scan.plan_option != scan.plan_option || s.scan.plan_options != scan.plan_options ||
+      s.scan.saved_channels != scan.saved_channels || std::strcmp(s.scan.plan_name, scan.plan_name) != 0 ||
+      s.scan.planned != scan.planned || s.scan.est_pass_seconds != scan.est_pass_seconds || s.evidence != cur_evidence ||
+      saved_flags_changed;
   s.receiver = rx;
   s.scan = scan;
   s.can_scan = can_scan;
@@ -306,18 +480,10 @@ void refresh(State& st) {
   s.relative_level_tenths_db = level;
   s.last_heard_available = true;
   s.systems_available = true;
-  s.can_save_channel = false;      // save-as-profile needs the storage flow (not wired yet): never offered
+  s.can_save_channel = g_hooks.save_plan != nullptr;     // the saved list is the existing `dv_plan` setting
+  if (!st.have_call) { s.evidence = cur_evidence; if (synced) s.protocol = sync_protocol; }
   if (!st.have_call && ss.frequency_hz && active) {      // show the channel being examined; identity stays unknown
     s.frequency_hz = ss.frequency_hz; s.has_frequency = true;
-  }
-  if (ss.holds != st.last_hold_count) {                   // a hold = a verified scan hit
-    st.last_hold_count = ss.holds;
-    if (s.scan_hit_count < kScanHits && st.have_call) {
-      ScanHit& hit = s.scan_hits[s.scan_hit_count++];
-      hit.protocol = s.protocol; hit.evidence = s.evidence; hit.frequency_hz = s.frequency_hz; hit.has_frequency = true;
-      hit.ran = s.ran; hit.ran_valid = s.ran_valid;
-      hit.colour_code = s.colour_code; hit.colour_code_valid = s.colour_code_valid;
-    }
   }
   if (changed) ++s.revision;
 }
@@ -408,7 +574,7 @@ void run_scanner(State& st) {
     st.scanner.retune_result(ok, now());
     if (ok) {
       clear_call(st);                // new channel visit: nothing from the previous channel carries over
-      const uint8_t entry = st.plan_mask[st.scanner.status().index];
+      const uint8_t entry = entry_mask(st);
       st.auto_phase = 0;
       st.auto_switch_ms = now();
       dv_radio::set_protocol_mask(st.mask_override ? st.mask_override : entry ? entry : dv_radio::kMaskDmr);
@@ -416,7 +582,7 @@ void run_scanner(State& st) {
   }
   // An "auto" entry cannot run every decoder at once (NXDN48 alone needs more than one core on the Tab5): it rotates them
   // through the dwell, restarting the decoder set at each switch so no decoder bridges a window it did not see.
-  if (st.scanner.active() && !st.mask_override && st.plan_mask[st.scanner.status().index] == 0 &&
+  if (st.scanner.active() && !st.mask_override && entry_mask(st) == 0 &&
       st.scanner.status().state == dv::ScanState::sampling && now() - st.auto_switch_ms >= 400) {
     static constexpr uint8_t kRotation[3] = {dv_radio::kMaskDmr, dv_radio::kMaskNxdn96, dv_radio::kMaskNxdn48};
     st.auto_phase = static_cast<uint8_t>((st.auto_phase + 1) % 3);
@@ -445,6 +611,32 @@ bool full_draw() {
   return g_state->surface.draw(M5.Display, g_state->snapshot, overlay(), g_hooks.header_controls);
 }
 
+// Adds a verified signal's frequency (with its protocol's decoder) to the saved channel list. The renderer only offers this for a
+// selected signal with integrity-validated evidence and a frequency; it is checked again here because serial calls it too.
+bool save_hit(State& st, uint8_t index) {
+  Snapshot& s = st.snapshot;
+  if (!g_hooks.save_plan || index >= s.scan_hit_count || index >= kScanHits) return false;
+  const ScanHit& h = s.scan_hits[index];
+  if (h.evidence < Evidence::integrity_valid || !h.has_frequency) return false;
+  for (uint8_t i = 0; i < st.saved_n; ++i) if (st.saved_hz[i] == h.frequency_hz) return false;
+  if (st.saved_n >= dv::kMaxScanChannels) return false;
+  st.saved_hz[st.saved_n] = h.frequency_hz;
+  st.saved_mask[st.saved_n] = mask_for_protocol(h.protocol);
+  ++st.saved_n;
+  save_list(st);
+  if (st.plan_option == 0) apply_plan_option(st);        // a no-op while scanning: the new channel joins the next time the list is loaded
+  ++s.revision;
+  return true;
+}
+
+void step_plan(State& st, int dir) {
+  if (st.scanner.active()) return;
+  const size_t n = plan_option_count(st);
+  st.plan_option = static_cast<uint8_t>((st.plan_option + n + (dir > 0 ? 1 : n - 1)) % n);
+  apply_plan_option(st);
+  ++st.snapshot.revision;
+}
+
 void apply_radio_action(State& st, const Action& a) {
   switch (a.kind) {
     case ActionKind::scan:
@@ -453,6 +645,9 @@ void apply_radio_action(State& st, const Action& a) {
       break;
     case ActionKind::toggle_hold: st.scanner.toggle_manual_hold(); break;
     case ActionKind::skip_frequency: st.scanner.skip(now()); break;
+    case ActionKind::plan_prev: step_plan(st, -1); break;
+    case ActionKind::plan_next: step_plan(st, +1); break;
+    case ActionKind::save_channel: if (!save_hit(st, a.value)) { ++g_unapplied_actions; return; } break;
     default: ++g_unapplied_actions; return;     // save / setup: no owner yet, never faked
   }
   ++st.actions_applied;
@@ -534,7 +729,13 @@ void tick() {
   run_scanner(*g_state);
   refresh(*g_state);
   // update() also returns true when it correctly drew nothing; count only real model changes as repaints.
-  if (g_state->surface.update(M5.Display, g_state->snapshot, overlay()) && g_state->snapshot.revision != g_painted_revision) {
+  const uint32_t t_render = g_hooks.micros ? g_hooks.micros() : 0;
+  const bool drew = g_state->snapshot.revision != g_painted_revision;
+  if (g_state->surface.update(M5.Display, g_state->snapshot, overlay()) && drew) {
+    if (g_hooks.micros) {
+      const uint32_t dt = g_hooks.micros() - t_render;
+      g_render_us_total += dt; ++g_render_n; if (dt > g_render_us_max) g_render_us_max = dt;
+    }
     g_painted_revision = g_state->snapshot.revision;
     ++g_repaints;
     screens::note_visible_update(screens::Id::digital_voice);
@@ -571,7 +772,7 @@ void describe(char* out, size_t size) {
   std::snprintf(out, size,
                 "RTL_DV_UI open=1 view=%u density=%u receiver=%s scan=%s plan=%u idx=%u visited=%lu holds=%lu passes=%lu "
                 "manual_hold=%d can_scan=%u hist=%u systems=%u rev=%lu repaints=%lu applied=%lu unapplied=%lu "
-                "db_sys=%u db_tg=%u db_units=%u db_saves=%lu db_save_fail=%lu db_saving=%d",
+                "db_sys=%u db_tg=%u db_units=%u db_saves=%lu db_save_fail=%lu db_saving=%d stage=%u mode=%u opt=%u/%u render_n=%lu render_avg_us=%lu render_max_us=%lu",
                 static_cast<unsigned>(ui.view), static_cast<unsigned>(ui.density),
                 receiver_name(g_state->snapshot.receiver), scan_phase_name(g_state->snapshot.scan.phase),
                 static_cast<unsigned>(ss.count), static_cast<unsigned>(ss.index), static_cast<unsigned long>(ss.visited),
@@ -582,7 +783,11 @@ void describe(char* out, size_t size) {
                 static_cast<unsigned long>(g_state->actions_applied), static_cast<unsigned long>(g_unapplied_actions),
                 static_cast<unsigned>(g_state->db.system_count()), static_cast<unsigned>(g_state->db.talkgroup_count()),
                 static_cast<unsigned>(g_state->db.subscriber_count()), static_cast<unsigned long>(g_state->db_saves),
-                static_cast<unsigned long>(g_state->db_save_failures), g_state->db_saving ? 1 : 0);
+                static_cast<unsigned long>(g_state->db_save_failures), g_state->db_saving ? 1 : 0,
+                static_cast<unsigned>(g_state->snapshot.scan.stage), static_cast<unsigned>(g_state->snapshot.scan.mode),
+                static_cast<unsigned>(g_state->plan_option), static_cast<unsigned>(plan_option_count(*g_state)),
+                static_cast<unsigned long>(g_render_n), static_cast<unsigned long>(g_render_n ? g_render_us_total / g_render_n : 0),
+                static_cast<unsigned long>(g_render_us_max));
 }
 
 bool handle_command(const char* command, bool authenticated, void (*write_line)(const char*)) {
@@ -630,10 +835,45 @@ bool handle_command(const char* command, bool authenticated, void (*write_line)(
       return true;
     }
     std::memcpy(st.plan_mask, masks, sizeof(masks));
+    std::memcpy(st.saved_hz, plan, sizeof(plan));          // PLAN replaces the saved channel list and selects it
+    std::memcpy(st.saved_mask, masks, sizeof(masks));
+    st.saved_n = static_cast<uint8_t>(n);
+    st.plan_option = 0;
     if (g_hooks.save_plan) g_hooks.save_plan(arg + 5);
     std::snprintf(line, sizeof(line), "RTL_DV_PLAN_OK channels=%u", static_cast<unsigned>(n));
     write_line(line);
     ++st.snapshot.revision;
+    return true;
+  }
+  if (std::strncmp(arg, "RANGE ", 6) == 0) {         // RTL_DV RANGE <start MHz> <end MHz> <step kHz>: a custom scan range, selected immediately
+    double a = 0, b = 0, k = 0;
+    if (std::sscanf(arg + 6, "%lf %lf %lf", &a, &b, &k) != 3 || st.scanner.active() || k < 6.25 || b < a) {
+      write_line("RTL_DV_RANGE_INVALID use RTL_DV RANGE <start MHz> <end MHz> <step kHz>, step >= 6.25, scan stopped");
+      return true;
+    }
+    const uint32_t start = static_cast<uint32_t>(std::llround(a * 1e6)), step = static_cast<uint32_t>(std::llround(k * 1e3));
+    const size_t count = static_cast<size_t>(std::llround((b - a) * 1e6 / step)) + 1;
+    if (!st.scanner.set_range(start, step, count)) { write_line("RTL_DV_RANGE_INVALID outside 24 MHz..1.766 GHz or more than 4096 channels"); return true; }
+    st.custom_start = start; st.custom_step = step; st.custom_count = count;
+    st.plan_option = static_cast<uint8_t>(1 + dv::kBandPresetCount);
+    std::snprintf(line, sizeof(line), "RTL_DV_RANGE_OK channels=%u est_pass_s=%u", static_cast<unsigned>(count), static_cast<unsigned>(count * 2200u / 1000u));
+    write_line(line);
+    ++st.snapshot.revision;
+    return true;
+  }
+  if (std::strncmp(arg, "PRESET ", 7) == 0) {       // RTL_DV PRESET <n>: 0 = saved list, 1..N = built-in band range (same as the PLAN buttons)
+    const int n = std::atoi(arg + 7);
+    if (st.scanner.active() || n < 0 || static_cast<size_t>(n) >= plan_option_count(st)) { write_line("RTL_DV_PRESET_INVALID stop the scan; 0..N"); return true; }
+    st.plan_option = static_cast<uint8_t>(n);
+    apply_plan_option(st);
+    std::snprintf(line, sizeof(line), "RTL_DV_PRESET_OK option=%d channels=%u", n, static_cast<unsigned>(st.scanner.plan_count()));
+    write_line(line);
+    ++st.snapshot.revision;
+    return true;
+  }
+  if (std::strncmp(arg, "SAVE ", 5) == 0) {         // RTL_DV SAVE <discovered-signal index>: same handler as the SAVE button
+    const bool ok = save_hit(st, static_cast<uint8_t>(std::atoi(arg + 5)));
+    write_line(ok ? "RTL_DV_SAVE_OK added to the saved channel list" : "RTL_DV_SAVE_REFUSED needs a verified signal with a frequency, not already saved, list not full");
     return true;
   }
   if (std::strncmp(arg, "MASK ", 5) == 0) {

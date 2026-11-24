@@ -5,6 +5,7 @@
 #endif
 #include <cassert>
 #include <cstdio>
+#include <cstring>
 #include <string>
 namespace dv=orcsdr::digital_voice_ui;
 using namespace dv;
@@ -19,7 +20,7 @@ int main(){
   assert(dashboard.present(display,s,ui,true,false));
   assert(host_stub::contains("RECEIVER DISCONNECTED"));
   assert(host_stub::contains("DISCOVERY FIRST"));
-  assert(host_stub::contains("DIGITAL VOICE SCANNER NOT CONNECTED"));
+  assert(host_stub::contains("SCANNER NOT CONNECTED"));
   assert(host_stub::contains("SCAN"));
   assert(dashboard.handle_touch(55,598,s,ui).kind==ActionKind::none); // disabled scan never initiates tuning
   assert(host_stub::full_clear_count==0 && !host_stub::out_of_bounds);
@@ -42,9 +43,11 @@ int main(){
   scan.scan.visited=3;
   scan.scan.planned=12;
   scan.scan.validated_hits=0;
+  scan.scan.mode=ScanMode::channel_list;scan.scan.stage=ScanStage::scanning;scan.scan.channel_index=3;
+  std::strcpy(scan.scan.plan_name,"SAVED LIST");
   host_stub::reset();assert(dashboard.present(display,scan,ui,true,false));
-  assert(host_stub::contains("SCAN RUNNING"));
-  assert(host_stub::contains("CHANNEL 3 / 12  VERIFIED 0"));
+  assert(host_stub::contains("SCANNING"));
+  assert(host_stub::contains("CHANNEL LIST  SAVED LIST  CH 3 / 12"));
   assert(dashboard.handle_touch(55,598,scan,ui).kind==ActionKind::scan);
   assert(dashboard.handle_touch(240,598,scan,ui).kind==ActionKind::none);
   scan.can_hold=true;
@@ -65,10 +68,14 @@ int main(){
   assert(host_stub::contains("FREQUENCY UNKNOWN"));
   assert(dashboard.handle_touch(240,598,scan,ui).kind==ActionKind::toggle_hold);
   assert(dashboard.handle_touch(380,598,scan,ui).kind==ActionKind::skip_frequency);
-  assert(dashboard.handle_touch(496,598,scan,ui).kind==ActionKind::save_channel);
+  assert(dashboard.handle_touch(496,598,scan,ui).kind==ActionKind::none);   // selected signal is only a candidate: SAVE is disabled and says why
+  assert(action_state(ActionKind::save_channel,scan,ui).reason==Disabled::not_verified);
   auto pick=dashboard.handle_touch(865,256,scan,ui);
   assert(pick.kind==ActionKind::select_scan_hit && pick.value==0);
   assert(apply_ui_action(ui,pick,scan) && ui.selected_scan_hit==0);
+  scan.scan_hits[1].has_frequency=true;scan.scan_hits[1].frequency_hz=453775000;ui.selected_scan_hit=1;   // verified and with a frequency: SAVE becomes usable
+  assert(dashboard.handle_touch(496,598,scan,ui).kind==ActionKind::save_channel);
+  ui.selected_scan_hit=0;
   ui.view=View::live;
   host_stub::reset();
   assert(dashboard.present(display,s,ui,true,false));
@@ -104,7 +111,7 @@ int main(){
   assert(!host_stub::out_of_bounds);
   auto hist=demo::make(demo::Case::history_demo);hist.revision=5;
   host_stub::reset();assert(dashboard.present(display,hist,ui,true,false));
-  assert(host_stub::contains("ID VERIFIED"));
+  assert(host_stub::contains("3024109>99"));   // identity-validated rows show the decoded source>destination, never a generic label
   assert(host_stub::contains("TIME ?"));
   assert(host_stub::contains("RECORDED IQ REPLAY"));
   assert(dashboard.handle_touch(100,681,hist,ui).kind==ActionKind::switch_view);

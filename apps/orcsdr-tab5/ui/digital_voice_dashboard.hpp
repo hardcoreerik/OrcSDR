@@ -4,6 +4,7 @@
 // and supplies immutable snapshots. No radio/SD/USB or decoder dependencies.
 #include "digital_voice_dashboard_layout.hpp"
 #include "digital_voice_dashboard_model.hpp"
+#include "digital_voice_scan_view.hpp"
 #include <M5Unified.h>
 
 namespace orcsdr::digital_voice_ui {
@@ -15,11 +16,13 @@ class Dashboard final {
                const UiState& state, bool owns_screen, bool overlay_open);
   Action handle_touch(int32_t x, int32_t y, const Snapshot& snapshot,
                       const UiState& state) const;
-  void leave() { ready_ = false; }
+  void leave() { ready_ = false; scan_.reset(); }
   bool active() const { return ready_; }
  private:
   Snapshot old_{};  // bounded ~1 KiB, no heap; review internal RAM budget before firmware integration
   UiState last_state_{};
+  ScanView scan_{};        // retained SCAN widgets: what is on screen, to repaint only what changed
+  uint32_t ctx_sig_ = 0;   // what the context strip currently shows
   bool ready_ = false;
 };
 }
