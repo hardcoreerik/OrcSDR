@@ -1,5 +1,6 @@
 #include "digital_voice_dashboard.hpp"
 #include "digital_voice_dashboard_paint.hpp"
+#include "dv_bandplan.hpp"
 #include <algorithm>
 #include <cstdio>
 #include <cstring>
@@ -311,6 +312,7 @@ void signal(Paint& p,const Snapshot& s,Density mode) {
   }
   p.label(origin_name(s.origin),b.x+18,b.y+420,b);
 }
+Rect band_button(Rect b,unsigned i) {return {b.x+14+static_cast<int>(i%2)*206,b.y+60+static_cast<int>(i/2)*52,198,44};}
 void setup(Paint& p,const Snapshot& s,Density mode) {
   const auto a=mode==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
   const auto b=mode==Density::discovery_first?layout::kBasicFacts:layout::kAdvancedFacts;
@@ -331,14 +333,16 @@ void setup(Paint& p,const Snapshot& s,Density mode) {
     else std::snprintf(t,sizeof(t),"SAVE DMR SPEECH: OFF");
     p.button(t,{a.x+408,a.y+322,376,44},s.can_save_speech,s.save_speech);
   }
-  p.label("Decoded clear speech only, one WAV per call",a.x+408,a.y+398,a);
-  p.title("FEATURE READINESS",b.x+18,b.y+32,b);
-  p.label("P25-I: native receive and voice",b.x+18,b.y+98,b);
-  p.label("DMR: host data / no Tab5 IQ",b.x+18,b.y+140,b);
-  p.label("D-STAR / YSF: host bits only",b.x+18,b.y+182,b);
-  p.label("P25-II: no voice",b.x+18,b.y+224,b);
-  p.label("NXDN48/96: host synthetic IQ",b.x+18,b.y+266,b);
-  p.label("Shared speaker / volume via header",b.x+18,b.y+340,b);
+  p.label("Decoded clear speech only",a.x+408,a.y+398,a);
+  p.title("SCAN BANDS (MY BANDS)",b.x+18,b.y+32,b);
+  for(unsigned i=0;i<dv::kBandPresetCount;++i)
+    p.button(dv::kBandPresets[i].label,band_button(b,i),true,(s.band_mask>>i)&1U);
+  {
+    char t[64];
+    std::snprintf(t,sizeof(t),"%u CH  ~%u MIN PER PASS",static_cast<unsigned>(s.band_channels),static_cast<unsigned>(s.band_minutes));
+    p.label(t,b.x+18,b.y+346,b);
+    p.label("SCAN > PLAN > MY BANDS",b.x+18,b.y+384,b);
+  }
   p.text("RX ONLY  /  NO TX",b.x+18,b.y+420,kCyan,2,b);
 }
 void page(Paint& p,const Snapshot& s,const UiState& u) {
@@ -412,6 +416,11 @@ Action Dashboard::handle_touch(int32_t x,int32_t y,const Snapshot& s,
     const auto a=state.density==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
     if(Rect{a.x+18,a.y+376,370,44}.contains(x,y))return {ActionKind::toggle_density};
     if(s.can_save_speech&&Rect{a.x+408,a.y+322,376,44}.contains(x,y))return {ActionKind::toggle_save_speech};
+    {
+      const auto b=state.density==Density::discovery_first?layout::kBasicFacts:layout::kAdvancedFacts;
+      for(unsigned i=0;i<dv::kBandPresetCount;++i)
+        if(band_button(b,i).contains(x,y))return {ActionKind::toggle_band,static_cast<uint8_t>(i)};
+    }
   }
   if(state.view==View::systems && s.systems_available) {
     const auto a=state.density==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;

@@ -87,6 +87,21 @@ int main() {
     CHECK(host_stub::contains("SAVE DMR SPEECH: N/A"));
     CHECK(dash.handle_touch(32 + 408 - 20 + 100, 158 + 322 + 20, q, ui).kind == ActionKind::none);
   }
+  { // SETUP band picker: nine bands as toggles, selection and cost shown, touch returns the band index
+    ui.view = View::setup; ui.density = Density::discovery_first; dash = Dashboard();
+    Snapshot q; q.revision = 1; q.band_mask = 0x12; q.band_channels = 2240; q.band_minutes = 49;
+    host_stub::reset(); CHECK(dash.present(display, q, ui, true, false));
+    CHECK(host_stub::contains("VHF BUS 150-158") && host_stub::contains("900 896-901") && host_stub::contains("2240 CH  ~49 MIN PER PASS"));
+    CHECK(!host_stub::out_of_bounds);
+    for (unsigned i = 0; i < 9; ++i) {
+      const auto a = dash.handle_touch(834 + 14 + static_cast<int>(i % 2) * 206 + 100, 158 + 60 + static_cast<int>(i / 2) * 52 + 20, q, ui);
+      CHECK(a.kind == ActionKind::toggle_band && a.value == i);
+    }
+    ui.density = Density::analysis_first; dash = Dashboard();
+    q.revision = 2; host_stub::reset(); CHECK(dash.present(display, q, ui, true, false));
+    CHECK(host_stub::contains("SCAN BANDS") && !host_stub::out_of_bounds);
+    CHECK(dash.handle_touch(642 + 14 + 100, 158 + 60 + 20, q, ui).kind == ActionKind::toggle_band);
+  }
   std::printf("dashboard_voice_tests: %s\n", g_fail ? "FAILED" : "ok");
   return g_fail ? 1 : 0;
 }

@@ -71,7 +71,7 @@ std::atomic<uint32_t> g_blocks{0}, g_wrong_rate{0}, g_settle_skipped{0}, g_gaps{
 std::atomic<uint32_t> g_events{0}, g_dropped{0}, g_seq{0};
 std::atomic<uint32_t> g_max_us{0}, g_level_milli{0};
 std::atomic<uint64_t> g_total_us{0}, g_samples{0}, g_us_ch{0}, g_us_dmr{0}, g_us_n48{0}, g_us_n96{0};
-std::atomic<uint32_t> g_verified_ms{0};
+std::atomic<uint32_t> g_verified_ms{0}, g_identity_ms{0};
 std::atomic<uint32_t> g_dmr_acq{0}, g_dmr_id{0}, g_dmr_ev{0};
 std::atomic<uint32_t> g_n48_frames{0}, g_n48_valid{0}, g_n96_frames{0}, g_n96_valid{0};
 std::atomic<uint32_t> g_ring_head{0}, g_ring_tail{0};
@@ -135,6 +135,7 @@ void push(const Event& base) {
   g_ring_head.store(head + 1, std::memory_order_release);
   g_events.fetch_add(1, std::memory_order_relaxed);
   g_verified_ms.store(e.t_ms ? e.t_ms : 1u, std::memory_order_release);
+  if (e.evidence == ui::Evidence::identity_valid) g_identity_ms.store(e.t_ms ? e.t_ms : 1u, std::memory_order_release);
   g_candidate.store(true, std::memory_order_relaxed);   // a verified event is more than a candidate
 }
 
@@ -169,6 +170,7 @@ void on_qualified(const dmr::d1::QualifiedGroup& q, void*) noexcept {
   for (size_t i = 0; i < kVoicePayloadBytes; ++i) m.payload[i] = q.group->payload[i];
   // A qualified voice group is verified activity: it extends the scanner's hold for as long as the call lasts.
   g_verified_ms.store(now() ? now() : 1u, std::memory_order_release);
+  g_identity_ms.store(now() ? now() : 1u, std::memory_order_release);   // a qualified call is the strongest evidence there is
   g_candidate.store(true, std::memory_order_relaxed);
   push_voice(m);
 }
@@ -389,7 +391,7 @@ bool start() {
   g_vring_head.store(0); g_vring_tail.store(0); g_voice_dropped = g_voice_flushes = g_voice_pending_lost = 0; g_call_serial = 0;
   g_blocks = g_wrong_rate = g_settle_skipped = g_gaps = g_loss_events = 0;
   g_events = g_dropped = g_seq = 0;
-  g_max_us = g_level_milli = 0; g_total_us = 0; g_samples = 0; g_verified_ms = 0;
+  g_max_us = g_level_milli = 0; g_total_us = 0; g_samples = 0; g_verified_ms = 0; g_identity_ms = 0;
   g_us_ch = g_us_dmr = g_us_n48 = g_us_n96 = 0;
   g_dmr_acq = g_dmr_id = g_dmr_ev = 0;
   g_n48_frames = g_n48_valid = g_n96_frames = g_n96_valid = 0;
@@ -461,6 +463,7 @@ bool tune_channel(uint32_t channel_hz) {
   g_channel_hz.store(channel_hz, std::memory_order_relaxed);
   g_settle_until.store(now() + kSettleMs, std::memory_order_release);
   g_verified_ms.store(0, std::memory_order_release);
+  g_identity_ms.store(0, std::memory_order_release);
   g_candidate.store(false, std::memory_order_relaxed);
   g_baseline_acq = g_dmr_acq.load(); g_baseline_n48 = g_n48_frames.load(); g_baseline_n96 = g_n96_frames.load();
   g_epoch.fetch_add(1, std::memory_order_relaxed);
@@ -648,6 +651,7 @@ Status status() {
   s.state_bytes = g_state ? static_cast<uint32_t>(sizeof(State) + sizeof(Decoders)) : 0;
   s.alloc_failed_bytes = g_alloc_failed;
   s.verified_ms = g_verified_ms.load();
+  s.identity_ms = g_identity_ms.load();
   s.candidate = g_candidate.load();
   if (!s.running) s.link = g_alloc_failed && !g_state ? Link::no_memory : Link::stopped;
   else if (!g_hooks.device_ready || !g_hooks.device_ready()) s.link = Link::no_receiver;

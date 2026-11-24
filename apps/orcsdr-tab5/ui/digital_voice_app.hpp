@@ -26,6 +26,8 @@ struct Hooks {
   int (*file_save_result)() = nullptr;
   bool (*flag_load)(const char* key) = nullptr;
   void (*flag_store)(const char* key, bool value) = nullptr;
+  uint32_t (*u32_load)(const char* key, uint32_t fallback) = nullptr;   // band picker selection (persistent)
+  void (*u32_store)(const char* key, uint32_t value) = nullptr;
   uint32_t (*utc_epoch)() = nullptr;     // wall-clock seconds, 0 when the clock is not valid (times then stay unknown)
   // Receiver-owner access (the same tune / release rules ACARS and AIS use; no second owner).
   bool (*tune)(uint32_t center_hz, uint32_t sample_rate) = nullptr;

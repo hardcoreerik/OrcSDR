@@ -73,6 +73,7 @@ struct Status {
   bool worker = false;
   bool replay = false;
   uint32_t verified_ms = 0;          // monotonic time of the newest verified event since the last tune, 0 = none
+  uint32_t identity_ms = 0;          // newest identity-validated event or qualified voice group since the last tune, 0 = none
   bool candidate = false;            // sync-level activity seen since the last tune
   uint8_t mask = 0;
 };

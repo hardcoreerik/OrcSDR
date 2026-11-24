@@ -3,6 +3,7 @@
 #include <M5Unified.h>
 #include <esp_heap_caps.h>
 
+#include <algorithm>
 #include <cmath>
 #include <cstdio>
 #include <cstdlib>
@@ -41,7 +42,8 @@ struct State {
   uint32_t saved_hz[dv::kMaxScanChannels]{};   // the saved channel list (persisted as the `dv_plan` setting)
   uint8_t saved_mask[dv::kMaxScanChannels]{};
   uint8_t saved_n = 0;
-  uint8_t plan_option = 0;                     // 0 = saved list, 1..kBandPresetCount = a band preset, then the custom range
+  uint8_t plan_option = 0;                     // 0 = saved list, 1..kBandPresetCount = a band preset, then MY BANDS, then the custom range
+  uint16_t band_mask = 0x0012;                 // MY BANDS: bit i = built-in band i. Default VHF business + UHF business; persisted as dv_bands
   uint32_t custom_start = 0, custom_step = 0;  // RTL_DV RANGE; 0 = none
   size_t custom_count = 0;
   // Session ledger of channels that showed activity: what the SCAN counters report (the Last Heard list holds only the newest few).
@@ -207,7 +209,17 @@ Protocol protocol_for_mask(uint8_t m) {
   if (m == dv_radio::kMaskNxdn96) return Protocol::nxdn96;
   return Protocol::unknown;
 }
-size_t plan_option_count(const State& st) { return 1 + dv::kBandPresetCount + (st.custom_start ? 1 : 0); }
+size_t plan_option_count(const State& st) { return 2 + dv::kBandPresetCount + (st.custom_start ? 1 : 0); }
+size_t my_bands_channels(const State& st) {
+  size_t n = 0;
+  for (size_t i = 0; i < dv::kBandPresetCount; ++i) if ((st.band_mask >> i) & 1U) n += dv::channel_count(dv::kBandPresets[i]);
+  return n;
+}
+size_t my_bands_count(const State& st) {
+  size_t n = 0;
+  for (size_t i = 0; i < dv::kBandPresetCount; ++i) n += (st.band_mask >> i) & 1U;
+  return n;
+}
 
 // The scan plan follows the selected option: the saved channel list, a built-in band range, or the custom range.
 void apply_plan_option(State& st) {
@@ -219,6 +231,12 @@ void apply_plan_option(State& st) {
   } else if (st.plan_option <= dv::kBandPresetCount) {
     const dv::BandPreset& p = dv::kBandPresets[st.plan_option - 1];
     if (!st.scanner.set_range(p.start_hz, p.step_hz, dv::channel_count(p))) st.scanner.clear_plan();
+  } else if (st.plan_option == 1 + dv::kBandPresetCount) {      // MY BANDS: the picked bands scanned in order as one plan
+    dv::Segment seg[dv::kMaxSegments];
+    size_t n = 0;
+    for (size_t i = 0; i < dv::kBandPresetCount && n < dv::kMaxSegments; ++i)
+      if ((st.band_mask >> i) & 1U) seg[n++] = {dv::kBandPresets[i].start_hz, dv::kBandPresets[i].step_hz, static_cast<uint32_t>(dv::channel_count(dv::kBandPresets[i]))};
+    if (!n || !st.scanner.set_ranges(seg, n)) st.scanner.clear_plan();
   } else if (!st.scanner.set_range(st.custom_start, st.custom_step, st.custom_count)) {
     st.scanner.clear_plan();
   }
@@ -475,12 +493,13 @@ void refresh(State& st) {
   if (ss.count == 0) std::snprintf(scan.plan_name, sizeof(scan.plan_name), "%s", st.plan_option == 0 ? "SAVED LIST" : "");
   else if (st.plan_option == 0) std::snprintf(scan.plan_name, sizeof(scan.plan_name), "SAVED LIST");
   else if (st.plan_option <= dv::kBandPresetCount) std::snprintf(scan.plan_name, sizeof(scan.plan_name), "%s", dv::kBandPresets[st.plan_option - 1].name);
+  else if (st.plan_option == 1 + dv::kBandPresetCount) std::snprintf(scan.plan_name, sizeof(scan.plan_name), "MY BANDS (%u)", static_cast<unsigned>(my_bands_count(st)));
   else std::snprintf(scan.plan_name, sizeof(scan.plan_name), "CUSTOM RANGE");
   if (ss.kind == dv::PlanKind::range && ss.count) {
     scan.range_start_hz = ss.range_start_hz; scan.range_step_hz = ss.range_step_hz;
-    scan.range_end_hz = ss.range_start_hz + static_cast<uint32_t>(ss.count - 1) * ss.range_step_hz;
+    scan.range_end_hz = ss.range_end_hz;
   }
-  scan.est_pass_seconds = static_cast<uint32_t>(ss.count * (700u + 1500u) / 1000u);    // settle + dwell per channel; an estimate
+  scan.est_pass_seconds = static_cast<uint32_t>(ss.count * (ss.kind == dv::PlanKind::range ? 700u + 600u : 700u + 1500u) / 1000u);   // settle + quick or full dwell per channel; an estimate (a busy channel takes longer)
   scan.saved_channels = st.saved_n;
   scan.saved_capacity = dv::kMaxScanChannels;
   // Evidence on the current channel: sync-level means a decoder reported synchronisation since this visit began (never an identity).
@@ -555,6 +574,10 @@ void refresh(State& st) {
     const bool on = dv_voice_service::save_speech();
     if (s.can_save_speech != can || s.save_speech != on || s.speech_files != st.speech_files) ++s.revision;
     s.can_save_speech = can; s.save_speech = on; s.speech_files = st.speech_files;
+    const uint16_t ch = static_cast<uint16_t>(std::min<size_t>(my_bands_channels(st), 65535));
+    const uint16_t mins = static_cast<uint16_t>((my_bands_channels(st) * 1300u + 59999u) / 60000u);
+    if (s.band_mask != st.band_mask || s.band_channels != ch || s.band_minutes != mins) ++s.revision;
+    s.band_mask = st.band_mask; s.band_channels = ch; s.band_minutes = mins;
   }
 }
 
@@ -638,6 +661,7 @@ void run_scanner(State& st) {
   in.receiver_ready = g_hooks.receiver_ready && g_hooks.receiver_ready();
   in.verified_ms = rs.verified_ms;
   in.candidate = rs.candidate;
+  in.identity_ms = rs.identity_ms;
   const dv::ScanStep step = st.scanner.service(now(), in);
   if (step.tune) {
     const bool ok = dv_radio::tune_channel(step.tune_hz);
@@ -717,6 +741,14 @@ void apply_radio_action(State& st, const Action& a) {
     case ActionKind::skip_frequency: st.scanner.skip(now()); break;
     case ActionKind::plan_prev: step_plan(st, -1); break;
     case ActionKind::plan_next: step_plan(st, +1); break;
+    case ActionKind::toggle_band: {
+      if (a.value >= dv::kBandPresetCount) { ++g_unapplied_actions; return; }
+      st.band_mask = static_cast<uint16_t>(st.band_mask ^ (1u << a.value));
+      if (g_hooks.u32_store) g_hooks.u32_store("dv_bands", st.band_mask);
+      if (st.plan_option == 1 + dv::kBandPresetCount) apply_plan_option(st);      // the plan follows the picker (a no-op while scanning)
+      ++st.snapshot.revision;
+      break;
+    }
     case ActionKind::toggle_save_speech: {
       if (!g_hooks.flag_store) { ++g_unapplied_actions; return; }
       const bool on = !dv_voice_service::save_speech();
@@ -749,6 +781,7 @@ void open() {
   }
   new (&g_state->snapshot) Snapshot();
   g_state->scanner = dv::Scanner();
+  if (g_hooks.u32_load) g_state->band_mask = static_cast<uint16_t>(g_hooks.u32_load("dv_bands", g_state->band_mask) & ((1u << dv::kBandPresetCount) - 1u));
   start_voice_service();
   load_saved_plan();
   g_state->db.clear();
@@ -883,7 +916,7 @@ void describe(char* out, size_t size) {
   std::snprintf(out, size,
                 "RTL_DV_UI open=1 view=%u density=%u receiver=%s scan=%s plan=%u idx=%u visited=%lu holds=%lu passes=%lu "
                 "manual_hold=%d can_scan=%u hist=%u systems=%u rev=%lu repaints=%lu applied=%lu unapplied=%lu "
-                "db_sys=%u db_tg=%u db_units=%u db_saves=%lu db_save_fail=%lu db_saving=%d stage=%u mode=%u opt=%u/%u render_n=%lu render_avg_us=%lu render_max_us=%lu",
+                "db_sys=%u db_tg=%u db_units=%u db_saves=%lu db_save_fail=%lu db_saving=%d stage=%u mode=%u opt=%u/%u render_n=%lu render_avg_us=%lu render_max_us=%lu quick_skips=%lu control_releases=%lu segments=%u bands=0x%04x",
                 static_cast<unsigned>(ui.view), static_cast<unsigned>(ui.density),
                 receiver_name(g_state->snapshot.receiver), scan_phase_name(g_state->snapshot.scan.phase),
                 static_cast<unsigned>(ss.count), static_cast<unsigned>(ss.index), static_cast<unsigned long>(ss.visited),
@@ -898,7 +931,8 @@ void describe(char* out, size_t size) {
                 static_cast<unsigned>(g_state->snapshot.scan.stage), static_cast<unsigned>(g_state->snapshot.scan.mode),
                 static_cast<unsigned>(g_state->plan_option), static_cast<unsigned>(plan_option_count(*g_state)),
                 static_cast<unsigned long>(g_render_n), static_cast<unsigned long>(g_render_n ? g_render_us_total / g_render_n : 0),
-                static_cast<unsigned long>(g_render_us_max));
+                static_cast<unsigned long>(g_render_us_max), static_cast<unsigned long>(ss.quick_skips), static_cast<unsigned long>(ss.control_releases),
+                static_cast<unsigned>(ss.segments), static_cast<unsigned>(g_state->band_mask));
 }
 
 bool handle_command(const char* command, bool authenticated, void (*write_line)(const char*)) {
@@ -967,9 +1001,9 @@ bool handle_command(const char* command, bool authenticated, void (*write_line)(
     }
     const uint32_t start = static_cast<uint32_t>(std::llround(a * 1e6)), step = static_cast<uint32_t>(std::llround(k * 1e3));
     const size_t count = static_cast<size_t>(std::llround((b - a) * 1e6 / step)) + 1;
-    if (!st.scanner.set_range(start, step, count)) { write_line("RTL_DV_RANGE_INVALID outside 24 MHz..1.766 GHz or more than 4096 channels"); return true; }
+    if (!st.scanner.set_range(start, step, count)) { write_line("RTL_DV_RANGE_INVALID outside 24 MHz..1.766 GHz or more than 8192 channels"); return true; }
     st.custom_start = start; st.custom_step = step; st.custom_count = count;
-    st.plan_option = static_cast<uint8_t>(1 + dv::kBandPresetCount);
+    st.plan_option = static_cast<uint8_t>(2 + dv::kBandPresetCount);
     std::snprintf(line, sizeof(line), "RTL_DV_RANGE_OK channels=%u est_pass_s=%u", static_cast<unsigned>(count), static_cast<unsigned>(count * 2200u / 1000u));
     write_line(line);
     ++st.snapshot.revision;

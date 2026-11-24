@@ -13,6 +13,8 @@
 #include "dv_voice_audio.hpp"
 #include "dv_voice_service.hpp"
 #include "dv_speech_rec.hpp"
+#include "dv_scanner.hpp"
+#include "dv_bandplan.hpp"
 #include "orcsdr_dmr/d1.hpp"
 #include "orcsdr_dmr/d1_call.hpp"
 
@@ -312,6 +314,58 @@ static void corpus_tests(const char* dir) {
   CHECK(off.groups == 0);                         // queue disabled: counters only, nothing delivered
 }
 
+// ---- Scanner: multi-band plans, quick skip, control-only hold release ---------------------------------------------------
+static void scanner_tests() {
+  using namespace dv;
+  { Scanner s;
+    const Segment two[2] = {{150007500u, 12500u, 640}, {450000000u, 12500u, 1600}};
+    CHECK(s.set_ranges(two, 2) && s.plan_count() == 2240 && s.plan_kind() == PlanKind::range);
+    CHECK(s.plan_at(0) == 150007500u && s.plan_at(639) == 150007500u + 639u * 12500u && s.plan_at(640) == 450000000u && s.plan_at(2239) == 450000000u + 1599u * 12500u && s.plan_at(2240) == 0);
+    const auto st = s.status();
+    CHECK(st.segments == 2 && st.range_start_hz == 150007500u && st.range_end_hz == 450000000u + 1599u * 12500u);
+    const Segment bad[2] = {{150007500u, 12500u, 10}, {100u, 12500u, 10}};
+    CHECK(!s.set_ranges(bad, 2) && s.plan_count() == 2240);                       // one invalid segment changes nothing
+    const Segment huge[1] = {{150000000u, 6250u, 9000}};
+    CHECK(!s.set_ranges(huge, 1) && !s.set_ranges(nullptr, 0));
+    Segment all[kBandPresetCount];
+    size_t total = 0;
+    for (size_t i = 0; i < kBandPresetCount; ++i) { all[i] = {kBandPresets[i].start_hz, kBandPresets[i].step_hz, static_cast<uint32_t>(channel_count(kBandPresets[i]))}; total += all[i].count; }
+    CHECK(s.set_ranges(all, kBandPresetCount) && s.plan_count() == total && total <= kMaxRangeChannels);   // every built-in band at once fits
+  }
+  { // quick skip: a silent channel of a range plan is left after quick_ms, a list channel keeps the full dwell
+    Scanner s; const Segment g[1] = {{152000000u, 12500u, 4}};
+    CHECK(s.set_ranges(g, 1) && s.start(0));
+    ScanInputs in; in.receiver_ready = true;
+    ScanStep step = s.service(0, in); CHECK(step.tune && step.tune_hz == 152000000u);
+    s.retune_result(true, 0); s.service(700, in);
+    CHECK(s.status().state == ScanState::sampling);
+    s.service(700 + 599, in); CHECK(s.status().index == 0);
+    s.service(700 + 600, in); CHECK(s.status().index == 1 && s.status().quick_skips == 1);
+    Scanner l; const uint32_t one[2] = {152000000u, 152012500u}; CHECK(l.set_plan(one, 2) && l.start(0));
+    l.service(0, in); l.retune_result(true, 0); l.service(700, in); l.service(700 + 1000, in);
+    CHECK(l.status().index == 0);                                                  // list plan: full 1500 ms dwell
+    ScanInputs cand = in; cand.candidate = true;
+    s.service(2000, in); s.retune_result(true, 2000);
+  }
+  { // control-only hold: verified events but no identity release the hold after 20 s; an identity keeps it
+    Scanner s; const Segment g[1] = {{152000000u, 12500u, 4}}; CHECK(s.set_ranges(g, 1) && s.start(0));
+    ScanInputs in; in.receiver_ready = true;
+    s.service(0, in); s.retune_result(true, 0); s.service(700, in);
+    in.verified_ms = 800; s.service(800, in); CHECK(s.status().state == ScanState::holding);
+    for (uint32_t t = 1000; t < 20800; t += 500) { in.verified_ms = t; s.service(t, in); }
+    CHECK(s.status().state == ScanState::holding && s.status().control_releases == 0);
+    in.verified_ms = 20800; s.service(20800, in);
+    CHECK(s.status().index == 1 && s.status().control_releases == 1);              // control traffic only: moved on
+    Scanner c; CHECK(c.set_ranges(g, 1) && c.start(0));
+    ScanInputs ci; ci.receiver_ready = true;
+    c.service(0, ci); c.retune_result(true, 0); c.service(700, ci);
+    ci.verified_ms = 800; ci.identity_ms = 900; c.service(800, ci);
+    for (uint32_t t = 1000; t < 40000; t += 500) { ci.verified_ms = t; ci.identity_ms = t; c.service(t, ci); }
+    CHECK(c.status().state == ScanState::holding && c.status().control_releases == 0);   // a real call is never cut off
+    c.toggle_manual_hold(); c.service(60000, ci); CHECK(c.status().index == 0);          // manual hold never leaves either
+  }
+}
+
 // ---- Speech recorder (decoded DMR speech only) -------------------------------------------------------------------
 static void speech_tests() {
   using namespace dv_speech_rec;
@@ -423,6 +477,7 @@ int main(int argc, char** argv) {
   engine_tests();
   service_tests();
   speech_tests();
+  scanner_tests();
   // encoder self-consistency (guards the fixture, not the decoder)
   { uint8_t lc[9] = {0, 0, 0x20, 0, 0, 100, 0x3e, 0x99, 0x9b}; std::array<uint8_t, 128> w; encode_lc(lc, w, false); CHECK(row_ok(w)); encode_lc(lc, w, true); CHECK(row_ok(w)); }
   if (argc > 1) corpus_tests(argv[1]);

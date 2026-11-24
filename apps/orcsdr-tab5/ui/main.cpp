@@ -13384,6 +13384,8 @@ void open_digital_voice_dashboard() {
   };
   app.flag_load = [](const char* key) { return preferences.getBool(key, false); };
   app.flag_store = [](const char* key, bool value) { preferences.putBool(key, value); };
+  app.u32_load = [](const char* key, uint32_t fallback) { return preferences.getUInt(key, fallback); };
+  app.u32_store = [](const char* key, uint32_t value) { preferences.putUInt(key, value); };
   app.db_save_result = []() -> int {
     orcsdr::sd_writer::Writer& w = orcsdr::sd_writer::shared();
     const orcsdr::sd_writer::State st = w.result().state;
