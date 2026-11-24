@@ -50,3 +50,7 @@ artifacts/pocsag-validation/
 artifacts/lora_validation/
 artifacts/release-readiness/
 docs/user-guide/assets/screenshots/raw/
+
+# Real over-the-air call audio stays local (see artifacts/digital-voice-integration/AUDIO_LOCAL_ONLY.md)
+artifacts/digital-voice-integration/**/*.wav
+artifacts/digital-voice-integration/*.zip

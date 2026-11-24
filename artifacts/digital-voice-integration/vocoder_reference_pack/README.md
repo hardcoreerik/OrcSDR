@@ -25,6 +25,8 @@ sounds like and what the voice-frame stream looks like.
 
 ## Contents
 
+> **The `audio/` files are not in the repository** (real call audio stays local; hashes and location in `../AUDIO_LOCAL_ONLY.md`). The list below describes the pack as delivered.
+
 - `audio/` four per-call WAV files, **8 kHz, mono, 16-bit**, named by DSD-FME: date, system, colour code, talkgroup, source.
   - `..._CC_13_GROUP_TGT_6011885_SRC_4106011.wav` 7.56 s, 152.1575 MHz (speech, the best one)
   - `..._CC_13_GROUP_TGT_6011885_SRC_4106019.wav` 1.44 s, 152.1575 MHz

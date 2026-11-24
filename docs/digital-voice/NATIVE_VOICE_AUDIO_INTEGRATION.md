@@ -29,7 +29,7 @@ Fix: while the Digital Voice audio service runs, `queue_audio_samples()` refuses
 
 - `components/mbelib` is the same pinned upstream mbelib (`9a04ed5c`, ISC) the P25 IMBE path already used, with the AMBE+2 3600x2450 backend added by Codex commit `87e0eec9`.
 - `components/orcsdr_vocoder` is the Codex adapter (DMR 72-bit deinterleave, extended Golay C0 rejection, silence types muted, gain limiting). The DMR interleave tables come from szechyjs/dsd (ISC notice in `THIRD_PARTY.md`).
-- No DSD-FME code is used. The DSD-FME reference pack (`artifacts/digital-voice-integration/vocoder_reference_pack*`) is validation evidence only: it is read by `tools/dv_voice_compare.py` and `tools/dv_voice_audio_compare.py` and never by the receiver or the vocoder. Every WAV listed below was produced from original IQ by native code.
+- No DSD-FME code is used. The DSD-FME reference pack (local only, `F:\Ai\OrcSDR-data\digital-voiceocoder_reference_pack.zip`; its text parts are in `artifacts/digital-voice-integration/vocoder_reference_pack/`; hashes in `AUDIO_LOCAL_ONLY.md`) is validation evidence only: it is read by `tools/dv_voice_compare.py` and `tools/dv_voice_audio_compare.py` and never by the receiver or the vocoder. Every WAV listed below was produced from original IQ by native code.
 - One change to the vendored mbelib: `ambe3600x2450.c` read `prev_mp->log2Ml[57]` (one past a 57-entry array) when the interpolation index reached 56. UBSan found it. The index is now clamped to 56. The decoded PCM of all three real calls is byte-identical before and after the clamp (md5 of every WAV compared).
 - **Licensing and patents are not assessed.** The ISC notice on mbelib does not establish freedom to distribute an AMBE+2 implementation. Commercial codec and patent status remains an owner decision. Development testing is authorised; nothing here is a distribution decision.
 
@@ -192,7 +192,7 @@ Firmware `v0.6.0` build `Nov 24 2026`, ESP-IDF 5.5.4, flashed app-only. Raw logs
 cmake -S tests/digital_voice_live -B build/dv-voice -DCMAKE_BUILD_TYPE=Release && cmake --build build/dv-voice -j
 cd build/dv-voice && ctest                                   # includes digital_voice_native_voice
 ./dv_voice_replay ../../tests/digital_voice_corpus/iq/terra_152p1575_call_cc13.cu8 152157500 ../../output/native terra_152p1575_call_cc13
-python3 tools/dv_voice_compare.py output/native output artifacts/digital-voice-integration/vocoder_reference_pack.zip output/liborcsdr_vocoder.so
+python3 tools/dv_voice_compare.py output/native output F:/Ai/OrcSDR-data/digital-voice/vocoder_reference_pack.zip output/liborcsdr_vocoder.so   # the reference pack is local only, see artifacts/digital-voice-integration/AUDIO_LOCAL_ONLY.md
 tools/dv_voice_impairments.sh build/dv-voice/dv_voice_replay tests/digital_voice_corpus/iq/terra_152p1575_call_cc13.cu8 152157500 output/impair
 ```
 
