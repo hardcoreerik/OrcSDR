@@ -176,14 +176,19 @@ std::array<std::uint8_t, 12> reference_cach(bool slot2) {
     return out;
 }
 std::array<std::uint8_t, 128> reference_embedded(const Block& lc) {
+    // ETSI TS 102 361-1 B.2.2.1 layout (checked against real captures): the 72 LC bits fill rows 0-1 (11 columns) and rows 2-6
+    // (columns 0..9); the 5-bit checksum is column 10 of rows 2..6, MSB first. The previous version of this encoder filled a plain
+    // 7x11 row-major array, the same mistake the decoder had, so the two agreed while validating no real embedded LC.
     std::uint8_t rows[8][16]{};
-    for (unsigned i = 0; i < 72; ++i)
-        rows[i/11U][i%11U] = static_cast<std::uint8_t>(read_bit(lc.data(), i));
+    unsigned n = 0;
+    for (unsigned r = 0; r < 2; ++r)
+        for (unsigned c = 0; c < 11; ++c) rows[r][c] = static_cast<std::uint8_t>(read_bit(lc.data(), n++));
+    for (unsigned r = 2; r < 7; ++r)
+        for (unsigned c = 0; c < 10; ++c) rows[r][c] = static_cast<std::uint8_t>(read_bit(lc.data(), n++));
     unsigned sum = 0;
     for (unsigned i = 0; i < 9; ++i) sum += lc[i];
     const unsigned check = sum % 31U;
-    for (unsigned i = 0; i < 5; ++i)
-        rows[(72U + i)/11U][(72U + i)%11U] = static_cast<std::uint8_t>((check >> (4U - i)) & 1U);
+    for (unsigned r = 2; r < 7; ++r) rows[r][10] = static_cast<std::uint8_t>((check >> (6U - r)) & 1U);
     for (unsigned r = 0; r < 7; ++r) {
         const unsigned parity = parity_from_matrix(rows[r], 11, row16);
         for (unsigned b = 0; b < 5; ++b)
