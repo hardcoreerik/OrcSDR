@@ -267,12 +267,35 @@ static void negative_control(Density d) {
   CHECK(escaped);                               // and the draw escaped the frequency widget
 }
 
+// Regression for a collision seen on the device: a row with a count, a last time and a SAVED/NEW tag must not overlap text on its second line.
+static void row_collision(Density d) {
+  const scan_layout::Geometry g = scan_layout::geometry(d);
+  lgfx::LovyanGFX display; Dashboard dash; UiState ui; ui.density = d; ui.view = View::explore;
+  Snapshot s = sc_multi(); s.scan_hits[0].saved = true; s.scan_hits[1].is_new = true; s.revision = 1;
+  host_stub::reset(); CHECK(dash.present(display, s, ui, true, false));
+  for (size_t row = 0; row < 2; ++row)
+    for (const auto& a : host_stub::calls) {
+      if (a.kind != host_stub::Prim::text || a.str.empty()) continue;
+      const host_stub::R ea = host_stub::eff(a);
+      if (!inside(ea, g.row[row])) continue;
+      for (const auto& b : host_stub::calls) {
+        if (&a == &b || b.kind != host_stub::Prim::text || b.str.empty()) continue;
+        const host_stub::R eb = host_stub::eff(b);
+        if (!inside(eb, g.row[row])) continue;
+        const bool overlap = ea.x < eb.x + eb.w && eb.x < ea.x + ea.w && ea.y < eb.y + eb.h && eb.y < ea.y + ea.h;
+        if (overlap) { std::printf("   row %zu: '%s' overlaps '%s'\n", row, a.str.c_str(), b.str.c_str()); ++g_fail; }
+      }
+    }
+}
+
 int main(int argc, char** argv) {
   FILE* manifest = argc > 1 ? std::fopen(argv[1], "w") : nullptr;
   run_scenarios(manifest);
   if (manifest) std::fclose(manifest);
   flicker(Density::discovery_first);
   flicker(Density::analysis_first);
+  row_collision(Density::discovery_first);
+  row_collision(Density::analysis_first);
   negative_control(Density::discovery_first);
   negative_control(Density::analysis_first);
   if (g_fail) { std::printf("FAIL dv_dashboard_scan: %d failures\n", g_fail); return 1; }

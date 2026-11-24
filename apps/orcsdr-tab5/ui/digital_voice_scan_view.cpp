@@ -261,8 +261,9 @@ void draw_row(Paint& p, Rect r, size_t i, const Snapshot& s, const UiState& u) {
   if (h.seen_count > 1) std::snprintf(line, sizeof(line), "%s  x%u%s%s", f, static_cast<unsigned>(h.seen_count), h.last_time[0] ? "  " : "", h.last_time);
   else std::snprintf(line, sizeof(line), "%s%s%s", f, h.last_time[0] ? "  " : "", h.last_time);
   p.label(line, r.x + 10, r.y + 36, r);
-  if (h.is_new) p.text("NEW", r.x + r.w - 10 - 36, r.y + 36, kCyan, 2, r);
-  else if (h.saved) p.text("SAVED", r.x + r.w - 10 - 60, r.y + 36, kGreen, 2, r);
+  // NEW / SAVED sit on the first line between the area code and the evidence label, so the second line (frequency, count, last time) never collides with them.
+  if (h.saved) p.text("SAVED", r.x + 214, r.y + 14, kGreen, 2, r);
+  else if (h.is_new) p.text("NEW", r.x + 214, r.y + 14, kCyan, 2, r);
 }
 uint32_t sig_detail(const Snapshot& s, const UiState& u) {
   Hash h; h.u32(u.selected_scan_hit); h.u32(u.selected_scan_hit < s.scan_hit_count);
