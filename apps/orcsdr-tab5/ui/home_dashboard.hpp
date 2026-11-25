@@ -101,6 +101,9 @@ enum class ActionKind : uint8_t {
   mode_close,
   mode_set,          // value = 0 AUTO, 1 NFM, 2 AM, 3 WFM, 4 USB, 5 LSB
   keypad_open,       // tap on the frequency readout
+  bias_open,         // tap on BIAS in the footer: asks first
+  bias_close,
+  bias_set,          // confirmed; value 1 = antenna-port power on, 0 = off
 };
 
 struct Action {

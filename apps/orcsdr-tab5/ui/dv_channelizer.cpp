@@ -30,13 +30,8 @@ void Channelizer::reset() noexcept {
   power_n_ = 0;
 }
 
-size_t Channelizer::process_cu8(const uint8_t* cu8, size_t pairs, Iq48* out, size_t capacity) noexcept {
-  if (cu8 == nullptr || out == nullptr) return 0;
-  size_t written = 0;
-  constexpr float kScale = 1.0f / 127.5f;
-  for (size_t n = 0; n < pairs; ++n) {
-    const float i = (static_cast<float>(cu8[2 * n]) - 127.5f) * kScale;
-    const float q = (static_cast<float>(cu8[2 * n + 1]) - 127.5f) * kScale;
+inline void Channelizer::push(float i, float q, Iq48* out, size_t capacity, size_t& written) noexcept {
+  {
     float re, im;   // multiply by exp(-j*pi*phase/2): moves +60 kHz down to DC
     switch (phase_) {
       case 0: re = i; im = q; break;
@@ -48,11 +43,11 @@ size_t Channelizer::process_cu8(const uint8_t* cu8, size_t pairs, Iq48* out, siz
     hist_re_[pos_] = re;
     hist_im_[pos_] = im;
     pos_ = pos_ + 1 == kTaps ? 0 : pos_ + 1;
-    if (++decim_ < kDecimation) continue;
+    if (++decim_ < kDecimation) return;
     decim_ = 0;
     if (written >= capacity) {
       ++dropped_;
-      continue;
+      return;
     }
     float acc_re = 0, acc_im = 0;
     size_t idx = pos_;   // oldest sample
@@ -65,6 +60,24 @@ size_t Channelizer::process_cu8(const uint8_t* cu8, size_t pairs, Iq48* out, siz
     power_sum_ += static_cast<double>(acc_re) * acc_re + static_cast<double>(acc_im) * acc_im;
     ++power_n_;
   }
+}
+
+size_t Channelizer::process_cu8(const uint8_t* cu8, size_t pairs, Iq48* out, size_t capacity) noexcept {
+  if (cu8 == nullptr || out == nullptr) return 0;
+  size_t written = 0;
+  constexpr float kScale = 1.0f / 127.5f;
+  for (size_t n = 0; n < pairs; ++n) {
+    const float i = (static_cast<float>(cu8[2 * n]) - 127.5f) * kScale;
+    const float q = (static_cast<float>(cu8[2 * n + 1]) - 127.5f) * kScale;
+    push(i, q, out, capacity, written);
+  }
+  return written;
+}
+
+size_t Channelizer::process_f32(const float* iq, size_t pairs, Iq48* out, size_t capacity) noexcept {
+  if (iq == nullptr || out == nullptr) return 0;
+  size_t written = 0;
+  for (size_t n = 0; n < pairs; ++n) push(iq[2 * n], iq[2 * n + 1], out, capacity, written);
   return written;
 }
 

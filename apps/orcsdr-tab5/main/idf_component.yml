@@ -11,8 +11,8 @@ dependencies:
     version: "1.13.1"
   esp_rtl_sdr:
     git: https://github.com/hardcoreerik/esp-rtl-sdr.git
-    # esp_rtl_sdr v0.9.6 (published release, exact tagged source)
-    version: dabdda1aff6aa196f3c1523d791adf80d2c24ccc
+    # esp_rtl_sdr v0.9.6 + live sample-rate change and bias kept across stop/start (branch claude/live-rate-change, not yet released)
+    version: 8fdcd4de2e22b5f2faac104761e228b5963e6096
   orcmaps:
     git: https://github.com/hardcoreerik/OrcMaps.git
     # Development candidate: offscreen feature rejection; native timing pending.

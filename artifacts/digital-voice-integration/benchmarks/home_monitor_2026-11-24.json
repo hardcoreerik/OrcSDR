@@ -1,0 +1,201 @@
+{
+ "summary": {
+  "seconds": 574,
+  "mb_per_s": 5.121,
+  "expected_at_2560k": 5.12,
+  "overruns": 0,
+  "drops": 0,
+  "all_streaming": true
+ },
+ "rows": [
+  {
+   "t": 2,
+   "state": "STREAMING",
+   "eff": 2549794,
+   "bytes": 557481984,
+   "overruns": 0,
+   "drops": 0,
+   "bias": "0"
+  },
+  {
+   "t": 30,
+   "state": "STREAMING",
+   "eff": 2551870,
+   "bytes": 704249856,
+   "overruns": 0,
+   "drops": 0,
+   "bias": "0"
+  },
+  {
+   "t": 59,
+   "state": "STREAMING",
+   "eff": 2553209,
+   "bytes": 851607552,
+   "overruns": 0,
+   "drops": 0,
+   "bias": "0"
+  },
+  {
+   "t": 88,
+   "state": "STREAMING",
+   "eff": 2554142,
+   "bytes": 998342656,
+   "overruns": 0,
+   "drops": 0,
+   "bias": "0"
+  },
+  {
+   "t": 117,
+   "state": "STREAMING",
+   "eff": 2554869,
+   "bytes": 1145700352,
+   "overruns": 0,
+   "drops": 0,
+   "bias": "0"
+  },
+  {
+   "t": 145,
+   "state": "STREAMING",
+   "eff": 2555438,
+   "bytes": 1292959744,
+   "overruns": 0,
+   "drops": 0,
+   "bias": "0"
+  },
+  {
+   "t": 174,
+   "state": "STREAMING",
+   "eff": 2555838,
+   "bytes": 1439596544,
+   "overruns": 0,
+   "drops": 0,
+   "bias": "0"
+  },
+  {
+   "t": 203,
+   "state": "STREAMING",
+   "eff": 2556228,
+   "bytes": 1587085312,
+   "overruns": 0,
+   "drops": 0,
+   "bias": "0"
+  },
+  {
+   "t": 232,
+   "state": "STREAMING",
+   "eff": 2556514,
+   "bytes": 1734180864,
+   "overruns": 0,
+   "drops": 0,
+   "bias": "0"
+  },
+  {
+   "t": 260,
+   "state": "STREAMING",
+   "eff": 2556745,
+   "bytes": 1880915968,
+   "overruns": 0,
+   "drops": 0,
+   "bias": "0"
+  },
+  {
+   "t": 289,
+   "state": "STREAMING",
+   "eff": 2556974,
+   "bytes": 2027716608,
+   "overruns": 0,
+   "drops": 0,
+   "bias": "0"
+  },
+  {
+   "t": 318,
+   "state": "STREAMING",
+   "eff": 2557158,
+   "bytes": 2175139840,
+   "overruns": 0,
+   "drops": 0,
+   "bias": "0"
+  },
+  {
+   "t": 346,
+   "state": "STREAMING",
+   "eff": 2557291,
+   "bytes": 2321907712,
+   "overruns": 0,
+   "drops": 0,
+   "bias": "0"
+  },
+  {
+   "t": 375,
+   "state": "STREAMING",
+   "eff": 2557439,
+   "bytes": 2468839424,
+   "overruns": 0,
+   "drops": 0,
+   "bias": "0"
+  },
+  {
+   "t": 404,
+   "state": "STREAMING",
+   "eff": 2557594,
+   "bytes": 2615672832,
+   "overruns": 0,
+   "drops": 0,
+   "bias": "0"
+  },
+  {
+   "t": 432,
+   "state": "STREAMING",
+   "eff": 2557697,
+   "bytes": 2762768384,
+   "overruns": 0,
+   "drops": 0,
+   "bias": "0"
+  },
+  {
+   "t": 461,
+   "state": "STREAMING",
+   "eff": 2557793,
+   "bytes": 2909208576,
+   "overruns": 0,
+   "drops": 0,
+   "bias": "0"
+  },
+  {
+   "t": 490,
+   "state": "STREAMING",
+   "eff": 2557888,
+   "bytes": 3055812608,
+   "overruns": 0,
+   "drops": 0,
+   "bias": "0"
+  },
+  {
+   "t": 518,
+   "state": "STREAMING",
+   "eff": 2557977,
+   "bytes": 3203104768,
+   "overruns": 0,
+   "drops": 0,
+   "bias": "0"
+  },
+  {
+   "t": 547,
+   "state": "STREAMING",
+   "eff": 2558065,
+   "bytes": 3349807104,
+   "overruns": 0,
+   "drops": 0,
+   "bias": "0"
+  },
+  {
+   "t": 576,
+   "state": "STREAMING",
+   "eff": 2558121,
+   "bytes": 3497033728,
+   "overruns": 0,
+   "drops": 0,
+   "bias": "0"
+  }
+ ]
+}

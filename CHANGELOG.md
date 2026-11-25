@@ -2,6 +2,29 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Home streams at 2.56 MS/s on the RTL-SDR Blog V4/V4L — 2026-11-25
+
+- **Home:** on every wide band (browse, FM, AM, shortwave, weather, CB, airband) Home now runs the receiver at 2.56 MS/s on a V4/V4L, so the spectrum and waterfall span 2560 kHz. The dedicated dashboards (FM radio, shortwave, CB and so on) keep their own 2.4 MS/s because their decoders are tuned for it; other dongles keep 2.4 MS/s. The span steps and maximum follow the stream rate.
+- **Listening at 2.56 MS/s:** the demodulators decimate by 10 to 256 kS/s (`rtl_rate_plan.hpp`), the FM filter constants and the SSB BFO follow that rate, and the 51.2 kHz audio is converted to 48 kHz once at the source (`audio_rate_conv`, cubic, 15/16) so the speaker, recorder, web audio and meters are unchanged. Stereo/RDS metering at 256 kS/s is not corrected (it is metering only).
+- **Driver (esp-rtl-sdr branch `claude/live-rate-change`, pinned at 8fdcd4d):** the measured tuner-bandwidth plan now also applies at 2.56 MS/s (it clipped the upper end of the wider span), `esp_rtl_sdr_set_sample_rate_live()`, and bias kept across stop/start. Bias is never saved or applied at boot.
+- **Measured on a Tab5 with a V4L:** Home at 2.56 MS/s for 573 s: 5.123 MB/s (5.12 expected), 0 overruns, 0 drops. Screenshots show the full 2560 kHz span on the FM band.
+- **Not verified:** audio by ear (nobody listened), the upper-edge fix at the exact 152 MHz case where the drop was first seen, Home on the V4 (only the V4L was tested), and the fixed-rate decoders (P25, POCSAG, LoRa), whose bands still pin the stream rate on Home. The `RTL_DV DDCBENCH` command and `dv_wide_ddc` (wide-stream digital tuner for the DMR scan) are development items, not wired into the scan.
+
+## Unreleased — RF Lab: flicker fixed, small text enlarged — 2026-11-24
+
+- **Flicker:** the live spectrum and the side-panel readouts were cleared and redrawn straight on the display on every update, so the cleared frame was visible. The spectrum is now composed off screen and pushed in one transfer, and each readout row is redrawn only when its value changes, also in one transfer.
+- **Readability:** the side-panel labels, the Controls-page status lines and the notes at the bottom were drawn in the smallest font; they are now the same size as the values. "PEAK FREQUENCY", "FREQUENCY ERROR" and "REFERENCE-EST. POWER" are shortened ("PEAK FREQ", "FREQ ERROR", "REF-EST POWER") to fit. The Controls driver line no longer runs into the -100k button. The SPECTRUM caption, which was hidden under the plot, is drawn inside it; the WATERFALL caption is dropped.
+- **Dark boxes:** text on panels and buttons was drawn on a black background; it now uses the colour behind it.
+- **Verified:** screenshots of the Live and Controls pages on the Tab5 (COM17 Tab5 dev unit). **Not verified:** the flicker itself (a still image cannot show it), and the Measurements and Records pages.
+
+## Unreleased — Home BIAS popup; bias changes only on the owner's request — 2026-11-24
+
+- **Home:** tapping BIAS in the bottom status bar opens a confirmation popup (CONFIRM: TURN ON/OFF, CANCEL, tap outside cancels); bias changes only on CONFIRM.
+- **Rule:** bias is never saved, never applied at boot, and never re-applied by firmware after a scan or receiver restart. Only the Home popup, RF Lab and the serial command change it.
+- **Hunter:** `tab5_live_hunt.py` no longer sends `RTL_DRIVER BIAS ON`.
+- **Known gap:** starting a Digital Voice scan from Home restarts the receiver (sample-rate change) and the driver then starts with bias OFF, so the LNA loses power. Removing that restart is the real fix and is not done.
+- **Not verified:** the popup on screen.
+
 ## Unreleased — DMR conducted test harness for the Pluto (generator, loopback proof, safety-gated transmit, Tab5 scoring) — 2026-11-24
 
 - **`tools/dmr_pluto/`:** `dmr_gen.py` builds a known DMR call (voice LC header, N voice superframes with embedded LC, terminator, other slot idle) as 4FSK from 72-bit AMBE+2 frames; `cu8_loopback.py` / `loopback_test.sh` decode it with the production chain with no RF; `pluto_tx.py` transmits through OrcAnomaly's safety layer, cable-only, at 915.0 MHz inside the ISM window; `tab5_loop_test.py` and `sweep.py` score the Tab5 against what was sent across an attenuation ladder. README holds the checklist and the order for the first conducted test.

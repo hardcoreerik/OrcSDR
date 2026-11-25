@@ -71,7 +71,7 @@ constexpr int kPopButtonW = 210, kCloseW = 178;
 constexpr int kSliderY = 276 + kPopShift, kSliderH = 50;
 constexpr int kMinusX = 360, kBarX = 446, kBarW = 678, kPlusX = 1140, kNudgeW = 70;
 constexpr uint32_t kSpanSteps[] = {
-    120000, 240000, 480000, 960000, 1200000, 2400000};
+    120000, 240000, 480000, 960000, 1200000, 2400000, 2560000};
 
 Snapshot current{};
 bool shown = false;
@@ -79,6 +79,7 @@ bool browser = false;
 bool gain_popup = false;
 bool keypad = false;
 bool mode_popup = false;
+bool bias_popup = false;   // second confirmation before the antenna-port power changes
 bool keypad_error = false;   // the last entry was out of range
 char keypad_entry[12]{};
 bool filter_popup = false;
@@ -681,6 +682,32 @@ Action mode_popup_action(int32_t x, int32_t y) {
   return {};
 }
 
+constexpr int kBiasFooterX = 704, kBiasFooterY = 660, kBiasFooterW = 148, kBiasFooterH = 36;
+
+void draw_bias_popup() {
+  const bool on = current.bias_on;
+  M5.Display.fillRoundRect(kPopX, kPopY, kPopW, kPopH, 12, TFT_BLACK);
+  M5.Display.drawRoundRect(kPopX, kPopY, kPopW, kPopH, 12, TFT_RED);
+  M5.Display.drawRoundRect(kPopX + 1, kPopY + 1, kPopW - 2, kPopH - 2, 11, TFT_RED);
+  text("ANTENNA PORT POWER (BIAS TEE)", kPopX + 20, kPopY + 20, TFT_RED, 2);
+  text(on ? "NOW ON" : "NOW OFF", kPopX + kPopW - 20, kPopY + 20, on ? TFT_RED : TFT_LIGHTGREY, 2, middle_right);
+  popup_button(kAutoX, 420, on ? "CONFIRM: TURN OFF" : "CONFIRM: TURN ON", !on, true);
+  popup_button(kCloseX, kCloseW, "CANCEL", false, true);
+  text("Puts 5 V on the antenna connector to power an LNA.", kPopX + 20, 288 + kPopShift, TFT_LIGHTGREY, 2);
+  text("Turn it on only with a bias-tee LNA attached; never with a bare antenna", kPopX + 20, 320 + kPopShift, TFT_WHITE, 2);
+  text("or a DC-grounded one. It stays on until you turn it off. A restart turns it off.", kPopX + 20, 348 + kPopShift, TFT_WHITE, 2);
+}
+
+Action bias_popup_action(int32_t x, int32_t y) {
+  if (inside(x, y, kAutoX, kPopButtonY, 420, kPopButtonH))
+    return current.driver_ready && current.bias_available
+               ? Action{ActionKind::bias_set, dashboards::Id::count, current.bias_on ? 0u : 1u}
+               : Action{};
+  if (inside(x, y, kCloseX, kPopButtonY, kCloseW, kPopButtonH) || !inside(x, y, kPopX, kPopY, kPopW, kPopH))
+    return {ActionKind::bias_close};
+  return {};
+}
+
 void draw_filter_popup() {
   const auto& standards = filter_standards::standards(current.filter_kind);
   M5.Display.fillRoundRect(kPopX, kPopY, kPopW, kPopH, 12, TFT_BLACK);
@@ -858,6 +885,7 @@ void draw_receiver_chrome(bool keep_graphics = false) {
   if (gain_popup) draw_gain_popup();
   if (filter_popup) draw_filter_popup();
   if (mode_popup) draw_mode_popup();
+  if (bias_popup) draw_bias_popup();
   if (keep_graphics) draw_footer();   // the popup covered the footer
 }
 
@@ -941,11 +969,14 @@ Action tap_action(int32_t x, int32_t y) {
     }
     return {};
   }
+  if (bias_popup) return bias_popup_action(x, y);
   if (mode_popup) return mode_popup_action(x, y);
   if (gain_popup) return gain_popup_action(x, y);
   if (filter_popup) return filter_popup_action(x, y);
   if (inside(x,y,kHeaderStatusX+238,kHeaderStatusY,kHeaderStatusW-238,kHeaderStatusH))
     return {ActionKind::open_clock};
+  if (inside(x, y, kBiasFooterX, kBiasFooterY, kBiasFooterW, kBiasFooterH))
+    return current.driver_ready && current.bias_available ? Action{ActionKind::bias_open} : Action{};
   if (inside(x, y, kGainX, kGainY, kGainW, kGainH)) return {ActionKind::gain_open};
   if (inside(x, y, kFilterPanelX, kFilterPanelY, kFilterPanelW, kFilterPanelH))
     return {ActionKind::filter_open};
@@ -1011,6 +1042,7 @@ void enter(const Snapshot& snapshot) {
   gain_popup = false;
   filter_popup = false;
   mode_popup = false;
+  bias_popup = false;
   keypad = false;
   gesture = {};
   last_spectrum_ms = 0;
@@ -1021,7 +1053,7 @@ void enter(const Snapshot& snapshot) {
   draw_all();
 }
 
-void leave() { shown = browser = gain_popup = filter_popup = mode_popup = keypad = false; gesture = {}; }
+void leave() { shown = browser = gain_popup = filter_popup = mode_popup = bias_popup = keypad = false; gesture = {}; }
 
 void draw() {
   if (!shown) return;
@@ -1052,7 +1084,7 @@ void update(const Snapshot& snapshot) {
                              static_cast<int>(std::lround(current.relative_dbfs));
   const bool gain_state_changed = gain_changed(snapshot, current);
   current = snapshot;
-  const bool covered = gain_popup || filter_popup || mode_popup;   // a popup is over the lower half
+  const bool covered = gain_popup || filter_popup || mode_popup || bias_popup;   // a popup is over the lower half
   M5.Display.startWrite();
   if (status_changed || receiver_changed) draw_header_status();
   if (tuner_changed) draw_band_label();
@@ -1066,6 +1098,7 @@ void update(const Snapshot& snapshot) {
   }
   if (covered) {
     if (mode_popup && tuner_changed) draw_mode_popup();
+    if (bias_popup && receiver_changed) draw_bias_popup();
     if (filter_popup && (bandwidth_changed || tuner_changed)) draw_filter_popup();
     if (gain_popup && (gain_state_changed || receiver_changed)) draw_gain_popup();
     M5.Display.endWrite();
@@ -1189,7 +1222,7 @@ void draw_spectrum(const float* levels, size_t first_bin, size_t visible_bins,
   // With a popup docked at the bottom it scrolls only the part above it.
   const int rows = waterfall_clock.rows(now, waterfall_style::rows_per_frame(waterfall_style::Screen::home));
   if (rows) {
-    const bool popup_over = gain_popup || filter_popup || mode_popup;
+    const bool popup_over = gain_popup || filter_popup || mode_popup || bias_popup;
     const int waterfall_h = popup_over ? kPopY - 2 - (kWaterfallY + 1) : kWaterfallH - 2;
     M5.Display.startWrite();
     M5.Display.setScrollRect(kPlotX + 1, kWaterfallY + 1, kPlotW - 2, waterfall_h, TFT_BLACK);
@@ -1310,6 +1343,21 @@ Action handle_touch(int32_t x, int32_t y, bool pressed) {
       M5.Display.endWrite();
       return {};
     }
+    if (action.kind == ActionKind::bias_open || action.kind == ActionKind::bias_close) {
+      bias_popup = action.kind == ActionKind::bias_open;
+      M5.Display.startWrite();
+      if (bias_popup) draw_bias_popup();
+      else draw_receiver_chrome(true);
+      M5.Display.endWrite();
+      return {};
+    }
+    if (action.kind == ActionKind::bias_set) {   // confirmed: close the popup, hand the choice to the firmware
+      bias_popup = false;
+      M5.Display.startWrite();
+      draw_receiver_chrome(true);
+      M5.Display.endWrite();
+      return action;
+    }
     if (action.kind == ActionKind::gain_open || action.kind == ActionKind::gain_close) {
       gain_popup = action.kind == ActionKind::gain_open;
       M5.Display.startWrite();
@@ -1368,11 +1416,11 @@ Action handle_touch(int32_t x, int32_t y, bool pressed) {
 }
 
 bool active() { return shown; }
-bool popup_open() { return shown && !browser && (gain_popup || filter_popup || mode_popup); }
+bool popup_open() { return shown && !browser && (gain_popup || filter_popup || mode_popup || bias_popup); }
 int32_t list_scroll_px() { return scroll_offset_px; }
 void close_popup() {
   if (!popup_open()) return;
-  gain_popup = filter_popup = mode_popup = false;
+  gain_popup = filter_popup = mode_popup = bias_popup = false;
   M5.Display.startWrite();
   draw_receiver_chrome(true);
   M5.Display.endWrite();

@@ -1,0 +1,31 @@
+{
+ "t": "2026-11-24 21:17:08",
+ "results": {
+  "2400000": {
+   "seconds": 41.7,
+   "state": "STREAMING",
+   "effective_sps": "2383533",
+   "bytes_delta": 200146944,
+   "blocks_delta": 6108,
+   "overruns_delta": 0,
+   "drops_delta": 0,
+   "overruns_total": "0",
+   "drops_total": "0",
+   "mb_per_s": 4.802,
+   "expected_mb_per_s": 4.8
+  },
+  "2560000": {
+   "seconds": 41.6,
+   "state": "STREAMING",
+   "effective_sps": "2544900",
+   "bytes_delta": 213057536,
+   "blocks_delta": 6502,
+   "overruns_delta": 0,
+   "drops_delta": 0,
+   "overruns_total": "0",
+   "drops_total": "0",
+   "mb_per_s": 5.117,
+   "expected_mb_per_s": 5.12
+  }
+ }
+}

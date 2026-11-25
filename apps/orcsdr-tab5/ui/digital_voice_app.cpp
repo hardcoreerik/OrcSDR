@@ -13,6 +13,7 @@
 #include "digital_voice_dashboard_surface.hpp"
 #include "dv_bandplan.hpp"
 #include "dv_discovery_bridge.hpp"
+#include "dv_wide_bench.hpp"
 #include "dv_radio.hpp"
 #include "dv_scanner.hpp"
 #include "dv_voice_service.hpp"
@@ -1055,6 +1056,12 @@ bool handle_command(const char* command, bool authenticated, void (*write_line)(
     dv_radio::set_protocol_mask(static_cast<uint8_t>(m));
     dv_radio::request_decoder_reset();
     write_line("RTL_DV_MASK_OK (override: forces these decoders on every channel)");
+    return true;
+  }
+  if (std::strcmp(arg, "DDCBENCH") == 0) {          // development: cost of tuning a channel out of a 2.4 MS/s stream
+    if (!authenticated) { write_line("RTL_DV_REFUSED authenticate first"); return true; }
+    if (!g_hooks.micros) { write_line("RTL_DV_DDCBENCH_FAILED no clock"); return true; }
+    dv_wide_bench::run([] { return g_hooks.micros(); }, write_line);
     return true;
   }
   if (std::strncmp(arg, "IQ ", 3) == 0) {          // development IQ capture: RTL_DV IQ ON|OFF|SNAP|STATUS

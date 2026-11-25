@@ -235,6 +235,8 @@
 #include "../../../orcdial/src/control/secure_runtime.hpp"
 #include "../../../orcdial/src/controller.hpp"
 #endif
+#include "audio_rate_conv.hpp"
+#include "rtl_rate_plan.hpp"
 
 #if ESP_RTL_SDR_VERSION_NUMBER < 800
 #error "OrcSDR requires esp_rtl_sdr v0.8.0-rc2 or newer"
@@ -413,6 +415,7 @@ constexpr int kWifiData3Pin = 8;
 constexpr int kWifiResetPin = 15;
 constexpr uint32_t kRtlSampleRateSps = 960000;
 constexpr uint32_t kRtlDashboardSampleRateSps = 2400000;
+constexpr uint32_t kRtlBrowseSampleRateSps = 2560000;   // Home's wide view on the RTL-SDR Blog V4/V4L (the vendor's stable ceiling)
 constexpr uint32_t kRtlDemodRateSps = 240000;
 constexpr uint32_t kRtlNoHfMinHz = 24000000;
 constexpr uint32_t kRtlCaptureBytes = 9600000;
@@ -750,7 +753,7 @@ constexpr uint32_t kRtlHotRetuneQuantHz = 5000;
 /** Min time between LO applies (each apply drains bulk + EP0). */
 constexpr uint32_t kRtlHotRetuneMinIntervalMs = 280;
 constexpr uint32_t kRtlScopeSpanMinHz = 120000;
-constexpr uint32_t kRtlScopeSpanMaxHz = kRtlDashboardSampleRateSps;
+constexpr uint32_t kRtlScopeSpanMaxHz = kRtlBrowseSampleRateSps;
 /* 3 dB is at bandwidth/2. 180 kHz chopped stereo/RDS (±90 kHz).
  * Broadcast FM with 19/38/57 kHz MPX needs ~±130 kHz. */
 constexpr uint32_t kRtlFmFilterDefaultHz = 260000;
@@ -2783,6 +2786,19 @@ bool rtl_tuner_gain_available(uint32_t frequency_hz) {
   return rtl_tuner_gain_available_for_caps(frequency_hz, rtl_device_capabilities());
 }
 
+// Bias tee (antenna-port 5 V for an LNA) changes ONLY on the owner's request: Home popup (confirmed), RF Lab, serial command.
+// Never saved, never applied at boot, never re-applied by a scan or a receiver restart (the driver starts each attachment OFF).
+// The owner changed it (Home popup, RF Lab, serial command): remember it and apply it.
+esp_err_t rtl_bias_owner_set(bool enabled, const char* source) {
+  if (!rtl_has_device_capability(ESP_RTL_SDR_CAP_BIAS_TEE)) return ESP_RTL_SDR_ERR_UNSUPPORTED;
+  const esp_err_t err = esp_rtl_sdr_set_bias_tee(g_rtl, enabled);
+  if (err == ESP_OK) {
+  }
+  Serial.printf("RTL_BIAS_KEEP reason=owner:%s action=%s result=%s\n", source, enabled ? "on" : "off",
+                esp_rtl_sdr_err_to_name(err));
+  return err;
+}
+
 static bool rtl_remote_tuning_selected();   // defined with the remote source, below
 
 // Match the tuning limits of the pinned esp-rtl-sdr E4000 implementation.
@@ -3609,20 +3625,27 @@ bool rtl_band_needs_fixed_rate(RtlBand band) {
   return band == RtlBand::lora || band == RtlBand::pocsag || band == RtlBand::p25;
 }
 
+// Home shows the wide view (2.56 MS/s) on every wide band; the dedicated dashboards (FM radio, shortwave, CB, ...) keep their own
+// rate because their decoders (stereo/RDS, audio filters) are tuned for it. The browse band is Home's own.
+bool rtl_home_wide_view(RtlBand band) {
+  return band == RtlBand::browse || (rtl_wide_dashboard_band(band) && orcsdr::home::active());
+}
+
 uint32_t rtl_default_sample_rate(RtlBand band) {
   if (band == RtlBand::adsb) return ESP_RTL_SDR_RATE_2048K;
   const bool remote_narrow = g_rtl_remote_narrow.load(std::memory_order_acquire);
   if (remote_narrow && rtl_band_needs_fixed_rate(band)) return ESP_RTL_SDR_RATE_960K;
   if (remote_narrow)
     return orcsdr::rtl_tcp_source::adapted_rate(rtl_remote_wanted_rate(band));
+  if (rtl_home_wide_view(band) && esp_rtl_sdr_is_rate_supported(kRtlBrowseSampleRateSps)) {
+    const auto profile = g_rtl_profile.load(std::memory_order_acquire);
+    if (profile == ESP_RTL_SDR_PROFILE_BLOG_V4L || profile == ESP_RTL_SDR_PROFILE_BLOG_V4) return kRtlBrowseSampleRateSps;
+  }
   return rtl_wide_dashboard_band(band) ? ESP_RTL_SDR_RATE_2400K : ESP_RTL_SDR_RATE_960K;
 }
 
 constexpr uint8_t rtl_rf_decimation(uint32_t sample_rate_sps) {
-  if (sample_rate_sps < kRtlDemodRateSps ||
-      sample_rate_sps % kRtlDemodRateSps != 0) return 0;
-  const uint32_t decimation = sample_rate_sps / kRtlDemodRateSps;
-  return decimation <= UINT8_MAX ? static_cast<uint8_t>(decimation) : 0;
+  return orcsdr::rtl_rate_plan::rf_decimation(sample_rate_sps);   // 240 kS/s family, and 2.56 MS/s -> 256 kS/s
 }
 static_assert(rtl_rf_decimation(ESP_RTL_SDR_RATE_960K) == 4);
 static_assert(rtl_rf_decimation(ESP_RTL_SDR_RATE_2400K) == 10);
@@ -6559,9 +6582,7 @@ void service_rf_lab() {
                    ? esp_rtl_sdr_set_rtl_agc(g_rtl, action.value != 0)
                    : ESP_RTL_SDR_ERR_UNSUPPORTED;
     } else if (action.kind == Kind::bias_tee) {
-      result = rtl_has_device_capability(ESP_RTL_SDR_CAP_BIAS_TEE)
-                   ? esp_rtl_sdr_set_bias_tee(g_rtl, action.value != 0)
-                   : ESP_RTL_SDR_ERR_UNSUPPORTED;
+      result = rtl_bias_owner_set(action.value != 0, "rflab");
     } else if (action.kind == Kind::tuner_bandwidth_hz) {
       // Asynchronous in the driver: ESP_OK means queued. RF Lab displays the
       // requested/applied shadow, never this result, as the hardware state.
@@ -7186,6 +7207,18 @@ void queue_audio_samples(int16_t* audio, size_t audio_count) {
   queue_audio_samples_unfiltered(audio, audio_count);
 }
 
+// Audio written by the demodulators. A 2.56 MS/s stream is demodulated at 256 kS/s, so its audio is 51.2 kHz: bring it to
+// the 48 kHz everything after this point (speaker, recorder, web audio, meters) expects. Mono, in place, state kept
+// across blocks. Tones, the P25 decoder and the visualizer already produce 48 kHz and do not come through here.
+void queue_demod_audio(int16_t* audio, size_t audio_count, uint32_t stream_rate_sps) {
+  static orcsdr::audio_rate_conv::Down16to15 converter;
+  static uint32_t converter_rate = 0;
+  if (stream_rate_sps != converter_rate) { converter_rate = stream_rate_sps; converter.reset(); }
+  if (orcsdr::rtl_rate_plan::audio_needs_conversion(stream_rate_sps))
+    audio_count = converter.process(audio, audio_count, audio);
+  queue_audio_samples(audio, audio_count);
+}
+
 void queue_audio_samples_unfiltered(int16_t* audio, size_t audio_count) {
   if (audio_count == 0) return;
 #if ORCSDR_DSP_AB
@@ -7499,8 +7532,10 @@ __attribute__((noinline)) void demodulate_fm(const uint8_t* iq, size_t bytes, fl
   if (!rf_decimation) return;
   const float iq_lpf_k = rtl_filter_alpha(wbfm ? RtlBand::fm : RtlBand::wx,
                                           sample_rate_sps);
-  const float audio_lpf_k = wbfm ? kWbfmAudioLpfK : kNfmAudioLpfK;
-  const float deemph_k = wbfm ? kWbfmDeemphK : kNfmDeemphK;
+  // These one-pole constants were tuned for 48 kHz audio; at 2.56 MS/s the demodulators run at 256 kS/s (51.2 kHz audio).
+  const uint32_t audio_rate_hz = orcsdr::rtl_rate_plan::audio_rate(sample_rate_sps);
+  const float audio_lpf_k = orcsdr::rtl_rate_plan::rescale_one_pole(wbfm ? kWbfmAudioLpfK : kNfmAudioLpfK, audio_rate_hz);
+  const float deemph_k = orcsdr::rtl_rate_plan::rescale_one_pole(wbfm ? kWbfmDeemphK : kNfmDeemphK, audio_rate_hz);
   const float inv_rf_decim = 1.0f / static_cast<float>(rf_decimation);
   const float inv_audio_decim = 1.0f / static_cast<float>(kFmAudioDecim);
 
@@ -7761,7 +7796,7 @@ __attribute__((noinline)) void demodulate_fm(const uint8_t* iq, size_t bytes, fl
     }
     rds_publish_state();
   }
-  queue_audio_samples(audio, audio_count);
+  queue_demod_audio(audio, audio_count, sample_rate_sps);
 }
 
 void demodulate_am(const uint8_t* iq, size_t bytes, float audio_scale,
@@ -7845,7 +7880,7 @@ void demodulate_am(const uint8_t* iq, size_t bytes, float audio_scale,
   // Airband squelch mutes the output only; the demodulator keeps running because the squelch
   // measures the carrier it tracks.
   if (g_stream_band == RtlBand::airband && !orcsdr::airband::audio_open()) audio_count = 0;
-  queue_audio_samples(audio, audio_count);
+  queue_demod_audio(audio, audio_count, sample_rate_sps);
 }
 
 /* noinline: keeps the hot loop out of rtl_dsp_task (see DSP audit, Stage 1). */
@@ -7860,7 +7895,7 @@ __attribute__((noinline)) void demodulate_ssb(const uint8_t* iq, size_t bytes, f
   constexpr float kPi = 3.14159265358979323846f;
   const float bfo_hz = 1500.0f + cb_clarifier_hz.load(std::memory_order_relaxed);
   const float direction = mode == CbMode::usb ? -1.0f : 1.0f;
-  const float step = direction * 2.0f * kPi * bfo_hz / kRtlDemodRateSps;
+  const float step = direction * 2.0f * kPi * bfo_hz / static_cast<float>(orcsdr::rtl_rate_plan::demod_rate(sample_rate_sps));
   const float step_cos = cosf(step);
   const float step_sin = sinf(step);
   // Hot state lives in locals for the block (see rtl_dsp_reset_requests).
@@ -7931,7 +7966,7 @@ __attribute__((noinline)) void demodulate_ssb(const uint8_t* iq, size_t bytes, f
     rtl_audio.ssb_cos /= norm;
     rtl_audio.ssb_sin /= norm;
   }
-  queue_audio_samples(audio, audio_count);
+  queue_demod_audio(audio, audio_count, sample_rate_sps);
 }
 
 
@@ -7982,7 +8017,7 @@ __attribute__((noinline)) void demodulate_shortwave_ssb(RtlBand band, const uint
   rtl_audio.samples = samples;
   rtl_block_clip.note(clipped_pairs);
   if (band == RtlBand::shortwave) orcsdr::shortwave::audio_dsp::process(audio, audio_count, rtl_signal_dbfs_smooth);
-  queue_audio_samples(audio, audio_count);
+  queue_demod_audio(audio, audio_count, sample_rate_sps);
 }
 
 // One demodulator choice for every band. CB follows Home's choice while Home is on screen (its squelch gate is skipped
@@ -8145,6 +8180,38 @@ static void rtl_tcp_sink_discontinuity() {
   orcsdr::ais_radio::note_discontinuity();     // AIS must not join HDLC frames across the gap (sets a flag only)
 }
 
+// The driver changed the sample rate of the RUNNING stream (no stop/start). Its event comes before the first block at the
+// new rate, so everything after this call sees the new rate: bookkeeping, a clean DSP state, and a marked break.
+static void rtl_note_live_rate_change(uint32_t rate) {
+  // The scope span may never claim more than the stream carries. A drop narrows it to the new rate; a later rise gives back
+  // what it was (up to the new rate) if the user has not changed it meanwhile.
+  static uint32_t span_before_drop = 0, span_set_by_drop = 0;
+  rtl_active_sample_rate_sps.store(rate, std::memory_order_release);
+  const uint32_t span = rtl_scope_span_hz.load(std::memory_order_relaxed);
+  if (span > rate) {
+    span_before_drop = span;
+    span_set_by_drop = rate;
+    rtl_scope_span_hz.store(rate, std::memory_order_relaxed);
+  } else if (span_before_drop != 0 && span == span_set_by_drop) {
+    rtl_scope_span_hz.store(std::min(span_before_drop, rate), std::memory_order_relaxed);
+    span_before_drop = span_set_by_drop = 0;
+  }
+  reset_spectrum_renderer();
+  rtl_tcp_sink_discontinuity();
+  Serial.printf("RTL_RATE_LIVE rate=%u\n", static_cast<unsigned>(rate));
+}
+
+// Try to move a running local stream to `rate` without stopping it. False = not done (nothing changed): the caller
+// restarts the stream as before.
+static bool rtl_try_live_rate(uint32_t rate) {
+  if (g_rtl == nullptr || !rtl_device_ready() ||
+      g_rtl_active_source.load(std::memory_order_acquire) != static_cast<uint8_t>(orcsdr::source::Active::local_usb))
+    return false;
+  const esp_err_t err = esp_rtl_sdr_set_sample_rate_live(g_rtl, rate);
+  Serial.printf("RTL_RATE_LIVE_REQUEST rate=%u result=%s\n", static_cast<unsigned>(rate), esp_rtl_sdr_err_to_name(err));
+  return err == ESP_OK && rtl_active_sample_rate_sps.load(std::memory_order_acquire) == rate;
+}
+
 // rtl_tcp server (rtl_tcp_server.cpp): primitives only; the ownership policy is in the module.
 static std::atomic<bool> g_rtl_server_owner{false};  // gates local stream starts
 static const orcsdr::rtl_tcp_server::Hooks kRtlTcpServerHooks{
@@ -8278,6 +8345,11 @@ static void on_rtl_driver_event(esp_rtl_sdr_event_t event, const void *payload, 
     }
     case ESP_RTL_SDR_EVT_STOPPED:
       break;
+    case ESP_RTL_SDR_EVT_RATE_CHANGED: {
+      const auto *rate = static_cast<const uint32_t *>(payload);
+      if (rate != nullptr && *rate != 0) rtl_note_live_rate_change(*rate);
+      break;
+    }
     case ESP_RTL_SDR_EVT_RETUNED: {
       if (g_stream_band == RtlBand::p25) orcsdr::p25decoder::reset();
       const auto *hz = static_cast<const uint32_t *>(payload);
@@ -13237,7 +13309,13 @@ orcsdr::acars_receiver::Hooks acars_receiver_hooks() {
     rtl_rate_override_sps.store(rate, std::memory_order_release);
     const bool streaming = rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running &&
                            rtl_ui_band == RtlBand::browse && rtl_active_sample_rate_sps.load(std::memory_order_acquire) == rate;
-    const bool accepted = streaming ? request_hot_retune(center_hz) : queue_local_rtl_listen(RtlBand::browse, center_hz, false);
+    const bool running = rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running &&
+                         rtl_ui_band == RtlBand::browse;
+    // Already at this rate: retune only. Streaming at another rate on a local dongle: change the rate on the running
+    // stream, then retune (no stop, so nothing the dongle holds, such as the bias tee, is touched). Otherwise start it.
+    const bool accepted = streaming ? request_hot_retune(center_hz)
+                          : (running && rtl_try_live_rate(rate)) ? request_hot_retune(center_hz)
+                                                                  : queue_local_rtl_listen(RtlBand::browse, center_hz, false);
     if (!accepted) rtl_rate_override_sps.store(previous_override, std::memory_order_release);   // a refused request must not strand the rate
     if (accepted) g_ft8_rate_owned = false;   // this receiver now holds the rate; a later FT8 release must not clear it
     return accepted;
@@ -13246,8 +13324,12 @@ orcsdr::acars_receiver::Hooks acars_receiver_hooks() {
     const uint32_t owned = rtl_rate_override_sps.exchange(0, std::memory_order_acq_rel);
     // A hot retune keeps the stream's rate: restart once at the normal rate if the stream is still at ours.
     if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running &&
-        rtl_active_sample_rate_sps.load(std::memory_order_acquire) == owned && rtl_ui_band == RtlBand::browse)
-      (void)queue_local_rtl_listen(rtl_ui_band, rtl_ui_frequency_hz, false);
+        rtl_active_sample_rate_sps.load(std::memory_order_acquire) == owned && rtl_ui_band == RtlBand::browse) {
+      if (rtl_try_live_rate(rtl_default_sample_rate(rtl_ui_band)))
+        (void)request_hot_retune(rtl_ui_frequency_hz);   // back to the band's normal rate without a stop
+      else
+        (void)queue_local_rtl_listen(rtl_ui_band, rtl_ui_frequency_hz, false);
+    }
   };
   hooks.sample_rate = [] { return rtl_active_sample_rate_sps.load(std::memory_order_acquire); };
   hooks.tuned_center = [] { return rtl_ui_frequency_hz; };
@@ -13808,6 +13890,7 @@ void handle_home_action(const orcsdr::home::Action& action) {
       (void)rtl_gain_set_manual("HOME", static_cast<int>(action.value));
       break;
     case ActionKind::rtl_agc: (void)rtl_gain_set_rtl_agc("HOME", action.value != 0); break;
+    case ActionKind::bias_set: (void)rtl_bias_owner_set(action.value != 0, "home"); break;
     case ActionKind::filter_set:
     case ActionKind::filter_standard: {
       const uint32_t width =
@@ -14809,7 +14892,8 @@ bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
   // Leaving LoRa while the clipping guard owned the gain: hand the tuner back first.
   if (band != RtlBand::lora && rtl_ui_band == RtlBand::lora) lora_gain_guard_release();
   const uint32_t default_span = rtl_wide_dashboard_band(band)
-                                    ? kRtlDashboardSampleRateSps
+                                    ? (rtl_home_wide_view(band) ? std::min(rtl_default_sample_rate(band), kRtlScopeSpanMaxHz)
+                                                               : kRtlDashboardSampleRateSps)
                                     : band == RtlBand::adsb
                                           ? ESP_RTL_SDR_RATE_2048K
                                           : band == RtlBand::lora ? 500000u
@@ -18902,10 +18986,7 @@ static orcsdr::serial_driver::Outcome serial_driver_rtl_agc(bool enabled) {
   return serial_driver_outcome(err);
 }
 static orcsdr::serial_driver::Outcome serial_driver_bias_tee(bool enabled) {
-  const esp_err_t err = rtl_has_device_capability(ESP_RTL_SDR_CAP_BIAS_TEE)
-                            ? esp_rtl_sdr_set_bias_tee(g_rtl, enabled)
-                            : ESP_RTL_SDR_ERR_UNSUPPORTED;
-  return serial_driver_outcome(err);
+  return serial_driver_outcome(rtl_bias_owner_set(enabled, "serial"));
 }
 static orcsdr::serial_driver::Outcome serial_driver_hf_direct(uint32_t override_hz) {
   rtl_hf_direct_override_hz = override_hz;

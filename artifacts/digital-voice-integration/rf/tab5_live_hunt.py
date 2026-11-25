@@ -18,7 +18,10 @@ def _logged_run(c, cmd, window=1.2):
 run = _logged_run
 ARCH = Path("F:/Ai/OrcSDR-data/digital-voice/tab5live"); ARCH.mkdir(parents=True, exist_ok=True)
 SECS = float(sys.argv[1]) if len(sys.argv) > 1 else 60
-CH = [(152.1575, 496), (152.685, 496), (152.345, 496), (451.9125, None), (153.068, 496)]   # (MHz, manual gain tenth-dB or None = auto)
+# 2026-11-24: only the channels where voice/identities were actually heard on 2026-11-23 (PC hunter, outdoor antenna + LNA): Terra T3 152.1575, 152.685, 153.068
+# gain 300 (30 dB) while the LNA is fitted: the old 49.6 dB was chosen without it
+CH = [(152.1575, 300), (152.685, 300), (153.068, 300)]
+# earlier list also had 152.345 (Terra Oakridge, never produced an identity) and 451.9125 (Capacity Max control, CRC-failing control traffic only)   # (MHz, manual gain tenth-dB or None = auto)
 def open_dash(c):
     for _ in range(4):
         run(c, "RTL_UI OPEN DIGITAL_VOICE", 2.0); time.sleep(3)
@@ -35,20 +38,23 @@ while not (D / "STOP").exists():
                 if (D / "STOP").exists(): break
                 run(c, "RTL_DV SCAN STOP", 4.0); run(c, f"RTL_DV PLAN {mhz}", 1.5); run(c, "RTL_DV MASK 1", 1.2); run(c, "RTL_DV SCAN START", 5.0); time.sleep(4)
                 # The driver only accepts gain commands while the receiver is claimed, i.e. after the scan has started it.
+                # Bias tee is the owner's setting (Home > BIAS); the firmware keeps it across scans. The hunter never touches it.
                 if gain is None: run(c, "RTL_DRIVER GAINMODE AUTO", 1.5)
                 else: run(c, "RTL_DRIVER GAINMODE MANUAL", 1.5); run(c, f"RTL_DRIVER GAIN {gain}", 1.5)
                 run(c, "RTL_DV SCAN HOLD", 1.5)
                 # Decoded DMR speech is saved by the firmware itself (SETUP > SAVE DMR SPEECH, persistent; RTL_DV AUDIO SAVE ON): /orcsdr/dmr_*.wav
-                t0 = time.time(); first = None; last = {}; ui = ""; iqs = {}
+                t0 = time.time(); first = None; last = {}; ui = ""; iqs = {}; bias_on = None
                 while time.time() - t0 < SECS and not (D / "STOP").exists():
                     time.sleep(5); ui, r = dv(c)
                     aud = kv(find(run(c, "RTL_DV AUDIO STATUS", 1.0), "RTL_DV_AUDIO "))
                     iqs = kv(find(run(c, "RTL_DV IQ STATUS", 1.0), "RTL_DV_IQ "))
+                    bias_l = next((l for l in run(c, "RTL_DRIVER STATUS", 1.5) if "bias=" in l), ""); bias_on = (re.search(r"bias=(\d)", bias_l) or [None, None])[1]
                     if r: last = r
                     if first is None and int(last.get("dmr_ev", 0)) > 0: first = round(time.time() - t0, 1)
                 rec = dict(config=os.environ.get("DV_CONFIG", "Tab5 V4L + indoor 140/440 whip"), t=time.strftime("%Y-%m-%d %H:%M:%S"), mhz=mhz, gain=gain if gain else "auto", secs=round(time.time() - t0), source="tab5_live_antenna", replay=False,
                            link=last.get("link"), loss=last.get("loss"), level_milli=last.get("level_milli"), dmr_acq=last.get("dmr_acq"), dmr_ev=last.get("dmr_ev"),
                            dmr_id=last.get("dmr_id"), events=last.get("events"), first_dmr_event_s=first, hist=(re.search(r"hist=(\d+)", ui) or [None, None])[1],
+                           bias_tee=bias_on,
                            iq={k: iqs.get(k) for k in ("triggers", "saved", "failed", "skipped_busy", "skipped_cooldown")},
                            audio={k: aud.get(k) for k in ("phase", "groups", "speech", "qual", "prot", "unq", "calls", "nfm_blocked", "rec", "rec_saved", "rec_discarded", "rec_busy")} if (aud := locals().get('aud')) else None,
                            db=(re.search(r"db_sys=\d+ db_tg=\d+ db_units=\d+", ui) or [None])[0])

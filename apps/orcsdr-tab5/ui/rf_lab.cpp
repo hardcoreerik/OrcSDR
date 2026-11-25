@@ -53,6 +53,15 @@ uint32_t g_last_revision = 0;
 // once at boot, before enter() or an RTL_LAB command can read it.
 EXT_RAM_BSS_ATTR rf_analysis::Snapshot g_snapshot{};
 M5Canvas g_waterfall(&M5.Display);
+// The spectrum trace and each side-panel row are composed off screen and pushed in one transfer, so the display never
+// shows a cleared frame between the clear and the redraw (that was the flicker). PSRAM: ~417 KB + ~32 KB, freed on leave.
+M5Canvas g_spectrum(&M5.Display);
+M5Canvas g_row(&M5.Display);
+bool g_spectrum_ready = false, g_row_ready = false;
+constexpr int kMetricRows = 10;
+char g_metric_cache[kMetricRows][48]{};
+uint16_t g_metric_color[kMetricRows]{};
+bool g_metrics_invalid = true;   // the panel was repainted: every row must be drawn again
 EXT_RAM_BSS_ATTR plot::WaterfallClock g_waterfall_clock;
 bool g_waterfall_ready = false;
 Action g_actions[kActionCapacity]{};
@@ -141,11 +150,19 @@ bool inside(int32_t x, int32_t y, int bx, int by, int bw, int bh) {
   return x >= bx && x < bx + bw && y >= by && y < by + bh;
 }
 
+// Behind the text: black on the page, the panel colour inside panels and buttons. A wrong value shows as a dark box.
+uint16_t g_text_bg = kBg;
+struct TextBg {
+  uint16_t old;
+  explicit TextBg(uint16_t c) : old(g_text_bg) { g_text_bg = c; }
+  ~TextBg() { g_text_bg = old; }
+};
+
 void text(const char* value, int x, int y, uint16_t color = TFT_WHITE,
           uint8_t size = 2, textdatum_t datum = middle_left) {
   M5.Display.setFont(nullptr);
   M5.Display.setTextDatum(datum);
-  M5.Display.setTextColor(color, kBg);
+  M5.Display.setTextColor(color, g_text_bg);
   M5.Display.setTextSize(size);
   M5.Display.drawString(value, x, y);
 }
@@ -572,15 +589,17 @@ const char* page_name(Page value) {
 void draw_header() {
   M5.Display.fillRect(0, 0, 1280, 80, kBg);
   panel(18, 14, 104, 52, kCyan);
-  text("BACK", 70, 40, kCyan, 2, middle_center);
+  { TextBg bg(kPanel); text("BACK", 70, 40, kCyan, 2, middle_center); }
   text("RF LAB", 148, 39, kGreen, 4);
   text("LIVE RECEIVER TEST BENCH", 360, 42, kCyan, 2);
   const Runtime r = runtime();
   if (r.bias_tee) {
     M5.Display.fillRoundRect(1010, 14, 246, 52, 8, kRed);
+    TextBg bg(kRed);
     text("BIAS ON", 1133, 40, TFT_WHITE, 3, middle_center);
   } else {
     panel(1080, 14, 176, 52, r.source_available ? kGreen : TFT_ORANGE);
+    TextBg bg(kPanel);
     text(r.source_available ? "SOURCE LIVE" : "NO SOURCE", 1168, 40,
          r.source_available ? kGreen : TFT_ORANGE, 2, middle_center);
   }
@@ -592,6 +611,7 @@ void draw_footer() {
     const int x = 20 + i * 312;
     const auto candidate = static_cast<Page>(i);
     panel(x, kFooterY, width, kFooterH, candidate == g_page ? kGreen : kCyan);
+    TextBg bg(kPanel);
     text(page_name(candidate), x + width / 2, kFooterY + kFooterH / 2,
          candidate == g_page ? kGreen : TFT_WHITE, 2, middle_center);
   }
@@ -600,27 +620,27 @@ void draw_footer() {
 void draw_static_live() {
   panel(kPlotX, kPlotY, kPlotW, kPlotH);
   M5.Display.drawRect(kPlotX + 10, kPlotY + 12, kPlotW - 20, kSpectrumH, kGrid);
-  text("SPECTRUM", kPlotX + 22, kPlotY + 28, kCyan, 1);
   M5.Display.drawRect(kPlotX + 10, kWaterfallY, kPlotW - 20, kWaterfallH, kGrid);
-  text("WATERFALL", kPlotX + 22, kWaterfallY + 16, kCyan, 1);
   panel(kSideX, kPlotY, kSideW, kPlotH);
 }
 
 void draw_button(int x, int y, int w, const char* label, uint16_t color = kCyan) {
   panel(x, y, w, 48, color);
+  TextBg bg(kPanel);
   text(label, x + w / 2, y + 24, color, 2, middle_center);
 }
 
 void draw_static_controls() {
   panel(22, 96, 1236, 530);
+  TextBg page_bg(kPanel);
   text("Driver controls report accepted requests and software shadows.", 44, 122,
        TFT_ORANGE, 2);
   const Runtime r = runtime();
   char line[160];
-  snprintf(line, sizeof(line), "Driver %s  Device %.36s  Health %.20s  Passport %s",
+  snprintf(line, sizeof(line), "Driver %s  %.22s  %.8s  Passport %s",
            r.driver_version, r.device, r.health,
-           (r.capabilities & ESP_RTL_SDR_CAP_PASSPORT) ? "SUPPORTED" : "UNAVAILABLE");
-  text(line, 48, 148, kMuted, 1);
+           (r.capabilities & ESP_RTL_SDR_CAP_PASSPORT) ? "yes" : "no");
+  text(line, 48, 148, kMuted, 2);
   snprintf(line, sizeof(line), "Frequency  %.6f MHz", r.frequency_hz / 1.0e6);
   text(line, 48, 178, TFT_WHITE, 2);
   draw_button(700, 154, 120, "-100k", has_cap(ESP_RTL_SDR_CAP_RETUNE) ? kCyan : kMuted);
@@ -638,7 +658,7 @@ void draw_static_controls() {
   else
     snprintf(line, sizeof(line), "Tuner BW  requested %s  applied %s%s", requested, applied,
              r.tuner_bandwidth_requested_hz != r.tuner_bandwidth_applied_hz ? "  PENDING" : "");
-  text(line, 48, 254, kMuted, 1);
+  text(line, 48, 254, kMuted, 2);
   draw_button(700, 214, 120, "NEXT RATE",
               has_cap(ESP_RTL_SDR_CAP_CONTINUOUS_RATE) ? kCyan : kMuted);
   draw_button(832, 214, 120, "NEXT BW", bandwidth_selectable(r) ? kCyan : kMuted);
@@ -671,20 +691,21 @@ void draw_static_controls() {
   text(hf_upconverter ? "HF: below 28.8 MHz via the board's upconverter route (RF + 28.8 MHz)."
        : direct_sampling ? "HF: below 24 MHz via direct sampling (Q branch); no tuner BW there."
                          : "HF: none; tuning below 24 MHz is unavailable on this receiver.",
-       48, 594, kMuted, 1);
-  text("Unsafe: raw EP0, EEPROM, test mode, bias GPIO.", 640, 594, kMuted, 1);
+       48, 590, kMuted, 2);
   char caps_line[128];
-  snprintf(caps_line, sizeof(caps_line), "Controls: manual gain %s, tuner AUTO %s, RTL AGC %s, bias-tee %s, tuner BW %s",
+  snprintf(caps_line, sizeof(caps_line), "Gain %s  Auto %s  AGC %s  Bias %s  BW %s",
            has_cap(ESP_RTL_SDR_CAP_GAIN) ? "yes" : "no",
            has_cap(ESP_RTL_SDR_CAP_GAIN_AUTO) ? "yes" : "no",
            has_cap(ESP_RTL_SDR_CAP_RTL_AGC) ? "yes" : "no",
            has_cap(ESP_RTL_SDR_CAP_BIAS_TEE) ? "yes" : "no",
            has_cap(ESP_RTL_SDR_CAP_TUNER_BANDWIDTH) ? "yes" : "no");
-  text(caps_line, 48, 616, kMuted, 1);
+  text(caps_line, 48, 612, kMuted, 2);
+  text("Unsafe: raw EP0, EEPROM, test mode, bias GPIO.", 1236, 612, kMuted, 2, middle_right);
 }
 
 void draw_static_measurements() {
   panel(22, 96, 1236, 530);
+  TextBg page_bg(kPanel);
   text("MEASUREMENT SESSION", 48, 128, kCyan, 3);
   text("Snapshots and timed 5 Hz runs use the live shared analyzer.", 48, 174,
        TFT_WHITE, 2);
@@ -720,6 +741,7 @@ void draw_static_measurements() {
 
 void draw_static_records() {
   panel(22, 96, 1236, 530);
+  TextBg page_bg(kPanel);
   text("RF LAB RECORDS", 48, 128, kCyan, 3);
   text(g_filesystem ? "SD storage ready" : "SD storage unavailable", 48, 180,
        g_filesystem ? kGreen : TFT_ORANGE, 2);
@@ -737,6 +759,7 @@ void draw_static_records() {
 
 void draw_page() {
   M5.Display.fillScreen(kBg);
+  g_metrics_invalid = true;
   draw_header();
   if (g_page == Page::live) draw_static_live();
   else if (g_page == Page::controls) draw_static_controls();
@@ -758,19 +781,28 @@ uint16_t waterfall_color(float db, float floor) {
 void draw_live_dynamic() {
   if (!g_snapshot.bins) return;
   constexpr int x0 = kPlotX + 11, y0 = kPlotY + 13, width = kPlotW - 22;
-  M5.Display.fillRect(x0, y0, width, kSpectrumH - 2, kBg);
-  for (int i = 1; i < 8; ++i) M5.Display.drawFastVLine(x0 + i * width / 8, y0, kSpectrumH - 2, kGrid);
-  for (int i = 1; i < 5; ++i) M5.Display.drawFastHLine(x0, y0 + i * (kSpectrumH - 2) / 5, width, kGrid);
-  const float floor = std::clamp(g_snapshot.noise - 15.0f, -140.0f, -45.0f);
-  int px = x0, py = y0 + kSpectrumH - 3;
-  for (int x = 0; x < width; ++x) {
-    const size_t bin = std::min<size_t>(g_snapshot.bins - 1,
-                                        static_cast<size_t>(x) * g_snapshot.bins / width);
-    const int y = y0 + kSpectrumH - 3 - static_cast<int>(
-        std::clamp((g_snapshot.live[bin] - floor) / 75.0f, 0.0f, 1.0f) * (kSpectrumH - 18));
-    if (x) M5.Display.drawLine(px, py, x0 + x, y, kCyan);
-    px = x0 + x; py = y;
+  const int sh = kSpectrumH - 2;
+  if (g_spectrum_ready) {
+    g_spectrum.fillScreen(kBg);
+    for (int i = 1; i < 8; ++i) g_spectrum.drawFastVLine(i * width / 8, 0, sh, kGrid);
+    for (int i = 1; i < 5; ++i) g_spectrum.drawFastHLine(0, i * sh / 5, width, kGrid);
+    const float floor = std::clamp(g_snapshot.noise - 15.0f, -140.0f, -45.0f);
+    int px = 0, py = sh - 3;
+    for (int x = 0; x < width; ++x) {
+      const size_t bin = std::min<size_t>(g_snapshot.bins - 1, static_cast<size_t>(x) * g_snapshot.bins / width);
+      const int y = sh - 3 - static_cast<int>(
+          std::clamp((g_snapshot.live[bin] - floor) / 75.0f, 0.0f, 1.0f) * (kSpectrumH - 18));
+      if (x) g_spectrum.drawLine(px, py, x, y, kCyan);
+      px = x; py = y;
+    }
+    g_spectrum.setFont(nullptr);
+    g_spectrum.setTextDatum(top_left);
+    g_spectrum.setTextColor(kCyan);
+    g_spectrum.setTextSize(2);
+    g_spectrum.drawString("SPECTRUM", 8, 6);
+    g_spectrum.pushSprite(x0, y0);   // one transfer: no cleared frame is ever on screen
   }
+  const float floor = std::clamp(g_snapshot.noise - 15.0f, -140.0f, -45.0f);
   const int rows = g_waterfall_clock.rows(millis(), 2);
   if (g_waterfall_ready && rows) {
     g_waterfall.setScrollRect(0, 0, width, kWaterfallH - 2, kBg);
@@ -784,32 +816,49 @@ void draw_live_dynamic() {
     g_waterfall.pushSprite(x0, kWaterfallY + 1);
   }
 
-  M5.Display.fillRect(kSideX + 10, kPlotY + 10, kSideW - 20, kPlotH - 20, kPanel);
   char line[80];
+  int row = 0;
   int y = kPlotY + 38;
   auto metric = [&](const char* label, const char* value, uint16_t color = TFT_WHITE) {
-    text(label, kSideX + 22, y, kMuted, 1);
-    text(value, kSideX + kSideW - 22, y, color, 2, middle_right);
+    const int r = row++;
+    char key[48];
+    snprintf(key, sizeof(key), "%s", value);
+    if (!g_metrics_invalid && g_metric_color[r] == color && strcmp(g_metric_cache[r], key) == 0) { y += 48; return; }
+    strlcpy(g_metric_cache[r], key, sizeof(g_metric_cache[r]));
+    g_metric_color[r] = color;
+    if (g_row_ready) {
+      g_row.fillScreen(kPanel);
+      g_row.setFont(nullptr);
+      g_row.setTextSize(2);
+      g_row.setTextDatum(middle_left);
+      g_row.setTextColor(TFT_LIGHTGREY, kPanel);
+      g_row.drawString(label, 12, 22);
+      g_row.setTextDatum(middle_right);
+      g_row.setTextColor(color, kPanel);
+      g_row.drawString(value, kSideW - 20 - 12, 22);
+      g_row.pushSprite(kSideX + 10, y - 22);
+    }
     y += 48;
   };
   snprintf(line, sizeof(line), "%.6f MHz", g_snapshot.strongest_frequency_hz / 1.0e6);
-  metric("PEAK FREQUENCY", line, kGreen);
+  metric("PEAK FREQ", line, kGreen);
   snprintf(line, sizeof(line), "%.1f dBFS", g_snapshot.strongest); metric("PEAK", line);
   snprintf(line, sizeof(line), "%.1f dBFS", g_snapshot.noise); metric("NOISE FLOOR", line);
   snprintf(line, sizeof(line), "%.1f dB", g_snapshot.snr_db); metric("SNR", line, kCyan);
   if (g_reference.calibrated) {
     snprintf(line, sizeof(line), "~%.1f dBm", g_snapshot.channel_power_dbfs + g_reference.dbm_offset);
-    metric("REFERENCE-EST. POWER", line, kGreen);
+    metric("REF-EST POWER", line, kGreen);
   } else {
     snprintf(line, sizeof(line), "%.1f dBFS", g_snapshot.channel_power_dbfs);
     metric("CHANNEL POWER", line);
   }
   snprintf(line, sizeof(line), "%.1f kHz", g_snapshot.occupied_bandwidth_hz / 1000.0); metric("99% OBW", line);
-  snprintf(line, sizeof(line), "%+.0f Hz", g_snapshot.strongest_offset_hz); metric("FREQUENCY ERROR", line);
+  snprintf(line, sizeof(line), "%+.0f Hz", g_snapshot.strongest_offset_hz); metric("FREQ ERROR", line);
   snprintf(line, sizeof(line), "%.2f %%", g_snapshot.clipping_percent); metric("CLIPPING", line,
          g_snapshot.clipping_percent > 0.1f ? kRed : kGreen);
   snprintf(line, sizeof(line), "I %+.3f  Q %+.3f", g_snapshot.dc_i, g_snapshot.dc_q); metric("DC OFFSET", line);
   snprintf(line, sizeof(line), "%+.2f dB", g_snapshot.iq_imbalance_db); metric("IQ BALANCE", line);
+  g_metrics_invalid = false;
 }
 
 void queue_restore() {
@@ -992,6 +1041,14 @@ bool enter(uint8_t origin_screen_value, uint8_t origin_tab_value) {
     if (!g_waterfall_ready) return false;
     g_waterfall.fillScreen(kBg);
   }
+  if (!g_spectrum_ready) {
+    g_spectrum.setColorDepth(16);
+    g_spectrum_ready = g_spectrum.createSprite(kPlotW - 22, kSpectrumH - 2) != nullptr;
+  }
+  if (!g_row_ready) {
+    g_row.setColorDepth(16);
+    g_row_ready = g_row.createSprite(kSideW - 20, 44) != nullptr;
+  }
   g_origin_screen = origin_screen_value;
   g_origin_tab = origin_tab_value;
   g_initial = runtime();
@@ -1024,6 +1081,8 @@ void leave() {
     g_waterfall.deleteSprite();
     g_waterfall_ready = false;
   }
+  if (g_spectrum_ready) { g_spectrum.deleteSprite(); g_spectrum_ready = false; }
+  if (g_row_ready) { g_row.deleteSprite(); g_row_ready = false; }
 }
 
 bool active() { return g_active.load(std::memory_order_acquire); }
@@ -1085,6 +1144,7 @@ void service_ui(uint32_t now_ms) {
       draw_live_dynamic();
       if (!r.source_available) {
         M5.Display.fillRect(kPlotX + 80, kPlotY + 235, kPlotW - 160, 72, 0x2104);
+        TextBg bg(0x2104);
         text("SOURCE LOST - PAUSED", kPlotX + kPlotW / 2, kPlotY + 271,
              TFT_ORANGE, 3, middle_center);
       }
