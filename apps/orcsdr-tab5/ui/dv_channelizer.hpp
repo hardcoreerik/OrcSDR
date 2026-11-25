@@ -24,16 +24,11 @@ class Channelizer {
   // `pairs` IQ pairs of CU8 (2 bytes each). Writes at most `capacity` outputs; returns the number written.
   // capacity must be >= pairs / 5 + 1 or input is dropped (counted in dropped_inputs()).
   size_t process_cu8(const uint8_t* cu8, size_t pairs, Iq48* out, size_t capacity) noexcept;
-  // Same chain from float IQ (interleaved re,im; already scaled to about +-1) with the wanted channel at +60 kHz: the
-  // output of dv::WideDdc, so a wide stream is tuned digitally with no precision lost to 8-bit rounding.
-  size_t process_f32(const float* iq, size_t pairs, Iq48* out, size_t capacity) noexcept;
   uint64_t dropped_inputs() const noexcept { return dropped_; }
   // Relative RMS (0..~1.4) of the channel samples produced since the last call; 0 when none. Not calibrated.
   float take_level() noexcept;
 
  private:
-  // One input sample through mixer, history and (every 5th) the filter; true when an output was written.
-  inline void push(float i, float q, Iq48* out, size_t capacity, size_t& written) noexcept;
   std::array<float, kTaps> taps_{};
   std::array<float, kTaps> hist_re_{}, hist_im_{};
   size_t pos_ = 0;

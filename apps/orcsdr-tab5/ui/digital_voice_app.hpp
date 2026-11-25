@@ -52,6 +52,8 @@ struct Hooks {
 void install(const Hooks& hooks);
 void open();                       // screen opened: allocate PSRAM state, first full draw. Does NOT start the receiver.
 void close();                      // left for any reason; stops scanning, releases the receiver, frees everything.
+void hide();                       // left for Home: the screen goes but scanning, decoding and speech keep running (else close()).
+bool in_background();              // running with its screen hidden; a retune by anything else must stop it (close()).
 void tick();                       // main loop: scanner, events, snapshot, repaint on change
 void draw(bool static_panel);      // ScreenController refresh (true = full redraw after Settings/Visualizer)
 void touch(int32_t x, int32_t y);  // taps below the shared header

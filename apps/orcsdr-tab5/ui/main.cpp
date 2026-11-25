@@ -1902,6 +1902,34 @@ std::atomic<bool> rtl_audio_user_enabled{true};
 std::atomic<bool> rtl_audio_enabled{false};
 // Digital Voice owns the speaker while its audio service runs: the analogue NFM demod audio of a digital channel is noise.
 std::atomic<bool> g_dv_audio_exclusive{false};
+// Set while a receiver app (Digital Voice, ACARS, AIS) performs its OWN tune or release. Anything else that retunes the receiver
+// while Digital Voice listens in the background (Home tuning, a band change) ends that listening first, the way changing the
+// frequency ends a P25 call.
+bool g_rx_app_tuning = false;
+struct RxAppTuning {
+  bool old;
+  RxAppTuning() : old(g_rx_app_tuning) { g_rx_app_tuning = true; }
+  ~RxAppTuning() { g_rx_app_tuning = old; }
+};
+// The battery level comes over the I2C bus. Many screens asked for it on every snapshot, from more than one task, which a crash trace
+// (xTaskPriorityDisinherit in the I2C unlock, 2026-11-25) tied to overlapping bus use. One caller at a time refreshes it, about once a second.
+int battery_percent_cached() {
+  static std::atomic<int> value{-1};
+  static std::atomic<uint32_t> last_ms{0};
+  const uint32_t now = millis();
+  uint32_t last = last_ms.load(std::memory_order_acquire);
+  if ((value.load(std::memory_order_relaxed) < 0 || now - last >= 1000u) &&
+      last_ms.compare_exchange_strong(last, now, std::memory_order_acq_rel))
+    value.store(static_cast<int>(M5.Power.getBatteryLevel()), std::memory_order_release);
+  const int v = value.load(std::memory_order_acquire);
+  return v < 0 ? 0 : v;
+}
+
+void dv_background_yield() {
+  if (g_rx_app_tuning || !orcsdr::digital_voice_app::in_background()) return;
+  RxAppTuning scope;
+  orcsdr::digital_voice_app::close();
+}
 std::atomic<bool> rtl_speaker_start_allowed{false};
 std::atomic<bool> rtl_speaker_codec_primed{false};
 std::atomic<bool> rtl_headphone_connected{false};
@@ -2727,7 +2755,7 @@ void draw_power_state() {
     return;
   }
   char message[96];
-  const int32_t level = M5.Power.getBatteryLevel();
+  const int32_t level = battery_percent_cached();
   const int16_t battery_mv = M5.Power.getBatteryVoltage();
   const int16_t vbus_mv = M5.Power.getVBUSVoltage();
   snprintf(message, sizeof(message), "Power: %ld%%  battery %dmV  USB %dmV",
@@ -5843,7 +5871,7 @@ void update_signal_level_from_iq(const uint8_t* iq, size_t bytes) {
 void draw_global_header_controls() {
   orcsdr::audio_header::draw(rtl_header_audio_control, rtl_ui_volume,
                              rtl_audio_user_enabled.load(std::memory_order_acquire),
-                             M5.Power.getBatteryLevel());
+                             battery_percent_cached());
   orcsdr::audio_header::draw_home_button();
   orcsdr::audio_header::draw_settings_button();
   orcsdr::audio_header::draw_mute_button(
@@ -5982,7 +6010,7 @@ orcsdr::airband::LiveState airband_live_state() {
   live.receiver_running =
       rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
   live.sound_enabled = rtl_audio_user_enabled.load(std::memory_order_acquire);
-  live.battery_percent = M5.Power.getBatteryLevel();
+  live.battery_percent = battery_percent_cached();
   const auto location = orcsdr::receiver_location::snapshot();
   live.location_configured = location.configured;
   live.latitude_e7 = location.latitude_e7;
@@ -10007,7 +10035,7 @@ orcsdr::fm::Snapshot fm_dashboard_snapshot() {
       rtl_fm_preset_scan_active.load(std::memory_order_relaxed);
   snapshot.volume = rtl_ui_volume;
   snapshot.preset_count = static_cast<uint8_t>(fm_preset_count);
-  snapshot.battery_percent = M5.Power.getBatteryLevel();
+  snapshot.battery_percent = battery_percent_cached();
   for (int i = 0; i < fm_preset_count; ++i) {
     const uint32_t delta = rtl_ui_frequency_hz > fm_presets[i].freq_hz
                                ? rtl_ui_frequency_hz - fm_presets[i].freq_hz
@@ -10193,7 +10221,7 @@ orcsdr::am::Snapshot am_dashboard_snapshot() {
   snapshot.graphics_enabled = rtl_graphics_enabled.load(std::memory_order_relaxed);
   snapshot.recording = orcsdr::audio_rec::active();
   snapshot.volume = rtl_ui_volume;
-  snapshot.battery_percent = M5.Power.getBatteryLevel();
+  snapshot.battery_percent = battery_percent_cached();
   snapshot.scan_active = rtl_am_scan_active.load(std::memory_order_relaxed);
   snapshot.scan_step = rtl_am_scan_step.load(std::memory_order_relaxed);
   snapshot.scan_total = rtl_am_scan_total.load(std::memory_order_relaxed);
@@ -10369,7 +10397,7 @@ orcsdr::shortwave::Snapshot shortwave_dashboard_snapshot() {
     snapshot.clarifier_hz = static_cast<int16_t>(ssb::control().clarifier_hz.load(std::memory_order_relaxed));
     if (mode != ssb::Mode::am) snapshot.filter_bandwidth_hz = ssb::kPassbandHz;
   }
-  snapshot.battery_percent = M5.Power.getBatteryLevel();
+  snapshot.battery_percent = battery_percent_cached();
   snapshot.controls.audio_boost =
       rtl_shortwave_audio_boost.load(std::memory_order_relaxed);
   snapshot.controls.volume = rtl_ui_volume;
@@ -10564,7 +10592,7 @@ orcsdr::lora::Snapshot lora_dashboard_snapshot() {
   snapshot.iq_recording = g_iq_rec_active.load(std::memory_order_relaxed);
   snapshot.iq_ready = g_iq_rec_ready.load(std::memory_order_relaxed);
   snapshot.iq_busy = lora_native_decode_busy.load(std::memory_order_relaxed);
-  snapshot.battery_percent = M5.Power.getBatteryLevel();
+  snapshot.battery_percent = battery_percent_cached();
   snapshot.native_decoder_ready =
       lora_native_decoder_ready.load(std::memory_order_acquire) &&
       snapshot.bandwidth_hz == 250000;
@@ -10683,7 +10711,7 @@ orcsdr::p25::Snapshot p25_dashboard_snapshot() {
     snapshot.decoded.current_grant = p25_follow_grant;
     snapshot.decoded.recent_grants[0] = p25_follow_grant;
   }
-  snapshot.battery_percent = M5.Power.getBatteryLevel();
+  snapshot.battery_percent = battery_percent_cached();
   esp_rtl_sdr_metrics_t metrics{};
   if (g_rtl != nullptr) {
     (void)esp_rtl_sdr_get_metrics(g_rtl, &metrics);
@@ -12142,7 +12170,7 @@ void show_home(bool demo) {
   orcsdr::sstv_app::close();
   orcsdr::acars_app::close();
   orcsdr::ais_app::close();
-  orcsdr::digital_voice_app::close();
+  orcsdr::digital_voice_app::hide();   // Home keeps a running Digital Voice listening in the background
   const uint32_t dead_air_return_hz = orcsdr::dead_air_app::active() ? g_dead_air_return_hz : 0u;
   const RtlBand dead_air_return_band = g_dead_air_return_band;
   const uint8_t dead_air_return_demod = g_dead_air_return_demod;
@@ -12902,7 +12930,7 @@ void ft8_dashboard_fill_snapshot(orcsdr::ft8::Snapshot& snapshot) {
     snapshot.utc_ms = static_cast<uint64_t>(now.tv_sec) * 1000u + static_cast<uint64_t>(now.tv_usec / 1000);
   }
   snapshot.receiver_running = rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
-  snapshot.battery_percent = M5.Power.getBatteryLevel();
+  snapshot.battery_percent = battery_percent_cached();
   snapshot.selected_band = ft8_selected_band();
   orcsdr::ft8_runtime::touch();
   if (!orcsdr::ft8_runtime::active() && static_cast<int32_t>(millis() - g_ft8_next_start_ms) >= 0) {
@@ -13304,6 +13332,7 @@ orcsdr::acars_receiver::Hooks acars_receiver_hooks() {
   orcsdr::acars_receiver::Hooks hooks;
   hooks.device_ready = [] { return rtl_device_ready(); };
   hooks.tune = [](uint32_t center_hz, uint32_t rate) {   // 240 kS/s for ACARS, 250 kS/s for a VDL2 channel
+    RxAppTuning own_tune;
     if (!rtl_device_ready() || !esp_rtl_sdr_is_rate_supported(rate)) return false;
     const uint32_t previous_override = rtl_rate_override_sps.load(std::memory_order_acquire);
     rtl_rate_override_sps.store(rate, std::memory_order_release);
@@ -13321,6 +13350,7 @@ orcsdr::acars_receiver::Hooks acars_receiver_hooks() {
     return accepted;
   };
   hooks.release = [] {
+    RxAppTuning own_release;
     const uint32_t owned = rtl_rate_override_sps.exchange(0, std::memory_order_acq_rel);
     // A hot retune keeps the stream's rate: restart once at the normal rate if the stream is still at ours.
     if (rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running &&
@@ -13372,7 +13402,7 @@ void open_ais_dashboard() {
   orcsdr::ais_radio::install(radio);
   orcsdr::ais_app::Hooks app = {};
   app.header_controls = draw_global_header_controls;
-  app.battery_percent = [] { return static_cast<int>(M5.Power.getBatteryLevel()); };
+  app.battery_percent = [] { return static_cast<int>(battery_percent_cached()); };
   app.receiver_location = [](int32_t* lat_e7, int32_t* lon_e7) {
     const auto place = orcsdr::receiver_location::snapshot();
     if (!place.configured) return false;
@@ -13533,7 +13563,7 @@ orcsdr::dead_air_app::Hooks dead_air_app_hooks() {
   hooks.step_frequency = [](uint32_t hz, int direction) { return rtl_step_frequency(RtlBand::browse, hz, direction); };
   hooks.sound_enabled = [] { return rtl_audio_user_enabled.load(std::memory_order_relaxed); };
   hooks.overlay_open = [] { return rtl_header_audio_control.expanded; };
-  hooks.battery_percent = [] { return static_cast<int>(M5.Power.getBatteryLevel()); };
+  hooks.battery_percent = [] { return static_cast<int>(battery_percent_cached()); };
   hooks.utc_epoch = [] {
     const auto clock = orcsdr::time_service::now();
     return clock.wallclock_valid ? static_cast<uint32_t>(clock.utc) : 0u;
@@ -13624,7 +13654,8 @@ void open_dashboard(orcsdr::dashboards::Id id) {
   }
   if (id != Id::dead_air) orcsdr::dead_air_app::close();
   if (id != Id::ais) orcsdr::ais_app::close();
-  if (id != Id::digital_voice) orcsdr::digital_voice_app::close();
+  if (id == Id::home) orcsdr::digital_voice_app::hide();
+  else if (id != Id::digital_voice) orcsdr::digital_voice_app::close();
   if (id == Id::dead_air) { open_dead_air_dashboard(); return; }
   if (id == Id::rf_lab) {
     persist_dashboard_open(id);
@@ -14772,6 +14803,7 @@ bool point_in_button(int32_t x, int32_t y) {
 
 bool queue_local_rtl_listen(RtlBand band, uint32_t frequency_hz,
                             bool persist_navigation, bool user_request) {
+  dv_background_yield();
   if (band == RtlBand::adsb) frequency_hz = kAdsbDefaultHz;
   if (band == RtlBand::lora) {
     load_lora_config();
@@ -15130,7 +15162,7 @@ const orcsdr::cb::Snapshot& cb_dashboard_snapshot() {
   snapshot.running =
       rtl_capture_state.load(std::memory_order_acquire) == RtlCaptureState::running;
   snapshot.sound_enabled = rtl_audio_user_enabled.load(std::memory_order_acquire);
-  snapshot.battery_percent = M5.Power.getBatteryLevel();
+  snapshot.battery_percent = battery_percent_cached();
   snapshot.scan_state = cb_scanner.state();
   snapshot.hang_remaining_ms = cb_scanner.hang_remaining_ms(now);
   snapshot.stops = cb_scanner.stops();
@@ -15344,6 +15376,7 @@ bool request_hot_retune_for(orcsdr::radio::Token token, uint32_t frequency_hz,
 }
 
 bool request_hot_retune(uint32_t frequency_hz, bool user_request) {
+  dv_background_yield();
   const auto session = radio_session.snapshot();
   return request_hot_retune_for({session.owner, session.generation}, frequency_hz, user_request);
 }
@@ -16909,7 +16942,7 @@ void emit_identity() {
   uint32_t flash_size = 0;
   (void)esp_flash_get_size(nullptr, &flash_size);
   const char* wifi_ip = wifi_connected ? orcsdr::wifi::ip() : "0.0.0.0";
-  const int32_t battery_level = M5.Power.getBatteryLevel();
+  const int32_t battery_level = battery_percent_cached();
   const int16_t battery_mv = M5.Power.getBatteryVoltage();
   const int32_t battery_ma = M5.Power.getBatteryCurrent();
   const int16_t vbus_mv = M5.Power.getVBUSVoltage();
@@ -20427,7 +20460,7 @@ void emit_power_sample(const char* tag) {
       "charging=%s\n",
       tag ? tag : "sample", static_cast<unsigned long>(millis()),
       M5.Power.getBatteryVoltage(), static_cast<long>(M5.Power.getBatteryCurrent()),
-      static_cast<long>(M5.Power.getBatteryLevel()), charging_state());
+      static_cast<long>(battery_percent_cached()), charging_state());
 }
 
 void begin_power_monitor(const char* tag, uint32_t duration_ms) {

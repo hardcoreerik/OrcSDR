@@ -13,7 +13,6 @@
 #include "digital_voice_dashboard_surface.hpp"
 #include "dv_bandplan.hpp"
 #include "dv_discovery_bridge.hpp"
-#include "dv_wide_bench.hpp"
 #include "dv_radio.hpp"
 #include "dv_scanner.hpp"
 #include "dv_voice_service.hpp"
@@ -25,6 +24,7 @@ using namespace digital_voice_ui;
 
 // Everything lives in PSRAM for the lifetime of a visit: the Tab5 internal boot pool is nearly full.
 struct State {
+  bool background = false;          // the screen is hidden but the receiver, scanner and speech are still running
   Surface surface;
   Snapshot snapshot;
   dv::Scanner scanner;
@@ -788,6 +788,16 @@ void apply_radio_action(State& st, const Action& a) {
 void install(const Hooks& hooks) { g_hooks = hooks; }
 
 void open() {
+  if (g_state && g_state->background) {        // back from Home with the receiver still running: just show the screen again
+    g_state->background = false;
+    screens::begin_transition(screens::Id::digital_voice, now());
+    screens::finish_transition();
+    if (!full_draw()) {
+      ++g_open_failed;
+      leave_to_home();
+    }
+    return;
+  }
   if (!ensure_state()) {
     ++g_open_failed;
     if (g_hooks.go_home) g_hooks.go_home();
@@ -818,6 +828,16 @@ void open() {
     leave_to_home();
   }
 }
+
+void hide() {
+  if (!g_state) return;
+  // Nothing to keep when the receiver is not running: leave exactly as before.
+  if (!dv_radio::running()) { close(); return; }
+  g_state->background = true;                  // tick() keeps scanning and decoding; drawing is skipped (the screen is not ours)
+  g_state->surface.leave();                    // not an active screen any more (other screens ask active())
+}
+
+bool in_background() { return g_state != nullptr && g_state->background; }
 
 void close() {
   if (!g_state) return;
@@ -1056,12 +1076,6 @@ bool handle_command(const char* command, bool authenticated, void (*write_line)(
     dv_radio::set_protocol_mask(static_cast<uint8_t>(m));
     dv_radio::request_decoder_reset();
     write_line("RTL_DV_MASK_OK (override: forces these decoders on every channel)");
-    return true;
-  }
-  if (std::strcmp(arg, "DDCBENCH") == 0) {          // development: cost of tuning a channel out of a 2.4 MS/s stream
-    if (!authenticated) { write_line("RTL_DV_REFUSED authenticate first"); return true; }
-    if (!g_hooks.micros) { write_line("RTL_DV_DDCBENCH_FAILED no clock"); return true; }
-    dv_wide_bench::run([] { return g_hooks.micros(); }, write_line);
     return true;
   }
   if (std::strncmp(arg, "IQ ", 3) == 0) {          // development IQ capture: RTL_DV IQ ON|OFF|SNAP|STATUS
