@@ -1639,7 +1639,9 @@ bool probe_command(const char* op, void (*write_line)(const char*)) {
       std::snprintf(line, sizeof(line), "RTL_DV_PROBE core=%d samples=%lu", c, static_cast<unsigned long>(g_probe_total[c]));
       write_line(line);
       for (int k = 0; k < kProbeSlots && g_probe_tab[c][k].n; ++k) {
-        std::snprintf(line, sizeof(line), "RTL_DV_PROBE core=%d task=%s share_permille=%lu max_run_ms=%lu", c, g_probe_tab[c][k].name,
+        TaskHandle_t th = xTaskGetHandle(g_probe_tab[c][k].name);
+        std::snprintf(line, sizeof(line), "RTL_DV_PROBE core=%d task=%s stack_free_hwm=%lu share_permille=%lu max_run_ms=%lu", c, g_probe_tab[c][k].name,
+                      static_cast<unsigned long>(th ? uxTaskGetStackHighWaterMark(th) : 0),
                       static_cast<unsigned long>(g_probe_total[c] ? static_cast<uint64_t>(g_probe_tab[c][k].n) * 1000u / g_probe_total[c] : 0),
                       static_cast<unsigned long>(g_probe_tab[c][k].max_run));
         write_line(line);

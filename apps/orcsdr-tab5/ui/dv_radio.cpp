@@ -77,6 +77,9 @@ std::atomic<uint32_t> g_blocks{0}, g_wrong_rate{0}, g_settle_skipped{0}, g_gaps{
 std::atomic<uint32_t> g_events{0}, g_dropped{0}, g_seq{0};
 std::atomic<uint32_t> g_max_us{0}, g_level_milli{0};
 std::atomic<uint64_t> g_total_us{0}, g_samples{0}, g_us_ch{0}, g_us_dmr{0}, g_us_n48{0}, g_us_n96{0};
+// Samples actually delivered to each decoder (48 kS/s for DMR and NXDN96, 24 kS/s after the half-rate decimator for NXDN48). `pairs` counts the raw
+// 240 kS/s complex input pairs and is not comparable with these.
+std::atomic<uint64_t> g_smp_dmr{0}, g_smp_n48{0}, g_smp_n96{0};
 std::atomic<uint32_t> g_verified_ms{0}, g_identity_ms{0};
 std::atomic<uint32_t> g_dmr_acq{0}, g_dmr_id{0}, g_dmr_ev{0};
 std::atomic<uint32_t> g_n48_frames{0}, g_n48_valid{0}, g_n96_frames{0}, g_n96_valid{0};
@@ -299,6 +302,7 @@ void decode_samples(const dv::Iq48* in, size_t n, uint8_t mask) {
   if (mask & kMaskDmr) {
     for (size_t i = 0; i < n; ++i) st.dmr_in[i] = {in[i].re, in[i].im};
     (void)st.dec->dmr.process(st.dmr_in, n, on_dmr, nullptr);
+    g_smp_dmr.fetch_add(n, std::memory_order_relaxed);
     st.dec->calls.on_time(st.dec->dmr.protocol_dibits());
   }
   uint32_t b = micros32();
@@ -312,10 +316,11 @@ void decode_samples(const dv::Iq48* in, size_t n, uint8_t mask) {
       nxdn::IQSample half_nx[kWorkerChunk / 2 + 2];
       for (size_t i = 0; i < m; ++i) half_nx[i] = {half[i].re, half[i].im};
       (void)st.dec->f48.feed(half_nx, m, on_dibit_48, nullptr);
+      g_smp_n48.fetch_add(m, std::memory_order_relaxed);
     }
     b = micros32();
     g_us_n48.fetch_add(b - a, std::memory_order_relaxed);
-    if (mask & kMaskNxdn96) (void)st.dec->f96.feed(st.nx_in, n, on_dibit_96, nullptr);
+    if (mask & kMaskNxdn96) { (void)st.dec->f96.feed(st.nx_in, n, on_dibit_96, nullptr); g_smp_n96.fetch_add(n, std::memory_order_relaxed); }
     g_us_n96.fetch_add(micros32() - b, std::memory_order_relaxed);
   }
 }
@@ -415,6 +420,7 @@ bool start() {
   g_events = g_dropped = g_seq = 0;
   g_max_us = g_level_milli = 0; g_total_us = 0; g_samples = 0; g_verified_ms = 0; g_identity_ms = 0;
   g_us_ch = g_us_dmr = g_us_n48 = g_us_n96 = 0;
+  g_smp_dmr = g_smp_n48 = g_smp_n96 = 0;
   g_dmr_acq = g_dmr_id = g_dmr_ev = 0;
   g_n48_frames = g_n48_valid = g_n96_frames = g_n96_valid = 0;
   g_replay = false; g_candidate = false; g_channel_hz = 0; g_epoch = 0; g_settle_until = 0; g_last_block_ms = 0;
@@ -699,7 +705,7 @@ void format_status(char* out, size_t size) {
   std::snprintf(out, size,
       "RTL_DV_STATUS link=%s running=%d ch_hz=%lu epoch=%lu blocks=%lu wrong_rate=%lu settle_skipped=%lu gaps=%lu loss=%lu "
       "tune=%lu/%lu events=%lu dropped=%lu dmr_acq=%lu dmr_ev=%lu dmr_id=%lu n48_frames=%lu n48_ok=%lu n96_frames=%lu n96_ok=%lu "
-      "blk_us_max=%lu blk_us_avg=%lu level_milli=%lu mask=%u state_bytes=%lu pairs=%llu us_ch=%llu us_dmr=%llu us_n48=%llu us_n96=%llu worker=%d ring_pend=%lu ring_max=%lu ring_drops=%lu worker_busy_pm=%lu dec_internal=%lu",
+      "blk_us_max=%lu blk_us_avg=%lu level_milli=%lu mask=%u state_bytes=%lu pairs=%llu us_ch=%llu us_dmr=%llu us_n48=%llu us_n96=%llu worker=%d ring_pend=%lu ring_max=%lu ring_drops=%lu worker_busy_pm=%lu dec_internal=%lu smp_dmr=%llu smp_n48=%llu smp_n96=%llu",
       link_name(s.link), s.running ? 1 : 0, (unsigned long)s.channel_hz, (unsigned long)s.epoch, (unsigned long)s.blocks,
       (unsigned long)s.wrong_rate_blocks, (unsigned long)s.settle_skipped, (unsigned long)s.discontinuities,
       (unsigned long)s.loss_events, (unsigned long)s.tune_calls, (unsigned long)s.tune_refused, (unsigned long)s.events,
@@ -710,7 +716,8 @@ void format_status(char* out, size_t size) {
       (unsigned long long)s.samples_in, (unsigned long long)g_us_ch.load(), (unsigned long long)g_us_dmr.load(),
       (unsigned long long)g_us_n48.load(), (unsigned long long)g_us_n96.load(), s.worker ? 1 : 0,
       (unsigned long)s.ring_pending, (unsigned long)s.ring_fill_max, (unsigned long)s.ring_drops,
-      (unsigned long)s.worker_busy_permille, (unsigned long)g_dec_internal_bytes.load());
+      (unsigned long)s.worker_busy_permille, (unsigned long)g_dec_internal_bytes.load(),
+      (unsigned long long)g_smp_dmr.load(), (unsigned long long)g_smp_n48.load(), (unsigned long long)g_smp_n96.load());
 }
 
 }  // namespace orcsdr::dv_radio

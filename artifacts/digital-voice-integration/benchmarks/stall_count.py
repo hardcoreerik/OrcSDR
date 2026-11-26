@@ -15,11 +15,14 @@ for _ in range(10):
     time.sleep(3)
 time.sleep(5)
 t0=time.time(); gaps=[]
-while time.time()-t0<secs:
+try:
+  while time.time()-t0<secs:
     raw=c.serial.readline()
     if raw:
         l=raw.decode("utf-8","replace")
         if "RTL_MAIN_STALL" in l:
             try: gaps.append(int(l.split("elapsed_ms=")[1]))
             except Exception: pass
+finally:
+  run(c,"RTL_DV SCAN STOP",1.5)      # always leave the scanner stopped, also on failure
 print("stalls >=500 ms in %.0f s: %d  max %d ms  total %d ms"%(secs,len(gaps),max(gaps) if gaps else 0,sum(gaps)))
