@@ -49,6 +49,7 @@ struct State {
   char cap_json[4096];
   // MONITOR: scan only the systems the discovery database has seen. Filter: protocol (0 any, 1 DMR, 2 NXDN48, 3 NXDN96) and colour code / RAN (255 any).
   uint8_t mon_proto = 0, mon_cc = 255;
+  uint16_t mon_min_hits = 3;          // systems heard fewer times than this are left out (1 to 2 hit systems are usually false detections)
   uint8_t filled_system_offset = 0;            // the Systems page offset the snapshot rows were last filled for
   bool background = false;          // the screen is hidden but the receiver, scanner and speech are still running
   Surface surface;
@@ -254,6 +255,7 @@ size_t build_monitor_list(const State& st, uint32_t* hz, uint8_t* mask, size_t c
     const uint8_t m = mask_for_protocol(static_cast<Protocol>(r.protocol));
     if (r.frequency_hz == 0 || m == 0) continue;
     if (want && m != want) continue;
+    if (r.count < st.mon_min_hits) continue;
     if (st.mon_cc != 255 && !(r.area_kind != dv::AreaKind::none && r.area == st.mon_cc)) continue;
     size_t j = 0;
     while (j < n && hz[j] != r.frequency_hz) ++j;
@@ -1359,24 +1361,31 @@ bool handle_command(const char* command, bool authenticated, void (*write_line)(
       const uint8_t proto = std::strcmp(w1, "DMR") == 0 ? 1 : std::strcmp(w1, "NXDN48") == 0 ? 2 : std::strcmp(w1, "NXDN96") == 0 ? 3 : 0;
       const char* r = a + (k == 1 ? used : 0);
       while (*r == ' ') ++r;
-      long cc = -1;
+      long cc = -1, minh = -1;
       bool bad = k != 1 || (proto == 0 && std::strcmp(w1, "ALL") != 0);
-      if (!bad && *r) {                                       // optional "CC n", "CC13", "RAN n" or "RAN2"
-        if (std::strncmp(r, "CC", 2) == 0) r += 2; else if (std::strncmp(r, "RAN", 3) == 0) r += 3; else bad = true;
+      while (!bad && *r) {                                    // optional, in any order: "CC n" / "CC13", "RAN n" / "RAN2", "MIN n" (minimum hits)
+        const bool is_min = std::strncmp(r, "MIN", 3) == 0;
+        if (std::strncmp(r, "CC", 2) == 0) r += 2; else if (std::strncmp(r, "RAN", 3) == 0 || is_min) r += 3; else { bad = true; break; }
+        while (*r == ' ') ++r;
         char* end = nullptr;
-        if (!bad) { cc = std::strtol(r, &end, 10); bad = end == r || *end != 0 || cc < 0 || cc > 63; }
+        const long v = std::strtol(r, &end, 10);
+        if (end == r || v < 0 || (is_min ? v > 1000000 : v > 63)) { bad = true; break; }
+        (is_min ? minh : cc) = v;
+        r = end;
+        while (*r == ' ') ++r;
       }
       if (bad) {
-        write_line("RTL_DV_MONITOR_INVALID use RTL_DV MONITOR [ALL|DMR|NXDN48|NXDN96] [CC n | RAN n]");
+        write_line("RTL_DV_MONITOR_INVALID use RTL_DV MONITOR [ALL|DMR|NXDN48|NXDN96] [CC n | RAN n] [MIN hits]");
         return true;
       }
       st.mon_proto = proto;
       st.mon_cc = cc >= 0 ? static_cast<uint8_t>(cc) : 255;
+      st.mon_min_hits = minh >= 0 ? static_cast<uint16_t>(std::min<long>(minh, 65535)) : 3;
       st.plan_option = static_cast<uint8_t>(monitor_option(st));
       apply_plan_option(st);
       ++st.snapshot.revision;
     }
-    std::snprintf(line, sizeof(line), "RTL_DV_MONITOR proto=%u cc=%u entries=%u selected=%d", static_cast<unsigned>(st.mon_proto), static_cast<unsigned>(st.mon_cc),
+    std::snprintf(line, sizeof(line), "RTL_DV_MONITOR proto=%u cc=%u min_hits=%u entries=%u selected=%d", static_cast<unsigned>(st.mon_proto), static_cast<unsigned>(st.mon_cc), static_cast<unsigned>(st.mon_min_hits),
                   static_cast<unsigned>(st.plan_option == monitor_option(st) ? st.scanner.plan_count() : 0u), st.plan_option == monitor_option(st) ? 1 : 0);
     write_line(line);
     if (st.plan_option == monitor_option(st))
