@@ -324,15 +324,7 @@ void apply_plan_option(State& st) {
     uint8_t mk[dv::kMaxScanChannels];
     size_t n = build_monitor_list(st, hz, mk, dv::kMaxScanChannels);
     // A channel where speech was decoded is visited twice per round (the second time half a round later): a reply in that conversation is caught sooner.
-    const size_t base = n;
-    for (size_t v = 0; v < st.voice_n && n < dv::kMaxScanChannels; ++v) {
-      size_t j = 0;
-      while (j < n && hz[j] != st.voice_hz[v]) ++j;
-      if (j == n) continue;
-      const size_t at = n > j + base / 2 + 1 ? j + base / 2 + 1 : n;
-      for (size_t i = n; i > at; --i) { hz[i] = hz[i - 1]; mk[i] = mk[i - 1]; }
-      hz[at] = hz[j]; mk[at] = mk[j]; ++n;
-    }
+    n = dv::add_revisits(hz, mk, n, dv::kMaxScanChannels, st.voice_hz, st.voice_n);
     if (n && st.scanner.set_plan(hz, n)) { std::memset(st.plan_mask, 0, sizeof(st.plan_mask)); std::memcpy(st.plan_mask, mk, n); }
     else st.scanner.clear_plan();
   } else if (!st.scanner.set_range(st.custom_start, st.custom_step, st.custom_count)) {

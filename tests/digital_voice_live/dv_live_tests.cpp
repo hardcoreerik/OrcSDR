@@ -150,6 +150,22 @@ void test_scanner() {
   CHECK(s.status().state == dv::ScanState::failed && s.status().fail == dv::FailReason::receiver_removed);
 }
 
+void test_monitor_revisits() {
+  uint32_t hz[16] = {100, 101, 102, 103, 104, 105};
+  uint8_t mk[16] = {1, 2, 3, 4, 5, 6};
+  const uint32_t voice[2] = {101, 999};
+  size_t n = dv::add_revisits(hz, mk, 6, 16, voice, 2);      // 999 is not in the list: ignored
+  CHECK(n == 7);
+  CHECK(hz[1] == 101 && hz[5] == 101 && mk[5] == 2);        // second visit half a round (3) after the first, mask follows
+  CHECK(hz[0] == 100 && hz[2] == 102 && hz[6] == 105);      // everything else keeps its order
+  uint32_t h2[3] = {1, 2, 3}; uint8_t m2[3] = {1, 1, 1};
+  CHECK(dv::add_revisits(h2, m2, 3, 3, voice, 2) == 3);     // no room: unchanged
+  const uint32_t v3[1] = {3};
+  uint32_t h3[8] = {1, 2, 3}; uint8_t m3[8] = {1, 1, 1};
+  n = dv::add_revisits(h3, m3, 3, 8, v3, 1);
+  CHECK(n == 4 && h3[3] == 3);                              // last entry: the revisit goes at the end
+}
+
 void test_scanner_hold_time() {
   // A longer hold keeps the channel through a pause in a conversation; the default releases after 4 s. Limits are enforced.
   const uint32_t plan[2] = {460000000, 461000000};
@@ -315,6 +331,7 @@ int main() {
   test_channelizer_tone();
   test_scanner();
   test_scanner_hold_time();
+  test_monitor_revisits();
   test_dmr_end_to_end();
   test_worker_matches_inline();
   test_nxdn_end_to_end(false);

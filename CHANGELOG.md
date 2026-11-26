@@ -5,7 +5,7 @@ This is the **project-level release and current-source index**. It links the aut
 ## Unreleased — Digital Voice: MONITOR visits a channel with decoded speech twice per round — 2026-11-26
 
 - **What changed:** when speech frames are decoded on a channel, the channel is remembered for the session (up to 4, not saved). The next time the MONITOR plan is built (at START or a filter change) each such channel is listed a second time, half a round later, so a reply in a conversation is caught sooner. Control-only channels are never doubled: a first attempt that doubled the most-heard system was dropped because that is a Terra control channel (152.1575 MHz).
-- **Verified on the Tab5:** the build flashes and MONITOR still lists 9 entries when no speech has been heard. **Not verified:** the doubling itself on the device (no voice call occurred since the flash), and whether it catches more replies. No host test for the plan insertion.
+- **Verified on the Tab5:** the build flashes and MONITOR still lists 9 entries when no speech has been heard. **Not verified:** the doubling itself on the device (no voice call occurred since the flash), and whether it catches more replies. The plan insertion is now a pure function (`add_revisits`) with a host test (order kept, mask follows, unknown channel ignored, no room, last entry).
 
 ## Unreleased — Digital Voice: MONITOR leaves a control-only channel after 6 s instead of 20 s — 2026-11-26
 

@@ -130,4 +130,19 @@ class Scanner {
   ScanState paused_from_ = ScanState::sampling;
 };
 
+// MONITOR revisits: each channel in voice[] that is in hz[0, n) is listed a second time half a round after its first entry (masks follow).
+// Stops at cap entries; voice channels not in the list are ignored. Returns the new count.
+inline size_t add_revisits(uint32_t* hz, uint8_t* mask, size_t n, size_t cap, const uint32_t* voice, size_t nv) noexcept {
+  const size_t base = n;
+  for (size_t v = 0; v < nv && n < cap; ++v) {
+    size_t j = 0;
+    while (j < n && hz[j] != voice[v]) ++j;
+    if (j == n) continue;
+    const size_t at = n > j + base / 2 + 1 ? j + base / 2 + 1 : n;
+    for (size_t i = n; i > at; --i) { hz[i] = hz[i - 1]; mask[i] = mask[i - 1]; }
+    hz[at] = hz[j]; mask[at] = mask[j]; ++n;
+  }
+  return n;
+}
+
 }  // namespace orcsdr::dv
