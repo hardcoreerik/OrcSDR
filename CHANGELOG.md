@@ -2,6 +2,10 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased - Digital Voice: compact NXDN frontend storage - 2026-11-26
+
+- Production NXDN48 (24 kS/s) and NXDN96 (48 kS/s) both use 10 samples/symbol; keep only the required tap and history lengths. General 20-sps Frontend remains available; CompactFrontend rejects geometry beyond its capacity. Sandbox x86-64 sizeof 7064 -> 3624 B per frontend, combined state_bytes 40128 -> 33248 (6880 B saved). Exact same dibits, symbol counts and carrier estimates over 4 DMR IQ recordings and noise/analog at both rates, chunks 1/37/512/4096. No consistent CPU speedup claimed; no filter/decimation or rate change. Positive NXDN fixture CI pending, physical internal/PSRAM allocator placement and boot behavior not measured.
+
 ## Unreleased - Digital Voice: specialize existing quality-one harmonic synthesis - 2026-11-26
 
 - Shared mbelib synthesis keeps one arithmetic/RNG implementation but specializes quality 1 and allocates just two one-element oscillator arrays on that path. Sandbox GCC 14.2 -O3, 576 actual native wire frames x100 x5 runs: median 30.826 -> 24.255 us/frame (21.3% lower), PCM/result/RNG digest identical. Host compiler stack frame 2288 -> 176 B (generic path remains 2288 B); executable text +5432 B, data/BSS unchanged. Actual native IQ WAV and wire outputs byte-identical on four uploaded captures. 768 synthetic bounded shared-synthesis cases (qualities 0,1,2,3,8,32,64,65) produce byte-identical float PCM, predictor state and next RNG. P25 shares quality 1, so device/P25 full-chain acceptance and target stack/flash/cycle benefit remain unmeasured; no change to allocated task stack or quality.

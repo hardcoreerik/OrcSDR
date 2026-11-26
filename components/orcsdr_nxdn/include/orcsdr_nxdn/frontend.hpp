@@ -10,11 +10,13 @@ struct IQSample { float re = 0; float im = 0; };
 using DibitSink = void (*)(std::uint8_t, void*) noexcept;
 // 48 kHz channelized complex IQ; no radio, USB, tuner or resampler ownership.
 // Reset both this object and the decoder on every retune/discontinuity.
-class Frontend final {
+template<std::size_t MaxSps>
+class BasicFrontend final {
+    static_assert(MaxSps == 10 || MaxSps == 20, "supported NXDN storage geometries");
 public:
     // input_rate_hz: 48000 for both modes (validated default). NXDN48 may be fed a 24000 Hz stream (half the work; the
     // symbol geometry then equals NXDN96 at 48 kHz). The caller supplies the decimated stream; nothing resamples here.
-    explicit Frontend(Mode mode, double input_rate_hz = 48000.0) noexcept;
+    explicit BasicFrontend(Mode mode, double input_rate_hz = 48000.0) noexcept;
     void reset() noexcept;
     [[nodiscard]] bool feed(const IQSample* iq, std::size_t count,
                             DibitSink sink, void* user = nullptr) noexcept;
@@ -27,10 +29,10 @@ private:
     std::size_t sps_ = 10;
     std::size_t channel_n_ = 0;
     std::size_t rrc_n_ = 0;
-    std::array<float, 361> channel_taps_{};
-    std::array<float, 321> rrc_taps_{};
-    std::array<IQSample, 361> channel_hist_{};
-    std::array<float, 321> rrc_hist_{};
+    std::array<float, 18 * MaxSps + 1> channel_taps_{};
+    std::array<float, 16 * MaxSps + 1> rrc_taps_{};
+    std::array<IQSample, 18 * MaxSps + 1> channel_hist_{};
+    std::array<float, 16 * MaxSps + 1> rrc_hist_{};
     std::size_t channel_pos_ = 0, rrc_pos_ = 0;
     IQSample prev_iq_{1,0};
     bool have_iq_ = false;
@@ -45,4 +47,8 @@ private:
     double symbol_dc_ = 0, symbol_abs_ = 0;
     std::uint64_t symbols_ = 0;
 };
+// Preserve the original general-rate API. Production's 24k/2400 and
+// 48k/4800 inputs both use 10 samples/symbol; no unused 20-sps histories.
+using Frontend = BasicFrontend<20>;
+using CompactFrontend = BasicFrontend<10>;
 } // namespace orcsdr::nxdn
