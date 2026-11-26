@@ -80,6 +80,10 @@ struct State {
   bool led_new[64]{};
   uint8_t led_n = 0;
   uint16_t led_seen[64]{};                     // times each ledger channel was noted (saturating)
+  // Channels where speech frames were decoded this session (not saved): MONITOR visits them twice per round.
+  uint32_t voice_hz[4]{};
+  uint8_t voice_n = 0;
+  uint32_t voice_last_speech = 0;
   uint32_t led_utc[64]{};                      // UTC of the last note, 0 = clock not valid
   // Candidate log: the ledger written to /orcsdr/dv_cand_<utc>.csv (one file per session, never overwritten by a later one) so sync-level findings survive a restart.
   bool cand_dirty = false, cand_saving = false;
@@ -318,7 +322,17 @@ void apply_plan_option(State& st) {
   } else if (st.plan_option == monitor_option(st)) {            // MONITOR: only what discovery found
     uint32_t hz[dv::kMaxScanChannels];
     uint8_t mk[dv::kMaxScanChannels];
-    const size_t n = build_monitor_list(st, hz, mk, dv::kMaxScanChannels);
+    size_t n = build_monitor_list(st, hz, mk, dv::kMaxScanChannels);
+    // A channel where speech was decoded is visited twice per round (the second time half a round later): a reply in that conversation is caught sooner.
+    const size_t base = n;
+    for (size_t v = 0; v < st.voice_n && n < dv::kMaxScanChannels; ++v) {
+      size_t j = 0;
+      while (j < n && hz[j] != st.voice_hz[v]) ++j;
+      if (j == n) continue;
+      const size_t at = n > j + base / 2 + 1 ? j + base / 2 + 1 : n;
+      for (size_t i = n; i > at; --i) { hz[i] = hz[i - 1]; mk[i] = mk[i - 1]; }
+      hz[at] = hz[j]; mk[at] = mk[j]; ++n;
+    }
     if (n && st.scanner.set_plan(hz, n)) { std::memset(st.plan_mask, 0, sizeof(st.plan_mask)); std::memcpy(st.plan_mask, mk, n); }
     else st.scanner.clear_plan();
   } else if (!st.scanner.set_range(st.custom_start, st.custom_step, st.custom_count)) {
@@ -710,6 +724,16 @@ void refresh(State& st) {
   }
   if (changed) ++s.revision;
   refresh_voice(s);
+  {
+    const uint32_t sp = s.voice.speech_frames;
+    const uint32_t hz = st.scanner.status().frequency_hz;
+    if (sp > st.voice_last_speech && hz) {
+      size_t k = 0;
+      while (k < st.voice_n && st.voice_hz[k] != hz) ++k;
+      if (k == st.voice_n && st.voice_n < 4) st.voice_hz[st.voice_n++] = hz;
+    }
+    st.voice_last_speech = sp;
+  }
   {
     const bool can = g_hooks.file_save && g_hooks.file_save_result && g_hooks.flag_store;
     const bool on = dv_voice_service::save_speech();

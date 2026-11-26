@@ -2,6 +2,11 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Digital Voice: MONITOR visits a channel with decoded speech twice per round — 2026-11-26
+
+- **What changed:** when speech frames are decoded on a channel, the channel is remembered for the session (up to 4, not saved). The next time the MONITOR plan is built (at START or a filter change) each such channel is listed a second time, half a round later, so a reply in a conversation is caught sooner. Control-only channels are never doubled: a first attempt that doubled the most-heard system was dropped because that is a Terra control channel (152.1575 MHz).
+- **Verified on the Tab5:** the build flashes and MONITOR still lists 9 entries when no speech has been heard. **Not verified:** the doubling itself on the device (no voice call occurred since the flash), and whether it catches more replies. No host test for the plan insertion.
+
 ## Unreleased — Digital Voice: MONITOR leaves a control-only channel after 6 s instead of 20 s — 2026-11-26
 
 - **What changed:** a channel that shows only control traffic (verified events, no identity, no voice) is now released after 6 s in MONITOR (other plans keep 20 s), so MONITOR visits more channels per minute; a call that starts on a held channel brings identity evidence and still keeps the hold. New `Scanner::set_control_hold_max_ms` (1 to 60 s, clamped); `RTL_DV MONITOR` prints `control_hold_ms=`.
