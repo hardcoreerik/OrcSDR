@@ -26,7 +26,7 @@ def inspect(name,mode,expected,base,replay):
         raise ValueError(f"{path}: truncated CS16 sample")
     runs=[]
     for chunk in (1,37,4096):
-        proc=subprocess.run([str(replay.resolve()),mode,str(path),"--frames",f"--chunk={chunk}"],
+        proc=subprocess.run([str(replay.resolve()),mode,str(path),"--frames","--opaque",f"--chunk={chunk}"],
                             capture_output=True,text=True,check=True)
         events=[json.loads(line) for line in proc.stdout.splitlines() if line]
         runs.append(events)
@@ -36,10 +36,17 @@ def inspect(name,mode,expected,base,replay):
         raise AssertionError(f"{name}: IQ chunk size changes evidence output")
     frames=[x for x in runs[0] if x["kind"]=="lich_candidate"]
     crc=[x for x in runs[0] if x["kind"]=="sacch_crc_valid"]
+    opaque=[x for x in runs[0] if x["kind"]=="sacch_opaque_message"]
+    spacing={}
+    starts=[x["frame_start_dibit"] for x in frames]
+    for a,b in zip(starts,starts[1:]): spacing[b-a]=spacing.get(b-a,0)+1
     result={"fixture":name,"bytes":len(data),"git_blob_sha1":digest,
             "sha256":hashlib.sha256(data).hexdigest(),
             "fsw_lich_candidates":len(frames),"sacch_crc_valid":len(crc),
             "raw_voice_codeword_candidates":sum(x["voice_codewords_unverified"] for x in frames),
+            "ran_values_crc_valid":sorted({x["ran"] for x in crc}),
+            "frame_spacing_dibits_histogram":spacing,
+            "opaque_sacch_messages_uninterpreted":len(opaque),
             "note":"raw VCH candidates do not pass vocoder Golay validation"}
     print(json.dumps(result,sort_keys=True))
 

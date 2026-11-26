@@ -11,7 +11,11 @@
       "sha256": "2496c07730c6385c68dd9f54d723f4b6ff0bc7b49c5408c2fcf14dfb1afbb626",
       "url": "https://nostr.download/2496c07730c6385c68dd9f54d723f4b6ff0bc7b49c5408c2fcf14dfb1afbb626.xz",
       "compression": "xz",
-      "kind": "actual off-air, Signal Identification Wiki"
+      "kind": "actual off-air, Signal Identification Wiki",
+      "extracted_bytes": 2265600,
+      "extracted_sha256": "6947e2181a92eb41cc268e0c5ef8e7eb4219b4eab7b036ea4614355bc752c9db",
+      "sha256_scope": "xz-archive (original publisher/URL hash, unchanged)",
+      "extracted_note": "Observed 2026-11-25 after the archive SHA-256 verified; nominal \"bytes\" was the publisher figure and does not equal the real extracted length."
     },
     {
       "id": "waveshark-nxdn96-15s",
@@ -22,7 +26,11 @@
       "sha256": "48bba222129a43da7aae1c41aa2872b7adf9a3ea2d7bcbdcce5dd0ae3ad22af3",
       "url": "https://nostr.download/48bba222129a43da7aae1c41aa2872b7adf9a3ea2d7bcbdcce5dd0ae3ad22af3.xz",
       "compression": "xz",
-      "kind": "actual off-air, Signal Identification Wiki"
+      "kind": "actual off-air, Signal Identification Wiki",
+      "extracted_bytes": 2937600,
+      "extracted_sha256": "f719f7f78cc7cf0cd983ed89cca82901ec9242d053ea9958d56cba21ee0995d0",
+      "sha256_scope": "xz-archive (original publisher/URL hash, unchanged)",
+      "extracted_note": "Observed 2026-11-25 after the archive SHA-256 verified; nominal \"bytes\" was the publisher figure and does not equal the real extracted length."
     },
     {
       "id": "dsd-nxdn48-iq",

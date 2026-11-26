@@ -2,6 +2,13 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — NXDN: real-air replay results, opaque SACCH reassembly, fetcher fix — 2026-11-25
+
+- **What was measured:** the three private REA-Results NXDN clips (blobs and SHA-256 verified) replayed through OrcSDR's own production frontend: NXDN48 12 FSW/LICH frames and 12 CRC6-valid SACCH, NXDN96 voice 19 and 19, NXDN96 control 19 frames exactly 192 dibits apart at -664.9 Hz; RAN reads 7 on every voice frame; identical output at chunk sizes 1, 37 and 4096. Voice thresholds (Golay, pitch) are not measured and not claimed. The 11.8 s and 15.3 s WaveShark clips are not decoded.
+- **What was added:** `sacch_reassembly` (host component only) turns CRC-valid SACCH fragments into opaque 72-bit strings with gap, order, context and malformed-input handling; no Layer 3 field is interpreted, because the normative NXDN spec is not held. 10 synthetic tests pass in Release and ASan/UBSan. Frontend and decoder behaviour are unchanged; no firmware, `main.cpp` or dashboard change.
+- **Fix:** the NXDN IQ fetcher compared the extracted file to the archive hash and a nominal length, so valid downloads failed; it now verifies the archive hash and pins the observed extracted length and hash.
+- Assessment, standards gap and an audit of the experimental voice branch: `docs/nxdn/RESEARCH_ASSESSMENT_2026-11-25.md`.
+
 ## Unreleased â€” Investigated, not shipped: P25 decoding from the wide 2.56 MS/s stream â€” 2026-11-25
 
 - **What was tried:** the P25 band streaming at 2.56 MS/s (V4/V4L) with the P25 decoder taking its channel through a center decimator (stream/10), a 3/16 resampler to its 48 kS/s channel rate and the same two-pole channel filter its 960 kS/s front end applies. It worked on live P25 traffic (Lane County Fire EMS, 453.925 MHz): it followed clear Phase I voice grants (TGID 2001, source 200107, IMBE voice decoding) with 0 overruns and 0 drops.

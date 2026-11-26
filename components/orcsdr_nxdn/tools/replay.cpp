@@ -2,6 +2,7 @@
  // SPDX-License-Identifier: AGPL-3.0-or-later
 #include "orcsdr_nxdn/decoder.hpp"
 #include "orcsdr_nxdn/frontend.hpp"
+#include "orcsdr_nxdn/sacch_reassembly.hpp"
 #include <array>
 #include <cerrno>
 #include <cstddef>
@@ -15,7 +16,14 @@ struct Run {
     Decoder* decoder=nullptr;
     std::uint64_t frames=0,validated=0,voice_candidates=0;
     bool emit_candidates=false;
+    SacchReassembler* reassembler=nullptr; // optional, opaque bits only
 };
+void opaque_cb(const OpaqueMessage& m,void*) noexcept {
+    char bits[kMaxOpaqueBits+1]={};
+    for(std::size_t i=0;i<m.bit_count;++i) bits[i]=static_cast<char>('0'+m.bits[i]);
+    std::printf("{\"kind\":\"sacch_opaque_message\",\"first_frame_start_dibit\":%llu,\"last_frame_start_dibit\":%llu,\"ran\":%u,\"first_structure\":%u,\"bits_uninterpreted\":\"%s\"}\n",
+       static_cast<unsigned long long>(m.first_frame_start_dibit),static_cast<unsigned long long>(m.last_frame_start_dibit),m.ran,m.first_structure,bits);
+}
 void frame_cb(const FrameObservation& x,void* arg) noexcept {
     auto& r=*static_cast<Run*>(arg);++r.frames;
     unsigned v=0;
@@ -29,6 +37,7 @@ void frame_cb(const FrameObservation& x,void* arg) noexcept {
 }
 void valid_cb(const Event& x,void* arg) noexcept {
     auto& r=*static_cast<Run*>(arg);++r.validated;
+    if(r.reassembler) (void)r.reassembler->feed(x,opaque_cb,nullptr);
     std::printf("{\"kind\":\"sacch_crc_valid\",\"mode\":\"NXDN%u\",\"frame_start_dibit\":%llu,\"rfct\":%u,\"fct\":%u,\"direction\":%u,\"ran\":%u,\"structure\":%u,\"viterbi_distance\":%u}\n",
        x.mode==Mode::nxdn48?48:96,
        static_cast<unsigned long long>(x.frame_start_dibit),
@@ -46,14 +55,15 @@ std::int16_t i16le(const unsigned char* p) noexcept {
 }
 }
 int main(int argc,char** argv) {
-    if(argc<3||argc>5||(std::strcmp(argv[1],"48")&&std::strcmp(argv[1],"96"))) {
-        std::fprintf(stderr,"Usage: orcsdr_nxdn_replay 48|96 input.cs16|- [--frames] [--chunk=N]\n"
+    if(argc<3||argc>6||(std::strcmp(argv[1],"48")&&std::strcmp(argv[1],"96"))) {
+        std::fprintf(stderr,"Usage: orcsdr_nxdn_replay 48|96 input.cs16|- [--frames] [--chunk=N] [--opaque]\n"
                "Input: signed 16-bit LE IQ at 48000 complex samples/s.\n");
         return 2;
     }
-    bool frames=false;std::size_t chunk=4096;
+    bool frames=false,opaque=false;std::size_t chunk=4096;
     for(int i=3;i<argc;++i) {
         if(!std::strcmp(argv[i],"--frames")) frames=true;
+        else if(!std::strcmp(argv[i],"--opaque")) opaque=true;
         else if(!std::strncmp(argv[i],"--chunk=",8)) {
             char* end=nullptr;errno=0;
             const unsigned long v=std::strtoul(argv[i]+8,&end,10);
@@ -65,7 +75,8 @@ int main(int argc,char** argv) {
     if(!in) {std::perror(argv[2]);return 2;}
     const Mode mode=!std::strcmp(argv[1],"48")?Mode::nxdn48:Mode::nxdn96;
     Decoder decoder(mode,1);Frontend front(mode);
-    Run run{&decoder,0,0,0,frames};
+    SacchReassembler reassembler;
+    Run run{&decoder,0,0,0,frames,opaque?&reassembler:nullptr};
     std::array<unsigned char,4096*4> bytes{};
     std::array<IQSample,4096> samples{};
     std::uint64_t total=0;int result=0;
@@ -96,6 +107,9 @@ int main(int argc,char** argv) {
       static_cast<unsigned long long>(c.sacch_valid),
       static_cast<unsigned long long>(c.sacch_rejected),
       static_cast<unsigned long long>(c.voice_codeword_candidates),front.carrier_offset_hz());
+    if(opaque){const auto rc=reassembler.counters();
+        std::fprintf(stderr,"opaque_reassembly fragments=%llu messages=%llu waiting_anchor=%llu dropped_gap=%llu dropped_order=%llu dropped_context=%llu malformed=%llu\n",
+          static_cast<unsigned long long>(rc.fragments_accepted),static_cast<unsigned long long>(rc.messages_completed),static_cast<unsigned long long>(rc.waiting_for_anchor),static_cast<unsigned long long>(rc.dropped_gap),static_cast<unsigned long long>(rc.dropped_out_of_order),static_cast<unsigned long long>(rc.dropped_context_change),static_cast<unsigned long long>(rc.rejected_malformed));}
     if(std::ferror(stdout)||std::ferror(stderr)) result=2;
     return result;
 }

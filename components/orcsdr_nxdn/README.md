@@ -27,4 +27,6 @@ build/nxdn/orcsdr_nxdn_replay 96 /path/to/nxdn96_rcch_cc_453775_19oct_48k.cs16 -
 python3 tests/nxdn_replay_acceptance/check_replay.py --fixtures /path/to/NXDN --replay build/nxdn/orcsdr_nxdn_replay 2>&1 | tee ./nxdn-real-air-check.log
 ```
 
+`sacch_reassembly.*` orders CRC-valid SACCH fragments into **opaque** 72-bit strings (no Layer 3 field layout, no CRC claim); `orcsdr_nxdn_replay ... --opaque` prints them (keep that output private).
+
 No USB, firmware `main.cpp`, P25/DMR/D-STAR/YSF protocol code, dashboard renderer or TX modified. 
