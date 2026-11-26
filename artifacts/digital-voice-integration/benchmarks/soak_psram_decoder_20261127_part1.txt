@@ -1,0 +1,26 @@
+scan: ['RTL_DV_SCAN_OK started']
+t=  34 dmr_us=1.24 busy_pm=307 drops=0 loop_stalls=0 tick_gap_max_ms=78 dmr_ev=2114 dec_internal=0
+t=  69 dmr_us=1.31 busy_pm=302 drops=0 loop_stalls=0 tick_gap_max_ms=47 dmr_ev=2567 dec_internal=0
+t= 103 dmr_us=1.01 busy_pm=291 drops=0 loop_stalls=0 tick_gap_max_ms=50 dmr_ev=3046 dec_internal=0
+t= 137 dmr_us=0.90 busy_pm=281 drops=0 loop_stalls=0 tick_gap_max_ms=61 dmr_ev=3870 dec_internal=0  touch_ms=53/117
+t= 172 dmr_us=1.52 busy_pm=286 drops=0 loop_stalls=0 tick_gap_max_ms=60 dmr_ev=4296 dec_internal=0
+t= 206 dmr_us=1.78 busy_pm=291 drops=0 loop_stalls=0 tick_gap_max_ms=59 dmr_ev=4398 dec_internal=0
+t= 240 dmr_us=1.52 busy_pm=291 drops=0 loop_stalls=0 tick_gap_max_ms=68 dmr_ev=4679 dec_internal=0
+t= 275 dmr_us=1.00 busy_pm=286 drops=0 loop_stalls=0 tick_gap_max_ms=46 dmr_ev=5211 dec_internal=0  touch_ms=126/151
+t= 310 dmr_us=1.70 busy_pm=289 drops=0 loop_stalls=0 tick_gap_max_ms=50 dmr_ev=5374 dec_internal=0
+t= 345 dmr_us=1.73 busy_pm=292 drops=0 loop_stalls=0 tick_gap_max_ms=50 dmr_ev=5524 dec_internal=0
+t= 379 dmr_us=1.39 busy_pm=293 drops=0 loop_stalls=0 tick_gap_max_ms=45 dmr_ev=5994 dec_internal=0
+t= 413 dmr_us=1.19 busy_pm=291 drops=0 loop_stalls=0 tick_gap_max_ms=49 dmr_ev=6515 dec_internal=0  touch_ms=68/81
+t= 448 dmr_us=1.77 busy_pm=295 drops=0 loop_stalls=0 tick_gap_max_ms=60 dmr_ev=6645 dec_internal=0
+t= 482 dmr_us=1.47 busy_pm=295 drops=0 loop_stalls=0 tick_gap_max_ms=49 dmr_ev=6989 dec_internal=0
+t= 516 dmr_us=0.98 busy_pm=291 drops=0 loop_stalls=0 tick_gap_max_ms=58 dmr_ev=7629 dec_internal=0
+t= 551 dmr_us=1.65 busy_pm=292 drops=0 loop_stalls=0 tick_gap_max_ms=53 dmr_ev=7836 dec_internal=0  touch_ms=87/203
+t= 586 dmr_us=1.58 busy_pm=293 drops=0 loop_stalls=0 tick_gap_max_ms=47 dmr_ev=8106 dec_internal=0
+t= 620 dmr_us=0.93 busy_pm=289 drops=0 loop_stalls=0 tick_gap_max_ms=44 dmr_ev=8830 dec_internal=0
+t= 654 dmr_us=1.78 busy_pm=291 drops=0 loop_stalls=0 tick_gap_max_ms=51 dmr_ev=8934 dec_internal=0
+error Timed out waiting for ('PAIR_OK', 'PAIR_LOCKED', 'PAIR_INVAL
+Traceback (most recent call last):
+  File "F:\Ai\OrcSDR\.claude\worktrees\dmr-digital-voice-review-dde01d\artifacts\digital-voice-integration\benchmarks\soak_psram_decoder.py", line 40, in <module>
+    raw = c.serial.readline()
+          ^^^^^^^^
+AttributeError: 'NoneType' object has no attribute 'serial'

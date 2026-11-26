@@ -1,0 +1,20 @@
+scan: ['RTL_DV_SCAN_OK started']
+t=  34 dmr_us=1.20 busy_pm=289 drops=0 loop_stalls=0 tick_gap_max_ms=47 dmr_ev=10894 dec_internal=0
+t=  69 dmr_us=1.33 busy_pm=289 drops=0 loop_stalls=0 tick_gap_max_ms=60 dmr_ev=11367 dec_internal=0
+t= 103 dmr_us=0.99 busy_pm=286 drops=0 loop_stalls=0 tick_gap_max_ms=44 dmr_ev=11924 dec_internal=0
+t= 137 dmr_us=1.64 busy_pm=287 drops=0 loop_stalls=0 tick_gap_max_ms=48 dmr_ev=12128 dec_internal=0  touch_ms=147/158
+t= 172 dmr_us=1.78 busy_pm=289 drops=0 loop_stalls=0 tick_gap_max_ms=50 dmr_ev=12232 dec_internal=0
+t= 207 dmr_us=1.14 busy_pm=287 drops=0 loop_stalls=0 tick_gap_max_ms=48 dmr_ev=12819 dec_internal=0
+t= 241 dmr_us=1.46 busy_pm=287 drops=0 loop_stalls=0 tick_gap_max_ms=49 dmr_ev=13104 dec_internal=0
+t= 275 dmr_us=1.56 busy_pm=288 drops=0 loop_stalls=0 tick_gap_max_ms=51 dmr_ev=13309 dec_internal=0  touch_ms=94/175
+t= 310 dmr_us=1.56 busy_pm=288 drops=0 loop_stalls=0 tick_gap_max_ms=59 dmr_ev=13587 dec_internal=0
+t= 345 dmr_us=1.08 busy_pm=287 drops=0 loop_stalls=0 tick_gap_max_ms=51 dmr_ev=14226 dec_internal=0
+t= 379 dmr_us=1.68 busy_pm=289 drops=0 loop_stalls=0 tick_gap_max_ms=76 dmr_ev=14447 dec_internal=0
+t= 413 dmr_us=1.68 busy_pm=290 drops=0 loop_stalls=0 tick_gap_max_ms=50 dmr_ev=14655 dec_internal=0  touch_ms=94/169
+t= 448 dmr_us=1.33 busy_pm=290 drops=0 loop_stalls=0 tick_gap_max_ms=46 dmr_ev=15096 dec_internal=0
+t= 482 dmr_us=1.21 busy_pm=289 drops=0 loop_stalls=0 tick_gap_max_ms=50 dmr_ev=15473 dec_internal=0
+t= 517 dmr_us=1.92 busy_pm=291 drops=0 loop_stalls=0 tick_gap_max_ms=56 dmr_ev=15582 dec_internal=0
+t= 551 dmr_us=1.49 busy_pm=292 drops=0 loop_stalls=0 tick_gap_max_ms=49 dmr_ev=15909 dec_internal=0  touch_ms=111/89
+t= 586 dmr_us=1.02 busy_pm=290 drops=0 loop_stalls=0 tick_gap_max_ms=51 dmr_ev=16537 dec_internal=0
+t= 620 dmr_us=1.76 busy_pm=291 drops=0 loop_stalls=0 tick_gap_max_ms=104 dmr_ev=16655 dec_internal=0
+SUMMARY minutes=10 samples=18 worst_busy_pm=292 total_ring_drops=0 total_loop_stalls=0 touch_ms_median=147.2313404083252 max=175
