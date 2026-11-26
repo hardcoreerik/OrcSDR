@@ -2,6 +2,11 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Digital Voice: MONITOR holds a live channel for 9 s instead of 4 s — 2026-11-26
+
+- **What changed:** after the last verified burst, the scanner now keeps a MONITOR channel for 9 s (other plans keep the 4 s default), so the reply in a conversation is not cut off by the scan moving on. New `Scanner::set_hold_ms` (500 ms to 60 s, clamped); the plan selection sets it (MONITOR 9000 ms, everything else 4000 ms) and `RTL_DV MONITOR` now prints `hold_ms=`. The control-channel release rule (a channel with only control traffic is left after 20 s) is unchanged, so a quiet control channel does not trap the scan.
+- **Verified:** host live-chain suite passes, including a new hold-time test (4 s default releases 5 s after the last verified burst, 9 s still holds at 5 s and releases by 9.1 s, limits clamp). On the Tab5: `RTL_DV MONITOR ALL` reports `hold_ms=9000`, `RTL_DV PRESET 1` returns to 4000, `MONITOR NXDN48` is 9000 again. **Not verified:** that the longer hold actually catches a reply on a live conversation (needs a call in progress), and its cost to the scan rate on busy control channels (each verified burst renews the hold).
+
 ## Unreleased — Digital Voice: playback gain for decoded speech — 2026-11-26
 
 - **What changed:** decoded DMR speech is now amplified before it goes to the speaker. The first live call (463.400 MHz, 2026-11-26) had a vocoder output of RMS -41.8 dBFS (peak about 3000 of 32767), which is quiet. The service applies a gain of 4 (about +12 dB) by default; `RTL_DV AUDIO GAIN [0.25..16]` shows or sets it (rejected outside the range). The gain is applied in the engine's 8 to 48 kHz playout stage, after the speech sink, so recorded speech WAVs stay raw. Samples that would exceed full scale are hard-limited and counted in the existing `clipped` counter. The engine itself still defaults to unity, so every existing test is unchanged.

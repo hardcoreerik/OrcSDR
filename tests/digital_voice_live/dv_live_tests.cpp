@@ -150,6 +150,26 @@ void test_scanner() {
   CHECK(s.status().state == dv::ScanState::failed && s.status().fail == dv::FailReason::receiver_removed);
 }
 
+void test_scanner_hold_time() {
+  // A longer hold keeps the channel through a pause in a conversation; the default releases after 4 s. Limits are enforced.
+  const uint32_t plan[2] = {460000000, 461000000};
+  for (uint32_t hold : {4000u, 9000u}) {
+    dv::Scanner s; CHECK(s.set_plan(plan, 2)); if (hold != 4000u) s.set_hold_ms(hold);
+    CHECK(s.hold_ms() == hold);
+    uint32_t t = 1000; dv::ScanInputs in; in.receiver_ready = true;
+    CHECK(s.start(t));
+    auto st = s.service(t, in); CHECK(st.tune); s.retune_result(true, t);
+    t += 700; s.service(t, in);
+    const uint32_t verified = t + 100; in.verified_ms = verified;
+    t += 200; s.service(t, in); CHECK(s.status().state == dv::ScanState::holding);
+    t = verified + 3900; s.service(t, in); CHECK(s.status().state == dv::ScanState::holding);          // inside either hold
+    t = verified + 5000; s.service(t, in);
+    CHECK((hold == 4000u) == (s.status().index == 1));                                                  // 4 s: moved on; 9 s: still holding
+    if (hold == 9000u) { CHECK(s.status().state == dv::ScanState::holding); t = verified + 9100; s.service(t, in); CHECK(s.status().index == 1); }
+  }
+  dv::Scanner s; s.set_hold_ms(1); CHECK(s.hold_ms() == 500); s.set_hold_ms(1000000); CHECK(s.hold_ms() == 60000);
+}
+
 void test_dmr_end_to_end() {
   install_hooks(); g_ready = true; g_accept = true; g_lost = 0; g_now = 1000;
   CHECK(dv_radio::start());
@@ -271,6 +291,7 @@ void test_no_receiver_and_restart() {
 int main() {
   test_channelizer_tone();
   test_scanner();
+  test_scanner_hold_time();
   test_dmr_end_to_end();
   test_worker_matches_inline();
   test_nxdn_end_to_end(false);

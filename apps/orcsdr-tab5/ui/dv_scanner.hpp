@@ -95,6 +95,9 @@ class Scanner {
   void pause() noexcept;                    // keeps the current channel; no further tuning
   void resume(uint32_t now_ms) noexcept;    // listens on the current channel again
   void toggle_manual_hold() noexcept;       // while on: never leaves the channel; off: normal hold timing
+  // How long a channel is kept after its last verified activity (500 ms to 60 s). A longer hold catches the reply in a conversation (MONITOR uses 9 s).
+  void set_hold_ms(uint32_t ms) noexcept { config_.hold_ms = ms < 500 ? 500 : ms > 60000 ? 60000 : ms; }
+  uint32_t hold_ms() const noexcept { return config_.hold_ms; }
   void skip(uint32_t now_ms) noexcept;      // go to the next channel now (any active state)
   void retune_result(bool accepted, uint32_t now_ms) noexcept;   // the answer to the last ScanStep::tune
   void stream_discontinuity(uint32_t now_ms) noexcept;           // IQ gap or reset: listen again on this channel
