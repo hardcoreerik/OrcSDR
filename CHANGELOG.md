@@ -2,6 +2,14 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Digital Voice: DISCOVER SYSTEMS page (step 1 of the discover / monitor workflow) — 2026-11-25
+
+- **What it is:** a DISCOVER button on the SCAN page opens a page that lists the bands that will be swept (the MY BANDS selection from SETUP, ticked), a progress bar with the frequency being examined, the channel position and pass count, and how many channels were found. START DISCOVERY switches the plan to MY BANDS and starts the scan; STOP DISCOVERY stops it; BACK returns to SCAN. The page is reached from SCAN, not from a tab.
+- **Found:** a channel counts as found after 3 integrity-validated sightings in the run; one or two are shown as candidates (noise decoded as DMR looks like that). Nothing is written to the saved list until SAVE TO LIST is tapped; it adds each found channel with its protocol's decoder, skips duplicates and says when the 16-channel list is full.
+- **Honest numbers:** with eight of the nine built-in bands ticked the sweep is 7,759 channels, about 169 minutes per pass by the app's estimate; on the Tab5 it ran about 16 channels in 20 s.
+- **Not done yet:** MONITOR (scan only the discovered list with a system / colour code / talkgroup filter), HOLD tied to it, lockout, priority, rename; per-band tick boxes on the page itself (bands are still chosen in SETUP). NXDN hits appear with RAN only.
+- **Verified:** host dashboard tests 5 of 5 (new test: open from SCAN, start / stop / save / back actions, no-bands state). On a Tab5: the page rendered, START DISCOVERY ran (CH 18 / 7759 at 144.2125 MHz), STOP stopped it. **Not verified:** SAVE TO LIST on live hits (nothing reached 3 sightings in the short run), the sweep over a full pass.
+
 ## Unreleased — Digital Voice Systems screen: no flicker, paging, text fits; BIAS ON tap — 2026-11-25
 
 - **Flicker:** the Systems page used to repaint the whole page on every revision, and a scan bumps the revision constantly. Each of the four rows and the right-hand panel now repaint only when what they show changes (a content signature per part); the page is repainted once when rows appear or go away or the page changes.
