@@ -49,7 +49,7 @@ struct State {
   char cap_json[4096];
   // MONITOR: scan only the systems the discovery database has seen. Filter: protocol (0 any, 1 DMR, 2 NXDN48, 3 NXDN96) and colour code / RAN (255 any).
   uint8_t mon_proto = 0, mon_cc = 255;
-  uint16_t mon_min_hits = 3;          // systems heard fewer times than this are left out (1 to 2 hit systems are usually false detections)
+  uint16_t mon_min_hits = 1;          // systems heard fewer times than this are left out (default: none; the list is ordered by hits so the weakest fall off the 16-channel cap)
   uint8_t filled_system_offset = 0;            // the Systems page offset the snapshot rows were last filled for
   bool background = false;          // the screen is hidden but the receiver, scanner and speech are still running
   Surface surface;
@@ -251,7 +251,11 @@ size_t plan_option_count(const State& st) { return monitor_option(st) + 1; }
 
 // MONITOR list: the frequencies of the systems in the discovery database (newest first, one entry per frequency), optionally limited to one
 // protocol and one colour code / RAN. Two protocols on one frequency become one entry that runs both decoders.
-size_t build_monitor_list(const State& st, uint32_t* hz, uint8_t* mask, size_t cap) {
+size_t build_monitor_list(const State& st, uint32_t* out_hz, uint8_t* out_mask, size_t out_cap) {
+  uint32_t hz[dv::kMaxSystems];
+  uint8_t mask[dv::kMaxSystems];
+  uint32_t hits[dv::kMaxSystems];
+  const size_t cap = dv::kMaxSystems;
   size_t n = 0;
   const uint8_t want = st.mon_proto == 1 ? dv_radio::kMaskDmr : st.mon_proto == 2 ? dv_radio::kMaskNxdn48 : st.mon_proto == 3 ? dv_radio::kMaskNxdn96 : 0;
   for (size_t k = 0; k < st.db.system_count() && n < cap; ++k) {
@@ -265,10 +269,19 @@ size_t build_monitor_list(const State& st, uint32_t* hz, uint8_t* mask, size_t c
     if (st.mon_cc != 255 && !(r.area_kind != dv::AreaKind::none && r.area == st.mon_cc)) continue;
     size_t j = 0;
     while (j < n && hz[j] != r.frequency_hz) ++j;
-    if (j < n) { mask[j] = static_cast<uint8_t>(mask[j] | m); continue; }
-    hz[n] = r.frequency_hz; mask[n++] = m;
+    if (j < n) { mask[j] = static_cast<uint8_t>(mask[j] | m); hits[j] += r.count; continue; }
+    hz[n] = r.frequency_hz; mask[n] = m; hits[n++] = r.count;
   }
-  return n;
+  // Most-heard first (stable: ties keep newest first), then the first out_cap entries: the scanner's list is short, so the weakest systems are the ones left out.
+  for (size_t a = 1; a < n; ++a) {
+    const uint32_t h = hits[a], f = hz[a]; const uint8_t m = mask[a];
+    size_t b = a;
+    while (b > 0 && hits[b - 1] < h) { hits[b] = hits[b - 1]; hz[b] = hz[b - 1]; mask[b] = mask[b - 1]; --b; }
+    hits[b] = h; hz[b] = f; mask[b] = m;
+  }
+  const size_t take = std::min(n, out_cap);
+  for (size_t i = 0; i < take; ++i) { out_hz[i] = hz[i]; out_mask[i] = mask[i]; }
+  return take;
 }
 size_t my_bands_channels(const State& st) {
   size_t n = 0;
@@ -1439,7 +1452,7 @@ bool handle_command(const char* command, bool authenticated, void (*write_line)(
       }
       st.mon_proto = proto;
       st.mon_cc = cc >= 0 ? static_cast<uint8_t>(cc) : 255;
-      st.mon_min_hits = minh >= 0 ? static_cast<uint16_t>(std::min<long>(minh, 65535)) : 3;
+      st.mon_min_hits = minh >= 0 ? static_cast<uint16_t>(std::min<long>(minh, 65535)) : 1;
       st.plan_option = static_cast<uint8_t>(monitor_option(st));
       apply_plan_option(st);
       ++st.snapshot.revision;
