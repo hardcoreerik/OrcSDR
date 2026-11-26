@@ -182,6 +182,22 @@ void test_control_demotion() {
   CHECK(rounds >= 9);
   CHECK(visits0 >= 4 && visits0 <= 6);                      // 9 rounds: 2 normal visits, then every 3rd round
   CHECK(s.demoted(0) && !s.demoted(1) && s.demote_skips() >= 4);
+  // A call on the demoted channel (verified activity that stops by itself) restores it: it is visited every round again.
+  {
+    bool call_given = false; int visits_after = 0, rounds_after = 0; last_idx = 99;
+    for (int step = 0; step < 6000 && rounds_after < 6; ++step, t += 100) {
+      auto st = s.service(t, in); if (st.tune) s.retune_result(true, t);
+      const auto stat = s.status();
+      if (stat.index != last_idx) {
+        last_idx = stat.index; in.verified_ms = 0; in.identity_ms = 0;
+        if (last_idx == 0) { if (call_given) ++visits_after; }
+        if (last_idx == 2) { if (call_given) ++rounds_after; }
+      }
+      if (stat.index == 0 && !call_given && (stat.state == dv::ScanState::sampling || stat.state == dv::ScanState::holding)) { in.verified_ms = t; in.identity_ms = t + 150; call_given = true; }   // one burst with an identity, then silence
+    }
+    CHECK(call_given && !s.demoted(0));
+    CHECK(visits_after >= 5);                               // visited again nearly every round (the first visit after the call had already begun)
+  }
   dv::Scanner off; CHECK(off.set_plan(plan, 3)); CHECK(off.demote_after() == 0 && !off.demoted(0));
 }
 
