@@ -24,6 +24,13 @@ using namespace digital_voice_ui;
 
 // Everything lives in PSRAM for the lifetime of a visit: the Tab5 internal boot pool is nearly full.
 struct State {
+  // DISCOVER: channels with integrity-validated activity seen during the current discovery run (frequency + protocol + sightings).
+  static constexpr uint8_t kDiscMax = 32, kDiscFound = 3;      // a channel is "found" after 3 sightings; fewer are candidates
+  bool disc_running = false;
+  uint8_t disc_n = 0;
+  uint32_t disc_hz[kDiscMax]{};
+  uint8_t disc_proto[kDiscMax]{}, disc_seen[kDiscMax]{};
+  uint16_t disc_saved = 0, disc_skipped = 0;
   uint8_t filled_system_offset = 0;            // the Systems page offset the snapshot rows were last filled for
   bool background = false;          // the screen is hidden but the receiver, scanner and speech are still running
   Surface surface;
@@ -391,6 +398,14 @@ void note_event(State& st, const dv_radio::Event& e) {
   const dv::Observation obs = dv::observation_from(e, clock_utc);
   const bool existed = table.find_system(obs.protocol, obs.frequency_hz, obs.area, obs.area_kind) != static_cast<size_t>(-1);
   table.record(obs);
+  if (st.disc_running && !e.replay && e.evidence >= Evidence::integrity_valid && e.frequency_hz) {
+    uint8_t k = 0;
+    while (k < st.disc_n && !(st.disc_hz[k] == e.frequency_hz && st.disc_proto[k] == static_cast<uint8_t>(e.protocol))) ++k;
+    if (k == st.disc_n && st.disc_n < State::kDiscMax) {
+      st.disc_hz[k] = e.frequency_hz; st.disc_proto[k] = static_cast<uint8_t>(e.protocol); st.disc_seen[k] = 0; ++st.disc_n;
+    }
+    if (k < st.disc_n && st.disc_seen[k] < 255) ++st.disc_seen[k];
+  }
   st.show_replay_db = to_replay_table;
   upsert_hit(st, e.protocol, e.frequency_hz, e.evidence, &e, !existed, clock_utc);
   // A later control burst on the same channel must not wipe a verified call off the Live view for a few seconds.
@@ -469,6 +484,8 @@ ScanPhase map_phase(dv::ScanState state) {
 }
 
 // Rebuild only the facts the firmware can prove. Fields owned by event notes (live call, history, systems) are kept.
+bool receiver_ok_for_discover(const State&) { return g_hooks.receiver_ready && g_hooks.receiver_ready(); }
+
 void refresh(State& st) {
   Snapshot& s = st.snapshot;
   const bool ready = g_hooks.receiver_ready && g_hooks.receiver_ready();
@@ -577,6 +594,18 @@ void refresh(State& st) {
     st.filled_system_offset = st.surface.state().system_offset;
     fill_systems(st);
     ++s.revision;
+  }
+  {
+    uint16_t found = 0, cand = 0;
+    for (uint8_t i = 0; i < st.disc_n; ++i) (st.disc_seen[i] >= State::kDiscFound ? found : cand)++;
+    const bool run = st.disc_running && st.scanner.active();
+    if (!run) st.disc_running = false;
+    const bool can_disc = st.band_mask != 0 && receiver_ok_for_discover(st);
+    if (s.discover_running != run || s.discover_found != found || s.discover_candidates != cand || s.discover_saved != st.disc_saved ||
+        s.discover_skipped != st.disc_skipped || s.discover_can_start != can_disc)
+      ++s.revision;
+    s.discover_running = run; s.discover_found = found; s.discover_candidates = cand;
+    s.discover_saved = st.disc_saved; s.discover_skipped = st.disc_skipped; s.discover_can_start = can_disc;
   }
   if (changed) ++s.revision;
   refresh_voice(s);
@@ -744,6 +773,29 @@ void step_plan(State& st, int dir) {
   ++st.snapshot.revision;
 }
 
+// SAVE TO LIST: channels found in the last discovery run (at least State::kDiscFound sightings) join the saved scan list, each with
+// its protocol's decoder. Nothing is written unless the user taps SAVE TO LIST; a full list skips the rest and says so.
+void save_found(State& st) {
+  if (!g_hooks.save_plan) return;
+  uint16_t added = 0, skipped = 0;
+  for (uint8_t i = 0; i < st.disc_n; ++i) {
+    if (st.disc_seen[i] < State::kDiscFound) continue;
+    bool have = false;
+    for (uint8_t k = 0; k < st.saved_n; ++k) have = have || st.saved_hz[k] == st.disc_hz[i];
+    if (have) continue;
+    const uint8_t mask = mask_for_protocol(static_cast<Protocol>(st.disc_proto[i]));
+    if (st.saved_n >= dv::kMaxScanChannels || mask == 0) { ++skipped; continue; }
+    st.saved_hz[st.saved_n] = st.disc_hz[i];
+    st.saved_mask[st.saved_n] = mask;
+    ++st.saved_n;
+    ++added;
+  }
+  if (added) save_list(st);
+  st.disc_saved = added;
+  st.disc_skipped = skipped;
+  if (added && st.plan_option == 0) apply_plan_option(st);
+}
+
 void apply_radio_action(State& st, const Action& a) {
   switch (a.kind) {
     case ActionKind::scan:
@@ -754,6 +806,18 @@ void apply_radio_action(State& st, const Action& a) {
     case ActionKind::skip_frequency: st.scanner.skip(now()); break;
     case ActionKind::plan_prev: step_plan(st, -1); break;
     case ActionKind::plan_next: step_plan(st, +1); break;
+    case ActionKind::discover_start: {
+      if (st.band_mask == 0 || !receiver_ok_for_discover(st)) { ++g_unapplied_actions; return; }
+      if (st.scanner.active()) stop_scan(st);
+      st.plan_option = static_cast<uint8_t>(1 + dv::kBandPresetCount);      // MY BANDS: the bands picked in SETUP
+      apply_plan_option(st);
+      st.disc_n = 0; st.disc_saved = 0; st.disc_skipped = 0;
+      if (!start_scan(st)) { ++g_unapplied_actions; return; }
+      st.disc_running = true;
+      break;
+    }
+    case ActionKind::discover_stop: stop_scan(st); st.disc_running = false; break;
+    case ActionKind::discover_save: save_found(st); break;
     case ActionKind::toggle_band: {
       if (a.value >= dv::kBandPresetCount) { ++g_unapplied_actions; return; }
       st.band_mask = static_cast<uint16_t>(st.band_mask ^ (1u << a.value));

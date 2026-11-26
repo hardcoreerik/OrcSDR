@@ -20,12 +20,13 @@ Geometry geometry(Density d) {
   g.ladder = {a.x + 14, a.y + 272, a.w - 28, 54};
   g.reason = {a.x + 14, a.y + 334, a.w - 28, 30};
   if (basic) {
-    g.start = {a.x + 24, a.y + 419, 170, 44};
-    g.hold = {a.x + 202, a.y + 419, 132, 44};
-    g.skip = {a.x + 342, a.y + 419, 106, 44};
-    g.save = {a.x + 456, a.y + 419, 112, 44};
-    g.plan_prev = {a.x + 584, a.y + 419, 100, 44};
-    g.plan_next = {a.x + 692, a.y + 419, 100, 44};
+    g.start = {a.x + 14, a.y + 419, 150, 44};
+    g.hold = {a.x + 172, a.y + 419, 100, 44};
+    g.skip = {a.x + 280, a.y + 419, 80, 44};
+    g.save = {a.x + 368, a.y + 419, 90, 44};
+    g.plan_prev = {a.x + 466, a.y + 419, 84, 44};
+    g.plan_next = {a.x + 558, a.y + 419, 84, 44};
+    g.discover = {a.x + 650, a.y + 419, 140, 44};
   } else {
     g.start = {a.x + 18, a.y + 376, 170, 42};
     g.hold = {a.x + 196, a.y + 376, 122, 42};
@@ -33,6 +34,7 @@ Geometry geometry(Density d) {
     g.save = {a.x + 18, a.y + 426, 142, 42};
     g.plan_prev = {a.x + 168, a.y + 426, 120, 42};
     g.plan_next = {a.x + 296, a.y + 426, 120, 42};
+    g.discover = {a.x + 424, a.y + 426, 168, 42};
   }
   const int row_h = 50;
   for (size_t i = 0; i < kScanHits; ++i) g.row[i] = {b.x + 10, b.y + 54 + static_cast<int>(i) * (row_h + 4), b.w - 20, row_h};
@@ -48,7 +50,7 @@ namespace {
 using namespace paint;
 using scan_layout::Geometry;
 
-enum W { w_status, w_freq, w_plan, w_bar, w_counts, w_ladder, w_reason, w_start, w_hold, w_skip, w_save, w_prev, w_next,
+enum W { w_status, w_freq, w_plan, w_bar, w_counts, w_ladder, w_reason, w_start, w_hold, w_skip, w_save, w_prev, w_next, w_discover,
          w_row0, w_detail = w_row0 + static_cast<int>(kScanHits), w_count };
 static_assert(w_count <= ScanView::kWidgets, "signature table too small");
 
@@ -227,6 +229,7 @@ BtnSpec button_spec(int w, const Snapshot& s, const UiState& u) {
     case w_skip: return {"SKIP", action_state(ActionKind::skip_frequency, s, u).enabled, false};
     case w_save: return {"SAVE", action_state(ActionKind::save_channel, s, u).enabled, false};
     case w_prev: return {"< PLAN", action_state(ActionKind::plan_prev, s, u).enabled, false};
+    case w_discover: return {"DISCOVER", true, false};
     default:     return {"PLAN >", action_state(ActionKind::plan_next, s, u).enabled, false};
   }
 }
@@ -318,7 +321,7 @@ Rect rect_of(const Geometry& g, int w) {
     case w_status:return g.status; case w_freq:return g.freq; case w_plan:return g.plan; case w_bar:return g.bar;
     case w_counts:return g.counts; case w_ladder:return g.ladder; case w_reason:return g.reason;
     case w_start:return g.start; case w_hold:return g.hold; case w_skip:return g.skip; case w_save:return g.save;
-    case w_prev:return g.plan_prev; case w_next:return g.plan_next; case w_detail:return g.detail;
+    case w_prev:return g.plan_prev; case w_next:return g.plan_next; case w_discover:return g.discover; case w_detail:return g.detail;
     default:return g.row[w - w_row0];
   }
 }
@@ -326,7 +329,7 @@ uint32_t signature(int w, const Snapshot& s, const UiState& u, const Geometry& g
   switch (w) {
     case w_status:return sig_status(s); case w_freq:return sig_freq(s); case w_plan:return sig_plan(s); case w_bar:return sig_bar(s, g.bar);
     case w_counts:return sig_counts(s); case w_ladder:return sig_ladder(s); case w_reason:return sig_reason(s, u);
-    case w_start:case w_hold:case w_skip:case w_save:case w_prev:case w_next:return sig_button(w, s, u);
+    case w_start:case w_hold:case w_skip:case w_save:case w_prev:case w_next:case w_discover:return sig_button(w, s, u);
     case w_detail:return sig_detail(s, u);
     default:return sig_row(static_cast<size_t>(w - w_row0), s, u);
   }
@@ -341,7 +344,7 @@ void draw_widget(int w, Paint& p, const Geometry& g, const Snapshot& s, const Ui
     case w_counts:draw_counts(p, r, s, u.density); break;
     case w_ladder:draw_ladder(p, r, s); break;
     case w_reason:draw_reason(p, r, s, u); break;
-    case w_start:case w_hold:case w_skip:case w_save:case w_prev:case w_next:draw_button(p, r, w, s, u); break;
+    case w_start:case w_hold:case w_skip:case w_save:case w_prev:case w_next:case w_discover:draw_button(p, r, w, s, u); break;
     case w_detail:draw_detail(p, r, s, u); break;
     default:draw_row(p, r, static_cast<size_t>(w - w_row0), s, u); break;
   }
@@ -377,7 +380,8 @@ Action ScanView::touch(int32_t x, int32_t y, const Snapshot& s, const UiState& u
   const Geometry g = scan_layout::geometry(u.density);
   struct B { Rect r; ActionKind k; };
   const B buttons[] = {{g.start, ActionKind::scan}, {g.hold, ActionKind::toggle_hold}, {g.skip, ActionKind::skip_frequency},
-                       {g.save, ActionKind::save_channel}, {g.plan_prev, ActionKind::plan_prev}, {g.plan_next, ActionKind::plan_next}};
+                       {g.save, ActionKind::save_channel}, {g.plan_prev, ActionKind::plan_prev}, {g.plan_next, ActionKind::plan_next},
+                       {g.discover, ActionKind::open_discover}};
   for (const B& b : buttons)
     if (b.r.contains(x, y)) {
       if (!action_state(b.k, s, u).enabled) return {};      // a disabled control does nothing; the screen says why

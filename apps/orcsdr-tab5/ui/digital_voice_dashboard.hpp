@@ -16,7 +16,7 @@ class Dashboard final {
                const UiState& state, bool owns_screen, bool overlay_open);
   Action handle_touch(int32_t x, int32_t y, const Snapshot& snapshot,
                       const UiState& state) const;
-  void leave() { ready_ = false; sys_ready_ = false; scan_.reset(); pb_.release(); }
+  void leave() { ready_ = false; sys_ready_ = false; disc_ready_ = false; scan_.reset(); pb_.release(); }
   bool active() const { return ready_; }
  private:
   // Pages other than SCAN and SYSTEMS repaint only when something they show has changed.
@@ -41,5 +41,8 @@ class Dashboard final {
   uint32_t sys_facts_sig_ = 0;
   uint32_t sys_shape_ = 0;
   bool sys_ready_ = false;
+  // DISCOVER page: signatures of its parts (frame, progress, buttons, four rows) so only a changed part repaints
+  uint32_t disc_sig_[7] = {};
+  bool disc_ready_ = false;
 };
 }

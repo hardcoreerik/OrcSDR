@@ -13,7 +13,7 @@ using layout::Rect;
 struct Geometry {
   Rect a, b;                                   // the two cards
   Rect status, freq, plan, bar, counts, ladder, reason;
-  Rect start, hold, skip, save, plan_prev, plan_next;
+  Rect start, hold, skip, save, plan_prev, plan_next, discover;
   Rect row[kScanHits];
   Rect detail;
   int list_title_y, detail_title_y, footer_y;

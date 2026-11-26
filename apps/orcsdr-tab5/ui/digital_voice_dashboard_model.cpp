@@ -91,6 +91,8 @@ bool apply_ui_action(UiState& ui,Action action,const Snapshot& s) {
     case ActionKind::select_system:
       if(!s.systems_available||action.value>=s.observed_system_count||action.value>=kObservedSystems)return false;
       ui.selected_system=action.value;return true;
+    case ActionKind::open_discover: ui.view=View::discover;return true;
+    case ActionKind::close_discover: ui.view=View::explore;return true;
     case ActionKind::page_systems: {
       const size_t total=s.db_systems;
       if(!s.systems_available || total<=kObservedSystems)return false;

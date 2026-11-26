@@ -67,14 +67,14 @@ int main(){
   assert(host_stub::contains("447.100000 MHz"));
   assert(host_stub::contains("FREQUENCY UNKNOWN"));
   assert(dashboard.handle_touch(240,598,scan,ui).kind==ActionKind::toggle_hold);
-  assert(dashboard.handle_touch(380,598,scan,ui).kind==ActionKind::skip_frequency);
-  assert(dashboard.handle_touch(496,598,scan,ui).kind==ActionKind::none);   // selected signal is only a candidate: SAVE is disabled and says why
+  assert(dashboard.handle_touch(340,598,scan,ui).kind==ActionKind::skip_frequency);
+  assert(dashboard.handle_touch(430,598,scan,ui).kind==ActionKind::none);   // selected signal is only a candidate: SAVE is disabled and says why
   assert(action_state(ActionKind::save_channel,scan,ui).reason==Disabled::not_verified);
   auto pick=dashboard.handle_touch(865,256,scan,ui);
   assert(pick.kind==ActionKind::select_scan_hit && pick.value==0);
   assert(apply_ui_action(ui,pick,scan) && ui.selected_scan_hit==0);
   scan.scan_hits[1].has_frequency=true;scan.scan_hits[1].frequency_hz=453775000;ui.selected_scan_hit=1;   // verified and with a frequency: SAVE becomes usable
-  assert(dashboard.handle_touch(496,598,scan,ui).kind==ActionKind::save_channel);
+  assert(dashboard.handle_touch(430,598,scan,ui).kind==ActionKind::save_channel);
   ui.selected_scan_hit=0;
   ui.view=View::live;
   host_stub::reset();
@@ -176,6 +176,40 @@ int main(){
     assert(host_stub::full_clear_count==0);
     dashboard.leave();
     ui.view=View::systems;host_stub::reset();assert(dashboard.present(display,nx,ui,true,false));   // back to the single-system case
+  }
+  // DISCOVER: opened from SCAN, swept bands shown, start/stop/save/back actions, no tab for it.
+  {
+    const auto hero=layout::kBasicHero;
+    auto ds=nx;ds.revision=140;ds.band_mask=0x0003;ds.band_channels=2240;ds.band_minutes=48;ds.discover_can_start=true;
+    UiState dui=ui;dui.view=View::explore;dui.density=Density::discovery_first;
+    host_stub::reset();dashboard.leave();assert(dashboard.present(display,ds,dui,true,false));
+    const Action open=dashboard.handle_touch(hero.x+700,hero.y+440,ds,dui);
+    assert(open.kind==ActionKind::open_discover);
+    assert(apply_ui_action(dui,open,ds) && dui.view==View::discover);
+    ds.revision=141;
+    host_stub::reset();assert(dashboard.present(display,ds,dui,true,false));
+    assert(host_stub::contains("DISCOVER SYSTEMS") && host_stub::contains("[X] 2M 144-148") && host_stub::contains("START DISCOVERY"));
+    assert(host_stub::contains("2240 CH"));
+    assert(dashboard.handle_touch(hero.x+100,hero.y+440,ds,dui).kind==ActionKind::discover_start);
+    assert(dashboard.handle_touch(hero.x+330,hero.y+440,ds,dui).kind==ActionKind::none);            // SAVE TO LIST is off until something is found
+    ds.discover_running=true;ds.discover_found=0;ds.revision=142;
+    host_stub::reset();assert(dashboard.present(display,ds,dui,true,false));
+    assert(host_stub::contains("STOP DISCOVERY") && host_stub::contains("DISCOVERING"));
+    assert(dashboard.handle_touch(hero.x+100,hero.y+440,ds,dui).kind==ActionKind::discover_stop);
+    ds.discover_running=false;ds.discover_found=2;ds.revision=143;
+    host_stub::reset();assert(dashboard.present(display,ds,dui,true,false));
+    assert(host_stub::contains("FOUND 2"));
+    assert(dashboard.handle_touch(hero.x+330,hero.y+440,ds,dui).kind==ActionKind::none);            // storage hook missing: stays off
+    ds.can_save_channel=true;ds.revision=144;
+    host_stub::reset();assert(dashboard.present(display,ds,dui,true,false));
+    assert(dashboard.handle_touch(hero.x+330,hero.y+440,ds,dui).kind==ActionKind::discover_save);
+    ds.band_mask=0;ds.discover_can_start=false;ds.revision=145;
+    host_stub::reset();assert(dashboard.present(display,ds,dui,true,false));
+    assert(host_stub::contains("NO BANDS PICKED") && dashboard.handle_touch(hero.x+100,hero.y+440,ds,dui).kind==ActionKind::none);
+    const Action back=dashboard.handle_touch(hero.x+500,hero.y+440,ds,dui);
+    assert(back.kind==ActionKind::close_discover && apply_ui_action(dui,back,ds) && dui.view==View::explore);
+    assert(host_stub::full_clear_count==0);
+    dashboard.leave();
   }
   // Toggle density through SETUP page, purely UI-local.
   ui.view=View::setup;

@@ -82,7 +82,7 @@ void context(Paint& p,const Snapshot& s,Density mode) {
 void nav(Paint& p,const UiState& state) {
   p.fillRect(0,642,1280,78,kBg);
   for(int i=0;i<layout::kTabCount;++i)
-    p.button(kTabs[i],layout::tab(i),true,state.view==static_cast<View>(i));
+    p.button(kTabs[i],layout::tab(i),true,state.view==static_cast<View>(i)||(i==0&&state.view==View::discover));
 }
 // ---- Voice audio panel (LIVE page). Retained widget: repainted alone, inside its own rectangle, when audio_revision moves.
 Rect voice_rect(Density d) {
@@ -349,6 +349,128 @@ void systems_update(Paint& p,const Snapshot& s,const UiState& u,uint32_t* rows,u
   const uint32_t fs=sys_facts_sig(s,u,n);
   if(fs!=facts) {systems_facts(p,s,u,b,n);facts=fs;}
 }
+// ---- DISCOVER page (reached from SCAN): the bands that will be swept, progress, what was found, SAVE TO LIST ----
+struct DiscGeom {Rect a,b,prog,result,start,save,back;};
+DiscGeom disc_geom(Density d) {
+  DiscGeom g{};
+  g.a=d==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
+  g.b=d==Density::discovery_first?layout::kBasicFacts:layout::kAdvancedFacts;
+  g.prog={g.a.x+14,g.a.y+222,g.a.w-28,146};
+  g.result={g.a.x+14,g.a.y+372,g.a.w-28,34};
+  g.start={g.a.x+24,g.a.y+419,230,44};
+  g.save={g.a.x+264,g.a.y+419,200,44};
+  g.back={g.a.x+474,g.a.y+419,120,44};
+  return g;
+}
+void disc_mhz(char (&out)[32],uint32_t hz) {
+  std::snprintf(out,sizeof(out),"%lu.%06lu MHz",static_cast<unsigned long>(hz/1000000u),static_cast<unsigned long>(hz%1000000u));
+}
+bool disc_can_save(const Snapshot& s) {return !s.discover_running && s.discover_found>0 && s.can_save_channel;}
+void disc_progress(Paint& p,const Snapshot& s,const DiscGeom& g) {
+  const Rect r=g.prog;
+  p.fillRect(r.x,r.y,r.w,r.h,kPanel);
+  const bool run=s.discover_running;
+  p.text(run?"DISCOVERING":"READY",r.x+6,r.y+20,run?kCyan:kWhite,3,r);
+  char f[40];
+  if(run&&s.scan.current_frequency_valid){char m[32];disc_mhz(m,s.scan.current_frequency_hz);std::snprintf(f,sizeof(f),"NOW  %s",m);}
+  else std::snprintf(f,sizeof(f),run?"NOW  TUNING":"NOW  -");
+  p.text(f,r.x+6,r.y+58,kWhite,2,r);
+  const Rect bar{r.x+6,r.y+80,r.w-12,16};
+  p.fillRect(bar.x,bar.y,bar.w,bar.h,kEdge);
+  p.fillRect(bar.x+1,bar.y+1,bar.w-2,bar.h-2,kBg);
+  if(run&&s.scan.planned&&s.scan.channel_index) {
+    const long w=static_cast<long>(s.scan.channel_index)*(bar.w-2)/static_cast<long>(s.scan.planned);
+    if(w>0)p.fillRect(bar.x+1,bar.y+1,static_cast<int>(std::min<long>(w,bar.w-2)),bar.h-2,kCyan);
+  }
+  char t[72];
+  if(run&&s.scan.planned)std::snprintf(t,sizeof(t),"CH %u / %u   PASS %u",static_cast<unsigned>(s.scan.channel_index),static_cast<unsigned>(s.scan.planned),static_cast<unsigned>(s.scan.passes));
+  else std::snprintf(t,sizeof(t),"PASS ~%u:%02u",static_cast<unsigned>(s.band_minutes/60),static_cast<unsigned>(s.band_minutes%60));
+  if(run||s.band_channels==0)p.label(t,r.x+6,r.y+112,r);
+  else {std::snprintf(t,sizeof(t),"%u CH   ~%u MIN PER PASS",static_cast<unsigned>(s.band_channels),static_cast<unsigned>(s.band_minutes));p.label(t,r.x+6,r.y+112,r);}
+  std::snprintf(t,sizeof(t),"FOUND %u   CANDIDATES %u",static_cast<unsigned>(s.discover_found),static_cast<unsigned>(s.discover_candidates));
+  p.text(t,r.x+6,r.y+134,s.discover_found?kGreen:kMuted,2,r);
+}
+void disc_result(Paint& p,const Snapshot& s,const DiscGeom& g) {
+  const Rect r=g.result;
+  p.fillRect(r.x,r.y,r.w,r.h,kPanel);
+  char t[96];
+  if(s.band_mask==0)p.text("NO BANDS PICKED: CHOOSE THEM IN SETUP",r.x+6,r.y+r.h/2,kAmber,2,r);
+  else if(s.discover_saved||s.discover_skipped) {
+    std::snprintf(t,sizeof(t),"SAVED %u TO LIST%s",static_cast<unsigned>(s.discover_saved),s.discover_skipped?"   LIST FULL: SOME SKIPPED":"");
+    p.text(t,r.x+6,r.y+r.h/2,s.discover_skipped?kAmber:kGreen,2,r);
+  } else p.label("A channel counts as found after 3 sightings",r.x+6,r.y+r.h/2,r);
+}
+void disc_buttons(Paint& p,const Snapshot& s,const DiscGeom& g) {
+  const bool run=s.discover_running;
+  p.button(run?"STOP DISCOVERY":"START DISCOVERY",g.start,run||s.discover_can_start);
+  p.button("SAVE TO LIST",g.save,disc_can_save(s));
+  p.button("BACK",g.back,true);
+}
+void disc_row(Paint& p,const Snapshot& s,const DiscGeom& g,unsigned i) {
+  const Rect rr{g.b.x+10,g.b.y+54+static_cast<int>(i)*76,g.b.w-20,70};
+  p.fillRoundRect(rr.x,rr.y,rr.w,rr.h,5,kPanel);
+  if(!s.systems_available||i>=sys_count(s)) {
+    if(i==0)p.label("NO SYSTEMS YET",rr.x+10,rr.y+rr.h/2,rr);
+    return;
+  }
+  const auto& sys=s.observed_systems[i];
+  const bool verified=sys.evidence>=Evidence::integrity_valid;
+  char area[16];area_text(area,sys.protocol,sys.colour_code,sys.colour_code_valid,sys.ran,sys.ran_valid);
+  char t[64];
+  std::snprintf(t,sizeof(t),"%s  %s",protocol_name(sys.protocol),(area[0]&&verified)?area:"CC?");
+  p.text(t,rr.x+10,rr.y+18,verified?kGreen:kAmber,2,rr);
+  if(sys.has_frequency){char m[32];disc_mhz(m,sys.frequency_hz);std::snprintf(t,sizeof(t),"%s  HEARD %lu",m,static_cast<unsigned long>(sys.heard_count));}
+  else std::snprintf(t,sizeof(t),"FREQUENCY UNKNOWN");
+  p.label(t,rr.x+10,rr.y+46,rr);
+}
+uint32_t disc_frame_sig(const Snapshot& s) {
+  uint32_t h=2166136261u;
+  h=fnv_val(h,s.band_mask);h=fnv_val(h,s.band_channels);h=fnv_val(h,s.band_minutes);
+  return h;
+}
+uint32_t disc_progress_sig(const Snapshot& s) {
+  uint32_t h=2166136261u;
+  h=fnv_val(h,s.discover_running);h=fnv_val(h,s.scan.current_frequency_valid);h=fnv_val(h,s.scan.current_frequency_hz);
+  h=fnv_val(h,s.scan.channel_index);h=fnv_val(h,s.scan.planned);h=fnv_val(h,s.scan.passes);
+  h=fnv_val(h,s.discover_found);h=fnv_val(h,s.discover_candidates);
+  return h;
+}
+uint32_t disc_button_sig(const Snapshot& s) {
+  uint32_t h=2166136261u;
+  h=fnv_val(h,s.discover_running);h=fnv_val(h,s.discover_can_start);h=fnv_val(h,disc_can_save(s));
+  h=fnv_val(h,s.discover_saved);h=fnv_val(h,s.discover_skipped);h=fnv_val(h,s.band_mask);
+  return h;
+}
+void discover(Paint& p,const Snapshot& s,const UiState& u) {
+  const DiscGeom g=disc_geom(u.density);
+  p.card(g.a);p.card(g.b);
+  p.title("DISCOVER SYSTEMS",g.a.x+18,g.a.y+32,g.a);
+  p.label("BANDS (CHANGE THEM IN SETUP)",g.a.x+18,g.a.y+66,g.a);
+  for(unsigned i=0;i<dv::kBandPresetCount;++i) {
+    const bool on=(s.band_mask>>i)&1U;
+    char t[40];std::snprintf(t,sizeof(t),"[%c] %s",on?'X':' ',dv::kBandPresets[i].label);
+    p.text(t,g.a.x+18+static_cast<int>(i%3)*260,g.a.y+98+static_cast<int>(i/3)*30,on?kGreen:kMuted,2,g.a);
+  }
+  disc_progress(p,s,g);
+  disc_result(p,s,g);
+  disc_buttons(p,s,g);
+  p.title("NEWEST SYSTEMS",g.b.x+18,g.b.y+32,g.b);
+  for(unsigned i=0;i<kObservedSystems;++i)disc_row(p,s,g,i);
+}
+void discover_sigs(const Snapshot& s,uint32_t* sig) {
+  sig[0]=disc_frame_sig(s);sig[1]=disc_progress_sig(s);sig[2]=disc_button_sig(s);
+  const unsigned n=sys_count(s);
+  for(unsigned i=0;i<kObservedSystems;++i)sig[3+i]=i<n?sys_row_sig(s.observed_systems[i],false):0;
+}
+void discover_update(Paint& p,const Snapshot& s,const UiState& u,uint32_t* sig) {
+  uint32_t now[7];discover_sigs(s,now);
+  if(now[0]!=sig[0]) {discover(p,s,u);std::memcpy(sig,now,sizeof(now));return;}   // the band list changed: repaint the page once
+  const DiscGeom g=disc_geom(u.density);
+  if(now[1]!=sig[1]) {disc_progress(p,s,g);sig[1]=now[1];}
+  if(now[2]!=sig[2]) {disc_result(p,s,g);disc_buttons(p,s,g);sig[2]=now[2];}
+  for(unsigned i=0;i<kObservedSystems;++i)
+    if(now[3+i]!=sig[3+i]) {disc_row(p,s,g,i);sig[3+i]=now[3+i];}
+}
 void signal(Paint& p,const Snapshot& s,Density mode) {
   const auto a=mode==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
   const auto b=mode==Density::discovery_first?layout::kBasicFacts:layout::kAdvancedFacts;
@@ -432,6 +554,7 @@ void page(Paint& p,const Snapshot& s,const UiState& u) {
       break;
     case View::last_heard:last_heard(p,s,u.density,u.history_offset,u.selected_history);break;
     case View::systems:systems(p,s,u);break;
+    case View::discover:discover(p,s,u);break;
     case View::signal:signal(p,s,u.density);break;
     case View::setup:setup(p,s,u.density);break;
     default:break;
@@ -479,6 +602,7 @@ bool Dashboard::present(lgfx::LovyanGFX& display,const Snapshot& s,
     nav(p,state);
     scan_.reset();
     sys_ready_=false;
+    disc_ready_=false;
     pb_.valid=false;                // the screen was just cleared: the next page push covers everything
   }
   // The context strip shows only the origin and the density: repaint it when one of those changed, not on every revision.
@@ -487,12 +611,15 @@ bool Dashboard::present(lgfx::LovyanGFX& display,const Snapshot& s,
   if(state.view==View::explore) {
     if(entry)scan_.enter(display,s,state);
     else scan_.update(display,s,state);          // changed widgets only, each inside its own rectangle
+  } else if(state.view==View::discover && disc_ready_) {
+    discover_update(p,s,state,disc_sig_);                               // changed parts only
   } else if(state.view==View::systems && sys_ready_) {
     systems_update(p,s,state,sys_row_sig_,sys_facts_sig_,sys_shape_);   // changed rows / panel only
   } else {
-    if(state.view==View::systems) page(p,s,state);   // first paint of Systems; later changes go through systems_update()
-    else present_page(display,s,state);              // Live, Last Heard, Signal, Setup: changed bands only
+    if(state.view==View::systems||state.view==View::discover) page(p,s,state);   // first paint; later changes go through systems_update() / discover_update()
+    else present_page(display,s,state);              // Live, Last Heard, Signal, Setup: only when what they show changes
     if(state.view==View::systems) {systems_sigs(s,state,sys_row_sig_,sys_facts_sig_,sys_shape_);sys_ready_=true;}
+    if(state.view==View::discover) {discover_sigs(s,disc_sig_);disc_ready_=true;}
   }
   last_state_=state;
   old_=s;
@@ -525,6 +652,14 @@ Action Dashboard::handle_touch(int32_t x,int32_t y,const Snapshot& s,
       for(unsigned i=0;i<dv::kBandPresetCount;++i)
         if(band_button(b,i).contains(x,y))return {ActionKind::toggle_band,static_cast<uint8_t>(i)};
     }
+  }
+  if(state.view==View::discover) {
+    const DiscGeom g=disc_geom(state.density);
+    if(g.start.contains(x,y)&&(s.discover_running||s.discover_can_start))
+      return {s.discover_running?ActionKind::discover_stop:ActionKind::discover_start,0};
+    if(g.save.contains(x,y)&&disc_can_save(s))return {ActionKind::discover_save,0};
+    if(g.back.contains(x,y))return {ActionKind::close_discover,0};
+    return {};
   }
   if(state.view==View::systems && s.systems_available) {
     const auto a=state.density==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;

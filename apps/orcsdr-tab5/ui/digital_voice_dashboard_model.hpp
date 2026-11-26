@@ -25,7 +25,8 @@ struct VoiceAudioView {
   uint32_t source_id = 0, destination_id = 0;
   bool group_call = false;
 };
-enum class View : uint8_t { explore, live, last_heard, systems, signal, setup, count };
+// discover is reached from SCAN (DISCOVER button), not from a tab: the tab bar keeps its six entries (layout::kTabCount).
+enum class View : uint8_t { explore, live, last_heard, systems, signal, setup, discover, count };
 enum class Density : uint8_t { discovery_first, analysis_first };
 // Scanner state is a presentation snapshot owned by the existing receiver/scan service.
 // No scan engine or radio ownership is created by this UI.
@@ -169,6 +170,10 @@ struct Snapshot {
   uint16_t band_mask = 0;                 // SETUP band picker: bit i = built-in band i is part of MY BANDS
   uint16_t band_channels = 0;             // channels in the selected bands
   uint16_t band_minutes = 0;              // rough time for one pass over them, in minutes
+  // DISCOVER page: a sweep of the MY BANDS plan. "Found" = channels with integrity-validated activity seen at least 3 times in this run
+  // (one or two sightings are candidates: noise decoded as DMR looks like that); saved = added to the saved scan list by SAVE TO LIST.
+  bool discover_running = false, discover_can_start = false;
+  uint16_t discover_found = 0, discover_candidates = 0, discover_saved = 0, discover_skipped = 0;
   uint32_t audio_revision = 0;           // moves when the voice panel's content changes; the page revision does not
 };
 struct UiState {
@@ -182,7 +187,8 @@ struct UiState {
 };
 enum class ActionKind : uint8_t { none, switch_view, selected_history, save_channel, scan, setup_protocol,
                                   toggle_hold, skip_frequency, toggle_density, select_scan_hit,
-                                  select_system, page_history, plan_prev, plan_next, set_listen, toggle_save_speech, toggle_band, toggle_save_iq, page_systems };
+                                  select_system, page_history, plan_prev, plan_next, set_listen, toggle_save_speech, toggle_band, toggle_save_iq, page_systems,
+                                  open_discover, close_discover, discover_start, discover_stop, discover_save };
 // Why a control is unavailable, in words the screen can show. `none` = the control is usable.
 enum class Disabled : uint8_t { none, no_receiver, no_plan, not_scanning, no_signal_selected, not_verified, already_saved,
                                 list_full, no_storage, scan_running, single_plan, no_frequency };
