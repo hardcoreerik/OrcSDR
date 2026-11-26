@@ -11,3 +11,9 @@ Use a disposable checkout (temporarily instruments two host test files then rest
 
 ## Coordination
 Codex owns integration and device. Sandbox owns narrow decoder/vocoder improvements and independent A/B harness. No retune, driver, dashboard, file format, task core/priority, ring-size changes until hardware evidence. Do not shrink buffers to mask throughput failures. Keep each optimization independently reversible.
+
+## Experiment 1: paired DMR acquisition screen
+
+Actual pinned frontend/channelizer/header blobs matched the sandbox source. x86-64 GCC 14.2 -O3, five process-CPU samples per input (median, timing excludes channelization but includes symbol digest). Baseline/candidate ms: CC13 49.173/45.043; control 27.739/28.495; CC8 53.201/49.033; 153.068 48.480/47.338; 8 s noise 60.319/36.374; analog 65.005/37.032; tone 27.814/27.947. Repeat A/B noise 67.228/36.322, analog 62.873/36.329; locked signal timing varies. All serialized dibit, float error, sample position and final Stats fields byte-identical via cmp on 4 recordings and 3 synthetic inputs. Object sizeof 4784 B unchanged; host executable text +1224 bytes, data/BSS unchanged; P4 flash placement and internal RAM unmeasured. Full corpus PCM and event comparisons are separately enforced by profile_host.py.
+
+Math: D0 words are four pairs of +/-3 sign complements with zero mean, norm squared 216 (compile-time assertions). Screen score is invariant to covariance sign, so evaluate one polarity per pair; keep the exact float term order and division, unchanged exact double fit on potential sync. Threshold and timing unchanged. No FEC or protocol change. Requires ordinary round-to-nearest arithmetic; no fast-math change. No claim of exact performance on P4 until verified there.

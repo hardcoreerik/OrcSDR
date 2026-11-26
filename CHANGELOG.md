@@ -2,6 +2,10 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased - Digital Voice: paired DMR sync cost screen - 2026-11-26
+
+- Four complementary balanced sync pairs replace eight redundant float-screen correlations; invariant norms are constant, exact acquisition and thresholds unchanged. Sandbox GCC 14.2, 5-run median CPU: 8 s noise 60.319 -> 36.374 ms, analog FM 65.005 -> 37.032 ms; real captures mostly locked, 0.97-1.09x. Repeat run compared all serialized symbol and final stats fields byte-for-byte on four actual IQ recordings and three synthetic cases: identical. Frontend object 4784 B unchanged (x86-64); executable text +1224 B, data/BSS unchanged. Full production-chain host A/B pending CI; no P4 timing, memory, drops, stall count or physical audio claim.
+
 ## Unreleased - Digital Voice: isolated efficiency A/B harness - 2026-11-26
 
 - Host profiling and exact replay comparison harness added; no firmware behavior changed. Owner-supplied Tab5 baseline preserved in docs/digital-voice/EFFICIENCY_SANDBOX.md; host and device results pending execution. No hardware accessed.

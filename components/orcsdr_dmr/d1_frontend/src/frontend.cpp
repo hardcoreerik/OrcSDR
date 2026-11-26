@@ -20,6 +20,31 @@ constexpr float kMinimumSyncCorrelation = 0.955F;
 constexpr float kMinPower = 1.0e-10F;
 constexpr double kRolloff = 0.2;
 
+// The eight ETSI syncs are four balanced complementary pairs, all outer
+// levels (+/-3). The compile-time checks keep this screen tied to D0's words.
+constexpr bool balanced_complements() noexcept {
+    for (std::size_t k = 0; k < kSyncCount; k += 2) {
+        int sum = 0;
+        for (std::size_t i = 0; i < kSyncSymbols; ++i) {
+            const auto a = dibit_level(static_cast<std::uint8_t>((kSyncWords[k] >> (46-2*i)) & 3U));
+            const auto b = dibit_level(static_cast<std::uint8_t>((kSyncWords[k+1] >> (46-2*i)) & 3U));
+            if ((a != 3 && a != -3) || b != -a) return false;
+            sum += a;
+        }
+        if (sum != 0) return false;
+    }
+    return true;
+}
+static_assert(kSyncCount == 8 && kSyncSymbols == 24 && balanced_complements(), "DMR sync screen invariants");
+constexpr auto make_sync_levels() noexcept {
+    std::array<std::array<float, kSyncSymbols>, kSyncCount/2> levels{};
+    for (std::size_t k = 0; k < levels.size(); ++k)
+        for (std::size_t i = 0; i < kSyncSymbols; ++i)
+            levels[k][i] = static_cast<float>(dibit_level(static_cast<std::uint8_t>((kSyncWords[2*k] >> (46-2*i)) & 3U)));
+    return levels;
+}
+constexpr auto kScreenLevels = make_sync_levels();
+
 // A 6-symbol, beta=0.2 root raised cosine for the *demodulated frequency*.
 // Full spectrum Nyquist receiver pulse is completed by matching a shaped TX.
 // No Tx filtering is assumed for validity of the host-only front-end API.
@@ -165,21 +190,19 @@ void Frontend::try_acquire() noexcept {
     {
         const float fvar_y=fsum_yy-fsum_y*fsum_y/static_cast<float>(kSyncSymbols);
         if (fvar_y < 90000.0F) return;
-        float fbest=0.0F;
-        for(std::size_t kind=0;kind<kSyncCount;++kind) {
-            const std::uint64_t word=kSyncWords[kind];
-            float sx=0.0F,sxx=0.0F,sxy=0.0F;
-            for(std::size_t i=0;i<kSyncSymbols;++i) {
-                const float x=static_cast<float>(dibit_level(static_cast<std::uint8_t>((word >> (46-2*i)) & 3U)));
-                sx+=x;sxx+=x*x;sxy+=x*observed[i];
-            }
-            const float fvar_x=sxx-sx*sx/static_cast<float>(kSyncSymbols);
-            const float fcov=sxy-sx*fsum_y/static_cast<float>(kSyncSymbols);
-            if(fcov<=0.0F||fvar_x<=0.0F) continue;
-            const float fscore=(fcov*fcov)/(fvar_x*fvar_y);
-            if(fscore>fbest) fbest=fscore;
+        // Each x vector sums to zero and has squared norm 216. The
+        // opposite polarity has the negated covariance; its square is equal.
+        // Preserve the original per-term float multiply/add order and score
+        // division, and leave the exact double-precision decision unchanged.
+        bool possible = false;
+        for (const auto& levels : kScreenLevels) {
+            float sxy = 0.0F;
+            for (std::size_t i = 0; i < kSyncSymbols; ++i)
+                sxy += levels[i] * observed[i];
+            const float score = (sxy * sxy) / (216.0F * fvar_y);
+            if (score >= kMinimumSyncCorrelation*0.9F) { possible = true; break; }
         }
-        if (fbest < kMinimumSyncCorrelation*0.9F) return;
+        if (!possible) return;
     }
     double sum_y=0.0, sum_yy=0.0;
     for(std::size_t i=0;i<kSyncSymbols;++i) {
