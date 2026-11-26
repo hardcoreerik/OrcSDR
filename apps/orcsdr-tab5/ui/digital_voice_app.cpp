@@ -306,6 +306,7 @@ void apply_plan_option(State& st) {
   if (st.scanner.active()) return;
   st.scanner.set_hold_ms(st.plan_option == monitor_option(st) ? kMonitorHoldMs : kDefaultHoldMs);
   st.scanner.set_control_hold_max_ms(st.plan_option == monitor_option(st) ? kMonitorControlHoldMs : kDefaultControlHoldMs);
+  st.scanner.set_demote(st.plan_option == monitor_option(st) ? 2 : 0, 3);      // MONITOR: a channel that only ever shows control traffic is visited every 3rd round
   if (st.plan_option >= plan_option_count(st)) st.plan_option = 0;
   if (st.plan_option == 0) {
     if (st.saved_n && st.scanner.set_plan(st.saved_hz, st.saved_n)) std::memcpy(st.plan_mask, st.saved_mask, sizeof(st.plan_mask));

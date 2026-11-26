@@ -6,7 +6,11 @@ mins = float(sys.argv[1]) if len(sys.argv) > 1 else 10
 c = connect(); time.sleep(2)
 run(c, "RTL_UI OPEN DIGITAL_VOICE", 3); time.sleep(2)
 print(find(run(c, "RTL_DV MONITOR ALL", 2), "RTL_DV_MONITOR"))
-print([l for l in run(c, "RTL_DV SCAN START", 2) if "RTL_DV" in l])
+for _ in range(40):
+    r = [l for l in run(c, "RTL_DV SCAN START", 2) if "RTL_DV_SCAN" in l]
+    if r and "REFUSED" not in r[0]: break
+    time.sleep(3)
+print(r)
 t0 = time.time(); last_holds = 0; by = collections.Counter(); ev = {}; sec = collections.Counter(); prev = None
 while time.time() - t0 < mins * 60:
     L = run(c, "RTL_DV STATUS", 1.0)

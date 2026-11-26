@@ -2,6 +2,12 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Digital Voice: MONITOR visits control-only channels every 3rd round — 2026-11-26
+
+- **What changed:** in MONITOR a channel released by the control-only rule twice in a row (verified traffic, never an identity or voice) is demoted: the scan visits it only every 3rd round, so channels with real or possible traffic come round sooner. A hold that ends by itself (a call) restores the channel at once. Applies to list plans in MONITOR only (`Scanner::set_demote`, `demoted()`, `demote_skips()`); SCAN and DISCOVER are unchanged.
+- **Measured on the Tab5 (15-channel MONITOR list, 12 min before vs 9 min after):** the quiet channels, which are always visited, went from about 2.1 to 3.5 sampled seconds per minute (about 1.7 times as many visits), and the six VHF control channels went from about 0.9 to 0.7 holds per minute. Holds on the intermittent channels (464.3625, 463.400) are not a visit count, so they say nothing about round time. No voice call occurred in either window.
+- **Verified:** host test (control channel visited 4 to 6 times in 9 rounds, demoted flag, skip counter, off by default). **Not verified:** that a call starting on a demoted control channel is caught within a few rounds (the restore path has no host test), and the effect on conversation catch rate.
+
 ## Unreleased — Digital Voice: DISCOVER leaves a silent survey-confirmed channel after 0.6 s — 2026-11-26
 
 - **What changed:** in the DISCOVER decode phase each channel the survey flagged was listened to for the full 1.5 s dwell (about 2.2 s with the retune settle), although most are analog. List plans can now use the quick exit that range scans already had (`Scanner::set_quick_lists`): a channel with no sync-level sign within 0.6 s is left; a pending candidate still earns the extra dwell. The flag is on only for DISCOVER batches and is cleared when DISCOVER stops, so SCAN and MONITOR keep the full dwell.

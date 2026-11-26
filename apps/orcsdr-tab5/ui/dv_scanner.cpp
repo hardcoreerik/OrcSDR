@@ -34,6 +34,7 @@ bool Scanner::set_plan(const uint32_t* channels_hz, size_t count) noexcept {
   count_ = count;
   kind_ = PlanKind::list;
   index_ = 0;
+  for (size_t i = 0; i < kMaxScanChannels; ++i) ctrl_streak_[i] = demote_wait_[i] = 0;
   return true;
 }
 
@@ -45,7 +46,7 @@ bool Scanner::start(uint32_t now_ms) noexcept {
   }
   if (active()) return false;
   index_ = 0;
-  passes_ = visited_ = holds_ = refusals_ = control_releases_ = quick_skips_ = 0;
+  passes_ = visited_ = holds_ = refusals_ = control_releases_ = quick_skips_ = demote_skips_ = 0;
   manual_hold_ = false;
   fail_ = FailReason::none;
   state_since_ms_ = now_ms;
@@ -83,6 +84,13 @@ void Scanner::next_channel(uint32_t now_ms) noexcept {
   if (++index_ >= count_) {
     index_ = 0;
     ++passes_;
+  }
+  if (kind_ == PlanKind::list && config_.demote_after && count_ > 1) {      // a demoted channel is visited only every demote_every-th round
+    for (size_t tries = 0; tries + 1 < count_ && ctrl_streak_[index_] >= config_.demote_after; ++tries) {
+      if (++demote_wait_[index_] >= config_.demote_every) { demote_wait_[index_] = 0; break; }
+      ++demote_skips_;
+      if (++index_ >= count_) { index_ = 0; ++passes_; }
+    }
   }
   manual_hold_ = false;
   extended_ = false;
@@ -174,12 +182,16 @@ ScanStep Scanner::service(uint32_t now_ms, const ScanInputs& in) noexcept {
         hold_reason_ms_ = in.verified_ms;
         hold_until_ms_ = in.verified_ms + config_.hold_ms;
       }
-      if (!manual_hold_ && static_cast<int32_t>(now_ms - hold_until_ms_) >= 0) { next_channel(now_ms); break; }
+      if (!manual_hold_ && static_cast<int32_t>(now_ms - hold_until_ms_) >= 0) {     // the activity stopped on its own: a call, not a control channel
+        if (index_ < kMaxScanChannels) { ctrl_streak_[index_] = 0; demote_wait_[index_] = 0; }
+        next_channel(now_ms); break;
+      }
       // Control-only channel: verified events keep renewing the hold, but no identity and no voice ever arrived. Move on.
       if (!manual_hold_ && config_.control_hold_max_ms &&
           static_cast<int32_t>(now_ms - hold_begin_ms_) >= static_cast<int32_t>(config_.control_hold_max_ms) &&
           (in.identity_ms == 0 || static_cast<int32_t>(in.identity_ms - hold_begin_ms_) < 0)) {
         ++control_releases_;
+        if (index_ < kMaxScanChannels && ctrl_streak_[index_] < 255) ++ctrl_streak_[index_];
         next_channel(now_ms);
       }
       break;

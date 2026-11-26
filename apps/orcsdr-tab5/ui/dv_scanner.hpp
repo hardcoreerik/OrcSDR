@@ -35,6 +35,10 @@ struct ScanConfig {
   bool quick_lists = false;     // true: list plans use quick_ms too (discovery's decode of survey-confirmed channels, which are mostly analog)
   // A hold that has seen only control traffic (verified events but no identity and no voice) is released after this long (0 = never).
   uint32_t control_hold_max_ms = 20000;
+  // List plans: a channel released by the control-only rule demote_after times in a row (no call between) is visited only every
+  // demote_every-th round, so the channels with real traffic come round sooner. A hold that ends on its own (a call) restores it. 0 = off.
+  uint8_t demote_after = 0;
+  uint8_t demote_every = 3;
 };
 
 struct ScanInputs {
@@ -99,6 +103,10 @@ class Scanner {
   // How long a channel is kept after its last verified activity (500 ms to 60 s). A longer hold catches the reply in a conversation (MONITOR uses 9 s).
   void set_hold_ms(uint32_t ms) noexcept { config_.hold_ms = ms < 500 ? 500 : ms > 60000 ? 60000 : ms; }
   uint32_t hold_ms() const noexcept { return config_.hold_ms; }
+  void set_demote(uint8_t after, uint8_t every) noexcept { config_.demote_after = after; config_.demote_every = every < 2 ? 2 : every; }
+  uint8_t demote_after() const noexcept { return config_.demote_after; }
+  uint32_t demote_skips() const noexcept { return demote_skips_; }
+  bool demoted(size_t i) const noexcept { return config_.demote_after && i < kMaxScanChannels && ctrl_streak_[i] >= config_.demote_after; }
   void set_quick_lists(bool on) noexcept { config_.quick_lists = on; }
   bool quick_lists() const noexcept { return config_.quick_lists; }
   // A hold that has seen only control traffic (verified events but no identity and no voice) is released after this long (1 s to 60 s). A shorter value
@@ -124,7 +132,9 @@ class Scanner {
   PlanKind kind_ = PlanKind::list;
   Segment segs_[kMaxSegments]{};
   size_t nseg_ = 0;
-  uint32_t hold_begin_ms_ = 0, control_releases_ = 0, quick_skips_ = 0;
+  uint32_t hold_begin_ms_ = 0, control_releases_ = 0, quick_skips_ = 0, demote_skips_ = 0;
+  uint8_t ctrl_streak_[kMaxScanChannels]{};
+  uint8_t demote_wait_[kMaxScanChannels]{};
   ScanState state_ = ScanState::idle;
   FailReason fail_ = FailReason::none;
   uint32_t state_since_ms_ = 0, hold_until_ms_ = 0, hold_reason_ms_ = 0, tune_ms_ = 0;

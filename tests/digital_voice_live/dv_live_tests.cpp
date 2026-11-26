@@ -166,6 +166,25 @@ void test_monitor_revisits() {
   CHECK(n == 4 && h3[3] == 3);                              // last entry: the revisit goes at the end
 }
 
+void test_control_demotion() {
+  // Channel 0 is a control channel (released by the control-only rule every visit), channel 1 is quiet. After 2 control releases channel 0 is
+  // visited only every 3rd round, and a call (hold that ends on its own) restores it.
+  const uint32_t plan[3] = {460000000, 461000000, 462000000};
+  dv::Scanner s; CHECK(s.set_plan(plan, 3)); s.set_control_hold_max_ms(1000); s.set_demote(2, 3);
+  uint32_t t = 1000; dv::ScanInputs in; in.receiver_ready = true; CHECK(s.start(t));
+  int visits0 = 0, rounds = 0; size_t last_idx = 99;
+  for (int step = 0; step < 4000 && rounds < 9; ++step, t += 100) {
+    auto st = s.service(t, in); if (st.tune) s.retune_result(true, t);
+    const auto stat = s.status();
+    if (stat.index != last_idx) { last_idx = stat.index; in.verified_ms = 0; if (last_idx == 0) ++visits0; if (last_idx == 2) ++rounds; }
+    if (stat.index == 0 && (stat.state == dv::ScanState::sampling || stat.state == dv::ScanState::holding)) in.verified_ms = t;   // control traffic, never an identity
+  }
+  CHECK(rounds >= 9);
+  CHECK(visits0 >= 4 && visits0 <= 6);                      // 9 rounds: 2 normal visits, then every 3rd round
+  CHECK(s.demoted(0) && !s.demoted(1) && s.demote_skips() >= 4);
+  dv::Scanner off; CHECK(off.set_plan(plan, 3)); CHECK(off.demote_after() == 0 && !off.demoted(0));
+}
+
 void test_scanner_hold_time() {
   // A longer hold keeps the channel through a pause in a conversation; the default releases after 4 s. Limits are enforced.
   const uint32_t plan[2] = {460000000, 461000000};
@@ -343,6 +362,7 @@ int main() {
   test_scanner();
   test_scanner_hold_time();
   test_monitor_revisits();
+  test_control_demotion();
   test_dmr_end_to_end();
   test_worker_matches_inline();
   test_nxdn_end_to_end(false);
