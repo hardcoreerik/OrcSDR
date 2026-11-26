@@ -1,0 +1,24 @@
+RTL_DV_MONITOR hold_ms=9000 control_hold_ms=6000 proto=0 cc=255 min_hits=1 entries=16 selected=1
+['RTL_DV_SCAN_OK started']
+minutes 25.0 total holds 111
+463400000 holds 23 approx s 168 dmr_ev/n48/n96 at last visit ('75763', '0', '0')
+151195000 holds 14 approx s 74 dmr_ev/n48/n96 at last visit ('76225', '0', '0')
+152682500 holds 14 approx s 60 dmr_ev/n48/n96 at last visit ('76718', '0', '0')
+152157500 holds 13 approx s 56 dmr_ev/n48/n96 at last visit ('76021', '0', '0')
+153120000 holds 13 approx s 58 dmr_ev/n48/n96 at last visit ('76350', '0', '0')
+152685000 holds 13 approx s 66 dmr_ev/n48/n96 at last visit ('76464', '0', '0')
+153645000 holds 13 approx s 66 dmr_ev/n48/n96 at last visit ('76584', '0', '0')
+464362500 holds 8 approx s 54 dmr_ev/n48/n96 at last visit ('76752', '0', '0')
+463250000 holds 0 approx s 52 dmr_ev/n48/n96 at last visit ('75810', '0', '0')
+451912500 holds 0 approx s 98 dmr_ev/n48/n96 at last visit ('75848', '0', '0')
+172145000 holds 0 approx s 62 dmr_ev/n48/n96 at last visit ('75914', '0', '0')
+453600000 holds 0 approx s 58 dmr_ev/n48/n96 at last visit ('75914', '0', '0')
+162720000 holds 0 approx s 58 dmr_ev/n48/n96 at last visit ('75914', '0', '0')
+456162500 holds 0 approx s 60 dmr_ev/n48/n96 at last visit ('75914', '0', '0')
+171232500 holds 0 approx s 50 dmr_ev/n48/n96 at last visit ('75729', '0', '0')
+speech frames decoded by channel: {'152157500': 285, '463400000': 26}
+
+NOTES (added by hand)
+- First MONITOR run with speech counters, commit 6967e75f plus the uncommitted probe change. 25 min, 111 holds.
+- Speech frames decoded: 285 on 152.1575 MHz (about 5.7 s of audio at 20 ms a frame) and 26 on 463.400 MHz (about 0.5 s). The counter is attributed to the channel the receiver was on at the sample, so a frame or two can land on the next channel.
+- 152.1575 is the Eugene Terra site, where voice shares the control channel: the first decoded voice there in these runs, and a channel the demotion rule had been treating as control-only. The scan still got there, which is the case the restore path is for. Whether the call was heard in full was not measured. Audio quality was not listened to.

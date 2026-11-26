@@ -11,16 +11,21 @@ for _ in range(40):
     if r and "REFUSED" not in r[0]: break
     time.sleep(3)
 print(r)
+spk = collections.Counter(); last_sp = 0
 t0 = time.time(); last_holds = 0; by = collections.Counter(); ev = {}; sec = collections.Counter(); prev = None
 while time.time() - t0 < mins * 60:
     L = run(c, "RTL_DV STATUS", 1.0)
     st = kv(find(L, "RTL_DV_STATUS")); ui = kv(find(L, "RTL_DV_UI"))
+    a = kv(find(run(c, "RTL_DV AUDIO", 0.6), "RTL_DV_AUDIO")); sp = int(a.get("speech", "0") or 0)
     ch = st.get("ch_hz"); holds = int(ui.get("holds", "0") or 0)
     if ch and ch != "0":
         sec[ch] += 2
         if holds > last_holds: by[ch] += holds - last_holds
         ev[ch] = (st.get("dmr_ev"), st.get("n48_ok"), st.get("n96_ok"))
+    if sp > last_sp and ch: spk[ch] += sp - last_sp
+    last_sp = max(last_sp, sp)
     last_holds = max(last_holds, holds)
     time.sleep(1)
 print("minutes", round((time.time() - t0) / 60, 1), "total holds", last_holds)
 for ch in sorted(sec, key=lambda k: -by[k]): print(ch, "holds", by[ch], "approx s", sec[ch], "dmr_ev/n48/n96 at last visit", ev.get(ch))
+print("speech frames decoded by channel:", dict(spk) if spk else "none")
