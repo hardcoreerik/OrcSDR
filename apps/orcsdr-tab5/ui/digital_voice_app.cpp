@@ -92,7 +92,10 @@ struct State {
   // Repaint cost per view (this visit): count, total, worst, and how many took 100 ms or more. RTL_DV RENDER prints it, RTL_DV RENDER RESET clears it.
   uint32_t rv_n[8]{}, rv_max[8]{}, rv_slow[8]{};
   uint32_t tick_n = 0, tick_last_ms = 0, tick_gap_max_ms = 0, tick_slow = 0, tick_busy_max_us = 0;
-  uint32_t tick_sec_max_us[6]{};   // worst time of each part of tick(): speech save, candidates, persistence, scanner, refresh, draw   // how often the main loop reaches this screen
+  uint32_t tick_sec_max_us[10]{};
+  // The last 12 ticks that took 100 ms or more: when (ms), then the time of each part (speech save, candidates, persistence, scanner, refresh, draw), in ms.
+  uint32_t slow_ring[12][7]{};
+  uint8_t slow_head = 0;   // worst time of each part of tick(): speech save, candidates, persistence, scanner, refresh, draw   // how often the main loop reaches this screen
   uint64_t rv_total[8]{};
   uint32_t led_utc[64]{};                      // UTC of the last note, 0 = clock not valid
   // Candidate log: the ledger written to /orcsdr/dv_cand_<utc>.csv (one file per session, never overwritten by a later one) so sync-level findings survive a restart.
@@ -581,9 +584,18 @@ bool receiver_ok_for_discover(const State&) { return g_hooks.receiver_ready && g
 
 void refresh(State& st) {
   Snapshot& s = st.snapshot;
+  uint32_t rl_t = g_hooks.micros ? g_hooks.micros() : 0;
+  auto rlap = [&](int k) {
+    if (!g_hooks.micros) return;
+    const uint32_t t1 = g_hooks.micros();
+    if (t1 - rl_t > st.tick_sec_max_us[k]) st.tick_sec_max_us[k] = t1 - rl_t;
+    rl_t = t1;
+  };
   const bool ready = g_hooks.receiver_ready && g_hooks.receiver_ready();
+  rlap(6);
   const auto ss = st.scanner.status();
   const auto rs = dv_radio::status();
+  rlap(7);
   Receiver rx = ready ? Receiver::ready : Receiver::disconnected;
   if (ready && rs.running && rs.link == dv_radio::Link::receiving) rx = Receiver::receiving;
   if (st.replaying) rx = Receiver::receiving;
@@ -737,7 +749,9 @@ void refresh(State& st) {
     s.survey_rate_khz = sv_rate; s.survey_center_hz = sv_center; s.survey_passes = sv_pass;
   }
   if (changed) ++s.revision;
+  rlap(8);
   refresh_voice(s);
+  rlap(9);
   {
     const uint32_t sp = s.voice.speech_frames;
     const uint32_t hz = st.scanner.status().frequency_hz;
@@ -1415,9 +1429,11 @@ void tick() {
     g_state->tick_last_ms = t_now; ++g_state->tick_n;
   }
   const uint32_t t_tick0 = g_hooks.micros ? g_hooks.micros() : 0;
+  uint32_t cur_us[6]{};
   auto lap = [&](int k, uint32_t& t0) {
     if (!g_hooks.micros) return;
     const uint32_t t1 = g_hooks.micros();
+    cur_us[k] = t1 - t0;
     if (t1 - t0 > g_state->tick_sec_max_us[k]) g_state->tick_sec_max_us[k] = t1 - t0;
     t0 = t1;
   };
@@ -1443,6 +1459,10 @@ void tick() {
     screens::note_visible_update(screens::Id::digital_voice);
   }
   lap(5, t_lap);
+  if (g_hooks.micros && g_hooks.micros() - t_tick0 >= 100000u) {
+    uint32_t* r = g_state->slow_ring[g_state->slow_head]; g_state->slow_head = static_cast<uint8_t>((g_state->slow_head + 1) % 12);
+    r[0] = now(); for (int k = 0; k < 6; ++k) r[k + 1] = cur_us[k] / 1000u;
+  }
   if (g_hooks.micros) { const uint32_t busy = g_hooks.micros() - t_tick0; if (busy > g_state->tick_busy_max_us) g_state->tick_busy_max_us = busy; }
 }
 
@@ -1565,13 +1585,23 @@ bool handle_command(const char* command, bool authenticated, void (*write_line)(
     if (std::strstr(arg, "RESET")) {
       for (int i = 0; i < 8; ++i) { st.rv_n[i] = st.rv_max[i] = st.rv_slow[i] = 0; st.rv_total[i] = 0; }
       st.tick_n = st.tick_gap_max_ms = st.tick_slow = st.tick_busy_max_us = 0; st.tick_last_ms = 0;
-      for (int i = 0; i < 6; ++i) st.tick_sec_max_us[i] = 0;
+      for (int i = 0; i < 10; ++i) st.tick_sec_max_us[i] = 0;
+      std::memset(st.slow_ring, 0, sizeof(st.slow_ring)); st.slow_head = 0;
       write_line("RTL_DV_RENDER_OK reset"); return true;
     }
-    { char tl[120]; std::snprintf(tl, sizeof(tl), "RTL_DV_TICKS n=%lu gap_max_ms=%lu gaps_100ms=%lu tick_busy_max_us=%lu sec_us=%lu/%lu/%lu/%lu/%lu/%lu", static_cast<unsigned long>(st.tick_n),
+    for (int i = 0; i < 12; ++i) {
+      const uint32_t* r = st.slow_ring[i];
+      if (!r[0]) continue;
+      char sl[120];
+      std::snprintf(sl, sizeof(sl), "RTL_DV_SLOW t=%lu speech=%lu cand=%lu persist=%lu scanner=%lu refresh=%lu draw=%lu", static_cast<unsigned long>(r[0]), static_cast<unsigned long>(r[1]),
+                    static_cast<unsigned long>(r[2]), static_cast<unsigned long>(r[3]), static_cast<unsigned long>(r[4]), static_cast<unsigned long>(r[5]), static_cast<unsigned long>(r[6]));
+      write_line(sl);
+    }
+    { char tl[220]; std::snprintf(tl, sizeof(tl), "RTL_DV_TICKS n=%lu gap_max_ms=%lu gaps_100ms=%lu tick_busy_max_us=%lu sec_us=%lu/%lu/%lu/%lu/%lu/%lu refresh_us=%lu/%lu/%lu/%lu", static_cast<unsigned long>(st.tick_n),
                                   static_cast<unsigned long>(st.tick_gap_max_ms), static_cast<unsigned long>(st.tick_slow), static_cast<unsigned long>(st.tick_busy_max_us),
                                   static_cast<unsigned long>(st.tick_sec_max_us[0]), static_cast<unsigned long>(st.tick_sec_max_us[1]), static_cast<unsigned long>(st.tick_sec_max_us[2]),
-                                  static_cast<unsigned long>(st.tick_sec_max_us[3]), static_cast<unsigned long>(st.tick_sec_max_us[4]), static_cast<unsigned long>(st.tick_sec_max_us[5])); write_line(tl); }
+                                  static_cast<unsigned long>(st.tick_sec_max_us[3]), static_cast<unsigned long>(st.tick_sec_max_us[4]), static_cast<unsigned long>(st.tick_sec_max_us[5]),
+                                  static_cast<unsigned long>(st.tick_sec_max_us[6]), static_cast<unsigned long>(st.tick_sec_max_us[7]), static_cast<unsigned long>(st.tick_sec_max_us[8]), static_cast<unsigned long>(st.tick_sec_max_us[9])); write_line(tl); }
     for (int i = 0; i < 8; ++i) {
       char line[120];
       std::snprintf(line, sizeof(line), "RTL_DV_RENDER view=%d n=%lu avg_us=%lu max_us=%lu slow100ms=%lu", i, static_cast<unsigned long>(st.rv_n[i]),
