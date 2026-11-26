@@ -85,12 +85,13 @@ Publisher-reported identities (NXDN48 source 901/group 0/RAN 1; NXDN96 source 2/
 |---|---:|---|---:|---:|---|---|---:|---:|
 | NXDN48 voice 447.100 | 2879 | 11 / 3 | 12 | 12, 0 rejected | 7 (all 12) | 192 ×9, 384 ×2 (one frame missed twice) | +407.9 Hz | 48 |
 | NXDN96 voice 447.100 | 3840 | 18 / 1 | 19 | 19, 0 rejected | 7 (all 19) | 192 ×18 | +382.0 Hz | 40 |
-| NXDN96 RCCH 453.775 | 4800 | 18 / 2 | 19 (RFCT 0, direction 1) | 0 (not applicable to RCCH) | none | 192 ×18 | −664.9 Hz | 0 |
+| NXDN96 RCCH 453.775 | 4800 | 21 / 1 | 22 (RFCT 0, direction 1) | 0 (not applicable to RCCH) | none | 192 ×21 | −664.9 Hz | 0 |
 
 Relation to the upstream reference thresholds (comparison, not equivalence):
 
-- RCCH ≥18 FSW/LICH frames at exactly 192 dibits and carrier −750…−550 Hz: OrcSDR observed 19 frames, all 192 apart,
-  −664.9 Hz. **Meets the physical-layer part (Gate A).** It validates nothing about CAC CRC or Type-C grants.
+- RCCH ≥18 FSW/LICH frames at exactly 192 dibits and carrier −750…−550 Hz: OrcSDR observed 22 frames, all 192 apart,
+  −664.9 Hz (19 before the timing-gain change in §4a).
+   **Meets the physical-layer part (Gate A).** It validates nothing about CAC CRC or Type-C grants.
 - Voice ≥32 (NXDN48) / ≥24 (NXDN96) voice-channel frames, Golay ≤1.0/frame, pitch continuity ≥50%: OrcSDR produces only
   **raw, un-Golay-checked 72-bit candidates** (48 and 40). The count exceeds the upstream floor numerically, but the
   measurements are not the same thing. Golay corrections, 49-bit extraction and pitch continuity are **not measured**; the
@@ -98,10 +99,16 @@ Relation to the upstream reference thresholds (comparison, not equivalence):
 - Observed on both voice clips: the SACCH `structure` field counts down 3,2,1,0,3,… on every consecutive traffic frame
   (31 CRC-valid frames; the NXDN48 skipped frame appears as a missing value exactly at the 384-dibit spacings). RAN 7 on
   all 31. RAN 7 is OrcSDR's CRC-valid reading; it has no independent confirmation (§8).
-- Frame loss: the RCCH clip yields 19 of ≈24 possible frames because none are found before dibit 1017 although the
-  signal is present from sample 0; the voice clips start at dibit ≈115. Cause not established. I tried annealing the
-  carrier-loop and symbol-DC gains; the best variant moved one NXDN48 frame (12→13) and the DC variant lost frames, so I
-  **reverted all frontend changes** (no regression, no unsupported claim). Open item for Gate A.
+- Frame loss and the 4a fix: the first pass found only 19 RCCH frames, none before dibit 1017, although the signal is
+  present from sample 0. FSW-level probing showed the dibit stream was degraded for the first ~800 dibits, not that the
+  decoder rejected good frames. Sweeping loop constants on a scratch copy (carrier τ, symbol DC and level rates,
+  Mueller-Muller gain) showed only the timing-loop gain mattered: 0.05→0.15 raised exact FSW hits from 19→22 on the RCCH
+  clip with NXDN48 and NXDN96-voice unchanged or better, and carrier estimates identical. **Shipped change:** the
+  Mueller-Muller gain in `frontend.cpp` is 0.15 (one constant). After it: RCCH 22 frames (first at dibit 441), NXDN48 12,
+  NXDN96 voice 19; all synthetic suites and Release/ASan pass; chunk-independence unchanged. Caveats: three short clips
+  from one origin, so the gain is tuned on very little data; it has not been tested on weak or noisy real signals, and a
+  higher timing gain can cost noise margin. Treat as provisional until longer, independent recordings exist. NXDN48 still
+  loses two frames (one exact FSW has a failed LICH) and has no explanation yet.
 
 WaveShark long clips, same production path: **not acquired.** NXDN48 11.8 s: 29 one-dibit-error FSW matches but 0 exact,
 1 LICH, 0 SACCH. NXDN96 15.3 s: 1 near match, 0 LICH. Findings from a separate numpy probe (diagnostic, not decoder
@@ -116,14 +123,14 @@ inputs (provenance/format/mapping unknown), not as decoder failures and not as p
 | FSW, PN9, LICH parity | `test_decoder.cpp`, `nxdn_synth.cpp` round-trips | 19/19 (RCCH), 19/19 and 12/12 voice frames agree |
 | SACCH K=5 Viterbi + CRC6 + RAN | round-trip incl. corruption cases | 31/31 CRC-valid, RAN 7, structure countdown |
 | Chunk-size independence | unit tests | byte-identical at 1/37/4096 on all 3 clips |
-| Opaque SACCH reassembly | `test_reassembly.cpp` (10 tests, Release+ASan/UBSan) | 5 opaque 72-bit messages (NXDN96 ×4, NXDN48 ×1) |
+| Opaque SACCH reassembly | `test_reassembly.cpp` (10 tests, Release+ASan/UBSan) | 4 opaque 72-bit messages (NXDN96 ×4; NXDN48 ×0, its two lost frames break the anchor run) |
 | Golay / 49-bit / AMBE+2 | none in this component | none |
 | Layer 3 fields, CAC, trunking | none | none |
 
 Synthetic round-trips prove self-consistency, not interoperability. The real-air agreement is the only interoperability
 evidence for the physical layer, and it is limited to 3 short clips from one origin.
 
-## 6. Current decoder capability (unchanged by this work)
+## 6. Current decoder capability (one frontend constant changed, see §4)
 
 48 kS/s IQ → NXDN48/NXDN96 4FSK dibits; exact/1-error FSW; PN9 descrambling; LICH with parity; CRC6-valid SACCH with RAN
 and raw 18-bit fragments; raw 72-bit voice candidates. Not implemented: Golay, 49-bit extraction, AMBE+2 output, FACCH,
@@ -182,8 +189,8 @@ Reviewed `docs/nxdn/VOICE_BACKEND_HANDOFF.md` and `components/orcsdr_nxdn_voice/
 Blockers: (1) normative TS 1-A (owner action, §2); (2) no independent ground truth for identities; (3) the two long
 recordings are not decoded and their provenance is unclear.
 
-Doable now without the spec, in order: (a) find why the RCCH clip yields nothing before dibit 1017 and why NXDN48 skips a
-frame twice (instrument the frontend per-stage; try a coarse initial carrier estimate rather than gain annealing);
+Doable now without the spec, in order (the RCCH start-up loss was addressed, see §4): (a) find why NXDN48 loses two frames (one exact FSW with a failed LICH) and validate the 0.15 timing gain on weak/noisy
+real signals;
 (b) investigate the WaveShark clips (check the true sample format/rate/deviation from the SigIDWiki page; a
 discriminator-level eye diagram), without changing the decoder to fit them; (c) wire the reassembler into a bounded
 read-only IQ tap only after the owner approves any Tab5 work; (d) when the spec arrives, implement FACCH/Layer 3 and the
