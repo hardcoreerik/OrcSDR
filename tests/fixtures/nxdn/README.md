@@ -10,7 +10,7 @@ python tests/fixtures/nxdn/fetch_assets.py --fetch all
 python tests/fixtures/nxdn/fetch_assets.py --verify
 ```
 
-The downloader checks original SHA-256 (WaveShark) or original Git blob SHA-1 (DSD-neo) and exact byte lengths, leaves data in gitignored `tests/fixtures/nxdn/data/`, and writes `nxdn-assets-report.json` plus `nxdn-assets.log` in the directory where invoked. A bad hash is a hard error, never a reason to update the manifest. Requires network access; download was NOT executed in the current restricted sandbox.
+The downloader checks original SHA-256 (WaveShark) or original Git blob SHA-1 (DSD-neo) and exact byte lengths, leaves data in gitignored `tests/fixtures/nxdn/data/`, and writes `nxdn-assets-report.json` plus `nxdn-assets.log` in the directory where invoked. A bad hash is a hard error, never a reason to update the manifest. Requires network access. Run 2026-11-25: both WaveShark archives verified against their manifest SHA-256 (which hashes the `.xz`, not the extracted file); extracted lengths are 2265600 and 2937600 bytes (the manifest `bytes` was a nominal figure), pinned in `extracted_bytes`/`extracted_sha256`. The OrcSDR decoder does not acquire either file (see docs/nxdn/RESEARCH_ASSESSMENT_2026-11-25.md).
 
 WaveShark: CS16 48 kS/s after xz decompression. DSD-neo: CU8 48 kS/s; never feed CU8 bytes to an NXDN CS16 CLI without a documented deterministic conversion. Both derive from the Signal Identification Wiki source and **are not two independent original RF recording sources**. The 453 MHz label on WaveShark files is synthetic; source tuning is unknown. The upstream reports source 901/group 0/RAN 1 for NXDN48 and source 2/group 0/RAN 0 for NXDN96; OrcSDR must verify independently.
 

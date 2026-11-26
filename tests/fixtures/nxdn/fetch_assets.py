@@ -27,9 +27,19 @@ def digests(path):
 
 def verify(path, record):
     size, sha, blob = digests(path)
-    if size != record["bytes"]:
+    # For xz assets the manifest "sha256" pins the downloaded ARCHIVE (the URL is
+    # content-addressed by it) and "bytes" is the publisher-stated nominal length.
+    # The extracted file is pinned by extracted_bytes/extracted_sha256, which were
+    # recorded from the first verified-archive extraction (2026-11-25), not by the
+    # publisher.
+    xz = record.get("compression") == "xz"
+    want_len = record.get("extracted_bytes") if xz else record["bytes"]
+    want_sha = record.get("extracted_sha256") if xz else record.get("sha256")
+    if want_len is not None and size != want_len:
         raise ValueError("wrong length")
-    if record.get("sha256") and record["sha256"] != sha:
+    if xz and size % 4:
+        raise ValueError("CS16 length is not a multiple of 4")
+    if want_sha and want_sha != sha:
         raise ValueError("SHA-256 mismatch")
     if record.get("git_blob_sha1") and record["git_blob_sha1"] != blob:
         raise ValueError("Git blob SHA-1 mismatch")
@@ -54,11 +64,15 @@ def download(record, dest):
                 if total > 32 * 1048576:
                     raise ValueError("download exceeds size limit")
                 fp.write(part)
+        if record["compression"] == "xz":
+            archive_sha = hashlib.sha256(packed.read_bytes()).hexdigest()
+            if archive_sha != record["sha256"]:
+                raise ValueError("archive SHA-256 mismatch")
         unpacked = Path(tmp) / "unpacked"
         if record["compression"] == "xz":
             with lzma.open(packed, "rb") as src, unpacked.open("wb") as dst:
                 for part in iter(lambda: src.read(1048576), b""):
-                    if dst.tell() + len(part) > record["bytes"]:
+                    if dst.tell() + len(part) > 32 * 1048576:
                         raise ValueError("decompression exceeds expected length")
                     dst.write(part)
         else:

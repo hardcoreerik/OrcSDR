@@ -2,6 +2,7 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+<<<<<<< HEAD
 ## Unreleased — Digital Voice Systems screen: no flicker, paging, text fits; BIAS ON tap — 2026-11-25
 
 - **Flicker:** the Systems page used to repaint the whole page on every revision, and a scan bumps the revision constantly. Each of the four rows and the right-hand panel now repaint only when what they show changes (a content signature per part); the page is repainted once when rows appear or go away or the page changes.
@@ -12,6 +13,14 @@ This is the **project-level release and current-source index**. It links the aut
 - **Other pages (Live, Last Heard, Signal, Setup):** they repainted the whole page on every revision too. Each page is now dry-run first (`Paint` with a signature: every draw call folds into a hash and draws nothing); the page is repainted only when that signature changed, so a scan stage tick or a counter on another page repaints nothing. A real change still repaints the page. Per-revision cost on the Tab5 while scanning: 2 to 8 ms average, 84 ms worst. An off-screen sprite that pushed only changed bands was tried first and dropped: 70 to 180 ms per repaint and 1.8 s for the first one on the Tab5.
 - **Also:** shortened "No inference from missing encryption bits" on Live, which was cut off at the panel edge.
 - **Scan list:** the saved scan list had been overwritten with one frequency by the live-hunt test scripts, so the scan sat on 152.1575 MHz. Restored on the Tab5 to 152.1575, 152.685, 152.345 and 153.068 MHz. The test scripts still use `RTL_DV PLAN`, which replaces the saved list; they should not run against a unit used for scanning.
+=======
+## Unreleased � NXDN: real-air replay results, opaque SACCH reassembly, fetcher fix � 2026-11-25
+
+- **What was measured:** the three private REA-Results NXDN clips (blobs and SHA-256 verified) replayed through OrcSDR's own production frontend: NXDN48 12 FSW/LICH frames and 12 CRC6-valid SACCH, NXDN96 voice 19 and 19, NXDN96 control 19 frames exactly 192 dibits apart at -664.9 Hz; RAN reads 7 on every voice frame; identical output at chunk sizes 1, 37 and 4096. Voice thresholds (Golay, pitch) are not measured and not claimed. The 11.8 s and 15.3 s WaveShark clips are not decoded.
+- **What was added:** `sacch_reassembly` (host component only) turns CRC-valid SACCH fragments into opaque 72-bit strings with gap, order, context and malformed-input handling; no Layer 3 field is interpreted, because the normative NXDN spec is not held. 10 synthetic tests pass in Release and ASan/UBSan. Frontend and decoder behaviour are unchanged; no firmware, `main.cpp` or dashboard change.
+- **Fix:** the NXDN IQ fetcher compared the extracted file to the archive hash and a nominal length, so valid downloads failed; it now verifies the archive hash and pins the observed extracted length and hash.
+- Assessment, standards gap and an audit of the experimental voice branch: `docs/nxdn/RESEARCH_ASSESSMENT_2026-11-25.md`.
+>>>>>>> d2720099 (NXDN: real-air replay results, opaque SACCH reassembly, fetcher fix, research assessment)
 
 ## Unreleased — Investigated, not shipped: P25 decoding from the wide 2.56 MS/s stream — 2026-11-25
 
