@@ -24,6 +24,8 @@ jobs:
         run: |
           set -euo pipefail
           python tools/dv_efficiency/profile_host.py --root . --output evidence/candidate --compare evidence/base/report.json | tee evidence/candidate/run.log
+      - name: Shared synthesis exact A-B
+        run: bash tools/dv_efficiency/synth_ab.sh /tmp/dv-base evidence/synth-ab.log
       - name: Source-only sandbox handoff
         if: always()
         run: |

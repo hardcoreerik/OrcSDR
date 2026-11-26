@@ -241,8 +241,18 @@ mbe_synthesizeSilence (short *aout_buf)
     }
 }
 
-void
-mbe_synthesizeSpeechf (float *aout_buf, mbe_parms * cur_mp, mbe_parms * prev_mp, int uvquality)
+// Specialize the existing recurrence for the AMBE adapter's quality=1.
+// A single source of arithmetic and rand() calls serves every quality.
+#if defined(__GNUC__) || defined(__clang__)
+#define MBE_SYNTH_INLINE static inline __attribute__((always_inline))
+#define MBE_SYNTH_NOINLINE __attribute__((noinline))
+#else
+#define MBE_SYNTH_INLINE static inline
+#define MBE_SYNTH_NOINLINE
+#endif
+MBE_SYNTH_INLINE void
+mbe_synthesizeSpeechf_impl (float *aout_buf, mbe_parms * cur_mp, mbe_parms * prev_mp, int uvquality,
+                           mbe_oscillator *uvosc1, mbe_oscillator *uvosc2)
 {
 
   int i, l, n, maxl;
@@ -255,7 +265,6 @@ mbe_synthesizeSpeechf (float *aout_buf, mbe_parms * cur_mp, mbe_parms * prev_mp,
   float uvstep, uvoffset;
   float qfactor;
   mbe_oscillator voiced1, voiced2;
-  mbe_oscillator uvosc1[64], uvosc2[64];
 
   const int N = 160;
 
@@ -486,6 +495,28 @@ mbe_synthesizeSpeechf (float *aout_buf, mbe_parms * cur_mp, mbe_parms * prev_mp,
         }
     }
 }
+
+// Keep the generic arrays in a separate frame, not on the quality=1 path.
+static MBE_SYNTH_NOINLINE void
+mbe_synthesizeSpeechf_generic (float *aout_buf, mbe_parms *cur_mp, mbe_parms *prev_mp, int uvquality)
+{
+  mbe_oscillator uvosc1[64], uvosc2[64];
+  mbe_synthesizeSpeechf_impl (aout_buf, cur_mp, prev_mp, uvquality, uvosc1, uvosc2);
+}
+
+void
+mbe_synthesizeSpeechf (float *aout_buf, mbe_parms *cur_mp, mbe_parms *prev_mp, int uvquality)
+{
+  if (uvquality == 1)
+    {
+      mbe_oscillator uvosc1[1], uvosc2[1];
+      mbe_synthesizeSpeechf_impl (aout_buf, cur_mp, prev_mp, 1, uvosc1, uvosc2);
+    }
+  else
+    mbe_synthesizeSpeechf_generic (aout_buf, cur_mp, prev_mp, uvquality);
+}
+#undef MBE_SYNTH_INLINE
+#undef MBE_SYNTH_NOINLINE
 
 void
 mbe_synthesizeSpeech (short *aout_buf, mbe_parms * cur_mp, mbe_parms * prev_mp, int uvquality)
