@@ -1416,6 +1416,14 @@ Action handle_touch(int32_t x, int32_t y, bool pressed) {
 }
 
 bool active() { return shown; }
+void open_bias_popup() {
+  if (!shown || browser) return;
+  bias_popup = true;
+  M5.Display.startWrite();
+  draw_bias_popup();
+  M5.Display.endWrite();
+}
+
 bool popup_open() { return shown && !browser && (gain_popup || filter_popup || mode_popup || bias_popup); }
 int32_t list_scroll_px() { return scroll_offset_px; }
 void close_popup() {

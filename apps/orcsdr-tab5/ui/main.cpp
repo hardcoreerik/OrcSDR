@@ -159,6 +159,7 @@
 #include "atc_presets.hpp"
 #include "airband_runtime.hpp"
 #include "catalog_sync.hpp"
+#include "bias_confirm.hpp"
 #include "dashboard_audio_control.hpp"
 #include "dashboard_registry.hpp"
 #include "device_status_service.hpp"
@@ -5885,7 +5886,22 @@ bool map_download_notice_blocked() {
   return g_suppress_home_paint||ui_documentation_mode||orcsdr::text_editor::active()||
       rtl_header_audio_control.expanded||shared_keypad_open()||orcsdr::home::popup_open();
 }
+bool rtl_bias_is_on();
+
 bool handle_global_header_audio_touch(int32_t x, int32_t y) {
+  // The red BIAS ON rectangle: tapping it asks to turn bias OFF (confirmed in a popup). While the popup is open it owns every touch.
+  if (orcsdr::bias_confirm::active()) {
+    if (orcsdr::bias_confirm::touch(x, y) == orcsdr::bias_confirm::Result::turn_off) {
+      (void)rtl_bias_owner_set(false, "header");
+      M5.Display.fillRect(1016, 72, 240, 32, TFT_BLACK);        // the rectangle goes away with the bias
+    }
+    return true;
+  }
+  if (orcsdr::bias_confirm::rect_hit(x, y) && !rtl_header_audio_control.expanded && rtl_bias_is_on()) {
+    if (orcsdr::home::active()) orcsdr::home::open_bias_popup();   // Home draws its own popup (it keeps repainting underneath)
+    else orcsdr::bias_confirm::open();
+    return true;
+  }
   const bool blocked=map_download_notice_blocked();
   if(orcsdr::map_download_notice::hit(x,y,orcsdr::screens::status().active,blocked)) {
     (void)orcsdr::map_screen::open(orcsdr::map_screen::Mode::downloads);
@@ -5990,10 +6006,13 @@ bool diagnostic_iq_rec_start(const char* transition) {
   return true;
 }
 
-void draw_global_bias_warning() {
+bool rtl_bias_is_on() {
   bool enabled = false;
-  if (g_rtl == nullptr || esp_rtl_sdr_get_bias_tee(g_rtl, &enabled) != ESP_OK || !enabled)
-    return;
+  return g_rtl != nullptr && esp_rtl_sdr_get_bias_tee(g_rtl, &enabled) == ESP_OK && enabled;
+}
+
+void draw_global_bias_warning() {
+  if (!rtl_bias_is_on()) return;
   M5.Display.fillRoundRect(1016, 72, 240, 32, 6, TFT_RED);
   M5.Display.setFont(nullptr);
   M5.Display.setTextDatum(middle_center);
@@ -13317,7 +13336,7 @@ orcsdr::acars_app::Hooks acars_app_hooks() {
   orcsdr::acars_app::Hooks hooks;
   hooks.header_controls = draw_global_header_controls;
   hooks.sound_enabled = [] { return rtl_audio_user_enabled.load(std::memory_order_acquire); };
-  hooks.overlay_open = [] { return rtl_header_audio_control.expanded; };
+  hooks.overlay_open = [] { return rtl_header_audio_control.expanded || orcsdr::bias_confirm::active(); };
   hooks.archive_ops = &orcsdr::acars_archive_sd::file_ops();   // verified blocks are saved to the SD card
   hooks.store.get_bool = [](const char* key, bool fallback) { return preferences.getBool(key, fallback); };
   hooks.store.put_bool = [](const char* key, bool value) { preferences.putBool(key, value); };
@@ -13413,7 +13432,7 @@ void open_ais_dashboard() {
   app.remote_source = radio.remote_source;
   app.now_ms = [] { return static_cast<uint32_t>(millis()); };
   app.go_home = [] { show_home(); };
-  app.overlay_open = [] { return rtl_header_audio_control.expanded; };
+  app.overlay_open = [] { return rtl_header_audio_control.expanded || orcsdr::bias_confirm::active(); };
   app.sd_available = [] { return orcsdr::storage::mounted(); };
   orcsdr::ais_app::install(app);
   orcsdr::ais_app::open();
@@ -13435,7 +13454,7 @@ void open_digital_voice_dashboard() {
     orcsdr::audio_header::draw_brand("DIGITAL VOICE");
     draw_global_header_controls();
   };
-  app.overlay_open = [] { return rtl_header_audio_control.expanded; };
+  app.overlay_open = [] { return rtl_header_audio_control.expanded || orcsdr::bias_confirm::active(); };
   app.receiver_ready = [] { return rtl_device_ready(); };
   app.go_home = [] { show_home(); };
   app.now_ms = [] { return static_cast<uint32_t>(millis()); };
@@ -13562,7 +13581,7 @@ orcsdr::dead_air_app::Hooks dead_air_app_hooks() {
   hooks.hot_retune = [](uint32_t hz) { return request_hot_retune(rtl_clamp_frequency(RtlBand::browse, hz)); };
   hooks.step_frequency = [](uint32_t hz, int direction) { return rtl_step_frequency(RtlBand::browse, hz, direction); };
   hooks.sound_enabled = [] { return rtl_audio_user_enabled.load(std::memory_order_relaxed); };
-  hooks.overlay_open = [] { return rtl_header_audio_control.expanded; };
+  hooks.overlay_open = [] { return rtl_header_audio_control.expanded || orcsdr::bias_confirm::active(); };
   hooks.battery_percent = [] { return static_cast<int>(battery_percent_cached()); };
   hooks.utc_epoch = [] {
     const auto clock = orcsdr::time_service::now();

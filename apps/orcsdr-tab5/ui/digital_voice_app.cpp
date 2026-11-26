@@ -24,6 +24,7 @@ using namespace digital_voice_ui;
 
 // Everything lives in PSRAM for the lifetime of a visit: the Tab5 internal boot pool is nearly full.
 struct State {
+  uint8_t filled_system_offset = 0;            // the Systems page offset the snapshot rows were last filled for
   bool background = false;          // the screen is hidden but the receiver, scanner and speech are still running
   Surface surface;
   Snapshot snapshot;
@@ -350,8 +351,9 @@ void fill_systems(State& st) {
   s.db_talkgroups = static_cast<uint16_t>(d.talkgroup_count());
   s.db_subscribers = static_cast<uint16_t>(d.subscriber_count());
   s.observed_system_count = 0;
+  const size_t first = st.surface.state().system_offset;   // the Systems page lists newest first, a page at a time
   for (size_t n = 0; n < kObservedSystems; ++n) {
-    const size_t i = d.nth_newest_system(n);
+    const size_t i = d.nth_newest_system(first + n);
     if (i == static_cast<size_t>(-1)) break;
     const dv::SystemRec& r = d.system(i);
     ObservedSystem& o = s.observed_systems[s.observed_system_count++];
@@ -570,6 +572,11 @@ void refresh(State& st) {
   if (!st.have_call) { s.evidence = cur_evidence; if (synced) s.protocol = sync_protocol; }
   if (!st.have_call && ss.frequency_hz && active) {      // show the channel being examined; identity stays unknown
     s.frequency_hz = ss.frequency_hz; s.has_frequency = true;
+  }
+  if (st.surface.state().system_offset != st.filled_system_offset) {      // the Systems page was paged: refill its rows
+    st.filled_system_offset = st.surface.state().system_offset;
+    fill_systems(st);
+    ++s.revision;
   }
   if (changed) ++s.revision;
   refresh_voice(s);

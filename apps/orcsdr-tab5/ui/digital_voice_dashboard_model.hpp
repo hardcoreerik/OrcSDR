@@ -178,10 +178,11 @@ struct UiState {
   uint8_t selected_history = 0;
   uint8_t selected_scan_hit = 0;
   uint8_t selected_system = 0;
+  uint8_t system_offset = 0;   // Systems page: index of the first listed system (newest first), moves in pages of kObservedSystems
 };
 enum class ActionKind : uint8_t { none, switch_view, selected_history, save_channel, scan, setup_protocol,
                                   toggle_hold, skip_frequency, toggle_density, select_scan_hit,
-                                  select_system, page_history, plan_prev, plan_next, set_listen, toggle_save_speech, toggle_band, toggle_save_iq };
+                                  select_system, page_history, plan_prev, plan_next, set_listen, toggle_save_speech, toggle_band, toggle_save_iq, page_systems };
 // Why a control is unavailable, in words the screen can show. `none` = the control is usable.
 enum class Disabled : uint8_t { none, no_receiver, no_plan, not_scanning, no_signal_selected, not_verified, already_saved,
                                 list_full, no_storage, scan_running, single_plan, no_frequency };

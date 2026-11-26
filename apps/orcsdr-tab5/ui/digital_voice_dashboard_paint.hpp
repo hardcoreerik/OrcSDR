@@ -37,9 +37,9 @@ struct Paint {
     g.drawRoundRect(r.x,r.y,r.w,r.h,7,!enabled?kEdge:selected?kGreen:kCyan);
     text(label,r.x+10,r.y+r.h/2,!enabled?kMuted:selected?kGreen:kWhite,2,r);
   }
-  void fact(const char* key,const char* value,int x,int y,Rect clip,uint16_t value_color=kWhite) {
+  void fact(const char* key,const char* value,int x,int y,Rect clip,uint16_t value_color=kWhite,int value_dx=190) {
     text(key,x,y,kMuted,2,clip);
-    text(value,x+190,y,value_color,2,clip);
+    text(value,x+value_dx,y,value_color,2,clip);
   }
 };
 }  // namespace orcsdr::digital_voice_ui::paint

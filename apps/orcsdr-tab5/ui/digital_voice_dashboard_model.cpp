@@ -91,6 +91,19 @@ bool apply_ui_action(UiState& ui,Action action,const Snapshot& s) {
     case ActionKind::select_system:
       if(!s.systems_available||action.value>=s.observed_system_count||action.value>=kObservedSystems)return false;
       ui.selected_system=action.value;return true;
+    case ActionKind::page_systems: {
+      const size_t total=s.db_systems;
+      if(!s.systems_available || total<=kObservedSystems)return false;
+      if(action.value==0) {
+        if(ui.system_offset==0)return false;
+        ui.system_offset=static_cast<uint8_t>(ui.system_offset>kObservedSystems?ui.system_offset-kObservedSystems:0);
+      } else if(action.value==1) {
+        if(static_cast<size_t>(ui.system_offset)+kObservedSystems>=total)return false;
+        ui.system_offset=static_cast<uint8_t>(ui.system_offset+kObservedSystems);
+      } else return false;
+      ui.selected_system=0;
+      return true;
+    }
     default:return false; // scan/hold/skip/save are receiver or storage actions, not local changes.
   }
 }

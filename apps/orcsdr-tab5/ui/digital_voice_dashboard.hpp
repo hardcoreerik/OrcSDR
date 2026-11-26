@@ -16,7 +16,7 @@ class Dashboard final {
                const UiState& state, bool owns_screen, bool overlay_open);
   Action handle_touch(int32_t x, int32_t y, const Snapshot& snapshot,
                       const UiState& state) const;
-  void leave() { ready_ = false; scan_.reset(); }
+  void leave() { ready_ = false; sys_ready_ = false; scan_.reset(); }
   bool active() const { return ready_; }
  private:
   Snapshot old_{};  // bounded ~1 KiB, no heap; review internal RAM budget before firmware integration
@@ -24,5 +24,10 @@ class Dashboard final {
   ScanView scan_{};        // retained SCAN widgets: what is on screen, to repaint only what changed
   uint32_t ctx_sig_ = 0;   // what the context strip currently shows
   bool ready_ = false;
+  // Systems page: what each row and the right panel currently show, so only changed parts are repainted.
+  uint32_t sys_row_sig_[4] = {};
+  uint32_t sys_facts_sig_ = 0;
+  uint32_t sys_shape_ = 0;
+  bool sys_ready_ = false;
 };
 }

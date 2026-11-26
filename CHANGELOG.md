@@ -2,6 +2,15 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Digital Voice Systems screen: no flicker, paging, text fits; BIAS ON tap — 2026-11-25
+
+- **Flicker:** the Systems page used to repaint the whole page on every revision, and a scan bumps the revision constantly. Each of the four rows and the right-hand panel now repaint only when what they show changes (a content signature per part); the page is repainted once when rows appear or go away or the page changes.
+- **Paging:** the screen listed only the newest four of up to 32 stored systems. PREV and NEXT with a "1-4 OF 11" counter now page through all of them (`UiState.system_offset`, `ActionKind::page_systems`; the app refills the rows when the offset changes).
+- **Clipped text:** the right-hand panel cut off "INTEGRITY VALIDATED" and "5 UNITS". Its value column now starts 50 px further left (`Paint::fact` takes a `value_dx`).
+- **BIAS ON tap:** tapping the red BIAS ON rectangle that shows on every screen opens a confirmation popup (CONFIRM: TURN OFF / CANCEL) and turns the antenna-port power off on confirm. It can only turn bias off; turning it on stays with Home's BIAS popup, RF Lab and the serial command, and bias is still never saved or applied at boot. New module `bias_confirm.{hpp,cpp}`; thin hooks in `main.cpp` and `Home` (Home opens its own BIAS popup).
+- **Verified:** host dashboard tests 5 of 5 (new paging test). On a Tab5: page 1 and page 2 (5-8 OF 11) screenshots, the value column fits. **Not verified:** the flicker by eye, and the BIAS tap on a live bias-on state (the LNA was removed for the test).
+- **Scan list:** the saved scan list had been overwritten with one frequency by the live-hunt test scripts, so the scan sat on 152.1575 MHz. Restored on the Tab5 to 152.1575, 152.685, 152.345 and 153.068 MHz. The test scripts still use `RTL_DV PLAN`, which replaces the saved list; they should not run against a unit used for scanning.
+
 ## Unreleased — Investigated, not shipped: P25 decoding from the wide 2.56 MS/s stream — 2026-11-25
 
 - **What was tried:** the P25 band streaming at 2.56 MS/s (V4/V4L) with the P25 decoder taking its channel through a center decimator (stream/10), a 3/16 resampler to its 48 kS/s channel rate and the same two-pole channel filter its 960 kS/s front end applies. It worked on live P25 traffic (Lane County Fire EMS, 453.925 MHz): it followed clear Phase I voice grants (TGID 2001, source 200107, IMBE voice decoding) with 0 overruns and 0 drops.

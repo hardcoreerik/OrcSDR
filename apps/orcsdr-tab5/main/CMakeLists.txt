@@ -199,6 +199,7 @@ idf_component_register(
         "../ui/map_http_stream.cpp"
         "../ui/cb_dashboard.cpp"
         "../ui/cb_scanner.cpp"
+        "../ui/bias_confirm.cpp"
         "../ui/dashboard_audio_control.cpp"
         "../ui/digital_voice_app.cpp"
         "../ui/dv_channelizer.cpp"

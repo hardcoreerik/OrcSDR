@@ -123,6 +123,8 @@ uint32_t step_span(uint32_t span_hz, int direction);
 bool active();
 // A gain or filter popup is showing; close_popup() dismisses it.
 bool popup_open();
+// Opens the BIAS confirmation popup (the red BIAS ON rectangle in the shared header was tapped). No-op unless Home is showing.
+void open_bias_popup();
 // Scroll position of the "Last used" list; the keyboard focus map depends on it.
 int32_t list_scroll_px();
 void close_popup();

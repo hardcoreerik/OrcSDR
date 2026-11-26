@@ -153,6 +153,30 @@ int main(){
   host_stub::reset();assert(dashboard.present(display,nx,ui,true,false));
   assert(host_stub::contains("TYPE-C TRUNK") && host_stub::contains("453.775000 MHz"));
   assert(dashboard.handle_touch(100,263,nx,ui).kind==ActionKind::select_system);
+  // Systems paging: more systems in the database than rows on screen are reached with NEXT / PREV, in pages of four.
+  {
+    const auto hero=layout::kBasicHero;
+    auto many_sys=nx;many_sys.revision=130;many_sys.db_systems=11;many_sys.observed_system_count=4;
+    for(int i=1;i<4;++i)many_sys.observed_systems[i]=many_sys.observed_systems[0];
+    UiState sui=ui;sui.view=View::systems;sui.system_offset=0;
+    host_stub::reset();assert(dashboard.present(display,many_sys,sui,true,false));
+    assert(host_stub::contains("NEXT") && host_stub::contains("1-4 OF 11"));
+    assert(dashboard.handle_touch(hero.x+30,hero.y+400,many_sys,sui).kind==ActionKind::none);   // PREV is off on the first page
+    const Action next=dashboard.handle_touch(hero.x+140,hero.y+400,many_sys,sui);
+    assert(next.kind==ActionKind::page_systems && next.value==1);
+    assert(apply_ui_action(sui,next,many_sys) && sui.system_offset==4 && sui.selected_system==0);
+    many_sys.revision=131;many_sys.observed_system_count=4;
+    host_stub::reset();assert(dashboard.present(display,many_sys,sui,true,false));
+    assert(host_stub::contains("5-8 OF 11") && host_stub::contains("PREV"));
+    assert(apply_ui_action(sui,next,many_sys) && sui.system_offset==8);                           // last page holds 3
+    assert(!apply_ui_action(sui,next,many_sys) && sui.system_offset==8);                          // no page past the end
+    assert(apply_ui_action(sui,{ActionKind::page_systems,0},many_sys) && sui.system_offset==4);
+    assert(apply_ui_action(sui,{ActionKind::page_systems,0},many_sys) && sui.system_offset==0);
+    assert(!apply_ui_action(sui,{ActionKind::page_systems,0},many_sys));
+    assert(host_stub::full_clear_count==0);
+    dashboard.leave();
+    ui.view=View::systems;host_stub::reset();assert(dashboard.present(display,nx,ui,true,false));   // back to the single-system case
+  }
   // Toggle density through SETUP page, purely UI-local.
   ui.view=View::setup;
   host_stub::reset();assert(dashboard.present(display,nx,ui,true,false));

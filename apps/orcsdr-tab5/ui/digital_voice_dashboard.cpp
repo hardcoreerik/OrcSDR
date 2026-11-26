@@ -220,55 +220,77 @@ void last_heard(Paint& p,const Snapshot& s,Density mode,uint8_t offset,uint8_t s
   }
   p.label("No guessed times / aliases / IDs",b.x+18,b.y+421,b);
 }
-void systems(Paint& p,const Snapshot& s,const UiState& u) {
-  const auto mode=u.density;
-  const auto a=mode==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
-  const auto b=mode==Density::discovery_first?layout::kBasicFacts:layout::kAdvancedFacts;
-  p.card(a);p.card(b);
-  p.title("OBSERVED SYSTEMS",a.x+18,a.y+32,a);
-  const unsigned count=s.systems_available?std::min<unsigned>(s.observed_system_count,kObservedSystems):0;
-  if (!s.systems_available) p.text("SYSTEM LEARNING NOT INTEGRATED",a.x+18,a.y+117,kAmber,2,a);
-  else if (count==0) p.text("NO SYSTEMS OBSERVED",a.x+18,a.y+117,kMuted,2,a);
-  for(unsigned i=0;i<count;++i) {
-    const auto& sys=s.observed_systems[i];
-    const int yy=a.y+93+static_cast<int>(i)*76;
-    if(i==u.selected_system)p.g.fillRoundRect(a.x+11,yy-17,a.w-22,70,4,kSelected);
-    p.text(protocol_name(sys.protocol),a.x+18,yy,
-           sys.evidence>=Evidence::integrity_valid?kGreen:kAmber,2,a);
-    const bool verified=sys.evidence>=Evidence::integrity_valid;
-    char area[16];area_text(area,sys.protocol,sys.colour_code,sys.colour_code_valid,sys.ran,sys.ran_valid);
-    if(area[0]&&verified)p.text(area,a.x+240,yy,kWhite,2,a);
-    if(sys.topology_valid&&verified)p.label(nxdn_topology_name(sys.topology),a.x+(area[0]&&verified?400:240),yy,a);
-    else if(!(area[0]&&verified))p.label("SYSTEM TYPE UNKNOWN",a.x+240,yy,a);
-    char val[160];
-    if(sys.has_frequency)std::snprintf(val,sizeof(val),"%lu.%06lu MHz  TG %u  UNITS %u  HEARD %lu%s%s",
-        static_cast<unsigned long>(sys.frequency_hz/1000000),static_cast<unsigned long>(sys.frequency_hz%1000000),
-        static_cast<unsigned>(sys.talkgroup_count),static_cast<unsigned>(sys.subscriber_count),
-        static_cast<unsigned long>(sys.heard_count),sys.last_time[0]?"  ":"",sys.last_time);
-    else std::snprintf(val,sizeof(val),"FREQUENCY UNKNOWN");
-    p.label(val,a.x+18,yy+31,a);
-    p.hr(a.x+18,yy+51,a.w-36);
+unsigned sys_count(const Snapshot& s) {
+  return s.systems_available?std::min<unsigned>(s.observed_system_count,kObservedSystems):0;
+}
+uint32_t fnv_bytes(uint32_t h,const void* d,size_t n) {
+  const auto* b=static_cast<const uint8_t*>(d);
+  for(size_t i=0;i<n;++i){h^=b[i];h*=16777619u;}
+  return h;
+}
+template<class T> uint32_t fnv_val(uint32_t h,const T& v) {return fnv_bytes(h,&v,sizeof(v));}
+// What one Systems row shows, as a number: the row is repainted only when this changes (no page repaint on a bare revision).
+uint32_t sys_row_sig(const ObservedSystem& y,bool selected) {
+  uint32_t h=2166136261u;
+  h=fnv_val(h,y.protocol);h=fnv_val(h,y.evidence);h=fnv_val(h,y.colour_code);h=fnv_val(h,y.colour_code_valid);
+  h=fnv_val(h,y.ran);h=fnv_val(h,y.ran_valid);h=fnv_val(h,y.topology);h=fnv_val(h,y.topology_valid);
+  h=fnv_val(h,y.has_frequency);h=fnv_val(h,y.frequency_hz);h=fnv_val(h,y.talkgroup_count);
+  h=fnv_val(h,y.subscriber_count);h=fnv_val(h,y.heard_count);h=fnv_bytes(h,y.last_time,sizeof(y.last_time));
+  return fnv_val(h,selected);
+}
+// What the right-hand panel shows (database totals, the selected system's talkgroups and units, the save button).
+uint32_t sys_facts_sig(const Snapshot& s,const UiState& u,unsigned count) {
+  uint32_t h=2166136261u;
+  h=fnv_val(h,s.evidence);h=fnv_val(h,s.db_available);h=fnv_val(h,s.db_systems);h=fnv_val(h,s.db_talkgroups);
+  h=fnv_val(h,s.db_subscribers);h=fnv_val(h,s.can_save_channel);h=fnv_val(h,count);
+  if(count) {
+    const auto& y=s.observed_systems[std::min<unsigned>(u.selected_system,count-1)];
+    h=fnv_val(h,y.talkgroup_count);h=fnv_val(h,y.subscriber_count);h=fnv_val(h,y.top_talkgroup_n);h=fnv_val(h,y.top_subscriber_n);
+    for(unsigned i=0;i<kTopIds;++i){h=fnv_val(h,y.top_talkgroups[i]);h=fnv_val(h,y.top_subscribers[i]);}
   }
-  p.label("Directory matches never become RF evidence",a.x+18,a.y+432,a);
-  p.title("SAVE / DISCOVERY",b.x+18,b.y+32,b);
-  p.fact("RF LOCK",evidence_name(s.evidence),b.x+18,b.y+110,b);
+  return h;
+}
+void systems_row(Paint& p,const Snapshot& s,const UiState& u,Rect a,unsigned i) {
+  const auto& sys=s.observed_systems[i];
+  const int yy=a.y+93+static_cast<int>(i)*76;
+  p.g.fillRoundRect(a.x+11,yy-17,a.w-22,70,4,i==u.selected_system?kSelected:kPanel);   // this row only, painted over itself
+  p.text(protocol_name(sys.protocol),a.x+18,yy,
+         sys.evidence>=Evidence::integrity_valid?kGreen:kAmber,2,a);
+  const bool verified=sys.evidence>=Evidence::integrity_valid;
+  char area[16];area_text(area,sys.protocol,sys.colour_code,sys.colour_code_valid,sys.ran,sys.ran_valid);
+  if(area[0]&&verified)p.text(area,a.x+240,yy,kWhite,2,a);
+  if(sys.topology_valid&&verified)p.label(nxdn_topology_name(sys.topology),a.x+(area[0]&&verified?400:240),yy,a);
+  else if(!(area[0]&&verified))p.label("SYSTEM TYPE UNKNOWN",a.x+240,yy,a);
+  char val[160];
+  if(sys.has_frequency)std::snprintf(val,sizeof(val),"%lu.%06lu MHz  TG %u  UNITS %u  HEARD %lu%s%s",
+      static_cast<unsigned long>(sys.frequency_hz/1000000),static_cast<unsigned long>(sys.frequency_hz%1000000),
+      static_cast<unsigned>(sys.talkgroup_count),static_cast<unsigned>(sys.subscriber_count),
+      static_cast<unsigned long>(sys.heard_count),sys.last_time[0]?"  ":"",sys.last_time);
+  else std::snprintf(val,sizeof(val),"FREQUENCY UNKNOWN");
+  p.label(val,a.x+18,yy+31,a);
+  p.hr(a.x+18,yy+51,a.w-36);
+}
+void systems_facts(Paint& p,const Snapshot& s,const UiState& u,Rect b,unsigned count) {
+  constexpr int kDx=140;   // value column: wide enough for "INTEGRITY VALIDATED" and "10 SYS  3 TG  5 UNITS" inside the panel
+  p.g.fillRect(b.x+10,b.y+90,b.w-20,300,kPanel);
+  p.fact("RF LOCK",evidence_name(s.evidence),b.x+18,b.y+110,b,kWhite,kDx);
   if(s.db_available) {
     char t[40];std::snprintf(t,sizeof(t),"%u SYS  %u TG  %u UNITS",static_cast<unsigned>(s.db_systems),
                              static_cast<unsigned>(s.db_talkgroups),static_cast<unsigned>(s.db_subscribers));
-    p.fact("DATABASE",t,b.x+18,b.y+156,b,kGreen);
-  } else p.fact("DATABASE","NOT AVAILABLE",b.x+18,b.y+156,b,kAmber);
+    p.fact("DATABASE",t,b.x+18,b.y+156,b,kGreen,kDx);
+  } else p.fact("DATABASE","NOT AVAILABLE",b.x+18,b.y+156,b,kAmber,kDx);
   if(count) {
     const auto& sys=s.observed_systems[std::min<unsigned>(u.selected_system,count-1)];
     char t[24],ids[64];
     std::snprintf(t,sizeof(t),"%u",static_cast<unsigned>(sys.talkgroup_count));
-    p.fact("TALKGROUPS",t,b.x+18,b.y+202,b,sys.talkgroup_count?kGreen:kMuted);
+    p.fact("TALKGROUPS",t,b.x+18,b.y+202,b,sys.talkgroup_count?kGreen:kMuted,kDx);
     ids[0]=0;
     for(unsigned i=0;i<sys.top_talkgroup_n&&i<kTopIds;++i){
       char one[16];std::snprintf(one,sizeof(one),"%s%lu",i?"  ":"",static_cast<unsigned long>(sys.top_talkgroups[i]));
       std::strncat(ids,one,sizeof(ids)-std::strlen(ids)-1);}
     if(ids[0])p.label(ids,b.x+18,b.y+228,b);
     std::snprintf(t,sizeof(t),"%u",static_cast<unsigned>(sys.subscriber_count));
-    p.fact("UNITS",t,b.x+18,b.y+266,b,sys.subscriber_count?kGreen:kMuted);
+    p.fact("UNITS",t,b.x+18,b.y+266,b,sys.subscriber_count?kGreen:kMuted,kDx);
     ids[0]=0;
     for(unsigned i=0;i<sys.top_subscriber_n&&i<kTopIds;++i){
       char one[16];std::snprintf(one,sizeof(one),"%s%lu",i?"  ":"",static_cast<unsigned long>(sys.top_subscribers[i]));
@@ -276,7 +298,56 @@ void systems(Paint& p,const Snapshot& s,const UiState& u) {
     if(ids[0])p.label(ids,b.x+18,b.y+292,b);
   }
   p.button("SAVE CHANNEL",{b.x+18,b.y+334,242,48},s.can_save_channel);
+}
+void systems(Paint& p,const Snapshot& s,const UiState& u) {
+  const auto mode=u.density;
+  const auto a=mode==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
+  const auto b=mode==Density::discovery_first?layout::kBasicFacts:layout::kAdvancedFacts;
+  p.card(a);p.card(b);
+  p.title("OBSERVED SYSTEMS",a.x+18,a.y+32,a);
+  const unsigned count=sys_count(s);
+  if (!s.systems_available) p.text("SYSTEM LEARNING NOT INTEGRATED",a.x+18,a.y+117,kAmber,2,a);
+  else if (count==0) p.text("NO SYSTEMS OBSERVED",a.x+18,a.y+117,kMuted,2,a);
+  for(unsigned i=0;i<count;++i) systems_row(p,s,u,a,i);
+  if(s.systems_available && s.db_systems>kObservedSystems) {
+    const unsigned first=u.system_offset;
+    p.button("PREV",{a.x+18,a.y+384,94,40},first>0);
+    p.button("NEXT",{a.x+124,a.y+384,94,40},static_cast<size_t>(first)+kObservedSystems<s.db_systems);
+    char r[40];std::snprintf(r,sizeof(r),"%u-%u OF %u",first+1,first+count,static_cast<unsigned>(s.db_systems));
+    p.label(r,a.x+236,a.y+404,a);
+  }
+  p.label("Directory matches never become RF evidence",a.x+18,a.y+432,a);
+  p.title("SAVE / DISCOVERY",b.x+18,b.y+32,b);
+  systems_facts(p,s,u,b,count);
   p.label("No guessed repeater locations",b.x+18,b.y+422,b);
+}
+uint32_t sys_shape(const Snapshot& s,const UiState& u,unsigned n) {
+  return static_cast<uint32_t>(n)|(s.systems_available?0x10u:0u)|(static_cast<uint32_t>(u.system_offset)<<8)|
+         (static_cast<uint32_t>(s.db_systems)<<16);
+}
+void systems_sigs(const Snapshot& s,const UiState& u,uint32_t* rows,uint32_t& facts,uint32_t& shape) {
+  const unsigned n=sys_count(s);
+  shape=sys_shape(s,u,n);
+  for(unsigned i=0;i<kObservedSystems;++i) rows[i]=i<n?sys_row_sig(s.observed_systems[i],i==u.selected_system):0;
+  facts=sys_facts_sig(s,u,n);
+}
+// Systems page after the first paint: repaint only the rows and the right panel whose content changed.
+void systems_update(Paint& p,const Snapshot& s,const UiState& u,uint32_t* rows,uint32_t& facts,uint32_t& shape) {
+  const unsigned n=sys_count(s);
+  const uint32_t now_shape=sys_shape(s,u,n);
+  if(now_shape!=shape) {   // rows appeared or went away: the structure changed, repaint the page once
+    systems(p,s,u);
+    systems_sigs(s,u,rows,facts,shape);
+    return;
+  }
+  const auto a=u.density==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
+  const auto b=u.density==Density::discovery_first?layout::kBasicFacts:layout::kAdvancedFacts;
+  for(unsigned i=0;i<n;++i) {
+    const uint32_t sig=sys_row_sig(s.observed_systems[i],i==u.selected_system);
+    if(sig!=rows[i]) {systems_row(p,s,u,a,i);rows[i]=sig;}
+  }
+  const uint32_t fs=sys_facts_sig(s,u,n);
+  if(fs!=facts) {systems_facts(p,s,u,b,n);facts=fs;}
 }
 void signal(Paint& p,const Snapshot& s,Density mode) {
   const auto a=mode==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
@@ -374,7 +445,8 @@ bool Dashboard::present(lgfx::LovyanGFX& display,const Snapshot& s,
   const bool entry = !ready_ || last_state_.view!=state.view || last_state_.density!=state.density;
   if(!entry && old_.revision==s.revision &&
      last_state_.history_offset==state.history_offset && last_state_.selected_history==state.selected_history &&
-     last_state_.selected_scan_hit==state.selected_scan_hit && last_state_.selected_system==state.selected_system) {
+     last_state_.selected_scan_hit==state.selected_scan_hit && last_state_.selected_system==state.selected_system &&
+     last_state_.system_offset==state.system_offset) {
     if(old_.audio_revision!=s.audio_revision) {
       // Only the voice panel changed: repaint that one rectangle, nothing else on the page.
       if(state.view==View::live) {Paint pv{display};voice_panel(pv,s,state.density);}
@@ -388,6 +460,7 @@ bool Dashboard::present(lgfx::LovyanGFX& display,const Snapshot& s,
     display.fillRect(0,104,1280,616,kBg);
     nav(p,state);
     scan_.reset();
+    sys_ready_=false;
   }
   // The context strip shows only the origin and the density: repaint it when one of those changed, not on every revision.
   const uint32_t ctx=static_cast<uint32_t>(s.origin)|(static_cast<uint32_t>(state.density)<<8)|0x10000u;
@@ -395,8 +468,11 @@ bool Dashboard::present(lgfx::LovyanGFX& display,const Snapshot& s,
   if(state.view==View::explore) {
     if(entry)scan_.enter(display,s,state);
     else scan_.update(display,s,state);          // changed widgets only, each inside its own rectangle
+  } else if(state.view==View::systems && sys_ready_) {
+    systems_update(p,s,state,sys_row_sig_,sys_facts_sig_,sys_shape_);   // changed rows / panel only
   } else {
     page(p,s,state);                              // other pages: whole-page repaint on a changed revision (see docs)
+    if(state.view==View::systems) {systems_sigs(s,state,sys_row_sig_,sys_facts_sig_,sys_shape_);sys_ready_=true;}
   }
   last_state_=state;
   old_=s;
@@ -432,6 +508,13 @@ Action Dashboard::handle_touch(int32_t x,int32_t y,const Snapshot& s,
   }
   if(state.view==View::systems && s.systems_available) {
     const auto a=state.density==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
+    if(s.db_systems>kObservedSystems) {
+      if(Rect{a.x+18,a.y+384,94,40}.contains(x,y) && state.system_offset>0)
+        return {ActionKind::page_systems,0};
+      if(Rect{a.x+124,a.y+384,94,40}.contains(x,y) &&
+         static_cast<size_t>(state.system_offset)+kObservedSystems<s.db_systems)
+        return {ActionKind::page_systems,1};
+    }
     const unsigned n=std::min<unsigned>(s.observed_system_count,kObservedSystems);
     for(unsigned i=0;i<n;++i)
       if(Rect{a.x+12,a.y+66+static_cast<int>(i)*76,a.w-24,68}.contains(x,y))
