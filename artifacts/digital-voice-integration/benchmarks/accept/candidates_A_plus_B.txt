@@ -1,0 +1,9 @@
+waiting for boot stabilisation: uptime 9 s of 240
+== candidates_A_plus_B: memory at start {'psram_free': '13514392', 'psram_largest': '13369344', 'internal_free': '34555', 'internal_largest': '15360'}
+idle: stalls 0 (worst 0 ms) RTL_DV_TICKS n=3017 gap_max_ms=19 gaps_100ms=0 tick_busy_max_us=3290 sec_us=115/18/739/801/3242/1026 refresh_u
+analog  dmr=4.868 n48=None n96=None us/smp, ch=0.856 us/pair busy=226 drops=0 stalls=0 probe=[('IDLE1/core1', 760), ('IDLE0/core0', 656), ('dv_rx/core0', 232), ('rtl_dsp/core1', 225)]
+noise   dmr=4.939 n48=None n96=None us/smp, ch=0.865 us/pair busy=233 drops=0 stalls=0 probe=[('IDLE1/core1', 757), ('IDLE0/core0', 653), ('dv_rx/core0', 233), ('rtl_dsp/core1', 227)]
+dmr     dmr=4.758 n48=None n96=None us/smp, ch=0.865 us/pair busy=224 drops=0 stalls=0 probe=[('IDLE1/core1', 756), ('IDLE0/core0', 653), ('rtl_dsp/core1', 228), ('dv_rx/core0', 225)]
+nxdn48  dmr=None n48=15.03 n96=None us/smp, ch=0.860 us/pair busy=356 drops=0 stalls=0 probe=[('IDLE1/core1', 759), ('IDLE0/core0', 536), ('dv_rx/core0', 364), ('rtl_dsp/core1', 226)]
+nxdn96  dmr=None n48=None n96=13.653 us/smp, ch=0.858 us/pair busy=645 drops=0 stalls=0 probe=[('IDLE1/core1', 760), ('dv_rx/core0', 656), ('IDLE0/core0', 272), ('rtl_dsp/core1', 226)]
+scanner and probe stopped; results in accept/candidates_A_plus_B.json/.txt

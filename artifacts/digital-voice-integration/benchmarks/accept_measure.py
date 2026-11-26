@@ -102,7 +102,7 @@ try:
               "pairs": d("pairs"), "smp_dmr": d("smp_dmr"), "smp_n48": d("smp_n48"), "smp_n96": d("smp_n96"),
               "us_ch": d("us_ch"), "us_dmr": d("us_dmr"), "us_n48": d("us_n48"), "us_n96": d("us_n96"),
               "ring_drops": d("ring_drops"), "ring_max": int(b.get("ring_max", 0)), "ring_pend": int(b.get("ring_pend", 0)),
-              "worker_busy_pm": int(b.get("worker_busy_pm", 0)), "mask": b.get("mask"), "dec_internal": b.get("dec_internal"),
+              "worker_busy_pm": int(b.get("worker_busy_pm", 0)), "state_bytes": b.get("state_bytes"), "mask": b.get("mask"), "dec_internal": b.get("dec_internal"),
               "us_ch_per_pair": round(d("us_ch") / max(1, d("pairs")), 3),
               "us_dmr_per_sample": round(d("us_dmr") / max(1, d("smp_dmr")), 3) if d("smp_dmr") else None,
               "us_n48_per_sample": round(d("us_n48") / max(1, d("smp_n48")), 3) if d("smp_n48") else None,

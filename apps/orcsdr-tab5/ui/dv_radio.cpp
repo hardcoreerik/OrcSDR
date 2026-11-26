@@ -41,10 +41,10 @@ constexpr bool kDecodersInInternalRam = false;
 struct Decoders {
   dmr1::Receiver dmr;
   dmr::d1::CallManager calls;   // privacy / identity / continuity gate between D1 voice groups and the voice task
-  nxdn::Frontend f48{nxdn::Mode::nxdn48, 24000.0};   // fed through dec2 (half rate): NXDN48 at 48 kS/s exceeds one core
+  nxdn::CompactFrontend f48{nxdn::Mode::nxdn48, 24000.0};   // fed through dec2 (half rate): NXDN48 at 48 kS/s exceeds one core
   dv::Decimator2 dec2;
   nxdn::Decoder d48{nxdn::Mode::nxdn48};
-  nxdn::Frontend f96{nxdn::Mode::nxdn96};
+  nxdn::CompactFrontend f96{nxdn::Mode::nxdn96};
   nxdn::Decoder d96{nxdn::Mode::nxdn96};
 };
 struct State {

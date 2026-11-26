@@ -23,17 +23,22 @@ double i0(double x) noexcept {
 double sign(double x) noexcept { return x>0 ? 1.0 : (x<0 ? -1.0 : 0.0); }
 }
 
-Frontend::Frontend(Mode mode, double input_rate_hz) noexcept : mode_(mode), fs_(input_rate_hz) {
+template<std::size_t MaxSps>
+BasicFrontend<MaxSps>::BasicFrontend(Mode mode, double input_rate_hz) noexcept : mode_(mode), fs_(input_rate_hz) {
     sps_ = static_cast<std::size_t>(std::lround(fs_/(mode == Mode::nxdn48 ? 2400.0 : 4800.0)));
     if(sps_<4U) sps_=4U;
     if(sps_>20U) sps_=20U;   // the tap/history arrays are sized for 20 samples per symbol
+    // Refuse a geometry outside the compact storage contract; do not
+    // change symbol rate or clamp to 10 to make it fit.
+    if (sps_ > MaxSps) { reset(); return; }
     channel_n_ = 2U*9U*sps_+1U;
     rrc_n_ = 2U*8U*sps_+1U;
     build_taps();
     reset();
 }
 
-void Frontend::build_taps() noexcept {
+template<std::size_t MaxSps>
+void BasicFrontend<MaxSps>::build_taps() noexcept {
     const double cutoff=mode_ == Mode::nxdn48 ? 3500.0 : 6250.0;
     const double beta=8.6;
     const double denom=i0(beta);
@@ -67,7 +72,8 @@ void Frontend::build_taps() noexcept {
         rrc_taps_[i]=static_cast<float>(rrc_taps_[i]/std::sqrt(energy));
 }
 
-void Frontend::reset() noexcept {
+template<std::size_t MaxSps>
+void BasicFrontend<MaxSps>::reset() noexcept {
     channel_hist_.fill({});rrc_hist_.fill(0);
     channel_pos_=0;rrc_pos_=0;
     prev_iq_={1,0};have_iq_=false;prev_rrc_=0;have_rrc_=false;
@@ -76,9 +82,10 @@ void Frontend::reset() noexcept {
     symbol_dc_=0;symbol_abs_=0;symbols_=0;
 }
 
-bool Frontend::feed(const IQSample* iq,std::size_t count,
+template<std::size_t MaxSps>
+bool BasicFrontend<MaxSps>::feed(const IQSample* iq,std::size_t count,
                     DibitSink sink,void* user) noexcept {
-    if(mode_!=Mode::nxdn48&&mode_!=Mode::nxdn96) return false;
+    if(!channel_n_ || !rrc_n_ || (mode_!=Mode::nxdn48&&mode_!=Mode::nxdn96)) return false;
     if(count&&!iq) return false;
     if(count>std::numeric_limits<std::uint64_t>::max()/2-symbols_) return false;
     for(std::size_t i=0;i<count;++i)
@@ -190,4 +197,6 @@ bool Frontend::feed(const IQSample* iq,std::size_t count,
     }
     return true;
 }
+template class BasicFrontend<20>;
+template class BasicFrontend<10>;
 } // namespace orcsdr::nxdn

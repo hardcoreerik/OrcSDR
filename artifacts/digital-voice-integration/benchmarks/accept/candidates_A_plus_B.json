@@ -1,0 +1,898 @@
+{
+ "label": "candidates_A_plus_B",
+ "points": {
+  "analog": {
+   "plan": "162.55:dmr",
+   "window_s": 31.2,
+   "stalls": 0,
+   "worst_stall_ms": 0,
+   "pairs": 7520256,
+   "smp_dmr": 1504051,
+   "smp_n48": 0,
+   "smp_n96": 0,
+   "us_ch": 6435487,
+   "us_dmr": 7321372,
+   "us_n48": 0,
+   "us_n96": 0,
+   "ring_drops": 0,
+   "ring_max": 1843,
+   "ring_pend": 0,
+   "worker_busy_pm": 226,
+   "state_bytes": "33800",
+   "mask": "1",
+   "dec_internal": "0",
+   "us_ch_per_pair": 0.856,
+   "us_dmr_per_sample": 4.868,
+   "us_n48_per_sample": null,
+   "us_n96_per_sample": null,
+   "probe": {
+    "main/core0": {
+     "share_pm": 86,
+     "max_run_ms": 7,
+     "stack_free_hwm": 6384
+    },
+    "IDLE0/core0": {
+     "share_pm": 656,
+     "max_run_ms": 13,
+     "stack_free_hwm": 1188
+    },
+    "rtl_cli0/core0": {
+     "share_pm": 16,
+     "max_run_ms": 2,
+     "stack_free_hwm": 2220
+    },
+    "dv_rx/core0": {
+     "share_pm": 232,
+     "max_run_ms": 17,
+     "stack_free_hwm": 2732
+    },
+    "dvprobe/core0": {
+     "share_pm": 2,
+     "max_run_ms": 4,
+     "stack_free_hwm": 1512
+    },
+    "web_audio/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3752
+    },
+    "sdio_read/core0": {
+     "share_pm": 2,
+     "max_run_ms": 3,
+     "stack_free_hwm": 2252
+    },
+    "orcdial_secure/core0": {
+     "share_pm": 1,
+     "max_run_ms": 6,
+     "stack_free_hwm": 9048
+    },
+    "eh_rpc_tx/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3192
+    },
+    "orcdial_tx/core0": {
+     "share_pm": 0,
+     "max_run_ms": 2,
+     "stack_free_hwm": 3500
+    },
+    "sdio_write/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3232
+    },
+    "sdio_process_rx/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2040
+    },
+    "sdio_rx_buf/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2272
+    },
+    "eh_rpc_rx/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 1328
+    },
+    "rtl_usb_lib/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2240
+    },
+    "IDLE1/core1": {
+     "share_pm": 760,
+     "max_run_ms": 53,
+     "stack_free_hwm": 1212
+    },
+    "rtl_iq0/core1": {
+     "share_pm": 4,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3332
+    },
+    "rtl_dsp/core1": {
+     "share_pm": 225,
+     "max_run_ms": 16,
+     "stack_free_hwm": 3744
+    },
+    "orcdial_secure/core1": {
+     "share_pm": 4,
+     "max_run_ms": 9,
+     "stack_free_hwm": 9048
+    },
+    "dv_voice/core1": {
+     "share_pm": 3,
+     "max_run_ms": 1,
+     "stack_free_hwm": 9268
+    },
+    "rtl_app/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 11244
+    },
+    "dvprobe/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 1516
+    },
+    "eh_rpc_rx/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 1328
+    },
+    "rf_analysis/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 7624
+    },
+    "tiT/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2684
+    },
+    "sdio_rx_buf/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2272
+    },
+    "p25_voice/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 5716
+    }
+   },
+   "ticks": "RTL_DV_TICKS n=3093 gap_max_ms=48 gaps_100ms=0 tick_busy_max_us=5839 sec_us=20/8/48/887/1707/5307 refresh_us=47/62/1682/47",
+   "synth": [
+    "synth_us=0/0/0"
+   ],
+   "mem": {
+    "psram_free": "13204532",
+    "psram_largest": "12845056",
+    "internal_free": "34067",
+    "internal_largest": "15360"
+   },
+   "events": 0
+  },
+  "noise": {
+   "plan": "163.0:dmr",
+   "window_s": 31.2,
+   "stalls": 0,
+   "worst_stall_ms": 0,
+   "pairs": 7503872,
+   "smp_dmr": 1500774,
+   "smp_n48": 0,
+   "smp_n96": 0,
+   "us_ch": 6491937,
+   "us_dmr": 7413011,
+   "us_n48": 0,
+   "us_n96": 0,
+   "ring_drops": 0,
+   "ring_max": 1843,
+   "ring_pend": 0,
+   "worker_busy_pm": 233,
+   "state_bytes": "33800",
+   "mask": "1",
+   "dec_internal": "0",
+   "us_ch_per_pair": 0.865,
+   "us_dmr_per_sample": 4.939,
+   "us_n48_per_sample": null,
+   "us_n96_per_sample": null,
+   "probe": {
+    "main/core0": {
+     "share_pm": 88,
+     "max_run_ms": 9,
+     "stack_free_hwm": 6384
+    },
+    "IDLE0/core0": {
+     "share_pm": 653,
+     "max_run_ms": 13,
+     "stack_free_hwm": 1188
+    },
+    "rtl_cli0/core0": {
+     "share_pm": 16,
+     "max_run_ms": 2,
+     "stack_free_hwm": 2220
+    },
+    "dv_rx/core0": {
+     "share_pm": 233,
+     "max_run_ms": 17,
+     "stack_free_hwm": 2732
+    },
+    "dvprobe/core0": {
+     "share_pm": 1,
+     "max_run_ms": 1,
+     "stack_free_hwm": 1512
+    },
+    "sdio_read/core0": {
+     "share_pm": 3,
+     "max_run_ms": 3,
+     "stack_free_hwm": 2252
+    },
+    "esp_timer/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3672
+    },
+    "web_audio/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3736
+    },
+    "sdio_write/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3232
+    },
+    "sdio_process_rx/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2040
+    },
+    "lora_sd_log/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 1916
+    },
+    "orcdial_secure/core0": {
+     "share_pm": 1,
+     "max_run_ms": 8,
+     "stack_free_hwm": 9048
+    },
+    "orcdial_tx/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3500
+    },
+    "eh_rpc_tx/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3192
+    },
+    "rtl_usb_lib/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2240
+    },
+    "eh_rpc_rx/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 1328
+    },
+    "rtl_app/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 11244
+    },
+    "IDLE1/core1": {
+     "share_pm": 757,
+     "max_run_ms": 53,
+     "stack_free_hwm": 1212
+    },
+    "rtl_dsp/core1": {
+     "share_pm": 227,
+     "max_run_ms": 16,
+     "stack_free_hwm": 3744
+    },
+    "orcdial_secure/core1": {
+     "share_pm": 5,
+     "max_run_ms": 8,
+     "stack_free_hwm": 9048
+    },
+    "dv_voice/core1": {
+     "share_pm": 3,
+     "max_run_ms": 1,
+     "stack_free_hwm": 9268
+    },
+    "rtl_iq0/core1": {
+     "share_pm": 4,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3324
+    },
+    "dvprobe/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 1516
+    },
+    "rf_analysis/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 7624
+    },
+    "eh_rpc_rx/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 1328
+    },
+    "tiT/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2684
+    },
+    "orcsdr_maps/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2980
+    },
+    "sdio_rx_buf/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2272
+    }
+   },
+   "ticks": "RTL_DV_TICKS n=3055 gap_max_ms=44 gaps_100ms=0 tick_busy_max_us=6878 sec_us=148/19/20/600/1691/6343 refresh_us=52/83/1661/56",
+   "synth": [
+    "synth_us=0/0/0"
+   ],
+   "mem": {
+    "psram_free": "13204532",
+    "psram_largest": "12845056",
+    "internal_free": "34199",
+    "internal_largest": "15360"
+   },
+   "events": 0
+  },
+  "dmr": {
+   "plan": "152.1575:dmr",
+   "window_s": 31.2,
+   "stalls": 0,
+   "worst_stall_ms": 0,
+   "pairs": 7503872,
+   "smp_dmr": 1500775,
+   "smp_n48": 0,
+   "smp_n96": 0,
+   "us_ch": 6494165,
+   "us_dmr": 7140894,
+   "us_n48": 0,
+   "us_n96": 0,
+   "ring_drops": 0,
+   "ring_max": 2355,
+   "ring_pend": 0,
+   "worker_busy_pm": 224,
+   "state_bytes": "33800",
+   "mask": "1",
+   "dec_internal": "0",
+   "us_ch_per_pair": 0.865,
+   "us_dmr_per_sample": 4.758,
+   "us_n48_per_sample": null,
+   "us_n96_per_sample": null,
+   "probe": {
+    "main/core0": {
+     "share_pm": 94,
+     "max_run_ms": 9,
+     "stack_free_hwm": 6384
+    },
+    "IDLE0/core0": {
+     "share_pm": 653,
+     "max_run_ms": 10,
+     "stack_free_hwm": 1188
+    },
+    "rtl_cli0/core0": {
+     "share_pm": 16,
+     "max_run_ms": 2,
+     "stack_free_hwm": 2220
+    },
+    "dv_rx/core0": {
+     "share_pm": 225,
+     "max_run_ms": 18,
+     "stack_free_hwm": 2556
+    },
+    "dvprobe/core0": {
+     "share_pm": 2,
+     "max_run_ms": 1,
+     "stack_free_hwm": 1516
+    },
+    "sdio_read/core0": {
+     "share_pm": 3,
+     "max_run_ms": 3,
+     "stack_free_hwm": 2252
+    },
+    "sdio_process_rx/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2040
+    },
+    "sdio_write/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3232
+    },
+    "orcdial_secure/core0": {
+     "share_pm": 1,
+     "max_run_ms": 8,
+     "stack_free_hwm": 9048
+    },
+    "web_audio/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3736
+    },
+    "orcdial_tx/core0": {
+     "share_pm": 0,
+     "max_run_ms": 2,
+     "stack_free_hwm": 3500
+    },
+    "eh_rpc_tx/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3192
+    },
+    "rtl_usb_lib/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2240
+    },
+    "sd_writer/core0": {
+     "share_pm": 0,
+     "max_run_ms": 5,
+     "stack_free_hwm": 4072
+    },
+    "lora_sd_log/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 1916
+    },
+    "eh_rpc_rx/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 1280
+    },
+    "IDLE1/core1": {
+     "share_pm": 756,
+     "max_run_ms": 53,
+     "stack_free_hwm": 1212
+    },
+    "rtl_iq0/core1": {
+     "share_pm": 4,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3324
+    },
+    "rtl_dsp/core1": {
+     "share_pm": 228,
+     "max_run_ms": 17,
+     "stack_free_hwm": 3744
+    },
+    "orcdial_secure/core1": {
+     "share_pm": 4,
+     "max_run_ms": 9,
+     "stack_free_hwm": 9048
+    },
+    "dvprobe/core1": {
+     "share_pm": 1,
+     "max_run_ms": 1,
+     "stack_free_hwm": 1512
+    },
+    "dv_voice/core1": {
+     "share_pm": 3,
+     "max_run_ms": 1,
+     "stack_free_hwm": 9268
+    },
+    "sdio_rx_buf/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2272
+    },
+    "rtl_app/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 11244
+    },
+    "eh_rpc_rx/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 1280
+    },
+    "tiT/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2684
+    },
+    "orcsdr_maps/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2980
+    },
+    "rf_lab_save/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 10568
+    },
+    "eh_rpc_tx/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3192
+    },
+    "rf_analysis/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 7608
+    },
+    "p25_voice/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 5716
+    }
+   },
+   "ticks": "RTL_DV_TICKS n=3133 gap_max_ms=31 gaps_100ms=0 tick_busy_max_us=19334 sec_us=120/92/20/870/2089/18678 refresh_us=9/689/2067/68",
+   "synth": [
+    "synth_us=0/0/0"
+   ],
+   "mem": {
+    "psram_free": "13194284",
+    "psram_largest": "12845056",
+    "internal_free": "33843",
+    "internal_largest": "15360"
+   },
+   "events": 236
+  },
+  "nxdn48": {
+   "plan": "463.25:nxdn48",
+   "window_s": 31.2,
+   "stalls": 0,
+   "worst_stall_ms": 0,
+   "pairs": 7536640,
+   "smp_dmr": 0,
+   "smp_n48": 753664,
+   "smp_n96": 0,
+   "us_ch": 6480911,
+   "us_dmr": 2612,
+   "us_n48": 11327658,
+   "us_n96": 7210,
+   "ring_drops": 0,
+   "ring_max": 2867,
+   "ring_pend": 0,
+   "worker_busy_pm": 356,
+   "state_bytes": "33800",
+   "mask": "2",
+   "dec_internal": "0",
+   "us_ch_per_pair": 0.86,
+   "us_dmr_per_sample": null,
+   "us_n48_per_sample": 15.03,
+   "us_n96_per_sample": null,
+   "probe": {
+    "main/core0": {
+     "share_pm": 77,
+     "max_run_ms": 18,
+     "stack_free_hwm": 6384
+    },
+    "IDLE0/core0": {
+     "share_pm": 536,
+     "max_run_ms": 11,
+     "stack_free_hwm": 1188
+    },
+    "rtl_cli0/core0": {
+     "share_pm": 16,
+     "max_run_ms": 2,
+     "stack_free_hwm": 2220
+    },
+    "dv_rx/core0": {
+     "share_pm": 364,
+     "max_run_ms": 25,
+     "stack_free_hwm": 1772
+    },
+    "dvprobe/core0": {
+     "share_pm": 1,
+     "max_run_ms": 1,
+     "stack_free_hwm": 1516
+    },
+    "sdio_read/core0": {
+     "share_pm": 3,
+     "max_run_ms": 3,
+     "stack_free_hwm": 2252
+    },
+    "web_audio/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3736
+    },
+    "eh_rpc_tx/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3192
+    },
+    "sdio_process_rx/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2040
+    },
+    "sdio_write/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3232
+    },
+    "rtl_usb_lib/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2240
+    },
+    "esp_timer/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3672
+    },
+    "IDLE1/core1": {
+     "share_pm": 759,
+     "max_run_ms": 53,
+     "stack_free_hwm": 1212
+    },
+    "rtl_iq0/core1": {
+     "share_pm": 5,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3324
+    },
+    "rtl_dsp/core1": {
+     "share_pm": 226,
+     "max_run_ms": 16,
+     "stack_free_hwm": 3744
+    },
+    "orcdial_secure/core1": {
+     "share_pm": 3,
+     "max_run_ms": 1,
+     "stack_free_hwm": 9048
+    },
+    "dv_voice/core1": {
+     "share_pm": 3,
+     "max_run_ms": 1,
+     "stack_free_hwm": 9268
+    },
+    "rtl_app/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 11244
+    },
+    "dvprobe/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 1516
+    },
+    "tiT/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2684
+    },
+    "eh_rpc_rx/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 1280
+    },
+    "sdio_rx_buf/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2272
+    },
+    "sdio_read/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2252
+    },
+    "rf_analysis/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 7608
+    },
+    "p25_voice/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 5716
+    },
+    "eh_rpc_tx/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3192
+    }
+   },
+   "ticks": "RTL_DV_TICKS n=2750 gap_max_ms=58 gaps_100ms=0 tick_busy_max_us=26035 sec_us=43/19/24/138/25971/5229 refresh_us=35/777/25939/24878",
+   "synth": [
+    "synth_us=0/0/0"
+   ],
+   "mem": {
+    "psram_free": "13194284",
+    "psram_largest": "12845056",
+    "internal_free": "33647",
+    "internal_largest": "15360"
+   },
+   "events": 0
+  },
+  "nxdn96": {
+   "plan": "463.25:nxdn96",
+   "window_s": 31.3,
+   "stalls": 0,
+   "worst_stall_ms": 0,
+   "pairs": 7520256,
+   "smp_dmr": 0,
+   "smp_n48": 0,
+   "smp_n96": 1504051,
+   "us_ch": 6453182,
+   "us_dmr": 2536,
+   "us_n48": 2611,
+   "us_n96": 20534943,
+   "ring_drops": 0,
+   "ring_max": 2868,
+   "ring_pend": 0,
+   "worker_busy_pm": 645,
+   "state_bytes": "33800",
+   "mask": "4",
+   "dec_internal": "0",
+   "us_ch_per_pair": 0.858,
+   "us_dmr_per_sample": null,
+   "us_n48_per_sample": null,
+   "us_n96_per_sample": 13.653,
+   "probe": {
+    "main/core0": {
+     "share_pm": 48,
+     "max_run_ms": 7,
+     "stack_free_hwm": 6384
+    },
+    "IDLE0/core0": {
+     "share_pm": 272,
+     "max_run_ms": 10,
+     "stack_free_hwm": 1188
+    },
+    "rtl_cli0/core0": {
+     "share_pm": 16,
+     "max_run_ms": 2,
+     "stack_free_hwm": 2220
+    },
+    "dv_rx/core0": {
+     "share_pm": 656,
+     "max_run_ms": 45,
+     "stack_free_hwm": 1772
+    },
+    "dvprobe/core0": {
+     "share_pm": 2,
+     "max_run_ms": 2,
+     "stack_free_hwm": 1436
+    },
+    "sdio_read/core0": {
+     "share_pm": 2,
+     "max_run_ms": 4,
+     "stack_free_hwm": 2252
+    },
+    "sdio_write/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3232
+    },
+    "sdio_process_rx/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2040
+    },
+    "esp_timer/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3672
+    },
+    "rtl_usb_lib/core0": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2240
+    },
+    "IDLE1/core1": {
+     "share_pm": 760,
+     "max_run_ms": 53,
+     "stack_free_hwm": 1212
+    },
+    "rtl_dsp/core1": {
+     "share_pm": 226,
+     "max_run_ms": 17,
+     "stack_free_hwm": 3744
+    },
+    "rtl_iq0/core1": {
+     "share_pm": 5,
+     "max_run_ms": 1,
+     "stack_free_hwm": 3324
+    },
+    "orcdial_secure/core1": {
+     "share_pm": 3,
+     "max_run_ms": 1,
+     "stack_free_hwm": 9048
+    },
+    "dv_voice/core1": {
+     "share_pm": 2,
+     "max_run_ms": 1,
+     "stack_free_hwm": 9268
+    },
+    "rtl_app/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 11244
+    },
+    "eh_rpc_rx/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 1280
+    },
+    "dvprobe/core1": {
+     "share_pm": 0,
+     "max_run_ms": 2,
+     "stack_free_hwm": 1512
+    },
+    "tiT/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2684
+    },
+    "sdio_read/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2252
+    },
+    "rf_analysis/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 7608
+    },
+    "sdio_rx_buf/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2272
+    },
+    "orcsdr_maps/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 2980
+    },
+    "p25_voice/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 5716
+    },
+    "rf_lab_save/core1": {
+     "share_pm": 0,
+     "max_run_ms": 1,
+     "stack_free_hwm": 10568
+    }
+   },
+   "ticks": "RTL_DV_TICKS n=1653 gap_max_ms=70 gaps_100ms=0 tick_busy_max_us=52085 sec_us=59/22/22/769/1810/50443 refresh_us=22/870/1783/873",
+   "synth": [
+    "synth_us=0/0/0"
+   ],
+   "mem": {
+    "psram_free": "13194284",
+    "psram_largest": "12845056",
+    "internal_free": "33647",
+    "internal_largest": "15360"
+   },
+   "events": 0
+  }
+ },
+ "uptime_s": null,
+ "mem_start": {
+  "psram_free": "13514392",
+  "psram_largest": "13369344",
+  "internal_free": "34555",
+  "internal_largest": "15360"
+ },
+ "idle": {
+  "stalls_30s": 0,
+  "worst_ms": 0,
+  "ticks": "RTL_DV_TICKS n=3017 gap_max_ms=19 gaps_100ms=0 tick_busy_max_us=3290 sec_us=115/18/739/801/3242/1026 refresh_us=14/67/3203/843"
+ },
+ "mem_end": {
+  "psram_free": "13503036",
+  "psram_largest": "12845056",
+  "internal_free": "34003",
+  "internal_largest": "15360"
+ }
+}
