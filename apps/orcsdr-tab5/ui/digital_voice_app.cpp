@@ -47,6 +47,8 @@ struct State {
   uint8_t* cap_mem = nullptr;               // PSRAM, 10 MB, allocated on the first capture of a visit
   dv_capture::Capture cap;
   char cap_json[4096];
+  // MONITOR: scan only the systems the discovery database has seen. Filter: protocol (0 any, 1 DMR, 2 NXDN48, 3 NXDN96) and colour code / RAN (255 any).
+  uint8_t mon_proto = 0, mon_cc = 255;
   uint8_t filled_system_offset = 0;            // the Systems page offset the snapshot rows were last filled for
   bool background = false;          // the screen is hidden but the receiver, scanner and speech are still running
   Surface surface;
@@ -237,7 +239,29 @@ Protocol protocol_for_mask(uint8_t m) {
   if (m == dv_radio::kMaskNxdn96) return Protocol::nxdn96;
   return Protocol::unknown;
 }
-size_t plan_option_count(const State& st) { return 2 + dv::kBandPresetCount + (st.custom_start ? 1 : 0); }
+size_t monitor_option(const State& st) { return 2 + dv::kBandPresetCount + (st.custom_start ? 1 : 0); }     // the last plan option
+size_t plan_option_count(const State& st) { return monitor_option(st) + 1; }
+
+// MONITOR list: the frequencies of the systems in the discovery database (newest first, one entry per frequency), optionally limited to one
+// protocol and one colour code / RAN. Two protocols on one frequency become one entry that runs both decoders.
+size_t build_monitor_list(const State& st, uint32_t* hz, uint8_t* mask, size_t cap) {
+  size_t n = 0;
+  const uint8_t want = st.mon_proto == 1 ? dv_radio::kMaskDmr : st.mon_proto == 2 ? dv_radio::kMaskNxdn48 : st.mon_proto == 3 ? dv_radio::kMaskNxdn96 : 0;
+  for (size_t k = 0; k < st.db.system_count() && n < cap; ++k) {
+    const size_t i = st.db.nth_newest_system(k);
+    if (i == static_cast<size_t>(-1)) break;
+    const dv::SystemRec& r = st.db.system(i);
+    const uint8_t m = mask_for_protocol(static_cast<Protocol>(r.protocol));
+    if (r.frequency_hz == 0 || m == 0) continue;
+    if (want && m != want) continue;
+    if (st.mon_cc != 255 && !(r.area_kind != dv::AreaKind::none && r.area == st.mon_cc)) continue;
+    size_t j = 0;
+    while (j < n && hz[j] != r.frequency_hz) ++j;
+    if (j < n) { mask[j] = static_cast<uint8_t>(mask[j] | m); continue; }
+    hz[n] = r.frequency_hz; mask[n++] = m;
+  }
+  return n;
+}
 size_t my_bands_channels(const State& st) {
   size_t n = 0;
   for (size_t i = 0; i < dv::kBandPresetCount; ++i) if ((st.band_mask >> i) & 1U) n += dv::channel_count(dv::kBandPresets[i]);
@@ -265,6 +289,12 @@ void apply_plan_option(State& st) {
     for (size_t i = 0; i < dv::kBandPresetCount && n < dv::kMaxSegments; ++i)
       if ((st.band_mask >> i) & 1U) seg[n++] = {dv::kBandPresets[i].start_hz, dv::kBandPresets[i].step_hz, static_cast<uint32_t>(dv::channel_count(dv::kBandPresets[i]))};
     if (!n || !st.scanner.set_ranges(seg, n)) st.scanner.clear_plan();
+  } else if (st.plan_option == monitor_option(st)) {            // MONITOR: only what discovery found
+    uint32_t hz[dv::kMaxScanChannels];
+    uint8_t mk[dv::kMaxScanChannels];
+    const size_t n = build_monitor_list(st, hz, mk, dv::kMaxScanChannels);
+    if (n && st.scanner.set_plan(hz, n)) { std::memset(st.plan_mask, 0, sizeof(st.plan_mask)); std::memcpy(st.plan_mask, mk, n); }
+    else st.scanner.clear_plan();
   } else if (!st.scanner.set_range(st.custom_start, st.custom_step, st.custom_count)) {
     st.scanner.clear_plan();
   }
@@ -533,6 +563,12 @@ void refresh(State& st) {
   else if (st.plan_option == 0) std::snprintf(scan.plan_name, sizeof(scan.plan_name), "SAVED LIST");
   else if (st.plan_option <= dv::kBandPresetCount) std::snprintf(scan.plan_name, sizeof(scan.plan_name), "%s", dv::kBandPresets[st.plan_option - 1].name);
   else if (st.plan_option == 1 + dv::kBandPresetCount) std::snprintf(scan.plan_name, sizeof(scan.plan_name), "MY BANDS (%u)", static_cast<unsigned>(my_bands_count(st)));
+  else if (st.plan_option == monitor_option(st)) {
+    const char* pn = st.mon_proto == 1 ? "DMR" : st.mon_proto == 2 ? "NXDN48" : st.mon_proto == 3 ? "NXDN96" : "ALL";
+    const unsigned cnt = static_cast<uint8_t>(ss.count);          // at most 16: the narrow type bounds the text for the compiler
+    if (st.mon_cc != 255) std::snprintf(scan.plan_name, sizeof(scan.plan_name), "MONITOR %s CC%u (%u)", pn, static_cast<unsigned>(st.mon_cc), cnt);
+    else std::snprintf(scan.plan_name, sizeof(scan.plan_name), "MONITOR %s (%u)", pn, cnt);
+  }
   else std::snprintf(scan.plan_name, sizeof(scan.plan_name), "CUSTOM RANGE");
   if (ss.kind == dv::PlanKind::range && ss.count) {
     scan.range_start_hz = ss.range_start_hz; scan.range_step_hz = ss.range_step_hz;
@@ -1309,6 +1345,45 @@ bool handle_command(const char* command, bool authenticated, void (*write_line)(
     else std::snprintf(line, sizeof(line), "RTL_DV_CAPTURE_OK started (files /orcsdr/cap_*.cu8 + .json; status: RTL_DV CAPTURE STATUS)");
     write_line(line);
     ++st.snapshot.revision;
+    return true;
+  }
+  if (std::strncmp(arg, "MONITOR", 7) == 0) {            // scan only the discovered systems: RTL_DV MONITOR [ALL|DMR|NXDN48|NXDN96] [CC n|RAN n]
+    const char* a = arg + 7;
+    while (*a == ' ') ++a;
+    char line[300];
+    if (*a) {
+      if (st.scanner.active()) { write_line("RTL_DV_MONITOR_REFUSED stop the scan first"); return true; }
+      char w1[12] = {0};
+      int used = 0;
+      const int k = std::sscanf(a, "%11s%n", w1, &used);
+      const uint8_t proto = std::strcmp(w1, "DMR") == 0 ? 1 : std::strcmp(w1, "NXDN48") == 0 ? 2 : std::strcmp(w1, "NXDN96") == 0 ? 3 : 0;
+      const char* r = a + (k == 1 ? used : 0);
+      while (*r == ' ') ++r;
+      long cc = -1;
+      bool bad = k != 1 || (proto == 0 && std::strcmp(w1, "ALL") != 0);
+      if (!bad && *r) {                                       // optional "CC n", "CC13", "RAN n" or "RAN2"
+        if (std::strncmp(r, "CC", 2) == 0) r += 2; else if (std::strncmp(r, "RAN", 3) == 0) r += 3; else bad = true;
+        char* end = nullptr;
+        if (!bad) { cc = std::strtol(r, &end, 10); bad = end == r || *end != 0 || cc < 0 || cc > 63; }
+      }
+      if (bad) {
+        write_line("RTL_DV_MONITOR_INVALID use RTL_DV MONITOR [ALL|DMR|NXDN48|NXDN96] [CC n | RAN n]");
+        return true;
+      }
+      st.mon_proto = proto;
+      st.mon_cc = cc >= 0 ? static_cast<uint8_t>(cc) : 255;
+      st.plan_option = static_cast<uint8_t>(monitor_option(st));
+      apply_plan_option(st);
+      ++st.snapshot.revision;
+    }
+    std::snprintf(line, sizeof(line), "RTL_DV_MONITOR proto=%u cc=%u entries=%u selected=%d", static_cast<unsigned>(st.mon_proto), static_cast<unsigned>(st.mon_cc),
+                  static_cast<unsigned>(st.plan_option == monitor_option(st) ? st.scanner.plan_count() : 0u), st.plan_option == monitor_option(st) ? 1 : 0);
+    write_line(line);
+    if (st.plan_option == monitor_option(st))
+      for (size_t i = 0; i < st.scanner.plan_count(); ++i) {
+        std::snprintf(line, sizeof(line), "RTL_DV_MONITOR_ENTRY %u hz=%lu mask=%u", static_cast<unsigned>(i), static_cast<unsigned long>(st.scanner.plan_at(i)), static_cast<unsigned>(st.plan_mask[i]));
+        write_line(line);
+      }
     return true;
   }
   if (std::strcmp(arg, "DB CLEAR") == 0) {      // owner action: forget everything learned (and the file at the next save)
