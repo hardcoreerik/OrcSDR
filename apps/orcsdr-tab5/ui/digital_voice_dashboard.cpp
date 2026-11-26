@@ -3,7 +3,11 @@
 #include "dv_bandplan.hpp"
 #include <algorithm>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
+#if defined(ESP_PLATFORM)
+#include <esp_heap_caps.h>
+#endif
 
 namespace orcsdr::digital_voice_ui {
 namespace {
@@ -13,6 +17,13 @@ constexpr const char* kTabs[]={"SCAN","LIVE","LAST HEARD","SYSTEMS","SIGNAL","SE
 static_assert(sizeof(kTabs)/sizeof(kTabs[0]) == layout::kTabCount);
 
 void number(char (&out)[36],uint32_t n) {std::snprintf(out,sizeof(out),"%lu",static_cast<unsigned long>(n));}
+// Draw one widget with diff painting: only the calls that changed since its last paint reach the screen. When its structure changed
+// (a different number of calls) it is drawn once more in full.
+enum Slot : unsigned {kSlotVoice=16,kSlotPage=0,kSlotSysFrame=1,kSlotSysTail=2,kSlotSysRow=3,kSlotSysFacts=7,kSlotDiscFrame=8,kSlotDiscProgress=9,kSlotDiscResult=10,kSlotDiscButtons=11,kSlotDiscRow=12};
+template<class F> void widget(Paint& p,unsigned id,uint16_t bg,F fn) {
+  p.use(id,bg);fn();
+  if(p.done()) {p.use(id,bg);fn();p.done();}
+}
 // The protocol's area code, shown with the same widget for every protocol: DMR colour code, NXDN RAN (RAN 0 is valid).
 void area_text(char (&out)[16],Protocol pr,uint8_t cc,bool ccv,uint8_t ran,bool ranv) {
   out[0]=0;
@@ -101,7 +112,7 @@ uint16_t phase_color(VoicePhase ph) {
     default:return kMuted;
   }
 }
-void voice_panel(Paint& p,const Snapshot& s,Density d) {
+void voice_panel_body(Paint& p,const Snapshot& s,Density d) {
   const Rect r=voice_rect(d);
   const VoiceAudioView& v=s.voice;
   p.fillRect(r.x,r.y,r.w,r.h,kPanel);
@@ -125,6 +136,12 @@ void voice_panel(Paint& p,const Snapshot& s,Density d) {
   const int bx=r.x+r.w-4*kListenBtnStep,by=r.y+62;
   for(int i=0;i<8;++i)
     p.fillRect(bx+i*24,by,20,26,i<v.level?(i<6?kGreen:kAmber):kEdge);
+}
+// The voice panel has its own slot: the page's calls never shift when the panel's phase makes more or fewer calls.
+void voice_panel(Paint& p,const Snapshot& s,Density d) {
+  Paint::Saved outer;p.save(outer);
+  widget(p,kSlotVoice,kPanel,[&]{voice_panel_body(p,s,d);});
+  p.restore(outer);
 }
 void live_discovery(Paint& p,const Snapshot& s) {
   const auto a=layout::kBasicHero,b=layout::kBasicFacts;
@@ -303,12 +320,20 @@ void systems(Paint& p,const Snapshot& s,const UiState& u) {
   const auto mode=u.density;
   const auto a=mode==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
   const auto b=mode==Density::discovery_first?layout::kBasicFacts:layout::kAdvancedFacts;
-  p.card(a);p.card(b);
-  p.title("OBSERVED SYSTEMS",a.x+18,a.y+32,a);
   const unsigned count=sys_count(s);
-  if (!s.systems_available) p.text("SYSTEM LEARNING NOT INTEGRATED",a.x+18,a.y+117,kAmber,2,a);
-  else if (count==0) p.text("NO SYSTEMS OBSERVED",a.x+18,a.y+117,kMuted,2,a);
-  for(unsigned i=0;i<count;++i) systems_row(p,s,u,a,i);
+  widget(p,kSlotSysFrame,kBg,[&]{
+    p.card(a);p.card(b);
+    p.title("OBSERVED SYSTEMS",a.x+18,a.y+32,a);
+    if (!s.systems_available) p.text("SYSTEM LEARNING NOT INTEGRATED",a.x+18,a.y+117,kAmber,2,a);
+    else if (count==0) p.text("NO SYSTEMS OBSERVED",a.x+18,a.y+117,kMuted,2,a);
+  });
+  for(unsigned i=0;i<kObservedSystems;++i) {
+    if(i<count) widget(p,kSlotSysRow+i,kPanel,[&]{systems_row(p,s,u,a,i);});
+    else if(p.diff&&p.diff->used[kSlotSysRow+i]) {          // a row that went away: clear it, forget it
+      p.g.fillRect(a.x+11,a.y+93+static_cast<int>(i)*76-17,a.w-22,70,kPanel);p.diff->reset_slot(kSlotSysRow+i);
+    }
+  }
+  widget(p,kSlotSysTail,kPanel,[&]{
   if(s.systems_available && s.db_systems>kObservedSystems) {
     const unsigned first=u.system_offset;
     p.button("PREV",{a.x+18,a.y+384,94,40},first>0);
@@ -318,8 +343,9 @@ void systems(Paint& p,const Snapshot& s,const UiState& u) {
   }
   p.label("Directory matches never become RF evidence",a.x+18,a.y+432,a);
   p.title("SAVE / DISCOVERY",b.x+18,b.y+32,b);
-  systems_facts(p,s,u,b,count);
   p.label("No guessed repeater locations",b.x+18,b.y+422,b);
+  });
+  widget(p,kSlotSysFacts,kPanel,[&]{systems_facts(p,s,u,b,count);});
 }
 uint32_t sys_shape(const Snapshot& s,const UiState& u,unsigned n) {
   return static_cast<uint32_t>(n)|(s.systems_available?0x10u:0u)|(static_cast<uint32_t>(u.system_offset)<<8)|
@@ -344,10 +370,10 @@ void systems_update(Paint& p,const Snapshot& s,const UiState& u,uint32_t* rows,u
   const auto b=u.density==Density::discovery_first?layout::kBasicFacts:layout::kAdvancedFacts;
   for(unsigned i=0;i<n;++i) {
     const uint32_t sig=sys_row_sig(s.observed_systems[i],i==u.selected_system);
-    if(sig!=rows[i]) {systems_row(p,s,u,a,i);rows[i]=sig;}
+    if(sig!=rows[i]) {widget(p,kSlotSysRow+i,kPanel,[&]{systems_row(p,s,u,a,i);});rows[i]=sig;}
   }
   const uint32_t fs=sys_facts_sig(s,u,n);
-  if(fs!=facts) {systems_facts(p,s,u,b,n);facts=fs;}
+  if(fs!=facts) {widget(p,kSlotSysFacts,kPanel,[&]{systems_facts(p,s,u,b,n);});facts=fs;}
 }
 // ---- DISCOVER page (reached from SCAN): the bands that will be swept, progress, what was found, SAVE TO LIST ----
 struct DiscGeom {Rect a,b,prog,result,start,save,back;};
@@ -453,19 +479,21 @@ uint32_t disc_button_sig(const Snapshot& s) {
 }
 void discover(Paint& p,const Snapshot& s,const UiState& u) {
   const DiscGeom g=disc_geom(u.density);
-  p.card(g.a);p.card(g.b);
-  p.title("DISCOVER SYSTEMS",g.a.x+18,g.a.y+32,g.a);
-  p.label("BANDS (CHANGE THEM IN SETUP)",g.a.x+18,g.a.y+66,g.a);
-  for(unsigned i=0;i<dv::kBandPresetCount;++i) {
-    const bool on=(s.band_mask>>i)&1U;
-    char t[40];std::snprintf(t,sizeof(t),"[%c] %s",on?'X':' ',dv::kBandPresets[i].label);
-    p.text(t,g.a.x+18+static_cast<int>(i%3)*260,g.a.y+98+static_cast<int>(i/3)*30,on?kGreen:kMuted,2,g.a);
-  }
-  disc_progress(p,s,g);
-  disc_result(p,s,g);
-  disc_buttons(p,s,g);
-  p.title("NEWEST SYSTEMS",g.b.x+18,g.b.y+32,g.b);
-  for(unsigned i=0;i<kObservedSystems;++i)disc_row(p,s,g,i);
+  widget(p,kSlotDiscFrame,kBg,[&]{
+    p.card(g.a);p.card(g.b);
+    p.title("DISCOVER SYSTEMS",g.a.x+18,g.a.y+32,g.a);
+    p.label("BANDS (CHANGE THEM IN SETUP)",g.a.x+18,g.a.y+66,g.a);
+    for(unsigned i=0;i<dv::kBandPresetCount;++i) {
+      const bool on=(s.band_mask>>i)&1U;
+      char t[40];std::snprintf(t,sizeof(t),"[%c] %s",on?'X':' ',dv::kBandPresets[i].label);
+      p.text(t,g.a.x+18+static_cast<int>(i%3)*260,g.a.y+98+static_cast<int>(i/3)*30,on?kGreen:kMuted,2,g.a);
+    }
+    p.title("NEWEST SYSTEMS",g.b.x+18,g.b.y+32,g.b);
+  });
+  widget(p,kSlotDiscProgress,kPanel,[&]{disc_progress(p,s,g);});
+  widget(p,kSlotDiscResult,kPanel,[&]{disc_result(p,s,g);});
+  widget(p,kSlotDiscButtons,kBg,[&]{disc_buttons(p,s,g);});
+  for(unsigned i=0;i<kObservedSystems;++i)widget(p,kSlotDiscRow+i,kPanel,[&]{disc_row(p,s,g,i);});
 }
 void discover_sigs(const Snapshot& s,uint32_t* sig) {
   sig[0]=disc_frame_sig(s);sig[1]=disc_progress_sig(s);sig[2]=disc_button_sig(s);
@@ -476,10 +504,10 @@ void discover_update(Paint& p,const Snapshot& s,const UiState& u,uint32_t* sig) 
   uint32_t now[7];discover_sigs(s,now);
   if(now[0]!=sig[0]) {discover(p,s,u);std::memcpy(sig,now,sizeof(now));return;}   // the band list changed: repaint the page once
   const DiscGeom g=disc_geom(u.density);
-  if(now[1]!=sig[1]) {disc_progress(p,s,g);sig[1]=now[1];}
-  if(now[2]!=sig[2]) {disc_result(p,s,g);disc_buttons(p,s,g);sig[2]=now[2];}
+  if(now[1]!=sig[1]) {widget(p,kSlotDiscProgress,kPanel,[&]{disc_progress(p,s,g);});sig[1]=now[1];}
+  if(now[2]!=sig[2]) {widget(p,kSlotDiscResult,kPanel,[&]{disc_result(p,s,g);});widget(p,kSlotDiscButtons,kBg,[&]{disc_buttons(p,s,g);});sig[2]=now[2];}
   for(unsigned i=0;i<kObservedSystems;++i)
-    if(now[3+i]!=sig[3+i]) {disc_row(p,s,g,i);sig[3+i]=now[3+i];}
+    if(now[3+i]!=sig[3+i]) {widget(p,kSlotDiscRow+i,kPanel,[&]{disc_row(p,s,g,i);});sig[3+i]=now[3+i];}
 }
 void signal(Paint& p,const Snapshot& s,Density mode) {
   const auto a=mode==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
@@ -579,6 +607,26 @@ void page(Paint& p,const Snapshot& s,const UiState& u) {
 } // namespace
 
 void Dashboard::PageBuffers::release() {valid=false;}
+bool Dashboard::PageBuffers::ensure_diff() {
+  if(diff.h) return true;
+  const uint16_t cap=static_cast<uint16_t>(paint::kSlots*paint::kSlotOps);
+#if defined(ESP_PLATFORM)
+  auto mem=[](size_t n)->void* {return heap_caps_malloc(n,MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);};
+#else
+  auto mem=[](size_t n)->void* {return std::malloc(n);};
+#endif
+  auto* h=static_cast<uint32_t*>(mem(cap*sizeof(uint32_t)));
+  auto* w=static_cast<uint16_t*>(mem(cap*sizeof(uint16_t)));
+  auto* xs=static_cast<int16_t*>(mem(cap*sizeof(int16_t)));
+  auto* ys=static_cast<int16_t*>(mem(cap*sizeof(int16_t)));
+  if(!h||!w||!xs||!ys) {std::free(h);std::free(w);std::free(xs);std::free(ys);return false;}
+  diff.h=h;diff.w=w;diff.xs=xs;diff.ys=ys;diff.cap=cap;diff.reset();
+  return true;
+}
+void Dashboard::PageBuffers::free_diff() {
+  std::free(diff.h);std::free(diff.w);std::free(diff.xs);std::free(diff.ys);
+  diff=paint::Diff{};
+}
 // Pages other than SCAN and SYSTEMS: a dry run of the page folds everything it would draw into a signature. A revision that
 // changed nothing this page shows (a scan stage tick, a counter on another page) repaints nothing at all; a real change repaints
 // the page. (An off-screen sprite with a changed-band push was tried first: on the Tab5 it cost 70 to 180 ms per repaint and
@@ -591,7 +639,8 @@ void Dashboard::present_page(lgfx::LovyanGFX& display,const Snapshot& s,const Ui
   }
   if(pb_.valid && sig==pb_.sig) return;
   Paint p{display};
-  page(p,s,state);
+  if(pb_.ensure_diff()) p.diff=&pb_.diff;               // the page repaints only what changed since it was last drawn
+  widget(p,kSlotPage,kBg,[&]{page(p,s,state);});
   pb_.sig=sig;
   pb_.valid=true;
 }
@@ -600,18 +649,27 @@ bool Dashboard::present(lgfx::LovyanGFX& display,const Snapshot& s,
                         const UiState& state,bool owns_screen,bool overlay_open) {
   if(!owns_screen||overlay_open||state.view>=View::count)return false;
   const bool entry = !ready_ || last_state_.view!=state.view || last_state_.density!=state.density;
+  // A page other than SCAN whose only news is a faster-than-readable value change (a heard counter, a level) repaints at most every 250 ms.
+  // Anything the user did (a view, a selection, a page) changes the UI state and is drawn at once.
+  if(!entry && state.view!=View::explore && old_.revision!=s.revision &&
+     last_state_.history_offset==state.history_offset && last_state_.selected_history==state.selected_history &&
+     last_state_.selected_scan_hit==state.selected_scan_hit && last_state_.selected_system==state.selected_system &&
+     last_state_.system_offset==state.system_offset && static_cast<uint32_t>(millis()-last_paint_ms_)<250u) return true;
   if(!entry && old_.revision==s.revision &&
      last_state_.history_offset==state.history_offset && last_state_.selected_history==state.selected_history &&
      last_state_.selected_scan_hit==state.selected_scan_hit && last_state_.selected_system==state.selected_system &&
      last_state_.system_offset==state.system_offset) {
     if(old_.audio_revision!=s.audio_revision) {
-      // Only the voice panel changed: repaint that one rectangle, nothing else on the page.
-      if(state.view==View::live) {Paint pv{display};voice_panel(pv,s,state.density);}
+      if(static_cast<uint32_t>(millis()-last_paint_ms_)<120u) return true;   // a fast counter or level: at most about 8 repaints a second
+      last_paint_ms_=millis();
+      // Only the voice panel changed: the LIVE page repaints, and its diff painting draws only that panel's changed values.
+      if(state.view==View::live) present_page(display,s,state);
       old_.voice=s.voice;old_.audio_revision=s.audio_revision;
     }
     return true; // idle means zero drawing
   }
   Paint p{display};
+  if(pb_.ensure_diff()) p.diff=&pb_.diff;       // every widget below draws only what changed since it was last drawn
   if(entry) {
     // Screen owner already painted shared audio/header chrome. Never touch y < 104.
     display.fillRect(0,104,1280,616,kBg);
@@ -620,6 +678,7 @@ bool Dashboard::present(lgfx::LovyanGFX& display,const Snapshot& s,
     sys_ready_=false;
     disc_ready_=false;
     pb_.valid=false;                // the screen was just cleared: the next page push covers everything
+    pb_.diff.reset();               // ... and nothing that was drawn before is on it any more
   }
   // The context strip shows only the origin and the density: repaint it when one of those changed, not on every revision.
   const uint32_t ctx=static_cast<uint32_t>(s.origin)|(static_cast<uint32_t>(state.density)<<8)|0x10000u;
@@ -640,6 +699,7 @@ bool Dashboard::present(lgfx::LovyanGFX& display,const Snapshot& s,
   last_state_=state;
   old_=s;
   ready_=true;
+  last_paint_ms_=millis();
   return true;
 }
 Action Dashboard::handle_touch(int32_t x,int32_t y,const Snapshot& s,

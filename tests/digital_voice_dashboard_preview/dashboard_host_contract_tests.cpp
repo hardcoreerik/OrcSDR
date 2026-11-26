@@ -5,10 +5,12 @@
 #endif
 #include <cassert>
 #include <cstdio>
+#include <cstdlib>
 #include <cstring>
 #include <string>
 namespace dv=orcsdr::digital_voice_ui;
 using namespace dv;
+#define FCHK(c) do{if(!(c)){std::fprintf(stderr,"FLICKER TEST FAIL line %d: %s\n",__LINE__,#c);std::exit(1);}}while(0)
 int main(){
   lgfx::LovyanGFX display;
   Dashboard dashboard;
@@ -89,9 +91,34 @@ int main(){
   assert(!host_stub::out_of_bounds && host_stub::full_clear_count==0);
   auto x=s; x.revision=3; x.evidence=Evidence::candidate;
   host_stub::reset();assert(dashboard.present(display,x,ui,true,false));
-  assert(host_stub::contains("SOURCE") && host_stub::contains("UNKNOWN"));
+  // Diff painting: only what changed is drawn. The labels that did not change are not drawn again and no card is refilled.
+  assert(host_stub::contains("UNKNOWN"));  // the values that changed are drawn
+  assert(host_stub::calls.size()<80);        // a few values, not the page
+  for(const auto& c:host_stub::calls) assert(!(c.kind==host_stub::Prim::round_fill&&c.w>=400));
   assert(!host_stub::contains("3024109"));
   assert(host_stub::full_clear_count==0); // value update not screen clear
+  {
+    // FLICKER REGRESSION (docs/UI_RENDERING_STANDARD.md): a value that keeps changing (a heard counter) repaints only its own text. The
+    // displayed value updates, no card or panel is refilled, nothing clears the screen, and the cost of a repaint stays small.
+    Dashboard fd;lgfx::LovyanGFX fdisp;UiState fu{};fu.view=View::systems;
+    Snapshot fs{};fs.revision=1;fs.systems_available=true;fs.last_heard_available=true;fs.observed_system_count=1;fs.db_available=true;fs.db_systems=1;
+    fs.receiver=Receiver::receiving;
+    auto& sys=fs.observed_systems[0];sys.protocol=Protocol::dmr;sys.evidence=Evidence::integrity_valid;sys.frequency_hz=152157500;sys.has_frequency=true;
+    sys.colour_code=13;sys.colour_code_valid=true;sys.heard_count=100;
+    host_stub::reset();FCHK(fd.present(fdisp,fs,fu,true,false));
+    FCHK(host_stub::contains("HEARD 100"));
+    for(uint32_t n=101;n<=110;++n) {
+      sys.heard_count=n;++fs.revision;
+      host_stub::reset();FCHK(fd.present(fdisp,fs,fu,true,false));
+      char want[24];std::snprintf(want,sizeof(want),"HEARD %lu",static_cast<unsigned long>(n));
+      FCHK(host_stub::contains(want));
+      FCHK(host_stub::full_clear_count==0);
+      for(const auto& c:host_stub::calls) FCHK(!((c.kind==host_stub::Prim::round_fill||c.kind==host_stub::Prim::round_line)&&c.w>=100));
+      FCHK(host_stub::calls.size()<=12);
+    }
+    // The same value again, or a change on a page that does not show it, draws nothing.
+    host_stub::reset();++fs.revision;FCHK(fd.present(fdisp,fs,fu,true,false));FCHK(host_stub::calls.empty());
+  }
   ui.density=Density::analysis_first;
   host_stub::reset();assert(dashboard.present(display,s,ui,true,false));
   assert(host_stub::contains("ANALYSIS FIRST"));

@@ -3,6 +3,7 @@
 // Caller is the UI framebuffer owner, draws dashboard_audio_control shared chrome,
 // and supplies immutable snapshots. No radio/SD/USB or decoder dependencies.
 #include "digital_voice_dashboard_layout.hpp"
+#include "digital_voice_dashboard_paint.hpp"
 #include "digital_voice_dashboard_model.hpp"
 #include "digital_voice_scan_view.hpp"
 #include <M5Unified.h>
@@ -28,13 +29,19 @@ class Dashboard final {
     PageBuffers() = default;
     PageBuffers(const PageBuffers&) {}
     PageBuffers& operator=(const PageBuffers&) { valid = false; return *this; }
+    ~PageBuffers() { free_diff(); }
     void release();
+    // What each widget drew last time (see paint::Diff): arrays in PSRAM, allocated on first use. Without them the page repaints as before.
+    paint::Diff diff;
+    bool ensure_diff();
+    void free_diff();
   };
   PageBuffers pb_;
   Snapshot old_{};  // bounded ~1 KiB, no heap; review internal RAM budget before firmware integration
   UiState last_state_{};
   ScanView scan_{};        // retained SCAN widgets: what is on screen, to repaint only what changed
   uint32_t ctx_sig_ = 0;   // what the context strip currently shows
+  uint32_t last_paint_ms_ = 0;   // when a page last repainted: value changes arriving faster than about 4 a second wait for the next slot
   bool ready_ = false;
   // Systems page: what each row and the right panel currently show, so only changed parts are repainted.
   uint32_t sys_row_sig_[4] = {};

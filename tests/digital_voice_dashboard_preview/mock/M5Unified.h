@@ -3,6 +3,12 @@
 #include <cstdint>
 #include <string>
 #include <vector>
+#if defined(_MSC_VER)
+#include <crtdbg.h>
+#include <cstdlib>
+// A failed assert prints to stderr and exits; it must never open the Windows debug dialog and wait for a click.
+namespace host_stub { struct NoAssertDialog { NoAssertDialog() { _set_abort_behavior(0, _WRITE_ABORT_MSG | _CALL_REPORTFAULT); _CrtSetReportMode(_CRT_ASSERT, _CRTDBG_MODE_FILE); _CrtSetReportFile(_CRT_ASSERT, _CRTDBG_FILE_STDERR); _CrtSetReportMode(_CRT_ERROR, _CRTDBG_MODE_FILE); _CrtSetReportFile(_CRT_ERROR, _CRTDBG_FILE_STDERR); } }; inline NoAssertDialog g_no_assert_dialog; }
+#endif
 constexpr uint16_t TFT_BLACK=0x0000, TFT_WHITE=0xffff;
 constexpr int middle_left=0;
 namespace host_stub {
@@ -25,6 +31,8 @@ inline void record(Prim::Kind kind,int x,int y,int w,int h,const char* s=nullptr
 }
 inline bool contains(const std::string& needle){for(auto& p:calls)if(p.kind==Prim::text&&p.str.find(needle)!=std::string::npos)return true;return false;}
 }
+// Each call to millis() moves the clock on by one second, so a test that paints twice in a row is never held back by the repaint rate limit.
+inline uint32_t millis(){static uint32_t t=0;t+=1000;return t;}
 namespace lgfx {
 class LovyanGFX {
  public:
@@ -37,6 +45,8 @@ class LovyanGFX {
   void clearClipRect(){host_stub::clip_x=0;host_stub::clip_y=0;host_stub::clip_w=1280;host_stub::clip_h=720;}
   void setFont(decltype(nullptr)){}
   void setTextSize(int s){host_stub::text_size=s;}
+  int textWidth(const char* s){return (int)std::string(s).size()*6*host_stub::text_size;}
+  int fontHeight(){return 8*host_stub::text_size;}
   void setTextDatum(int){}
   void setTextColor(uint16_t){}
   void drawString(const char* s,int x,int y){int w=(int)std::string(s).size()*6*host_stub::text_size,h=8*host_stub::text_size;host_stub::record(host_stub::Prim::text,x,y-h/2,w,h,s);}   // middle-left datum; built-in 6x8 glyph cell

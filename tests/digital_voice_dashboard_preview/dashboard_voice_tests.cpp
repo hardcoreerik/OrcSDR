@@ -8,10 +8,11 @@ using orcsdr::digital_voice_ui::layout::Rect;
 static int g_fail = 0;
 #define CHECK(c) do { if (!(c)) { std::printf("FAIL %s:%d  %s\n", __FILE__, __LINE__, #c); ++g_fail; } } while (0)
 static bool inside(host_stub::R e, Rect r) { return e.w == 0 || e.h == 0 || (e.x >= r.x && e.y >= r.y && e.x + e.w <= r.x + r.w && e.y + e.h <= r.y + r.h); }
-static bool all_inside(Rect r) {
+// `extra` is a second place the audio state legitimately shows (the analysis page's VOICE fact); nothing else may be touched.
+static bool all_inside(Rect r, Rect extra = {0, 0, 0, 0}) {
   for (const auto& p : host_stub::calls) {
     if (p.kind == host_stub::Prim::line) continue;
-    if (!inside(host_stub::eff(p), r)) { const auto e = host_stub::eff(p); std::printf("   outside: kind=%d (%d,%d,%d,%d) '%s'\n", p.kind, e.x, e.y, e.w, e.h, p.str.c_str()); return false; }
+    if (!inside(host_stub::eff(p), r) && !(extra.w && inside(host_stub::eff(p), extra))) { const auto e = host_stub::eff(p); std::printf("   outside: kind=%d (%d,%d,%d,%d) '%s'\n", p.kind, e.x, e.y, e.w, e.h, p.str.c_str()); return false; }
   }
   return true;
 }
@@ -23,7 +24,7 @@ int main() {
   s.receiver = Receiver::receiving; s.protocol = Protocol::dmr; s.evidence = Evidence::identity_valid;
   s.has_source = s.has_destination = true; s.source_id = 4106011; s.destination_id = 1000; s.group_call = true;
   s.voice.available = true; s.voice.phase = VoicePhase::listening;
-  const struct { Density d; Rect vr; } kinds[] = {{Density::discovery_first, {32, 530, 778, 100}}, {Density::analysis_first, {654, 488, 594, 100}}};
+  const struct { Density d; Rect vr; Rect extra; } kinds[] = {{Density::discovery_first, {32, 530, 778, 100}, {0, 0, 0, 0}}, {Density::analysis_first, {654, 488, 594, 100}, {38, 442, 570, 16}}};
   for (const auto& k : kinds) {
     ui.density = k.d;
     s.voice = VoiceAudioView(); s.voice.available = true; s.voice.phase = VoicePhase::listening; ++s.audio_revision; ++s.revision;
@@ -43,7 +44,7 @@ int main() {
       host_stub::reset();
       CHECK(dash.present(display, s, ui, true, false));
       CHECK(host_stub::contains(voice_phase_name(ph)));
-      CHECK(all_inside(k.vr));                       // ONLY the voice panel was touched
+      CHECK(all_inside(k.vr, k.extra));                       // ONLY the voice panel was touched
       CHECK(host_stub::full_clear_count == 0 && !host_stub::out_of_bounds);
       CHECK(!host_stub::contains("SOURCE"));        // the rest of the page was not repainted
     }
