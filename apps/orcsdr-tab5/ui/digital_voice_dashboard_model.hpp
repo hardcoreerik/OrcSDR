@@ -26,7 +26,8 @@ struct VoiceAudioView {
   bool group_call = false;
 };
 // discover is reached from SCAN (DISCOVER button), not from a tab: the tab bar keeps its six entries (layout::kTabCount).
-enum class View : uint8_t { explore, live, last_heard, systems, signal, setup, discover, count };
+// follow is reached from SYSTEMS (FOLLOW button), not from a tab: it stays on one channel and shows it in plain words.
+enum class View : uint8_t { explore, live, last_heard, systems, signal, setup, discover, follow, count };
 enum class Density : uint8_t { discovery_first, analysis_first };
 // Scanner state is a presentation snapshot owned by the existing receiver/scan service.
 // No scan engine or radio ownership is created by this UI.
@@ -183,6 +184,14 @@ struct Snapshot {
   uint8_t monitor_proto = 0;
   uint16_t monitor_entries = 0;
   bool monitor_selected = false;
+  // FOLLOW (stay on one channel): active = the receiver owner is following it, lost = it stopped and is being restarted. The trace is the
+  // receiver's own relative RF level, one value (0..255 over -60..0 dB) every tenth of a second, oldest first: real data, never synthesised.
+  bool follow_active = false, follow_lost = false, follow_area_valid = false;
+  uint32_t follow_frequency_hz = 0;
+  Protocol follow_protocol = Protocol::unknown;
+  uint8_t follow_area = 0;
+  static constexpr size_t kFollowTrace = 64;
+  uint8_t follow_trace[kFollowTrace]{};
   uint32_t audio_revision = 0;           // moves when the voice panel's content changes; the page revision does not
 };
 struct UiState {
@@ -197,7 +206,8 @@ struct UiState {
 enum class ActionKind : uint8_t { none, switch_view, selected_history, save_channel, scan, setup_protocol,
                                   toggle_hold, skip_frequency, toggle_density, select_scan_hit,
                                   select_system, page_history, plan_prev, plan_next, set_listen, toggle_save_speech, toggle_band, toggle_save_iq, page_systems,
-                                  open_discover, close_discover, discover_start, discover_stop, discover_save, monitor_filter };
+                                  open_discover, close_discover, discover_start, discover_stop, discover_save, monitor_filter,
+                                  follow_system, follow_stop };
 // Why a control is unavailable, in words the screen can show. `none` = the control is usable.
 enum class Disabled : uint8_t { none, no_receiver, no_plan, not_scanning, no_signal_selected, not_verified, already_saved,
                                 list_full, no_storage, scan_running, single_plan, no_frequency };

@@ -84,6 +84,16 @@ struct State {
   uint32_t voice_hz[4]{};
   uint8_t voice_n = 0;
   uint32_t voice_last_speech = 0;
+  // FOLLOW: stay on one channel (SYSTEMS > FOLLOW, or RTL_DV FOLLOW <hz>). The scan that was running comes back when it ends.
+  bool follow_on = false, follow_lost = false, follow_resume = false, follow_area_valid = false;
+  uint32_t follow_hz = 0, follow_retry_ms = 0, follow_trace_ms = 0;
+  uint8_t follow_proto = 0, follow_area = 0;
+  uint8_t follow_trace[Snapshot::kFollowTrace]{};
+  // Repaint cost per view (this visit): count, total, worst, and how many took 100 ms or more. RTL_DV RENDER prints it, RTL_DV RENDER RESET clears it.
+  uint32_t rv_n[8]{}, rv_max[8]{}, rv_slow[8]{};
+  uint32_t tick_n = 0, tick_last_ms = 0, tick_gap_max_ms = 0, tick_slow = 0, tick_busy_max_us = 0;
+  uint32_t tick_sec_max_us[6]{};   // worst time of each part of tick(): speech save, candidates, persistence, scanner, refresh, draw   // how often the main loop reaches this screen
+  uint64_t rv_total[8]{};
   uint32_t led_utc[64]{};                      // UTC of the last note, 0 = clock not valid
   // Candidate log: the ledger written to /orcsdr/dv_cand_<utc>.csv (one file per session, never overwritten by a later one) so sync-level findings survive a restart.
   bool cand_dirty = false, cand_saving = false;
@@ -639,6 +649,17 @@ void refresh(State& st) {
   }
   const bool diag = rs.running;
   const int32_t level = rs.level_milli > 0 ? static_cast<int32_t>(std::lround(200.0 * std::log10(rs.level_milli / 1000.0))) : 0;
+  if (st.follow_on && static_cast<uint32_t>(now() - st.follow_trace_ms) >= 100u) {      // one RF level sample every tenth of a second, oldest first
+    st.follow_trace_ms = now();
+    std::memmove(st.follow_trace, st.follow_trace + 1, sizeof(st.follow_trace) - 1);
+    const int v = rs.level_milli > 0 ? (level + 600) * 255 / 600 : 0;                         // -60 dB .. 0 dB over 0..255
+    st.follow_trace[sizeof(st.follow_trace) - 1] = static_cast<uint8_t>(v < 1 ? 1 : v > 255 ? 255 : v);
+    ++s.revision;
+  }
+  if (s.follow_active != st.follow_on || s.follow_lost != st.follow_lost || s.follow_frequency_hz != st.follow_hz) ++s.revision;
+  s.follow_active = st.follow_on; s.follow_lost = st.follow_lost; s.follow_frequency_hz = st.follow_on ? st.follow_hz : 0;
+  s.follow_protocol = static_cast<Protocol>(st.follow_proto); s.follow_area = st.follow_area; s.follow_area_valid = st.follow_area_valid;
+  std::memcpy(s.follow_trace, st.follow_trace, sizeof(s.follow_trace));
   const bool saved_flags_changed = [&] {
     bool ch = false;
     for (size_t i = 0; i < s.scan_hit_count && i < kScanHits; ++i) {
@@ -1083,7 +1104,66 @@ void save_found(State& st) {
   if (added && st.plan_option == 0) apply_plan_option(st);
 }
 
+// ---- FOLLOW: one channel, listened to continuously. A one-channel plan never retunes; the control-only release and the demotion are off. ----
+bool follow_arm(State& st) {
+  const uint32_t plan[1] = {st.follow_hz};
+  std::memset(st.plan_mask, 0, sizeof(st.plan_mask));
+  if (!st.scanner.set_plan(plan, 1)) return false;
+  st.plan_mask[0] = mask_for_protocol(static_cast<Protocol>(st.follow_proto));
+  st.scanner.set_control_hold_max_ms(60000);
+  st.scanner.set_demote(0, 3);
+  st.scanner.set_quick_lists(false);
+  return start_scan(st);
+}
+bool follow_begin(State& st, uint32_t hz, Protocol pr, uint8_t area, bool area_valid) {
+  if (hz == 0 || mask_for_protocol(pr) == 0) return false;
+  if (st.disc_phase) stop_discover(st);
+  const bool was_scanning = st.scanner.active();
+  if (was_scanning) stop_scan(st);
+  if (!st.follow_on) st.follow_resume = was_scanning;
+  st.follow_hz = hz; st.follow_proto = static_cast<uint8_t>(pr); st.follow_area = area; st.follow_area_valid = area_valid;
+  std::memset(st.follow_trace, 0, sizeof(st.follow_trace));
+  st.follow_on = true;
+  st.follow_lost = !follow_arm(st);                 // if the receiver is not ready yet, service_follow() keeps trying
+  st.follow_retry_ms = now();
+  ++st.snapshot.revision;
+  return true;
+}
+void follow_end(State& st) {
+  if (!st.follow_on) return;
+  st.follow_on = false; st.follow_lost = false;
+  stop_scan(st);
+  apply_plan_option(st);                            // the plan that was selected before FOLLOW
+  if (st.follow_resume) (void)start_scan(st);
+  ++st.snapshot.revision;
+}
+// Called every tick: if the receiver stopped (USB hiccup, retune refused), try again every 3 s and say so on the screen.
+void service_follow(State& st) {
+  if (!st.follow_on) return;
+  const bool running = st.scanner.active();
+  const uint32_t t = now();
+  if (running) { if (st.follow_lost) { st.follow_lost = false; ++st.snapshot.revision; } return; }
+  if (!st.follow_lost) { st.follow_lost = true; ++st.snapshot.revision; }
+  if (t - st.follow_retry_ms < 3000u) return;
+  st.follow_retry_ms = t;
+  st.scanner.stop();
+  if (follow_arm(st)) { st.follow_lost = false; ++st.snapshot.revision; }
+}
+
 void apply_radio_action(State& st, const Action& a) {
+  switch (a.kind) {
+    case ActionKind::follow_system: {
+      const Snapshot& s = st.snapshot;
+      if (a.value >= s.observed_system_count || a.value >= kObservedSystems || !s.observed_systems[a.value].has_frequency) { ++g_unapplied_actions; return; }
+      const ObservedSystem& o = s.observed_systems[a.value];
+      const bool nx = o.protocol == Protocol::nxdn48 || o.protocol == Protocol::nxdn96;
+      if (!follow_begin(st, o.frequency_hz, o.protocol, nx ? o.ran : o.colour_code, nx ? o.ran_valid : o.colour_code_valid)) ++g_unapplied_actions;
+      return;
+    }
+    case ActionKind::follow_stop: follow_end(st); return;
+    default: break;
+  }
+  if (st.follow_on && (a.kind == ActionKind::scan || a.kind == ActionKind::discover_start)) follow_end(st);   // a scan or discovery ends FOLLOW first
   switch (a.kind) {
     case ActionKind::scan:
       if (st.disc_phase) stop_discover(st);
@@ -1325,11 +1405,29 @@ void service_candidates(State& st, bool final_flush) {
 
 void tick() {
   if (!g_state) return;
-  service_speech_save(*g_state);
-  service_candidates(*g_state, false);
-  service_persistence(*g_state, false);
-  run_scanner(*g_state);
-  refresh(*g_state);
+  {
+    const uint32_t t_now = now();
+    if (g_state->tick_last_ms) {
+      const uint32_t gap = t_now - g_state->tick_last_ms;
+      if (gap > g_state->tick_gap_max_ms) g_state->tick_gap_max_ms = gap;
+      if (gap >= 100u) ++g_state->tick_slow;
+    }
+    g_state->tick_last_ms = t_now; ++g_state->tick_n;
+  }
+  const uint32_t t_tick0 = g_hooks.micros ? g_hooks.micros() : 0;
+  auto lap = [&](int k, uint32_t& t0) {
+    if (!g_hooks.micros) return;
+    const uint32_t t1 = g_hooks.micros();
+    if (t1 - t0 > g_state->tick_sec_max_us[k]) g_state->tick_sec_max_us[k] = t1 - t0;
+    t0 = t1;
+  };
+  uint32_t t_lap = t_tick0;
+  service_speech_save(*g_state); lap(0, t_lap);
+  service_candidates(*g_state, false); lap(1, t_lap);
+  service_persistence(*g_state, false); lap(2, t_lap);
+  service_follow(*g_state);
+  run_scanner(*g_state); lap(3, t_lap);
+  refresh(*g_state); lap(4, t_lap);
   // update() also returns true when it correctly drew nothing; count only real model changes as repaints.
   const uint32_t t_render = g_hooks.micros ? g_hooks.micros() : 0;
   const bool drew = g_state->snapshot.revision != g_painted_revision;
@@ -1337,11 +1435,15 @@ void tick() {
     if (g_hooks.micros) {
       const uint32_t dt = g_hooks.micros() - t_render;
       g_render_us_total += dt; ++g_render_n; if (dt > g_render_us_max) g_render_us_max = dt;
+      const size_t vi = static_cast<size_t>(g_state->surface.state().view) & 7u;
+      ++g_state->rv_n[vi]; g_state->rv_total[vi] += dt; if (dt > g_state->rv_max[vi]) g_state->rv_max[vi] = dt; if (dt >= 100000u) ++g_state->rv_slow[vi];
     }
     g_painted_revision = g_state->snapshot.revision;
     ++g_repaints;
     screens::note_visible_update(screens::Id::digital_voice);
   }
+  lap(5, t_lap);
+  if (g_hooks.micros) { const uint32_t busy = g_hooks.micros() - t_tick0; if (busy > g_state->tick_busy_max_us) g_state->tick_busy_max_us = busy; }
 }
 
 void draw(bool static_panel) {
@@ -1457,6 +1559,43 @@ bool handle_command(const char* command, bool authenticated, void (*write_line)(
                     protocol_name(static_cast<Protocol>(st.led_proto[i])), static_cast<unsigned>(st.led_level[i]), static_cast<unsigned>(st.led_seen[i]), static_cast<unsigned long>(st.led_utc[i]));
       write_line(line);
     }
+    return true;
+  }
+  if (std::strncmp(arg, "RENDER", 6) == 0) {              // repaint cost per view: RTL_DV RENDER | RESET
+    if (std::strstr(arg, "RESET")) {
+      for (int i = 0; i < 8; ++i) { st.rv_n[i] = st.rv_max[i] = st.rv_slow[i] = 0; st.rv_total[i] = 0; }
+      st.tick_n = st.tick_gap_max_ms = st.tick_slow = st.tick_busy_max_us = 0; st.tick_last_ms = 0;
+      for (int i = 0; i < 6; ++i) st.tick_sec_max_us[i] = 0;
+      write_line("RTL_DV_RENDER_OK reset"); return true;
+    }
+    { char tl[120]; std::snprintf(tl, sizeof(tl), "RTL_DV_TICKS n=%lu gap_max_ms=%lu gaps_100ms=%lu tick_busy_max_us=%lu sec_us=%lu/%lu/%lu/%lu/%lu/%lu", static_cast<unsigned long>(st.tick_n),
+                                  static_cast<unsigned long>(st.tick_gap_max_ms), static_cast<unsigned long>(st.tick_slow), static_cast<unsigned long>(st.tick_busy_max_us),
+                                  static_cast<unsigned long>(st.tick_sec_max_us[0]), static_cast<unsigned long>(st.tick_sec_max_us[1]), static_cast<unsigned long>(st.tick_sec_max_us[2]),
+                                  static_cast<unsigned long>(st.tick_sec_max_us[3]), static_cast<unsigned long>(st.tick_sec_max_us[4]), static_cast<unsigned long>(st.tick_sec_max_us[5])); write_line(tl); }
+    for (int i = 0; i < 8; ++i) {
+      char line[120];
+      std::snprintf(line, sizeof(line), "RTL_DV_RENDER view=%d n=%lu avg_us=%lu max_us=%lu slow100ms=%lu", i, static_cast<unsigned long>(st.rv_n[i]),
+                    static_cast<unsigned long>(st.rv_n[i] ? st.rv_total[i] / st.rv_n[i] : 0), static_cast<unsigned long>(st.rv_max[i]), static_cast<unsigned long>(st.rv_slow[i]));
+      write_line(line);
+    }
+    return true;
+  }
+  if (std::strncmp(arg, "FOLLOW", 6) == 0) {              // stay on one channel: RTL_DV FOLLOW <hz> | STOP
+    const char* q = arg + 6;
+    while (*q == ' ') ++q;
+    if (std::strcmp(q, "STOP") == 0) { follow_end(st); write_line("RTL_DV_FOLLOW_OK stopped"); return true; }
+    char* endp = nullptr;
+    const unsigned long hz = std::strtoul(q, &endp, 10);
+    if (endp == q || hz < 24000000ul || hz > 1766000000ul) { write_line("RTL_DV_FOLLOW_INVALID use RTL_DV FOLLOW <hz> | STOP"); return true; }
+    Protocol pr = Protocol::dmr; uint8_t area = 0; bool av = false;
+    for (size_t i = 0; i < st.db.system_count(); ++i) {                       // the protocol and area of a known system on that frequency
+      const dv::SystemRec& r = st.db.system(i);
+      if (r.frequency_hz == hz) { pr = static_cast<Protocol>(r.protocol); area = r.area; av = r.area_kind != dv::AreaKind::none; break; }
+    }
+    if (!follow_begin(st, static_cast<uint32_t>(hz), pr, area, av)) { write_line("RTL_DV_FOLLOW_REFUSED"); return true; }
+    char line[96];
+    std::snprintf(line, sizeof(line), "RTL_DV_FOLLOW_OK hz=%lu proto=%u lost=%d", hz, static_cast<unsigned>(st.follow_proto), st.follow_lost ? 1 : 0);
+    write_line(line);
     return true;
   }
   if (std::strncmp(arg, "MONITOR", 7) == 0) {            // scan only the discovered systems: RTL_DV MONITOR [ALL|DMR|NXDN48|NXDN96] [CC n|RAN n]

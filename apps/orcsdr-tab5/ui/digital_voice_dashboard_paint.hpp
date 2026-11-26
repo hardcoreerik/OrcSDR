@@ -75,6 +75,7 @@ struct Paint {
     return false;
   }
   void note_fill(int x,int y,int w,int h,uint16_t c) {
+    if (w<40||h<20) return;                 // a thin bar or a bar's background is never what text sits on; remembering it would crowd out the cards and buttons
     if (nfills_<kFills) fills_[nfills_++]={x,y,w,h,c};
   }
   void mark_dirty(int x,int y,int w,int h) {

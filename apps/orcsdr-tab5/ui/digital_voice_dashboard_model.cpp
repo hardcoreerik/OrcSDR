@@ -92,6 +92,11 @@ bool apply_ui_action(UiState& ui,Action action,const Snapshot& s) {
       if(!s.systems_available||action.value>=s.observed_system_count||action.value>=kObservedSystems)return false;
       ui.selected_system=action.value;return true;
     case ActionKind::open_discover: ui.view=View::discover;return true;
+    // FOLLOW changes the screen AND the receiver: the view moves here, the receiver owner acts on the returned action.
+    case ActionKind::follow_system:
+      if(!s.can_scan||action.value>=s.observed_system_count||action.value>=kObservedSystems||!s.observed_systems[action.value].has_frequency)return false;
+      ui.view=View::follow;return false;
+    case ActionKind::follow_stop: ui.view=View::systems;return false;
     case ActionKind::close_discover: ui.view=View::explore;return true;
     case ActionKind::page_systems: {
       const size_t total=s.db_systems;

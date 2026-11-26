@@ -28,7 +28,7 @@ std::atomic<uint8_t> g_listen_req{0xff};     // 0xff = no request
 std::atomic<bool> g_reset_req{false};
 std::atomic<uint32_t> g_tone_ms{0};
 std::atomic<uint32_t> g_gain_req{0xffffffffu};      // requested playback gain x100; all-ones = none
-std::atomic<uint32_t> g_gain_x100{400};              // current playback gain x100 (default 4.00: the vocoder output is quiet)
+std::atomic<uint32_t> g_gain_x100{600};              // current playback gain x100 (default 6.00: the vocoder output is quiet; peaks of a real call were -20 dBFS raw)
 std::atomic<uint32_t> g_buffer_req{0xffffffffu};   // requested playout hold (ms); all-ones = none
 std::atomic<uint32_t> g_nfm_blocked{0};
 std::atomic<uint8_t> g_save_req{0xff};          // 0/1 = requested, 0xff = none

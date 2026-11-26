@@ -93,7 +93,7 @@ void context(Paint& p,const Snapshot& s,Density mode) {
 void nav(Paint& p,const UiState& state) {
   p.fillRect(0,642,1280,78,kBg);
   for(int i=0;i<layout::kTabCount;++i)
-    p.button(kTabs[i],layout::tab(i),true,state.view==static_cast<View>(i)||(i==0&&state.view==View::discover));
+    p.button(kTabs[i],layout::tab(i),true,state.view==static_cast<View>(i)||(i==0&&state.view==View::discover)||(i==3&&state.view==View::follow));
 }
 // ---- Voice audio panel (LIVE page). Retained widget: repainted alone, inside its own rectangle, when audio_revision moves.
 Rect voice_rect(Density d) {
@@ -315,6 +315,7 @@ void systems_facts(Paint& p,const Snapshot& s,const UiState& u,Rect b,unsigned c
     if(ids[0])p.label(ids,b.x+18,b.y+292,b);
   }
   p.button("SAVE CHANNEL",{b.x+18,b.y+334,242,48},s.can_save_channel);
+  p.button("FOLLOW",{b.x+270,b.y+334,138,48},s.can_scan&&count>0&&s.observed_systems[std::min<unsigned>(u.selected_system,count-1)].has_frequency);
 }
 void systems(Paint& p,const Snapshot& s,const UiState& u) {
   const auto mode=u.density;
@@ -509,6 +510,89 @@ void discover_update(Paint& p,const Snapshot& s,const UiState& u,uint32_t* sig) 
   for(unsigned i=0;i<kObservedSystems;++i)
     if(now[3+i]!=sig[3+i]) {widget(p,kSlotDiscRow+i,kPanel,[&]{disc_row(p,s,g,i);});sig[3+i]=now[3+i];}
 }
+// ---- FOLLOW: one channel, in plain words. Reached from SYSTEMS; BACK returns there and the scan resumes. ----
+constexpr Rect kFollowListen[4]={{38,568,150,46},{198,568,150,46},{358,568,150,46},{518,568,150,46}};
+Rect follow_back_button() {return {layout::kBasicFacts.x+18,layout::kBasicFacts.y+410,180,48};}
+Rect follow_record_button() {return {layout::kBasicFacts.x+208,layout::kBasicFacts.y+410,200,48};}
+void follow_mhz(char (&out)[32],uint32_t hz) {
+  std::snprintf(out,sizeof(out),"%lu.%04lu MHz",static_cast<unsigned long>(hz/1000000u),static_cast<unsigned long>((hz%1000000u)/100u));
+}
+void follow_page(Paint& p,const Snapshot& s,const UiState&) {
+  const Rect a=layout::kBasicHero,b=layout::kBasicFacts;
+  const VoiceAudioView& v=s.voice;
+  p.card(a);p.card(b);
+  // What the radio is doing, in words a DMR user already knows.
+  const bool on_air=v.available&&(v.phase==VoicePhase::decoding||v.phase==VoicePhase::acquiring||v.phase==VoicePhase::buffering||
+                                  v.phase==VoicePhase::degraded||v.phase==VoicePhase::silence_frame);
+  const char* status="Listening - no call right now";uint16_t sc=kWhite;
+  if(!s.follow_active){status="Not following a channel";sc=kMuted;}
+  else if(s.follow_lost){status="Receiver lost - check the USB cable. Trying again...";sc=kAmber;}
+  else if(v.phase==VoicePhase::protected_voice){status="Encrypted call - we can't play it";sc=kRed;}
+  else if(on_air){status="Call in progress";sc=kGreen;}
+  else if(v.phase==VoicePhase::call_ended){status="Call ended - waiting for a reply";sc=kCyan;}
+  p.title(s.follow_active?"FOLLOWING":"FOLLOW",a.x+18,a.y+32,a);
+  char t[64];
+  if(s.follow_active&&s.follow_frequency_hz) {char m[32];follow_mhz(m,s.follow_frequency_hz);std::snprintf(t,sizeof(t),"%s",m);}
+  else std::snprintf(t,sizeof(t),"-");
+  p.text(t,a.x+18,a.y+84,kWhite,4,a);
+  if(s.follow_active) {
+    if(s.follow_protocol==Protocol::dmr&&s.follow_area_valid) std::snprintf(t,sizeof(t),"DMR   Colour Code %u",static_cast<unsigned>(s.follow_area));
+    else if((s.follow_protocol==Protocol::nxdn48||s.follow_protocol==Protocol::nxdn96)&&s.follow_area_valid)
+      std::snprintf(t,sizeof(t),"%s   RAN %u",protocol_name(s.follow_protocol),static_cast<unsigned>(s.follow_area));
+    else std::snprintf(t,sizeof(t),"%s",protocol_name(s.follow_protocol));
+    p.label(t,a.x+18,a.y+130,a);
+  }
+  p.text(status,a.x+18,a.y+176,sc,3,a);
+  p.hr(a.x+18,a.y+206,a.w-36);
+  // The call: only what the radio verified. Nothing is guessed, so an unknown stays a dash.
+  if(s.follow_active&&(on_air||v.phase==VoicePhase::call_ended)&&v.source_id) {
+    char x[24];
+    std::snprintf(x,sizeof(x),"%lu",static_cast<unsigned long>(v.destination_id));
+    p.fact(v.group_call?"TALKGROUP":"TO RADIO",x,a.x+18,a.y+226,a,kGreen,170);
+    std::snprintf(x,sizeof(x),"%lu",static_cast<unsigned long>(v.source_id));
+    p.fact("FROM RADIO",x,a.x+18,a.y+256,a,kWhite,170);
+    std::snprintf(x,sizeof(x),"%s%s%u",v.group_call?"Group call":"Private call",v.active_slot?"   Slot ":"",static_cast<unsigned>(v.active_slot));
+    p.label(x,a.x+400,a.y+226,a);
+  } else {
+    p.label("TALKGROUP",a.x+18,a.y+226,a);p.text("-",a.x+188,a.y+226,kMuted,2,a);
+    p.label("FROM RADIO",a.x+18,a.y+256,a);p.text("-",a.x+188,a.y+256,kMuted,2,a);
+  }
+  // Activity: the receiver's own RF level over the last 8 seconds. It moves even when nobody is talking, so you can see it is working.
+  const Rect tr{a.x+18,a.y+292,a.w-36,76};
+  const int bw=tr.w/static_cast<int>(Snapshot::kFollowTrace);
+  // The bars are the receiver's level, scaled to the window (lowest = empty, a span of at least 6 dB) so a quiet channel still shows
+  // that it is being read. A sample 4 dB or more above the typical (median) level is a signal and is drawn green.
+  uint8_t lo=255,hi=0,sorted[Snapshot::kFollowTrace];
+  for(size_t i=0;i<Snapshot::kFollowTrace;++i) {sorted[i]=s.follow_trace[i];lo=std::min(lo,s.follow_trace[i]);hi=std::max(hi,s.follow_trace[i]);}
+  std::sort(sorted,sorted+Snapshot::kFollowTrace);
+  const int med=sorted[Snapshot::kFollowTrace/2];
+  const int span=std::max<int>(hi-lo,25);
+  bool signal=false;
+  for(size_t i=0;i<Snapshot::kFollowTrace;++i) {
+    const bool strong=s.follow_trace[i]>=med+17;
+    signal=signal||strong;
+    const int h=s.follow_active&&s.follow_trace[i]?std::max(2,(static_cast<int>(s.follow_trace[i])-lo)*(tr.h-4)/span+2):0;
+    const int x=tr.x+static_cast<int>(i)*bw;
+    p.fillRect(x,tr.y,bw-1,tr.h-h,kBg);                                    // above the bar
+    p.fillRect(x,tr.y+tr.h-h,bw-1,h,strong?kGreen:kCyan);                  // the bar
+  }
+  p.label(s.follow_active?(signal?"Signal found":"Quiet right now"):"",a.x+18,a.y+388,a);
+  p.label("RF level, last 6 s (real data)",a.x+400,a.y+388,a);
+  for(int i=0;i<4;++i) {
+    const bool sel=static_cast<int>(v.listen)==i;
+    p.button(i==0?"AUTO":i==1?"SLOT 1":i==2?"SLOT 2":"MUTE",kFollowListen[i],v.available,sel);
+  }
+  p.title("YOU ARE FOLLOWING ONE CHANNEL",b.x+18,b.y+32,b);
+  p.label("The scan is paused here.",b.x+18,b.y+84,b);
+  p.label("Volume: use the speaker icon",b.x+18,b.y+130,b);
+  p.label("at the top of the screen.",b.x+18,b.y+160,b);
+  p.label("Press BACK to start",b.x+18,b.y+216,b);
+  p.label("scanning again.",b.x+18,b.y+246,b);
+  std::snprintf(t,sizeof(t),"Recording calls: %s",s.can_save_speech?(s.save_speech?"ON":"OFF"):"NOT AVAILABLE");
+  p.text(t,b.x+18,b.y+330,s.save_speech?kGreen:kMuted,2,b);
+  p.button("BACK",follow_back_button(),true);
+  p.button(s.save_speech?"RECORD: ON":"RECORD: OFF",follow_record_button(),s.can_save_speech,s.save_speech);
+}
 void signal(Paint& p,const Snapshot& s,Density mode) {
   const auto a=mode==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
   const auto b=mode==Density::discovery_first?layout::kBasicFacts:layout::kAdvancedFacts;
@@ -599,6 +683,7 @@ void page(Paint& p,const Snapshot& s,const UiState& u) {
     case View::last_heard:last_heard(p,s,u.density,u.history_offset,u.selected_history);break;
     case View::systems:systems(p,s,u);break;
     case View::discover:discover(p,s,u);break;
+    case View::follow:follow_page(p,s,u);break;
     case View::signal:signal(p,s,u.density);break;
     case View::setup:setup(p,s,u.density);break;
     default:break;
@@ -654,7 +739,8 @@ bool Dashboard::present(lgfx::LovyanGFX& display,const Snapshot& s,
   if(!entry && state.view!=View::explore && old_.revision!=s.revision &&
      last_state_.history_offset==state.history_offset && last_state_.selected_history==state.selected_history &&
      last_state_.selected_scan_hit==state.selected_scan_hit && last_state_.selected_system==state.selected_system &&
-     last_state_.system_offset==state.system_offset && static_cast<uint32_t>(millis()-last_paint_ms_)<250u) return true;
+     last_state_.system_offset==state.system_offset &&
+     static_cast<uint32_t>(millis()-last_paint_ms_)<(state.view==View::follow?60u:250u)) return true;   // FOLLOW animates: about 16 a second
   if(!entry && old_.revision==s.revision &&
      last_state_.history_offset==state.history_offset && last_state_.selected_history==state.selected_history &&
      last_state_.selected_scan_hit==state.selected_scan_hit && last_state_.selected_system==state.selected_system &&
@@ -717,6 +803,17 @@ Action Dashboard::handle_touch(int32_t x,int32_t y,const Snapshot& s,
     const auto b=state.density==Density::discovery_first?layout::kBasicFacts:layout::kAdvancedFacts;
     if(Rect{b.x+18,b.y+334,242,48}.contains(x,y)&&s.can_save_channel)
       return {ActionKind::save_channel};
+    if(Rect{b.x+270,b.y+334,138,48}.contains(x,y)&&s.can_scan&&s.observed_system_count>0&&state.selected_system<s.observed_system_count&&
+       s.observed_systems[state.selected_system].has_frequency)
+      return {ActionKind::follow_system,state.selected_system};
+  }
+  if(state.view==View::follow) {
+    if(follow_back_button().contains(x,y))return {ActionKind::follow_stop,0};
+    if(s.can_save_speech&&follow_record_button().contains(x,y))return {ActionKind::toggle_save_speech,0};
+    if(s.voice.available)
+      for(int i=0;i<4;++i)
+        if(kFollowListen[i].contains(x,y))return {ActionKind::set_listen,static_cast<uint8_t>(i)};
+    return {};
   }
   if(state.view==View::setup) {
     const auto a=state.density==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
