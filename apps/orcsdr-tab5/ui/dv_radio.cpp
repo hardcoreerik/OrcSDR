@@ -31,8 +31,13 @@ constexpr uint32_t kSampleRing = 32768;  // 48 kS/s samples between the DSP task
 constexpr size_t kWorkerChunk = 512;     // samples per worker step (keeps the worker preemptible and the timing fine-grained)
 static_assert((kSampleRing & (kSampleRing - 1)) == 0, "ring size must be a power of two");
 
-// The decoders' per-sample state (filter histories and taps, ~25 KiB) is the hot working set of the worker. It is allocated in
-// internal RAM when the heap has room (PSRAM shares its bandwidth with the display), and falls back to PSRAM otherwise.
+// The decoders' per-sample state (filter histories and taps, ~25 KiB) is the hot working set of the worker. It lives in PSRAM.
+// MEASURED on the Tab5 (2026-11-27, same firmware, same plan, 12 s of scanning each): with the state in internal RAM the DMR decoder cost
+// 3.97 us per sample (worker 82 percent busy, sample ring overflowing, main loop starved to about 3 percent of core 0, touch lost);
+// with the state in PSRAM it cost 1.14 us (worker 22 percent, no ring drops). The earlier belief that internal RAM is faster was wrong
+// on this board, and which of the two a boot got depended on how much internal RAM happened to be free. Set kDecodersInInternalRam only
+// after measuring again.
+constexpr bool kDecodersInInternalRam = false;
 struct Decoders {
   dmr1::Receiver dmr;
   dmr::d1::CallManager calls;   // privacy / identity / continuity gate between D1 voice groups and the voice task
@@ -374,7 +379,7 @@ bool start() {
     }
     g_state = new (mem) State();
     bool internal = false;
-    void* dm = alloc_fast(sizeof(Decoders), &internal);
+    void* dm = kDecodersInInternalRam ? alloc_fast(sizeof(Decoders), &internal) : nullptr;
     if (!dm) dm = alloc_state(sizeof(Decoders));
     if (!dm) {
       g_alloc_failed = static_cast<uint32_t>(sizeof(Decoders));
