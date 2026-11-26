@@ -166,6 +166,8 @@ struct Snapshot {
   bool save_speech = false;               // SETUP: record decoded DMR speech to the SD card
   bool can_save_speech = false;           // the app has storage and a settings store for it
   uint16_t speech_files = 0;              // recordings written this visit
+  bool save_log = false;                  // SETUP: write every verified event (and DMR data-burst bytes) to the SD card as JSON lines
+  uint32_t log_lines = 0;                 // lines logged this visit
   bool save_iq = false;                   // SETUP (DEV): keep IQ around call-like events
   uint16_t iq_files = 0;
   uint16_t band_mask = 0;                 // SETUP band picker: bit i = built-in band i is part of MY BANDS
@@ -207,7 +209,7 @@ enum class ActionKind : uint8_t { none, switch_view, selected_history, save_chan
                                   toggle_hold, skip_frequency, toggle_density, select_scan_hit,
                                   select_system, page_history, plan_prev, plan_next, set_listen, toggle_save_speech, toggle_band, toggle_save_iq, page_systems,
                                   open_discover, close_discover, discover_start, discover_stop, discover_save, monitor_filter,
-                                  follow_system, follow_stop };
+                                  follow_system, follow_stop, toggle_log_data };
 // Why a control is unavailable, in words the screen can show. `none` = the control is usable.
 enum class Disabled : uint8_t { none, no_receiver, no_plan, not_scanning, no_signal_selected, not_verified, already_saved,
                                 list_full, no_storage, scan_running, single_plan, no_frequency };

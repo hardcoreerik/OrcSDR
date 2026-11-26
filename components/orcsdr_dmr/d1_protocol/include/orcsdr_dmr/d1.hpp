@@ -51,6 +51,10 @@ struct Event {
     // independently valid Golay, BPTC and RS/CRC. Never promote a fuzzy
     // voice-sync-only hit or an unchecked payload into a decoder event.
     std::uint8_t sync_bit_errors = 0;
+    // The 96 information bits (12 bytes, MSB first) of a data burst after BPTC(196,96) decoding, exactly as decoded: the full-LC or CSBK or
+    // data-header content including its RS or CRC bytes. Valid only when bptc_valid; integrity_valid says whether the RS/CRC check passed.
+    std::array<std::uint8_t, 12> info{};
+    bool info_valid = false;
 };
 
 using EventSink = void (*)(const Event&, void*) noexcept;

@@ -661,6 +661,13 @@ void setup(Paint& p,const Snapshot& s,Density mode) {
     else std::snprintf(t,sizeof(t),"SAVE DMR IQ (DEV): OFF");
     p.button(t,{a.x+408,a.y+376,376,44},s.can_save_speech,s.save_iq);
   }
+  {
+    char t[48];
+    if(!s.can_save_speech)std::snprintf(t,sizeof(t),"LOG DATA: N/A");
+    else if(s.save_log)std::snprintf(t,sizeof(t),"LOG DATA: ON (%lu)",static_cast<unsigned long>(s.log_lines));
+    else std::snprintf(t,sizeof(t),"LOG DATA: OFF");
+    p.button(t,{a.x+408,a.y+268,376,44},s.can_save_speech,s.save_log);
+  }
   p.label("Speech: decoded clear calls only",a.x+408,a.y+440,a);
   p.title("SCAN BANDS (MY BANDS)",b.x+18,b.y+32,b);
   for(unsigned i=0;i<dv::kBandPresetCount;++i)
@@ -819,6 +826,7 @@ Action Dashboard::handle_touch(int32_t x,int32_t y,const Snapshot& s,
     const auto a=state.density==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
     if(Rect{a.x+18,a.y+376,370,44}.contains(x,y))return {ActionKind::toggle_density};
     if(s.can_scan&&Rect{a.x+18,a.y+322,370,44}.contains(x,y))return {ActionKind::monitor_filter};
+    if(s.can_save_speech&&Rect{a.x+408,a.y+268,376,44}.contains(x,y))return {ActionKind::toggle_log_data};
     if(s.can_save_speech&&Rect{a.x+408,a.y+322,376,44}.contains(x,y))return {ActionKind::toggle_save_speech};
     if(s.can_save_speech&&Rect{a.x+408,a.y+376,376,44}.contains(x,y))return {ActionKind::toggle_save_iq};
     {

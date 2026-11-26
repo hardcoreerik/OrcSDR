@@ -166,6 +166,24 @@ int main(){
     FCHK(fd.handle_touch(20+60,568+20,fs,fu).kind==ActionKind::set_listen);
     FCHK(!apply_ui_action(fu,{ActionKind::follow_stop,0},fs)&&fu.view==View::systems);
   }
+  {
+    // SETUP > LOG DATA: shows off, on with the line count, is N/A without storage, and is a receiver-owner action (never a UI-local change).
+    Dashboard fd;lgfx::LovyanGFX fdisp;UiState fu{};fu.view=View::setup;
+    Snapshot fs{};fs.revision=1;fs.can_save_speech=true;fs.receiver=Receiver::receiving;
+    host_stub::reset();FCHK(fd.present(fdisp,fs,fu,true,false));
+    FCHK(host_stub::contains("LOG DATA: OFF"));
+    const auto la=layout::kBasicHero;
+    FCHK(fd.handle_touch(la.x+500,la.y+280,fs,fu).kind==ActionKind::toggle_log_data);
+    FCHK(!apply_ui_action(fu,{ActionKind::toggle_log_data,0},fs));
+    fs.save_log=true;fs.log_lines=42;++fs.revision;
+    host_stub::reset();FCHK(fd.present(fdisp,fs,fu,true,false));
+    FCHK(host_stub::contains("LOG DATA: ON (42)"));
+    FCHK(host_stub::full_clear_count==0);
+    fs.can_save_speech=false;++fs.revision;
+    host_stub::reset();FCHK(fd.present(fdisp,fs,fu,true,false));
+    FCHK(host_stub::contains("LOG DATA: N/A"));
+    FCHK(fd.handle_touch(la.x+500,la.y+280,fs,fu).kind==ActionKind::none);
+  }
   ui.density=Density::analysis_first;
   host_stub::reset();assert(dashboard.present(display,s,ui,true,false));
   assert(host_stub::contains("ANALYSIS FIRST"));

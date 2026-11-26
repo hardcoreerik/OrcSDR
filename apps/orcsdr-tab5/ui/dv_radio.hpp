@@ -53,6 +53,10 @@ struct Event {
   uint8_t colour_code = 0, slot = 0, ran = 0, nxdn_rf_channel = 0;
   bool colour_code_valid = false, slot_valid = false, ran_valid = false, nxdn_rf_valid = false;
   bool replay = false;               // from a recorded file fed through begin_replay(), NOT from the radio
+  // DMR burst detail for the data log (valid only for protocol == dmr; every field is what the decoder reported).
+  bool has_data_type = false, late_entry = false, info_valid = false;
+  uint8_t data_type = 0, flco = 0, feature_id = 0, service_options = 0;
+  uint8_t info[12] = {};             // the 96 BPTC-decoded information bits of a data burst, MSB first
 };
 
 struct Status {

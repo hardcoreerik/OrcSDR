@@ -215,6 +215,9 @@ void on_dmr(const dmr1::Event& ev, void*) noexcept {
   e.colour_code_valid = d.golay_valid || d.late_entry;   // CC comes from the Golay-checked slot type, or from the QR(16,7,6)-checked EMB of a checksummed late-entry LC
   e.slot = d.slot;
   e.slot_valid = d.slot != 0;                 // 0 stays UNKNOWN; never defaulted to TS1
+  e.has_data_type = d.golay_valid && d.data_type != 0xff; e.data_type = d.data_type; e.late_entry = d.late_entry;
+  e.flco = d.flco; e.feature_id = d.feature_id; e.service_options = d.service_options;
+  if (d.info_valid) { e.info_valid = true; for (size_t i = 0; i < 12; ++i) e.info[i] = d.info[i]; }
   push(e);
 }
 

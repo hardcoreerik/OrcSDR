@@ -19,6 +19,7 @@
 #include "dv_scanner.hpp"
 #include "dv_survey.hpp"
 #include "dv_capture.hpp"
+#include "dv_event_log.hpp"
 #include "dv_voice_service.hpp"
 #include "screen_controller.hpp"
 
@@ -115,6 +116,10 @@ struct State {
   uint32_t db_saved_revision = 0, db_saved_structure = 0, db_last_save_ms = 0, db_saves = 0, db_save_failures = 0;
   bool db_saving = false;
   bool rec_saving = false;           // a speech recording or IQ capture is being written by the shared SD writer
+  // Data log (SETUP > LOG DATA): verified events as JSON lines, in numbered segments through the shared writer. Two 32 KiB PSRAM buffers.
+  dv_event_log::Log elog;
+  char* elog_a = nullptr; char* elog_b = nullptr;
+  bool log_on = false, log_saving = false;
   bool rec_is_iq = false;            // which of the two
   uint16_t iq_files = 0;
   uint16_t speech_files = 0;
@@ -158,7 +163,7 @@ void start_voice_service() {
   h.utc_epoch = g_hooks.utc_epoch;
   dv_voice_service::fill_platform_hooks(h);   // pump task on core 1, PSRAM stack
   dv_voice_service::install(h);
-  if (g_hooks.flag_load) { dv_voice_service::set_save_speech(g_hooks.flag_load("dv_rec")); dv_radio::iq_set_enabled(g_hooks.flag_load("dv_iq")); }   // off unless the owner turned it on
+  if (g_hooks.flag_load) { dv_voice_service::set_save_speech(g_hooks.flag_load("dv_rec")); dv_radio::iq_set_enabled(g_hooks.flag_load("dv_iq")); g_state->log_on = g_hooks.flag_load("dv_log"); }   // off unless the owner turned it on
   (void)dv_voice_service::start();            // false = no memory: the LIVE page then says AUDIO UNAVAILABLE
 }
 
@@ -486,9 +491,27 @@ void fill_systems(State& st) {
   }
 }
 
+void log_event(State& st, const dv_radio::Event& e, uint32_t utc) {
+  if (!st.log_on || !st.elog.active() || e.replay) return;
+  dv_event_log::Entry en;
+  en.utc = utc; en.ms = e.t_ms; en.hz = e.frequency_hz;
+  en.protocol = e.protocol == Protocol::dmr ? "dmr" : e.protocol == Protocol::nxdn48 ? "nxdn48" : e.protocol == Protocol::nxdn96 ? "nxdn96" : "other";
+  en.evidence = e.evidence == Evidence::identity_valid ? "identity" : "integrity";
+  en.has_cc = e.colour_code_valid; en.cc = e.colour_code;
+  en.has_slot = e.slot_valid; en.slot = e.slot;
+  en.has_ran = e.ran_valid; en.ran = e.ran;
+  en.has_rf_channel = e.nxdn_rf_valid; en.rf_channel = e.nxdn_rf_channel;
+  en.has_data_type = e.has_data_type; en.data_type = e.data_type; en.flco = e.flco; en.feature_id = e.feature_id; en.service_options = e.service_options;
+  en.late_entry = e.late_entry;
+  en.has_ids = e.has_source && e.has_destination; en.source_id = e.source_id; en.destination_id = e.destination_id; en.group = e.group_call;
+  en.info_valid = e.info_valid; if (e.info_valid) for (size_t i = 0; i < 12; ++i) en.info[i] = e.info[i];
+  st.elog.add(en, e.t_ms);
+}
+
 void note_event(State& st, const dv_radio::Event& e) {
   Snapshot& s = st.snapshot;
   const uint32_t clock_utc = g_hooks.utc_epoch ? g_hooks.utc_epoch() : 0;
+  log_event(st, e, clock_utc);
   const bool identity = e.evidence == Evidence::identity_valid;
   // Discovery: validated observations only. Replays go to their own RAM table, never the persistent one.
   const bool to_replay_table = e.replay && !st.learn_replay;
@@ -771,6 +794,8 @@ void refresh(State& st) {
     if (s.save_iq != dv_radio::iq_enabled() || s.iq_files != st.iq_files) ++s.revision;
     s.save_iq = dv_radio::iq_enabled(); s.iq_files = st.iq_files;
     s.can_save_speech = can; s.save_speech = on; s.speech_files = st.speech_files;
+    if (s.save_log != st.log_on || (st.log_on && (st.elog.lines() >> 4) != (s.log_lines >> 4))) ++s.revision;      // the count moves the button text: update it every 16 lines at most
+    s.save_log = st.log_on; s.log_lines = st.elog.lines();
     const uint16_t ch = static_cast<uint16_t>(std::min<size_t>(my_bands_channels(st), 65535));
     const uint16_t mins = static_cast<uint16_t>((my_bands_channels(st) * 1300u + 59999u) / 60000u);
     if (s.band_mask != st.band_mask || s.band_channels != ch || s.band_minutes != mins) ++s.revision;
@@ -1228,6 +1253,13 @@ void apply_radio_action(State& st, const Action& a) {
       ++st.snapshot.revision;
       break;
     }
+    case ActionKind::toggle_log_data: {
+      if (!g_hooks.flag_store || !g_hooks.file_save) { ++g_unapplied_actions; return; }
+      st.log_on = !st.log_on;
+      g_hooks.flag_store("dv_log", st.log_on);
+      ++st.snapshot.revision;
+      break;
+    }
     case ActionKind::toggle_save_speech: {
       if (!g_hooks.flag_store) { ++g_unapplied_actions; return; }
       const bool on = !dv_voice_service::save_speech();
@@ -1316,6 +1348,14 @@ void close() {
   if (g_state->cap_mem) { heap_caps_free(g_state->cap_mem); g_state->cap_mem = nullptr; }
   for (uint32_t t0 = now(); now() - t0 < 20u;) {}                            // a block mid-copy in the DSP task finishes before the work memory goes
   if (g_state->sv_work) { heap_caps_free(g_state->sv_work); g_state->sv_work = nullptr; }
+  for (uint32_t t0 = now(); g_state->log_saving && now() - t0 < 2500u;) {          // a log segment being written: the writer reads the buffer
+    const int r = g_hooks.file_save_result ? g_hooks.file_save_result() : 2;
+    if (r != 0) { g_state->elog.release(r == 1); g_state->log_saving = false; }
+  }
+  if (!g_state->log_saving) {
+    if (g_state->elog_a) { heap_caps_free(g_state->elog_a); g_state->elog_a = nullptr; }
+    if (g_state->elog_b) { heap_caps_free(g_state->elog_b); g_state->elog_b = nullptr; }
+  }
   for (uint32_t t0 = now(); g_state->rec_saving && now() - t0 < (g_state->rec_is_iq ? 20000u : 2500u);) {   // let a recording being written finish: the writer reads the buffer
     const int r = g_hooks.file_save_result ? g_hooks.file_save_result() : 2;
     if (r != 0) {
@@ -1357,6 +1397,33 @@ void service_persistence(State& st, bool final_flush) {
 }  // namespace
 
 // Finished speech recordings go to the card through the same background writer as the discovery database (never both at once).
+// Data log: lines are collected in two PSRAM buffers; a segment goes to the shared writer when half full or 30 s old (and, once the log is
+// switched off, whatever is left). One writer job at a time: if it is busy the segment waits for the next tick.
+void service_event_log(State& st, bool final_flush) {
+  if (!g_hooks.file_save || !g_hooks.file_save_result) return;
+  if (st.log_saving) {
+    const int r = g_hooks.file_save_result();
+    if (r == 0) return;
+    st.elog.release(r == 1);
+    st.log_saving = false;
+    return;
+  }
+  if (st.log_on && !st.elog.active()) {                                       // first use: two 32 KiB buffers in PSRAM
+    st.elog_a = static_cast<char*>(heap_caps_malloc(32768, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    st.elog_b = static_cast<char*>(heap_caps_malloc(32768, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+    if (st.elog_a && st.elog_b) st.elog.begin(st.elog_a, st.elog_b, 32768, g_hooks.utc_epoch ? g_hooks.utc_epoch() : 0);
+    else { if (st.elog_a) heap_caps_free(st.elog_a); if (st.elog_b) heap_caps_free(st.elog_b); st.elog_a = st.elog_b = nullptr; st.log_on = false; }
+    return;
+  }
+  if (!st.elog.active()) return;
+  if (st.db_saving || st.rec_saving || st.cand_saving) return;                  // the writer is shared: never two jobs at once
+  const char* data = nullptr;
+  size_t n = 0;
+  char name[72];
+  if (!st.elog.ready(&data, &n, name, sizeof(name), now(), final_flush || !st.log_on)) return;
+  if (g_hooks.file_save(name, nullptr, 0, data, n)) { st.elog.saving(); st.log_saving = true; }   // busy: offered again on the next tick
+}
+
 void service_speech_save(State& st) {
   if (!g_hooks.file_save || !g_hooks.file_save_result) return;
   if (st.rec_saving) {
@@ -1440,7 +1507,7 @@ void tick() {
     t0 = t1;
   };
   uint32_t t_lap = t_tick0;
-  service_speech_save(*g_state); lap(0, t_lap);
+  service_speech_save(*g_state); service_event_log(*g_state, false); lap(0, t_lap);
   service_candidates(*g_state, false); lap(1, t_lap);
   service_persistence(*g_state, false); lap(2, t_lap);
   service_follow(*g_state);
@@ -1654,6 +1721,20 @@ bool handle_command(const char* command, bool authenticated, void (*write_line)(
 #if defined(ESP_PLATFORM)
   if (std::strncmp(arg, "PROBE ", 6) == 0) { if (probe_command(arg + 6, write_line)) return true; }
 #endif
+  if (std::strncmp(arg, "LOG", 3) == 0) {                  // data log: RTL_DV LOG ON | OFF | STATUS
+    const char* q = arg + 3;
+    while (*q == ' ') ++q;
+    if (std::strcmp(q, "ON") == 0 || std::strcmp(q, "OFF") == 0) {
+      if (!g_hooks.flag_store || !g_hooks.file_save) { write_line("RTL_DV_LOG_ERROR no storage"); return true; }
+      st.log_on = std::strcmp(q, "ON") == 0; g_hooks.flag_store("dv_log", st.log_on); ++st.snapshot.revision;
+    }
+    char line[160];
+    std::snprintf(line, sizeof(line), "RTL_DV_LOG on=%d active=%d lines=%lu dropped=%lu segments_saved=%lu segments_failed=%lu bytes_saved=%lu saving=%d session=%lu", st.log_on ? 1 : 0, st.elog.active() ? 1 : 0,
+                  static_cast<unsigned long>(st.elog.lines()), static_cast<unsigned long>(st.elog.dropped()), static_cast<unsigned long>(st.elog.segments_saved()),
+                  static_cast<unsigned long>(st.elog.segments_failed()), static_cast<unsigned long>(st.elog.bytes_saved()), st.log_saving ? 1 : 0, static_cast<unsigned long>(st.elog.session()));
+    write_line(line);
+    return true;
+  }
   if (std::strncmp(arg, "RENDER", 6) == 0) {              // repaint cost per view: RTL_DV RENDER | RESET
     if (std::strstr(arg, "RESET")) {
       for (int i = 0; i < 8; ++i) { st.rv_n[i] = st.rv_max[i] = st.rv_slow[i] = 0; st.rv_total[i] = 0; }

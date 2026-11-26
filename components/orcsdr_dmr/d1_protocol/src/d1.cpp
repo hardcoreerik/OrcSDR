@@ -438,6 +438,7 @@ void Decoder::scan(EventSink sink, void* user) noexcept {
         if (decode_bptc(tx, content, repairs)) {
             e.bptc_valid = true;
             e.bptc_corrected_bits = repairs;
+            e.info = content; e.info_valid = true;
             e.evidence = Evidence::fec_valid;
             const bool check = (type <= 2) ? check_full_lc(content, type) : check_crc16(content, type);
             if (check) {
