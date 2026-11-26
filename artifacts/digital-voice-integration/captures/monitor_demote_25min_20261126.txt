@@ -1,0 +1,24 @@
+RTL_DV_MONITOR hold_ms=9000 control_hold_ms=6000 proto=0 cc=255 min_hits=1 entries=16 selected=1
+['RTL_DV_SCAN_OK started']
+minutes 25.0 total holds 106
+463400000 holds 16 approx s 160 dmr_ev/n48/n96 at last visit ('53568', '0', '0')
+151195000 holds 14 approx s 92 dmr_ev/n48/n96 at last visit ('52558', '0', '0')
+152685000 holds 14 approx s 96 dmr_ev/n48/n96 at last visit ('52706', '0', '0')
+152682500 holds 14 approx s 92 dmr_ev/n48/n96 at last visit ('52962', '0', '0')
+152157500 holds 13 approx s 86 dmr_ev/n48/n96 at last visit ('52404', '0', '0')
+153120000 holds 13 approx s 90 dmr_ev/n48/n96 at last visit ('52599', '0', '0')
+153645000 holds 13 approx s 92 dmr_ev/n48/n96 at last visit ('52867', '0', '0')
+464362500 holds 9 approx s 84 dmr_ev/n48/n96 at last visit ('53345', '0', '0')
+463250000 holds 0 approx s 82 dmr_ev/n48/n96 at last visit ('53597', '0', '0')
+451912500 holds 0 approx s 146 dmr_ev/n48/n96 at last visit ('53664', '0', '0')
+172145000 holds 0 approx s 82 dmr_ev/n48/n96 at last visit ('53701', '0', '0')
+453600000 holds 0 approx s 90 dmr_ev/n48/n96 at last visit ('53701', '0', '0')
+171232500 holds 0 approx s 86 dmr_ev/n48/n96 at last visit ('53597', '0', '0')
+162720000 holds 0 approx s 80 dmr_ev/n48/n96 at last visit ('53597', '0', '0')
+456162500 holds 0 approx s 86 dmr_ev/n48/n96 at last visit ('53597', '0', '0')
+
+NOTES (added by hand)
+- Run on commit 6967e75f (control-channel demotion on), 16 MONITOR entries, 25 min, 106 holds.
+- Control channels: 13 to 14 holds each (0.55 per minute) versus 10 to 12 in 12 minutes before (0.9 per minute).
+- 463.400 MHz: 16 holds and about 160 sampled seconds (4 holds and 38 s in the 12-minute run without demotion): the channel with real activity was visited and held much more. Whether any of that was voice was not recorded by this probe (it does not read the voice counters).
+- 464.3625: 9 holds. The seven quiet channels: 0 holds.
