@@ -27,6 +27,8 @@ std::atomic<bool> g_enabled{true};
 std::atomic<uint8_t> g_listen_req{0xff};     // 0xff = no request
 std::atomic<bool> g_reset_req{false};
 std::atomic<uint32_t> g_tone_ms{0};
+std::atomic<uint32_t> g_gain_req{0xffffffffu};      // requested playback gain x100; all-ones = none
+std::atomic<uint32_t> g_gain_x100{400};              // current playback gain x100 (default 4.00: the vocoder output is quiet)
 std::atomic<uint32_t> g_buffer_req{0xffffffffu};   // requested playout hold (ms); all-ones = none
 std::atomic<uint32_t> g_nfm_blocked{0};
 std::atomic<uint8_t> g_save_req{0xff};          // 0/1 = requested, 0xff = none
@@ -122,6 +124,8 @@ bool running() { return g_running.load(std::memory_order_acquire); }
 bool enabled() { return g_enabled.load(std::memory_order_relaxed); }
 void set_enabled(bool on) { g_enabled.store(on, std::memory_order_relaxed); }
 void set_listen(dv_voice::Listen l) { g_listen_req.store(static_cast<uint8_t>(l), std::memory_order_release); }
+void set_gain(float g) { const uint32_t x = static_cast<uint32_t>((g < 0.25f ? 0.25f : g > 16.0f ? 16.0f : g) * 100.0f + 0.5f); g_gain_x100.store(x, std::memory_order_relaxed); g_gain_req.store(x, std::memory_order_release); }
+float gain() { return static_cast<float>(g_gain_x100.load(std::memory_order_relaxed)) / 100.0f; }
 void reset() { g_reset_req.store(true, std::memory_order_release); }
 void set_buffer_ms(uint32_t ms) { g_buffer_req.store(ms, std::memory_order_release); }
 bool play_tone(uint32_t ms) {
@@ -152,6 +156,7 @@ bool start() {
     g_engine = nullptr;
     return false;
   }
+  g_engine->set_gain(static_cast<float>(g_gain_x100.load(std::memory_order_relaxed)) / 100.0f);
   g_engine->set_enabled(g_enabled.load());
   g_rec = new (alloc(sizeof(dv_speech_rec::Recorder))) dv_speech_rec::Recorder();
   g_engine->set_speech_sink(speech_sink, nullptr);
@@ -205,6 +210,8 @@ void pump() {
   const uint8_t lr = g_listen_req.exchange(0xff, std::memory_order_acq_rel);
   if (lr <= 3) e.set_listen(static_cast<dv_voice::Listen>(lr));
   if (g_reset_req.exchange(false, std::memory_order_acq_rel)) e.reset_stream();
+  const uint32_t gr = g_gain_req.exchange(0xffffffffu, std::memory_order_acq_rel);
+  if (gr != 0xffffffffu) e.set_gain(static_cast<float>(gr) / 100.0f);
   const uint32_t br = g_buffer_req.exchange(0xffffffffu, std::memory_order_acq_rel);
   if (br != 0xffffffffu) e.set_target_buffer_ms(br);
   e.set_enabled(g_enabled.load(std::memory_order_relaxed));
@@ -398,6 +405,17 @@ bool handle_command(const char* arg, bool authenticated, void (*write_line)(cons
   if (std::strcmp(op, "DISABLE") == 0) { set_enabled(false); reset(); write_line("RTL_DV_AUDIO_OK disabled"); return true; }
   if (std::strcmp(op, "MUTE") == 0) { set_listen(dv_voice::Listen::mute); write_line("RTL_DV_AUDIO_OK listen=MUTE"); return true; }
   if (std::strcmp(op, "UNMUTE") == 0) { set_listen(dv_voice::Listen::automatic); write_line("RTL_DV_AUDIO_OK listen=AUTO"); return true; }
+  if (std::strncmp(op, "GAIN", 4) == 0) {                  // playback gain for decoded speech: RTL_DV AUDIO GAIN [0.25..16]
+    if (op[4] == ' ') {
+      char* end = nullptr;
+      const float g = std::strtof(op + 5, &end);
+      if (end == op + 5 || *end != 0 || !(g >= 0.25f && g <= 16.0f)) { write_line("RTL_DV_AUDIO_INVALID use RTL_DV AUDIO GAIN <0.25..16>"); return true; }
+      set_gain(g);
+    }
+    std::snprintf(line, sizeof(line), "RTL_DV_AUDIO_OK gain=%.2f (decoded speech playback only; recordings stay raw)", static_cast<double>(gain()));
+    write_line(line);
+    return true;
+  }
   if (std::strncmp(op, "BUFFER ", 7) == 0) {
     const int ms = std::atoi(op + 7);
     if (ms < 0 || ms > 1000) { write_line("RTL_DV_AUDIO_INVALID use RTL_DV AUDIO BUFFER <0..1000 ms>"); return true; }

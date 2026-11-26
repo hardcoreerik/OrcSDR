@@ -179,7 +179,7 @@ void Engine::push_frame(uint8_t slot, const int16_t pcm[160], bool silent) {
   if (ring_cap_ - static_cast<size_t>(wr_ - rd_) < kFrameSamples8k * kUp) { ++stats_.overruns; return; }
   float buf[kTapsPerPhase - 1 + kFrameSamples8k];
   std::memcpy(buf, s.hist, sizeof(s.hist));
-  for (size_t i = 0; i < kFrameSamples8k; ++i) buf[kTapsPerPhase - 1 + i] = silent ? 0.0f : static_cast<float>(pcm[i]);
+  for (size_t i = 0; i < kFrameSamples8k; ++i) buf[kTapsPerPhase - 1 + i] = silent ? 0.0f : static_cast<float>(pcm[i]) * gain_;
   for (size_t i = 0; i < kFrameSamples8k; ++i) {
     const float* x = buf + kTapsPerPhase - 1 + i;
     for (size_t p = 0; p < kUp; ++p) {

@@ -99,6 +99,11 @@ public:
   Listen listen() const { return listen_; }
   void set_target_buffer_ms(uint32_t ms) { cfg_.target_buffer_ms = ms > 1000 ? 1000 : ms; }
   uint32_t target_buffer_ms() const { return cfg_.target_buffer_ms; }
+  // Playback gain applied to decoded speech on its way to the speaker (the speech sink / recordings stay raw). The vocoder's output is quiet
+  // (live DMR call 2026-11-26: peak about 3000 of 32767), so the service raises it; the engine itself defaults to unity. Clipping is counted.
+  void set_gain(float g) { gain_ = g < 0.25f ? 0.25f : g > 16.0f ? 16.0f : g; }
+  float gain() const { return gain_; }
+  float gain_ = 1.0f;
 
   // Voice task: apply one queued item (any kind). now_ms is a monotonic millisecond clock.
   // `defer` = true only queues a qualified group; service() then synthesizes it a few frames at a time so a pump thread keeps

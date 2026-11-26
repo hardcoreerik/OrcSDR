@@ -256,6 +256,24 @@ static void engine_tests() {
     CHECK(std::fabs(zc / (2.0 * secs) - 1000.0) < 30.0);
     CHECK(peak < 8400 && t.snapshot(now).stats.clipped_samples == 0);
   }
+  { // playback gain: the engine defaults to unity; 2x doubles the level, an excessive gain clips and is COUNTED (the speech sink is fed before the gain stage, so recordings stay raw)
+    CHECK(Engine().gain() == 1.0f);
+    auto level = [&](float g, int amp, uint64_t* clipped) {
+      Engine t; Config c; c.target_buffer_ms = 0; CHECK(t.begin(c)); t.set_enabled(true); t.set_gain(g);
+      std::vector<int16_t> tone(160 * 20);
+      for (size_t i = 0; i < tone.size(); ++i) tone[i] = static_cast<int16_t>(amp * std::sin(2 * 3.14159265 * 1000.0 * i / 8000.0));
+      CHECK(t.inject_test_pcm(tone.data(), tone.size(), now));
+      std::vector<int16_t> out(960 * 20); t.pull(out.data(), out.size(), now + 1);
+      double sq = 0; for (size_t i = 960; i < out.size() - 960; ++i) sq += double(out[i]) * out[i];
+      if (clipped) *clipped = t.snapshot(now).stats.clipped_samples;
+      return std::sqrt(sq / (out.size() - 1920));
+    };
+    uint64_t clip1 = 0, clip2 = 0, clip8 = 0;
+    const double r1 = level(1.0f, 4000, &clip1), r2 = level(2.0f, 4000, &clip2), r8 = level(8.0f, 8000, &clip8);
+    CHECK(std::fabs(r2 / r1 - 2.0) < 0.02 && clip1 == 0 && clip2 == 0);
+    CHECK(clip8 > 0 && r8 <= 32767.0);                                       // 8000 x 8 = 64000 peak: hard-limited at full scale, counted
+    Engine g; g.set_gain(100.0f); CHECK(g.gain() == 16.0f); g.set_gain(0.0f); CHECK(g.gain() == 0.25f);   // limits
+  }
 }
 
 // ---- Real-IQ corpus acceptance ---------------------------------------------------------------------------------------

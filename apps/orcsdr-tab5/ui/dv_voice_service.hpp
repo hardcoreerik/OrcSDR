@@ -38,6 +38,8 @@ void pump();            // one service step: queue -> engine -> speaker. Called 
 void set_enabled(bool on);
 bool enabled();
 void set_listen(dv_voice::Listen listen);
+void set_gain(float gain);          // playback gain for decoded speech, 0.25 to 16 (default 4); recordings stay raw
+float gain();
 void reset();           // drop audio and codec state
 void set_buffer_ms(uint32_t ms);
 // Optional recording of DECODED DMR speech (SETUP toggle "SAVE DMR SPEECH"). Off by default. The pump thread collects the call, the UI
