@@ -155,6 +155,7 @@
 #include "receiver_location.hpp"
 #include "am_finder.hpp"
 #include "dv_survey.hpp"
+#include "dv_capture.hpp"
 #include "adsb_dashboard.hpp"
 #include "adsb_decoder.hpp"
 #include "atc_presets.hpp"
@@ -8450,9 +8451,10 @@ static void rtl_dsp_task(void *) {
       (void)stage_us;
 #endif
     };
-    if (orcsdr::am_finder::active() || orcsdr::dv_survey::active()) {      // wideband captures take the whole block budget, like the AM finder
+    if (orcsdr::am_finder::active() || orcsdr::dv_survey::active() || orcsdr::dv_capture::active()) {      // wideband captures take the whole block budget, like the AM finder
       orcsdr::am_finder::offer_iq(block.data, block.bytes, block.sample_rate_sps);
       orcsdr::dv_survey::offer_iq(block.data, block.bytes, block.sample_rate_sps);
+      orcsdr::dv_capture::offer_iq(block.data, block.bytes, block.sample_rate_sps);
       const uint32_t elapsed_us = micros() - dsp_started_us;
       rtl_dsp_window_us.fetch_add(elapsed_us, std::memory_order_relaxed);
       rtl_dsp_window_blocks.fetch_add(1, std::memory_order_relaxed);

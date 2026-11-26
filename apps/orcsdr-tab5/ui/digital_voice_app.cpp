@@ -16,6 +16,7 @@
 #include "dv_radio.hpp"
 #include "dv_scanner.hpp"
 #include "dv_survey.hpp"
+#include "dv_capture.hpp"
 #include "dv_voice_service.hpp"
 #include "screen_controller.hpp"
 
@@ -39,6 +40,13 @@ struct State {
   dv_survey::Work* sv_work = nullptr;       // PSRAM, allocated on the first survey of a visit
   dv_survey::Survey survey;
   uint32_t hot_hz[dv_survey::kMaxHot]{};
+  // DEVELOPMENT capture (RTL_DV CAPTURE): the live IQ stream to the card for offline analysis. Off unless asked for by command.
+  uint8_t cap_phase = 0;                    // 0 off, 1 tuning/settling, 2 recording, 3 writing the sidecar
+  bool cap_saving = false;
+  uint32_t cap_settle_until = 0, cap_center = 0, cap_rate = 0, cap_seconds = 0;
+  uint8_t* cap_mem = nullptr;               // PSRAM, 10 MB, allocated on the first capture of a visit
+  dv_capture::Capture cap;
+  char cap_json[4096];
   uint8_t filled_system_offset = 0;            // the Systems page offset the snapshot rows were last filled for
   bool background = false;          // the screen is hidden but the receiver, scanner and speech are still running
   Surface surface;
@@ -816,8 +824,69 @@ void run_discover(State& st) {
   }
 }
 
+// ---- DEVELOPMENT capture: tune, record the raw stream into 4 MB segments, write each through the shared SD writer, then the sidecar ----
+// Returns nullptr when started, otherwise the reason it was refused.
+const char* capture_begin(State& st, uint32_t center_hz, uint32_t rate, uint32_t seconds) {
+  if (st.cap_phase || st.scanner.active() || st.disc_phase || st.replaying) return "busy: a scan, discovery, replay or capture is running";
+  if (!g_hooks.tune || !g_hooks.file_save || !g_hooks.file_save_result) return "no tune or card hook";
+  if (!g_hooks.receiver_ready || !g_hooks.receiver_ready()) return "no receiver";
+  if (!st.cap_mem) st.cap_mem = static_cast<uint8_t*>(heap_caps_malloc(dv_capture::kMemBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!st.cap_mem) return "no memory for the 10 MB capture buffer";
+  dv_radio::stop();                                                         // the decoders are not part of a raw capture
+  if (!g_hooks.tune(center_hz, rate)) return "the receiver owner refused the tune or rate";
+  st.sv_rate_held = true;                                                   // the rate is released at the end
+  st.cap.attach(st.cap_mem);
+  st.cap_center = center_hz; st.cap_rate = rate; st.cap_seconds = seconds;
+  st.cap_saving = false;
+  st.cap_settle_until = now() + 500;
+  st.cap_phase = 1;
+  dv_capture::install(&st.cap);
+  return nullptr;
+}
+
+void capture_end(State& st) {
+  st.cap.abort();
+  dv_capture::install(nullptr);
+  survey_release(st);
+  st.cap_phase = 0;
+  st.cap_saving = false;
+}
+
+void run_capture(State& st) {
+  if (!st.cap_phase) return;
+  if (st.cap_phase == 1 && static_cast<int32_t>(now() - st.cap_settle_until) >= 0) {
+    dv_capture::Config c;
+    c.center_hz = st.cap_center; c.rate = st.cap_rate; c.seconds = st.cap_seconds; c.utc = g_hooks.utc_epoch ? g_hooks.utc_epoch() : 0;
+    if (!st.cap.start(c, now())) { capture_end(st); return; }
+    st.cap_phase = 2;
+  }
+  if (st.cap_phase == 2) st.cap.service(now());
+  if (st.cap_saving) {
+    const int r = g_hooks.file_save_result();
+    if (r == 0) return;
+    if (st.cap_phase == 3) { capture_end(st); return; }                    // the sidecar is on the card: finished
+    st.cap.write_done(r == 1);
+    st.cap_saving = false;
+  }
+  if (st.db_saving || st.rec_saving) return;                                // the writer is shared: never two jobs at once
+  if (st.cap_phase == 2 && st.cap.state() == dv_capture::State::done) {
+    char path[96];
+    const size_t n = st.cap.sidecar(st.cap_json, sizeof(st.cap_json));
+    if (n && st.cap.sidecar_path(path, sizeof(path)) && g_hooks.file_save(path, nullptr, 0, st.cap_json, n)) { st.cap_phase = 3; st.cap_saving = true; }
+    else if (!n) capture_end(st);
+    return;
+  }
+  if (st.cap_phase == 2) {
+    const uint8_t* d = nullptr; size_t n = 0; char path[96];
+    if (st.cap.next(&d, &n, path, sizeof(path))) {
+      if (g_hooks.file_save(path, nullptr, 0, d, n)) { st.cap.write_started(); st.cap_saving = true; }     // writer busy: asked again next tick
+    }
+  }
+}
+
 void run_scanner(State& st) {
   if (st.disc_phase) run_discover(st);
+  if (st.cap_phase) run_capture(st);
   pump_replay(st);
   const auto rs = dv_radio::status();
   if (rs.loss_events != st.last_loss_events) {
@@ -1047,6 +1116,8 @@ void close() {
   g_state->scanner.stop();
   g_state->survey.stop();
   dv_survey::install(nullptr);
+  if (g_state->cap_phase) capture_end(*g_state);
+  if (g_state->cap_mem) { heap_caps_free(g_state->cap_mem); g_state->cap_mem = nullptr; }
   for (uint32_t t0 = now(); now() - t0 < 20u;) {}                            // a block mid-copy in the DSP task finishes before the work memory goes
   if (g_state->sv_work) { heap_caps_free(g_state->sv_work); g_state->sv_work = nullptr; }
   for (uint32_t t0 = now(); g_state->rec_saving && now() - t0 < (g_state->rec_is_iq ? 20000u : 2500u);) {   // let a recording being written finish: the writer reads the buffer
@@ -1209,6 +1280,37 @@ bool handle_command(const char* command, bool authenticated, void (*write_line)(
     return true;
   }
   State& st = *g_state;
+  if (std::strncmp(arg, "CAPTURE", 7) == 0) {            // development: record the raw live stream to the card
+    const char* a = arg + 7;
+    while (*a == ' ') ++a;
+    char line[300];
+    if (std::strcmp(a, "STOP") == 0) { st.cap.stop(); write_line("RTL_DV_CAPTURE_OK stopping (remaining segments are written)"); return true; }
+    if (*a == 0 || std::strcmp(a, "STATUS") == 0) {
+      std::snprintf(line, sizeof(line), "RTL_DV_CAPTURE phase=%u center_hz=%lu rate=%lu captured=%llu dropped=%llu drop_events=%lu wrong_rate=%lu written=%lu failed=%lu writing=%d",
+                    static_cast<unsigned>(st.cap_phase), static_cast<unsigned long>(st.cap.center_hz()), static_cast<unsigned long>(st.cap.rate()),
+                    static_cast<unsigned long long>(st.cap.bytes_captured()), static_cast<unsigned long long>(st.cap.bytes_dropped()),
+                    static_cast<unsigned long>(st.cap.drop_events()), static_cast<unsigned long>(st.cap.wrong_rate_blocks()),
+                    static_cast<unsigned long>(st.cap.segments_written()), static_cast<unsigned long>(st.cap.segments_failed()), st.cap_saving ? 1 : 0);
+      write_line(line);
+      return true;
+    }
+    char* end = nullptr;
+    const double mhz = std::strtod(a, &end);
+    const long ksps = std::strtol(end, &end, 10);
+    const long secs = std::strtol(end, &end, 10);
+    const uint32_t rate = static_cast<uint32_t>(ksps * 1000);
+    const bool rate_ok = rate == 240000 || rate == 1024000 || rate == 1536000 || rate == 2048000 || rate == 2400000 || rate == 2560000;
+    if (!rate_ok || mhz < 24.0 || mhz > 1766.0 || secs < 1 || secs > static_cast<long>(dv_capture::kMaxSeconds)) {
+      write_line("RTL_DV_CAPTURE_INVALID use RTL_DV CAPTURE <MHz> <ksps: 240|1024|1536|2048|2400|2560> <seconds 1-120> | STOP | STATUS  (scan and discovery stopped)");
+      return true;
+    }
+    const char* why = capture_begin(st, static_cast<uint32_t>(std::llround(mhz * 1e6)), rate, static_cast<uint32_t>(secs));
+    if (why) std::snprintf(line, sizeof(line), "RTL_DV_CAPTURE_REFUSED %s", why);
+    else std::snprintf(line, sizeof(line), "RTL_DV_CAPTURE_OK started (files /orcsdr/cap_*.cu8 + .json; status: RTL_DV CAPTURE STATUS)");
+    write_line(line);
+    ++st.snapshot.revision;
+    return true;
+  }
   if (std::strcmp(arg, "DB CLEAR") == 0) {      // owner action: forget everything learned (and the file at the next save)
     st.db.clear(); st.replay_db.clear(); fill_systems(st); ++st.snapshot.revision;
     write_line("RTL_DV_DB_OK cleared");
