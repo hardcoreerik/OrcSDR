@@ -2,6 +2,8 @@
 
 #include <M5Unified.h>
 #include <esp_heap_caps.h>
+#include <freertos/FreeRTOS.h>
+#include <freertos/task.h>
 
 #include <algorithm>
 #include <cmath>
@@ -1515,6 +1517,74 @@ void describe(char* out, size_t size) {
                 static_cast<unsigned>(ss.segments), static_cast<unsigned>(g_state->band_mask));
 }
 
+// ---- Scheduler probe (diagnostic): which task runs on each core, sampled every millisecond by a task on the other core. ----
+#if defined(ESP_PLATFORM)
+namespace {
+struct ProbeSlot { char name[16]; uint32_t n; uint32_t max_run; };
+constexpr int kProbeSlots = 24;
+ProbeSlot* g_probe_tab[2] = {nullptr, nullptr};      // [core] = what ran on that core
+uint32_t g_probe_total[2] = {0, 0};
+volatile bool g_probe_run = false;
+TaskHandle_t g_probe_task[2] = {nullptr, nullptr};
+void probe_main(void* arg) {
+  const int me = static_cast<int>(reinterpret_cast<intptr_t>(arg));
+  const int other = 1 - me;
+  int last_k = -1; uint32_t run_len = 0;
+  while (g_probe_run) {
+    TaskHandle_t h = xTaskGetCurrentTaskHandleForCore(other);
+    const char* nm = h ? pcTaskGetName(h) : "?";
+    ProbeSlot* tab = g_probe_tab[other];
+    if (tab) {
+      int k = 0;
+      while (k < kProbeSlots && tab[k].n && std::strncmp(tab[k].name, nm, 15) != 0) ++k;
+      if (k < kProbeSlots) {
+        if (!tab[k].n) std::snprintf(tab[k].name, sizeof(tab[k].name), "%s", nm);
+        ++tab[k].n;
+        run_len = (k == last_k) ? run_len + 1 : 1;                 // consecutive samples of the same task: how long it held the core
+        last_k = k;
+        if (run_len > tab[k].max_run) tab[k].max_run = run_len;
+      }
+      ++g_probe_total[other];
+    }
+    vTaskDelay(1);
+  }
+  g_probe_task[me] = nullptr;
+  vTaskDelete(nullptr);
+}
+bool probe_command(const char* op, void (*write_line)(const char*)) {
+  if (std::strcmp(op, "START") == 0) {
+    if (g_probe_run) { write_line("RTL_DV_PROBE_OK already running"); return true; }
+    for (int c = 0; c < 2; ++c) {
+      if (!g_probe_tab[c]) g_probe_tab[c] = static_cast<ProbeSlot*>(heap_caps_calloc(kProbeSlots, sizeof(ProbeSlot), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+      if (!g_probe_tab[c]) { write_line("RTL_DV_PROBE_ERROR no memory"); return true; }
+      std::memset(g_probe_tab[c], 0, kProbeSlots * sizeof(ProbeSlot)); g_probe_total[c] = 0;
+    }
+    g_probe_run = true;
+    for (int c = 0; c < 2; ++c) xTaskCreatePinnedToCore(probe_main, "dvprobe", 3072, reinterpret_cast<void*>(static_cast<intptr_t>(c)), configMAX_PRIORITIES - 1, &g_probe_task[c], c);
+    write_line("RTL_DV_PROBE_OK started");
+    return true;
+  }
+  if (std::strcmp(op, "STOP") == 0) { g_probe_run = false; write_line("RTL_DV_PROBE_OK stopping"); return true; }
+  if (std::strcmp(op, "DUMP") == 0) {
+    for (int c = 0; c < 2; ++c) {
+      if (!g_probe_tab[c]) continue;
+      char line[120];
+      std::snprintf(line, sizeof(line), "RTL_DV_PROBE core=%d samples=%lu", c, static_cast<unsigned long>(g_probe_total[c]));
+      write_line(line);
+      for (int k = 0; k < kProbeSlots && g_probe_tab[c][k].n; ++k) {
+        std::snprintf(line, sizeof(line), "RTL_DV_PROBE core=%d task=%s share_permille=%lu max_run_ms=%lu", c, g_probe_tab[c][k].name,
+                      static_cast<unsigned long>(g_probe_total[c] ? static_cast<uint64_t>(g_probe_tab[c][k].n) * 1000u / g_probe_total[c] : 0),
+                      static_cast<unsigned long>(g_probe_tab[c][k].max_run));
+        write_line(line);
+      }
+    }
+    return true;
+  }
+  return false;
+}
+}  // namespace
+#endif
+
 bool handle_command(const char* command, bool authenticated, void (*write_line)(const char*)) {
   if (!command || !write_line || std::strncmp(command, "RTL_DV ", 7) != 0) return false;
   const char* arg = command + 7;
@@ -1581,6 +1651,9 @@ bool handle_command(const char* command, bool authenticated, void (*write_line)(
     }
     return true;
   }
+#if defined(ESP_PLATFORM)
+  if (std::strncmp(arg, "PROBE ", 6) == 0) { if (probe_command(arg + 6, write_line)) return true; }
+#endif
   if (std::strncmp(arg, "RENDER", 6) == 0) {              // repaint cost per view: RTL_DV RENDER | RESET
     if (std::strstr(arg, "RESET")) {
       for (int i = 0; i < 8; ++i) { st.rv_n[i] = st.rv_max[i] = st.rv_slow[i] = 0; st.rv_total[i] = 0; }
