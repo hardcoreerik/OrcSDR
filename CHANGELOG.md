@@ -2,6 +2,9 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased - DV efficiency: quarantine vocoder specialization (2026-11-26)
+- GCC 15.2 CI passed exact real-corpus event, wire-frame and PCM hashes, but the quality-1 synthetic shared-synthesis binary comparison failed (first differing byte 285157, run 45892171525). Restore the frozen baseline mbelib source. GCC 14.2 local 21.3% CPU saving and stack reduction remain experimental, not delivered. No audio change authorized. Target timing, stack high-water and listening remain unmeasured.
+
 ## Unreleased - Digital Voice: compact NXDN frontend storage - 2026-11-26
 
 - Production NXDN48 (24 kS/s) and NXDN96 (48 kS/s) both use 10 samples/symbol; keep only the required tap and history lengths. General 20-sps Frontend remains available; CompactFrontend rejects geometry beyond its capacity. Sandbox x86-64 sizeof 7064 -> 3624 B per frontend, combined state_bytes 40128 -> 33248 (6880 B saved). Exact same dibits, symbol counts and carrier estimates over 4 DMR IQ recordings and noise/analog at both rates, chunks 1/37/512/4096. No consistent CPU speedup claimed; no filter/decimation or rate change. Positive NXDN fixture CI pending, physical internal/PSRAM allocator placement and boot behavior not measured.
