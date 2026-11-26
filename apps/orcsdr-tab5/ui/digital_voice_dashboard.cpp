@@ -72,15 +72,15 @@ void protocol_facts(Paint& p,const Snapshot& s,Rect card,int x,int y) {
 }
 void context(Paint& p,const Snapshot& s,Density mode) {
   const Rect r=layout::kContext;
-  p.g.fillRoundRect(r.x,r.y,r.w,r.h,6,kPanel);
-  p.g.drawRoundRect(r.x,r.y,r.w,r.h,6,kEdge);
+  p.fillRoundRect(r.x,r.y,r.w,r.h,6,kPanel);
+  p.drawRoundRect(r.x,r.y,r.w,r.h,6,kEdge);
   p.text("DIGITAL VOICE  /  RECEIVE ONLY",r.x+14,r.y+r.h/2,kCyan,2,r);
   p.text(mode==Density::discovery_first?"DISCOVERY FIRST":"ANALYSIS FIRST",r.x+540,r.y+r.h/2,kGreen,2,r);
   p.text(origin_name(s.origin),r.x+864,r.y+r.h/2,
          s.origin==Origin::live?kWhite:kAmber,2,r);
 }
 void nav(Paint& p,const UiState& state) {
-  p.g.fillRect(0,642,1280,78,kBg);
+  p.fillRect(0,642,1280,78,kBg);
   for(int i=0;i<layout::kTabCount;++i)
     p.button(kTabs[i],layout::tab(i),true,state.view==static_cast<View>(i));
 }
@@ -104,8 +104,8 @@ uint16_t phase_color(VoicePhase ph) {
 void voice_panel(Paint& p,const Snapshot& s,Density d) {
   const Rect r=voice_rect(d);
   const VoiceAudioView& v=s.voice;
-  p.g.fillRect(r.x,r.y,r.w,r.h,kPanel);
-  p.g.drawFastHLine(r.x+6,r.y-2,r.w-12,kEdge);
+  p.fillRect(r.x,r.y,r.w,r.h,kPanel);
+  p.drawFastHLine(r.x+6,r.y-2,r.w-12,kEdge);
   p.text(voice_phase_name(v.phase),r.x+8,r.y+28,phase_color(v.phase),2,r);
   char t[80];
   if(v.active_slot&&v.phase!=VoicePhase::protected_voice&&v.source_id)
@@ -124,7 +124,7 @@ void voice_panel(Paint& p,const Snapshot& s,Density d) {
   // 8-segment level meter under the buttons (coarse: one repaint per segment change at most)
   const int bx=r.x+r.w-4*kListenBtnStep,by=r.y+62;
   for(int i=0;i<8;++i)
-    p.g.fillRect(bx+i*24,by,20,26,i<v.level?(i<6?kGreen:kAmber):kEdge);
+    p.fillRect(bx+i*24,by,20,26,i<v.level?(i<6?kGreen:kAmber):kEdge);
 }
 void live_discovery(Paint& p,const Snapshot& s) {
   const auto a=layout::kBasicHero,b=layout::kBasicFacts;
@@ -143,7 +143,7 @@ void live_discovery(Paint& p,const Snapshot& s) {
   p.text(s.encryption_known?(s.is_encrypted?"ENCRYPTED":"CLEAR FLAG"):
          "UNKNOWN",b.x+18,b.y+310,
          s.encryption_known?(s.is_encrypted?kRed:kGreen):kAmber,2,b);
-  p.label("No inference from missing encryption bits",b.x+18,b.y+416,b);
+  p.label("No inference from missing bits",b.x+18,b.y+416,b);   // must fit the 426 px panel at 12 px per character
 }
 void live_analysis(Paint& p,const Snapshot& s) {
   const auto a=layout::kAdvancedMain,b=layout::kAdvancedFacts;
@@ -185,7 +185,7 @@ void last_heard(Paint& p,const Snapshot& s,Density mode,uint8_t offset,uint8_t s
       area_text(area,h.protocol,h.colour_code,h.colour_code_valid,h.ran,h.ran_valid);
       if(h.timeslot_valid&&(h.timeslot==1||h.timeslot==2))std::snprintf(slot,sizeof(slot),"TS%u",static_cast<unsigned>(h.timeslot));
       char v[96];std::snprintf(v,sizeof(v),"%s  %s  %s  %s %s",h.has_time?h.time_utc:"TIME ?",protocol_name(h.protocol),who,area,slot);
-      if(row+offset==selected)p.g.fillRoundRect(a.x+12,y-17,a.w-24,40,4,kSelected);
+      if(row+offset==selected)p.fillRoundRect(a.x+12,y-17,a.w-24,40,4,kSelected);
       p.text(v,a.x+20,y,(h.evidence==Evidence::identity_valid)?kGreen:kMuted,2,a);
       p.hr(a.x+18,y+24,a.w-36);
     }
@@ -253,7 +253,7 @@ uint32_t sys_facts_sig(const Snapshot& s,const UiState& u,unsigned count) {
 void systems_row(Paint& p,const Snapshot& s,const UiState& u,Rect a,unsigned i) {
   const auto& sys=s.observed_systems[i];
   const int yy=a.y+93+static_cast<int>(i)*76;
-  p.g.fillRoundRect(a.x+11,yy-17,a.w-22,70,4,i==u.selected_system?kSelected:kPanel);   // this row only, painted over itself
+  p.fillRoundRect(a.x+11,yy-17,a.w-22,70,4,i==u.selected_system?kSelected:kPanel);   // this row only, painted over itself
   p.text(protocol_name(sys.protocol),a.x+18,yy,
          sys.evidence>=Evidence::integrity_valid?kGreen:kAmber,2,a);
   const bool verified=sys.evidence>=Evidence::integrity_valid;
@@ -272,7 +272,7 @@ void systems_row(Paint& p,const Snapshot& s,const UiState& u,Rect a,unsigned i) 
 }
 void systems_facts(Paint& p,const Snapshot& s,const UiState& u,Rect b,unsigned count) {
   constexpr int kDx=140;   // value column: wide enough for "INTEGRITY VALIDATED" and "10 SYS  3 TG  5 UNITS" inside the panel
-  p.g.fillRect(b.x+10,b.y+90,b.w-20,300,kPanel);
+  p.fillRect(b.x+10,b.y+90,b.w-20,300,kPanel);
   p.fact("RF LOCK",evidence_name(s.evidence),b.x+18,b.y+110,b,kWhite,kDx);
   if(s.db_available) {
     char t[40];std::snprintf(t,sizeof(t),"%u SYS  %u TG  %u UNITS",static_cast<unsigned>(s.db_systems),
@@ -439,6 +439,24 @@ void page(Paint& p,const Snapshot& s,const UiState& u) {
 }
 } // namespace
 
+void Dashboard::PageBuffers::release() {valid=false;}
+// Pages other than SCAN and SYSTEMS: a dry run of the page folds everything it would draw into a signature. A revision that
+// changed nothing this page shows (a scan stage tick, a counter on another page) repaints nothing at all; a real change repaints
+// the page. (An off-screen sprite with a changed-band push was tried first: on the Tab5 it cost 70 to 180 ms per repaint and
+// 1.8 s for the first one, so it was dropped.)
+void Dashboard::present_page(lgfx::LovyanGFX& display,const Snapshot& s,const UiState& state) {
+  uint32_t sig=2166136261u;
+  {
+    Paint dry{display,&sig};
+    page(dry,s,state);
+  }
+  if(pb_.valid && sig==pb_.sig) return;
+  Paint p{display};
+  page(p,s,state);
+  pb_.sig=sig;
+  pb_.valid=true;
+}
+
 bool Dashboard::present(lgfx::LovyanGFX& display,const Snapshot& s,
                         const UiState& state,bool owns_screen,bool overlay_open) {
   if(!owns_screen||overlay_open||state.view>=View::count)return false;
@@ -461,6 +479,7 @@ bool Dashboard::present(lgfx::LovyanGFX& display,const Snapshot& s,
     nav(p,state);
     scan_.reset();
     sys_ready_=false;
+    pb_.valid=false;                // the screen was just cleared: the next page push covers everything
   }
   // The context strip shows only the origin and the density: repaint it when one of those changed, not on every revision.
   const uint32_t ctx=static_cast<uint32_t>(s.origin)|(static_cast<uint32_t>(state.density)<<8)|0x10000u;
@@ -471,7 +490,8 @@ bool Dashboard::present(lgfx::LovyanGFX& display,const Snapshot& s,
   } else if(state.view==View::systems && sys_ready_) {
     systems_update(p,s,state,sys_row_sig_,sys_facts_sig_,sys_shape_);   // changed rows / panel only
   } else {
-    page(p,s,state);                              // other pages: whole-page repaint on a changed revision (see docs)
+    if(state.view==View::systems) page(p,s,state);   // first paint of Systems; later changes go through systems_update()
+    else present_page(display,s,state);              // Live, Last Heard, Signal, Setup: changed bands only
     if(state.view==View::systems) {systems_sigs(s,state,sys_row_sig_,sys_facts_sig_,sys_shape_);sys_ready_=true;}
   }
   last_state_=state;

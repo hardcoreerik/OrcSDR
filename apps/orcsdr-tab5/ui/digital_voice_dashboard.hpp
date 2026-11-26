@@ -16,9 +16,21 @@ class Dashboard final {
                const UiState& state, bool owns_screen, bool overlay_open);
   Action handle_touch(int32_t x, int32_t y, const Snapshot& snapshot,
                       const UiState& state) const;
-  void leave() { ready_ = false; sys_ready_ = false; scan_.reset(); }
+  void leave() { ready_ = false; sys_ready_ = false; scan_.reset(); pb_.release(); }
   bool active() const { return ready_; }
  private:
+  // Pages other than SCAN and SYSTEMS repaint only when something they show has changed.
+  void present_page(lgfx::LovyanGFX& display, const Snapshot& s, const UiState& state);
+  // Signature of the page the screen shows (see present_page); copying a Dashboard starts with no page shown.
+  struct PageBuffers {
+    bool valid = false;
+    uint32_t sig = 0;
+    PageBuffers() = default;
+    PageBuffers(const PageBuffers&) {}
+    PageBuffers& operator=(const PageBuffers&) { valid = false; return *this; }
+    void release();
+  };
+  PageBuffers pb_;
   Snapshot old_{};  // bounded ~1 KiB, no heap; review internal RAM budget before firmware integration
   UiState last_state_{};
   ScanView scan_{};        // retained SCAN widgets: what is on screen, to repaint only what changed
