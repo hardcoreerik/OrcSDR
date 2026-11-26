@@ -1,0 +1,29 @@
+00:06:17 RTL_DV_MONITOR proto=0 cc=255 min_hits=1 entries=9 selected=1
+00:06:19 RTL_DV_SCAN_OK started
+00:07:16 ch=153120000 scan=HOLD idx=2 holds=3 | dmr_ev=1146 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=17
+00:08:14 ch=463400000 scan=HOLD idx=6 holds=6 | dmr_ev=2163 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=17
+00:09:12 ch=153120000 scan=HOLD idx=2 holds=10 | dmr_ev=3147 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=18
+00:10:09 ch=153645000 scan=HOLD idx=5 holds=12 | dmr_ev=4410 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=18
+00:11:07 ch=152685000 scan=HOLD idx=1 holds=15 | dmr_ev=5583 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=18
+00:12:05 ch=153645000 scan=HOLD idx=5 holds=18 | dmr_ev=6909 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=18
+00:13:03 ch=152157500 scan=HOLD idx=0 holds=20 | dmr_ev=7964 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=18
+00:14:00 ch=151195000 scan=HOLD idx=4 holds=23 | dmr_ev=9235 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=18
+00:14:58 ch=463400000 scan=HOLD idx=6 holds=25 | dmr_ev=10245 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=18
+00:15:56 ch=153120000 scan=SCANNER idx=2 holds=28 | dmr_ev=11150 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=18
+00:16:53 ch=153645000 scan=HOLD idx=5 holds=31 | dmr_ev=12545 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=18
+00:17:51 ch=152685000 scan=HOLD idx=1 holds=34 | dmr_ev=13557 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=18
+00:18:49 ch=153645000 scan=HOLD idx=5 holds=37 | dmr_ev=14864 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=18
+00:19:46 ch=152157500 scan=HOLD idx=0 holds=40 | dmr_ev=15842 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=18
+00:20:44 ch=153645000 scan=HOLD idx=5 holds=43 | dmr_ev=17453 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=18
+00:21:42 ch=463400000 scan=HOLD idx=6 holds=44 | dmr_ev=18073 dmr_id=57 n48_ok=0 n96_ok=0 | voice groups=7 frames=126 speech=96 phase=LISTENING | db_sys=18  <<< VOICE
+00:22:40 ch=463400000 scan=HOLD idx=6 holds=44 | dmr_ev=18265 dmr_id=57 n48_ok=0 n96_ok=0 | voice groups=7 frames=126 speech=96 phase=LISTENING | db_sys=18  <<< VOICE
+00:23:37 ch=463400000 scan=HOLD idx=6 holds=44 | dmr_ev=18725 dmr_id=57 n48_ok=0 n96_ok=0 | voice groups=7 frames=126 speech=96 phase=LISTENING | db_sys=18  <<< VOICE
+00:24:35 ch=152157500 scan=HOLD idx=0 holds=45 | dmr_ev=19583 dmr_id=57 n48_ok=0 n96_ok=0 | voice groups=7 frames=126 speech=96 phase=LISTENING | db_sys=18  <<< VOICE
+00:25:33 ch=463250000 scan=SCAN idx=3 holds=47 | dmr_ev=20821 dmr_id=57 n48_ok=0 n96_ok=0 | voice groups=7 frames=126 speech=96 phase=LISTENING | db_sys=18  <<< VOICE
+00:26:30 ch=152157500 scan=HOLD idx=0 holds=50 | dmr_ev=21916 dmr_id=57 n48_ok=0 n96_ok=0 | voice groups=7 frames=126 speech=96 phase=LISTENING | db_sys=18  <<< VOICE
+00:27:28 ch=151195000 scan=HOLD idx=4 holds=53 | dmr_ev=23228 dmr_id=57 n48_ok=0 n96_ok=0 | voice groups=7 frames=126 speech=96 phase=LISTENING | db_sys=18  <<< VOICE
+00:28:26 ch=152685000 scan=HOLD idx=1 holds=56 | dmr_ev=24295 dmr_id=57 n48_ok=0 n96_ok=0 | voice groups=7 frames=126 speech=96 phase=LISTENING | db_sys=18  <<< VOICE
+00:29:24 ch=153645000 scan=HOLD idx=5 holds=59 | dmr_ev=25600 dmr_id=57 n48_ok=0 n96_ok=0 | voice groups=7 frames=126 speech=96 phase=LISTENING | db_sys=18  <<< VOICE
+00:30:21 ch=152157500 scan=HOLD idx=0 holds=62 | dmr_ev=26288 dmr_id=57 n48_ok=0 n96_ok=0 | voice groups=7 frames=126 speech=96 phase=LISTENING | db_sys=19  <<< VOICE
+00:31:19 ch=151195000 scan=HOLD idx=4 holds=65 | dmr_ev=27469 dmr_id=57 n48_ok=0 n96_ok=0 | voice groups=7 frames=126 speech=96 phase=LISTENING | db_sys=19  <<< VOICE
+00:31:19 DONE voice_seen=True
