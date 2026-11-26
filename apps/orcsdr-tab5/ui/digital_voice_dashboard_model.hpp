@@ -174,6 +174,11 @@ struct Snapshot {
   // (one or two sightings are candidates: noise decoded as DMR looks like that); saved = added to the saved scan list by SAVE TO LIST.
   bool discover_running = false, discover_can_start = false;
   uint16_t discover_found = 0, discover_candidates = 0, discover_saved = 0, discover_skipped = 0;
+  // Wideband survey (the pre-screen): phase 1 = surveying (many channels per tune at the highest loss-free rate), phase 2 = decoding
+  // the occupied channels it found, 0 = not running or a plain sweep. Hot = channels clearly above the noise floor (not yet decoded).
+  uint8_t discover_phase = 0;
+  uint16_t survey_done = 0, survey_total = 0, survey_hot = 0, survey_passes = 0, survey_rate_khz = 0;
+  uint32_t survey_center_hz = 0;
   uint32_t audio_revision = 0;           // moves when the voice panel's content changes; the page revision does not
 };
 struct UiState {

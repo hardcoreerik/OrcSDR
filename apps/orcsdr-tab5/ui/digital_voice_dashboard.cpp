@@ -370,24 +370,32 @@ void disc_progress(Paint& p,const Snapshot& s,const DiscGeom& g) {
   const Rect r=g.prog;
   p.fillRect(r.x,r.y,r.w,r.h,kPanel);
   const bool run=s.discover_running;
-  p.text(run?"DISCOVERING":"READY",r.x+6,r.y+20,run?kCyan:kWhite,3,r);
-  char f[40];
-  if(run&&s.scan.current_frequency_valid){char m[32];disc_mhz(m,s.scan.current_frequency_hz);std::snprintf(f,sizeof(f),"NOW  %s",m);}
+  const bool sv=run&&s.discover_phase==1;
+  const bool dec=run&&s.discover_phase==2;
+  p.text(sv?"SURVEYING":dec?"DECODING":run?"DISCOVERING":"READY",r.x+6,r.y+20,run?kCyan:kWhite,3,r);
+  char f[48];
+  if(sv&&s.survey_center_hz){char m[32];disc_mhz(m,s.survey_center_hz);std::snprintf(f,sizeof(f),"NOW  %s",m);}
+  else if(run&&s.scan.current_frequency_valid){char m[32];disc_mhz(m,s.scan.current_frequency_hz);std::snprintf(f,sizeof(f),"NOW  %s",m);}
   else std::snprintf(f,sizeof(f),run?"NOW  TUNING":"NOW  -");
   p.text(f,r.x+6,r.y+58,kWhite,2,r);
   const Rect bar{r.x+6,r.y+80,r.w-12,16};
   p.fillRect(bar.x,bar.y,bar.w,bar.h,kEdge);
   p.fillRect(bar.x+1,bar.y+1,bar.w-2,bar.h-2,kBg);
-  if(run&&s.scan.planned&&s.scan.channel_index) {
-    const long w=static_cast<long>(s.scan.channel_index)*(bar.w-2)/static_cast<long>(s.scan.planned);
+  const long num=sv?static_cast<long>(s.survey_done):(run&&s.scan.planned)?static_cast<long>(s.scan.channel_index):0;
+  const long den=sv?static_cast<long>(s.survey_total):static_cast<long>(s.scan.planned);
+  if(num>0&&den>0) {
+    const long w=num*(bar.w-2)/den;
     if(w>0)p.fillRect(bar.x+1,bar.y+1,static_cast<int>(std::min<long>(w,bar.w-2)),bar.h-2,kCyan);
   }
-  char t[72];
-  if(run&&s.scan.planned)std::snprintf(t,sizeof(t),"CH %u / %u   PASS %u",static_cast<unsigned>(s.scan.channel_index),static_cast<unsigned>(s.scan.planned),static_cast<unsigned>(s.scan.passes));
-  else std::snprintf(t,sizeof(t),"PASS ~%u:%02u",static_cast<unsigned>(s.band_minutes/60),static_cast<unsigned>(s.band_minutes%60));
-  if(run||s.band_channels==0)p.label(t,r.x+6,r.y+112,r);
-  else {std::snprintf(t,sizeof(t),"%u CH   ~%u MIN PER PASS",static_cast<unsigned>(s.band_channels),static_cast<unsigned>(s.band_minutes));p.label(t,r.x+6,r.y+112,r);}
-  std::snprintf(t,sizeof(t),"FOUND %u   CANDIDATES %u",static_cast<unsigned>(s.discover_found),static_cast<unsigned>(s.discover_candidates));
+  char t[96];
+  if(sv)std::snprintf(t,sizeof(t),"WINDOW %u / %u   %u.%02u MS/S   PASS %u",static_cast<unsigned>(s.survey_done),static_cast<unsigned>(s.survey_total),
+                      static_cast<unsigned>(s.survey_rate_khz/1000u),static_cast<unsigned>((s.survey_rate_khz%1000u)/10u),static_cast<unsigned>(s.survey_passes+1));
+  else if(dec)std::snprintf(t,sizeof(t),"CH %u / %u OF THE OCCUPIED   PASS %u",static_cast<unsigned>(s.scan.channel_index),static_cast<unsigned>(s.scan.planned),static_cast<unsigned>(s.survey_passes));
+  else if(run&&s.scan.planned)std::snprintf(t,sizeof(t),"CH %u / %u   PASS %u   PLAIN SWEEP",static_cast<unsigned>(s.scan.channel_index),static_cast<unsigned>(s.scan.planned),static_cast<unsigned>(s.scan.passes));
+  else std::snprintf(t,sizeof(t),"%u CH IN THE PICKED BANDS",static_cast<unsigned>(s.band_channels));
+  p.label(t,r.x+6,r.y+112,r);
+  if(sv||dec)std::snprintf(t,sizeof(t),"SIGNALS %u   FOUND %u   CANDIDATES %u",static_cast<unsigned>(s.survey_hot),static_cast<unsigned>(s.discover_found),static_cast<unsigned>(s.discover_candidates));
+  else std::snprintf(t,sizeof(t),"FOUND %u   CANDIDATES %u",static_cast<unsigned>(s.discover_found),static_cast<unsigned>(s.discover_candidates));
   p.text(t,r.x+6,r.y+134,s.discover_found?kGreen:kMuted,2,r);
 }
 void disc_result(Paint& p,const Snapshot& s,const DiscGeom& g) {
@@ -433,6 +441,8 @@ uint32_t disc_progress_sig(const Snapshot& s) {
   h=fnv_val(h,s.discover_running);h=fnv_val(h,s.scan.current_frequency_valid);h=fnv_val(h,s.scan.current_frequency_hz);
   h=fnv_val(h,s.scan.channel_index);h=fnv_val(h,s.scan.planned);h=fnv_val(h,s.scan.passes);
   h=fnv_val(h,s.discover_found);h=fnv_val(h,s.discover_candidates);
+  h=fnv_val(h,s.discover_phase);h=fnv_val(h,s.survey_done);h=fnv_val(h,s.survey_total);h=fnv_val(h,s.survey_hot);
+  h=fnv_val(h,s.survey_passes);h=fnv_val(h,s.survey_rate_khz);h=fnv_val(h,s.survey_center_hz);
   return h;
 }
 uint32_t disc_button_sig(const Snapshot& s) {

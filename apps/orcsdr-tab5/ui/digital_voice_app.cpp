@@ -15,6 +15,7 @@
 #include "dv_discovery_bridge.hpp"
 #include "dv_radio.hpp"
 #include "dv_scanner.hpp"
+#include "dv_survey.hpp"
 #include "dv_voice_service.hpp"
 #include "screen_controller.hpp"
 
@@ -31,6 +32,13 @@ struct State {
   uint32_t disc_hz[kDiscMax]{};
   uint8_t disc_proto[kDiscMax]{}, disc_seen[kDiscMax]{};
   uint16_t disc_saved = 0, disc_skipped = 0;
+  // Wideband pre-screen: phase 1 = survey the picked bands, 2 = decode the occupied channels in batches, 0 = off (or a plain sweep).
+  uint8_t disc_phase = 0, sv_rate_idx = 0, hot_n = 0, hot_at = 0;
+  bool sv_rate_held = false, sv_failed = false;
+  uint32_t survey_passes = 0;
+  dv_survey::Work* sv_work = nullptr;       // PSRAM, allocated on the first survey of a visit
+  dv_survey::Survey survey;
+  uint32_t hot_hz[dv_survey::kMaxHot]{};
   uint8_t filled_system_offset = 0;            // the Systems page offset the snapshot rows were last filled for
   bool background = false;          // the screen is hidden but the receiver, scanner and speech are still running
   Surface surface;
@@ -598,14 +606,25 @@ void refresh(State& st) {
   {
     uint16_t found = 0, cand = 0;
     for (uint8_t i = 0; i < st.disc_n; ++i) (st.disc_seen[i] >= State::kDiscFound ? found : cand)++;
-    const bool run = st.disc_running && st.scanner.active();
-    if (!run) st.disc_running = false;
+    const bool run = st.disc_running && (st.disc_phase == 1 || st.scanner.active());
+    if (!run) { st.disc_running = false; st.disc_phase = 0; }
     const bool can_disc = st.band_mask != 0 && receiver_ok_for_discover(st);
+    const bool sv = st.disc_phase == 1;
+    const uint16_t sv_done = sv ? static_cast<uint16_t>(std::min<uint32_t>(st.survey.windows_done(), 65535u)) : 0;
+    const uint16_t sv_total = sv ? static_cast<uint16_t>(std::min<uint32_t>(st.survey.windows_total(), 65535u)) : 0;
+    const uint16_t sv_hot = static_cast<uint16_t>(st.disc_phase ? (sv ? st.survey.hot_count() : st.hot_n) : 0);
+    const uint16_t sv_rate = static_cast<uint16_t>(st.disc_phase ? st.survey.rate() / 1000u : 0);
+    const uint32_t sv_center = sv ? st.survey.current_center_hz() : 0;
+    const uint16_t sv_pass = static_cast<uint16_t>(std::min<uint32_t>(st.survey_passes, 65535u));
     if (s.discover_running != run || s.discover_found != found || s.discover_candidates != cand || s.discover_saved != st.disc_saved ||
-        s.discover_skipped != st.disc_skipped || s.discover_can_start != can_disc)
+        s.discover_skipped != st.disc_skipped || s.discover_can_start != can_disc || s.discover_phase != st.disc_phase ||
+        s.survey_done != sv_done || s.survey_total != sv_total || s.survey_hot != sv_hot || s.survey_rate_khz != sv_rate ||
+        s.survey_center_hz != sv_center || s.survey_passes != sv_pass)
       ++s.revision;
     s.discover_running = run; s.discover_found = found; s.discover_candidates = cand;
     s.discover_saved = st.disc_saved; s.discover_skipped = st.disc_skipped; s.discover_can_start = can_disc;
+    s.discover_phase = st.disc_phase; s.survey_done = sv_done; s.survey_total = sv_total; s.survey_hot = sv_hot;
+    s.survey_rate_khz = sv_rate; s.survey_center_hz = sv_center; s.survey_passes = sv_pass;
   }
   if (changed) ++s.revision;
   refresh_voice(s);
@@ -692,7 +711,113 @@ bool start_replay(State& st, const char* path, uint32_t channel_hz) {
   return true;
 }
 
+// ---- DISCOVER with the wideband pre-screen -------------------------------------------------------------------------------------
+// Survey the picked bands at the highest loss-free sample rate (many channels per tune), keep the channels clearly above the noise
+// floor, decode those in batches of the saved-list size, then survey again. The decoders only ever see occupied channels.
+size_t my_bands_segments(const State& st, dv::Segment* seg) {
+  size_t n = 0;
+  for (size_t i = 0; i < dv::kBandPresetCount && n < dv::kMaxSegments; ++i)
+    if ((st.band_mask >> i) & 1U) seg[n++] = {dv::kBandPresets[i].start_hz, dv::kBandPresets[i].step_hz, static_cast<uint32_t>(dv::channel_count(dv::kBandPresets[i]))};
+  return n;
+}
+
+bool survey_pass(State& st) {
+  dv::Segment seg[dv::kMaxSegments];
+  const size_t n = my_bands_segments(st, seg);
+  return n && st.sv_work && st.survey.start(seg, n, now(), st.sv_rate_idx);
+}
+
+bool begin_survey(State& st) {
+  if (!g_hooks.tune || !g_hooks.lost_samples) return false;                 // no way to know a window was clean: use the plain sweep
+  if (!st.sv_work) {
+    void* mem = heap_caps_calloc(1, sizeof(dv_survey::Work), MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+    if (!mem) return false;
+    st.sv_work = static_cast<dv_survey::Work*>(mem);
+    dv_survey::init(*st.sv_work);
+  }
+  st.survey.attach(st.sv_work);
+  dv_survey::install(&st.survey);
+  st.sv_rate_idx = 0; st.survey_passes = 0; st.hot_n = 0; st.hot_at = 0; st.sv_failed = false;
+  stop_replay(st);
+  install_radio_hooks();
+  if (!dv_radio::start()) return false;                                     // the decoders are ready when the first hot channel is found
+  clear_call(st);
+  return survey_pass(st);
+}
+
+bool start_batch(State& st) {
+  uint32_t plan[dv::kMaxScanChannels];
+  size_t n = 0;
+  while (n < dv::kMaxScanChannels && st.hot_at + n < st.hot_n) { plan[n] = st.hot_hz[st.hot_at + n]; ++n; }
+  st.hot_at = static_cast<uint8_t>(st.hot_at + n);
+  std::memset(st.plan_mask, 0, sizeof(st.plan_mask));                       // every protocol decoder rotates through each dwell
+  st.scanner.stop();
+  if (!n || !st.scanner.set_plan(plan, n)) return false;
+  install_radio_hooks();
+  if (!dv_radio::start()) return false;                                     // a failed scan may have stopped it
+  clear_call(st);
+  return st.scanner.start(now());
+}
+
+void survey_release(State& st) {
+  if (st.sv_rate_held && g_hooks.release) g_hooks.release();                // the survey's rate goes back to the normal one
+  st.sv_rate_held = false;
+}
+
+void stop_discover(State& st) {
+  st.survey.stop();
+  st.disc_phase = 0;
+  st.disc_running = false;
+  st.scanner.stop();
+  dv_radio::stop();
+  survey_release(st);
+  apply_plan_option(st);                                                    // the scan plan goes back to MY BANDS
+}
+
+// The survey could not run cleanly (no rate stayed loss-free): the plain sweep of the picked bands takes over, and the page says so.
+void survey_fallback(State& st) {
+  st.sv_failed = true;
+  st.survey.stop();
+  st.disc_phase = 0;
+  st.scanner.stop();
+  dv_radio::stop();
+  survey_release(st);
+  apply_plan_option(st);
+  if (!start_scan(st)) st.disc_running = false;
+}
+
+void run_discover(State& st) {
+  if (st.disc_phase == 1) {
+    uint32_t hz = 0, rate = 0;
+    if (st.survey.service(now(), g_hooks.lost_samples ? g_hooks.lost_samples() : 0, &hz, &rate)) {
+      const bool ok = g_hooks.tune && g_hooks.tune(hz, rate);
+      if (ok) st.sv_rate_held = true;
+      st.survey.tune_result(ok, now());
+    }
+    if (st.survey.failed()) { survey_fallback(st); return; }
+    if (st.survey.finished()) {
+      st.sv_rate_idx = st.survey.rate_index();                              // later passes start at the rate that worked
+      ++st.survey_passes;
+      st.hot_n = static_cast<uint8_t>(std::min<size_t>(st.survey.hot_count(), dv_survey::kMaxHot));
+      for (uint8_t i = 0; i < st.hot_n; ++i) st.hot_hz[i] = st.survey.hot(i).hz;
+      st.hot_at = 0;
+      if (st.hot_n == 0) { if (!survey_pass(st)) survey_fallback(st); return; }   // a quiet pass: look again
+      st.disc_phase = 2;
+      if (!start_batch(st)) { st.disc_phase = 1; if (!survey_pass(st)) survey_fallback(st); }
+    }
+  } else if (st.disc_phase == 2) {
+    const bool batch_done = !st.scanner.active() || st.scanner.status().passes >= 1;     // every channel of this batch was examined once
+    if (batch_done) {
+      if (st.hot_at < st.hot_n && start_batch(st)) return;                  // the next batch of occupied channels
+      st.scanner.stop();
+      st.disc_phase = 1;                                                    // all of them checked: survey again
+      if (!survey_pass(st)) survey_fallback(st);
+    }
+  }
+}
+
 void run_scanner(State& st) {
+  if (st.disc_phase) run_discover(st);
   pump_replay(st);
   const auto rs = dv_radio::status();
   if (rs.loss_events != st.last_loss_events) {
@@ -799,7 +924,8 @@ void save_found(State& st) {
 void apply_radio_action(State& st, const Action& a) {
   switch (a.kind) {
     case ActionKind::scan:
-      if (st.scanner.active()) stop_scan(st);
+      if (st.disc_phase) stop_discover(st);
+      else if (st.scanner.active()) stop_scan(st);
       else (void)start_scan(st);
       break;
     case ActionKind::toggle_hold: st.scanner.toggle_manual_hold(); break;
@@ -808,15 +934,19 @@ void apply_radio_action(State& st, const Action& a) {
     case ActionKind::plan_next: step_plan(st, +1); break;
     case ActionKind::discover_start: {
       if (st.band_mask == 0 || !receiver_ok_for_discover(st)) { ++g_unapplied_actions; return; }
+      if (st.disc_phase) stop_discover(st);
       if (st.scanner.active()) stop_scan(st);
       st.plan_option = static_cast<uint8_t>(1 + dv::kBandPresetCount);      // MY BANDS: the bands picked in SETUP
       apply_plan_option(st);
       st.disc_n = 0; st.disc_saved = 0; st.disc_skipped = 0;
+      if (begin_survey(st)) { st.disc_phase = 1; st.disc_running = true; break; }
+      stop_scan(st);                                                         // the pre-screen could not start: plain sweep of the bands
+      st.sv_failed = true;
       if (!start_scan(st)) { ++g_unapplied_actions; return; }
       st.disc_running = true;
       break;
     }
-    case ActionKind::discover_stop: stop_scan(st); st.disc_running = false; break;
+    case ActionKind::discover_stop: if (st.disc_phase) stop_discover(st); else { stop_scan(st); st.disc_running = false; } break;
     case ActionKind::discover_save: save_found(st); break;
     case ActionKind::toggle_band: {
       if (a.value >= dv::kBandPresetCount) { ++g_unapplied_actions; return; }
@@ -915,6 +1045,10 @@ void close() {
   stop_replay(*g_state);
   service_persistence(*g_state, true);        // flush what was learned; the buffer outlives this call
   g_state->scanner.stop();
+  g_state->survey.stop();
+  dv_survey::install(nullptr);
+  for (uint32_t t0 = now(); now() - t0 < 20u;) {}                            // a block mid-copy in the DSP task finishes before the work memory goes
+  if (g_state->sv_work) { heap_caps_free(g_state->sv_work); g_state->sv_work = nullptr; }
   for (uint32_t t0 = now(); g_state->rec_saving && now() - t0 < (g_state->rec_is_iq ? 20000u : 2500u);) {   // let a recording being written finish: the writer reads the buffer
     const int r = g_hooks.file_save_result ? g_hooks.file_save_result() : 2;
     if (r != 0) {
@@ -924,6 +1058,7 @@ void close() {
   }
   dv_voice_service::stop();                   // releases the analogue audio path before the receiver is given back
   dv_radio::stop();
+  survey_release(*g_state);                   // the survey's wide rate, if it still holds one
   g_state->surface.leave();
   free_state();
 }

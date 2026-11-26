@@ -10,7 +10,7 @@ set(DMR ${ROOT}/components/orcsdr_dmr)
 set(NXDN ${ROOT}/components/orcsdr_nxdn)
 # The production sources under test (strict flags) ...
 add_library(dv_live STATIC
-  ${UI}/dv_iq_rec.cpp ${UI}/dv_channelizer.cpp ${UI}/dv_scanner.cpp ${UI}/dv_radio.cpp ${UI}/dv_discovery.cpp
+  ${UI}/dv_iq_rec.cpp ${UI}/dv_channelizer.cpp ${UI}/dv_scanner.cpp ${UI}/dv_radio.cpp ${UI}/dv_discovery.cpp ${UI}/dv_survey.cpp
   ${DMR}/d1_integration/src/d1_bridge.cpp ${DMR}/d1_frontend/src/frontend.cpp
   ${DMR}/d1_protocol/src/d1.cpp ${DMR}/d1_protocol/src/d1_call.cpp ${DMR}/src/d0.cpp
   ${NXDN}/src/decoder.cpp ${NXDN}/src/frontend.cpp)
@@ -55,10 +55,12 @@ add_executable(dv_corpus_tests dv_corpus_tests.cpp ${UI}/digital_voice_dashboard
 target_link_libraries(dv_corpus_tests PRIVATE dv_live)
 add_executable(dv_discovery_tests dv_discovery_tests.cpp)
 target_link_libraries(dv_discovery_tests PRIVATE dv_live)
+add_executable(dv_survey_tests dv_survey_tests.cpp)
+target_link_libraries(dv_survey_tests PRIVATE dv_live)
 add_executable(dv_bench dv_bench.cpp ${UI}/digital_voice_dashboard_model.cpp)
 target_link_libraries(dv_bench PRIVATE dv_live)
 if(ORC_DV_LIVE_SANITIZERS AND CMAKE_CXX_COMPILER_ID MATCHES "GNU|Clang")
-  foreach(t dv_inspect dv_corpus_tests dv_discovery_tests dv_bench dv_voice_replay dv_voice_tests dv_vocoder)
+  foreach(t dv_survey_tests dv_inspect dv_corpus_tests dv_discovery_tests dv_bench dv_voice_replay dv_voice_tests dv_vocoder)
     target_compile_options(${t} PRIVATE -fsanitize=address,undefined -fno-omit-frame-pointer)
     target_link_options(${t} PRIVATE -fsanitize=address,undefined)
   endforeach()
@@ -67,4 +69,5 @@ enable_testing()
 add_test(NAME digital_voice_discovery_db COMMAND dv_discovery_tests)
 add_test(NAME digital_voice_corpus COMMAND dv_corpus_tests ${ROOT}/tests/digital_voice_corpus)
 add_test(NAME digital_voice_live COMMAND dv_live_tests)
+add_test(NAME digital_voice_survey COMMAND dv_survey_tests)
 add_test(NAME digital_voice_native_voice COMMAND dv_voice_tests ${ROOT}/tests/digital_voice_corpus)

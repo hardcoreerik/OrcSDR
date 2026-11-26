@@ -205,6 +205,7 @@ idf_component_register(
         "../ui/dv_channelizer.cpp"
         "../ui/audio_rate_conv.cpp"
         "../ui/dv_discovery.cpp"
+        "../ui/dv_survey.cpp"
         "../ui/dv_radio.cpp"
         "../ui/dv_radio_task.cpp"
         "../ui/dv_voice_audio.cpp"
