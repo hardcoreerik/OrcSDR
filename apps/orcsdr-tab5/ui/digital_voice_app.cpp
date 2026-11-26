@@ -79,6 +79,11 @@ struct State {
   uint8_t led_proto[64]{}, led_level[64]{};    // level 1 = sync only, 2 = integrity, 3 = identity
   bool led_new[64]{};
   uint8_t led_n = 0;
+  uint16_t led_seen[64]{};                     // times each ledger channel was noted (saturating)
+  uint32_t led_utc[64]{};                      // UTC of the last note, 0 = clock not valid
+  // Candidate log: the ledger written to /orcsdr/dv_cand_<utc>.csv (one file per session, never overwritten by a later one) so sync-level findings survive a restart.
+  bool cand_dirty = false, cand_saving = false;
+  uint32_t cand_last_ms = 0, cand_saves = 0, cand_failures = 0, cand_session_utc = 0;
   bool visit_sync_logged = false, visit_counted = false;
   uint32_t base_dmr = 0, base_n48 = 0, base_n96 = 0;      // decoder counters when the current channel visit began
   uint8_t mask_override = 0;                   // RTL_DV MASK: forces one mask on every channel
@@ -99,6 +104,7 @@ struct State {
 };
 constexpr uint32_t kIdentityStickyMs = 15000;
 void service_persistence(State& st, bool final_flush);
+void service_candidates(State& st, bool final_flush);
 char* g_persist = nullptr;           // SD write buffer: allocated once in PSRAM and never freed (the writer may still read it)
 State* g_state = nullptr;
 Hooks g_hooks{};
@@ -362,8 +368,12 @@ void ledger_note(State& st, uint32_t hz, Protocol pr, uint8_t level, bool is_new
   if (i == st.led_n) {
     if (st.led_n == 64) return;                     // a very long scan: later channels are still decoded, just not counted here
     st.led_hz[i] = hz; st.led_proto[i] = static_cast<uint8_t>(pr); st.led_level[i] = 0; st.led_new[i] = is_new; ++st.led_n;
+    st.led_seen[i] = 0;
+    st.cand_dirty = true;
   }
-  if (level > st.led_level[i]) st.led_level[i] = level;
+  if (level > st.led_level[i]) { st.led_level[i] = level; st.cand_dirty = true; }
+  if (st.led_seen[i] < 65535) { ++st.led_seen[i]; st.cand_dirty = true; }
+  st.led_utc[i] = g_hooks.utc_epoch ? g_hooks.utc_epoch() : 0;
 }
 
 // The discovered-signals list (newest first, kScanHits long): one entry per (protocol, frequency). Evidence only ever rises, and every
@@ -1152,6 +1162,7 @@ void close() {
   stop_replay(*g_state);
   service_persistence(*g_state, true);        // flush what was learned; the buffer outlives this call
   g_state->scanner.stop();
+  service_candidates(*g_state, true);          // hands the last ledger to the writer; the buffer is global and outlives the screen
   g_state->survey.stop();
   dv_survey::install(nullptr);
   if (g_state->cap_phase) capture_end(*g_state);
@@ -1226,9 +1237,45 @@ void service_speech_save(State& st) {
   }
 }
 
+namespace {
+// Candidate log. One CSV per session; the buffer is a global that is never freed because the shared writer may still be reading it after the screen closes.
+char* g_cand_buf = nullptr;
+constexpr size_t kCandBytes = 4096;
+size_t candidates_csv(const State& st, char* out, size_t cap) {
+  size_t w = static_cast<size_t>(std::snprintf(out, cap, "frequency_hz,protocol,best_evidence,times_noted,last_utc\n"));
+  for (uint8_t i = 0; i < st.led_n && w + 80 < cap; ++i) {
+    const char* lv = st.led_level[i] >= 3 ? "identity" : st.led_level[i] == 2 ? "integrity" : "sync_only";
+    w += static_cast<size_t>(std::snprintf(out + w, cap - w, "%lu,%s,%s,%u,%lu\n", static_cast<unsigned long>(st.led_hz[i]), protocol_name(static_cast<Protocol>(st.led_proto[i])), lv,
+                                          static_cast<unsigned>(st.led_seen[i]), static_cast<unsigned long>(st.led_utc[i])));
+  }
+  return w;
+}
+void service_candidates(State& st, bool final_flush) {
+  if (!g_hooks.file_save || !g_hooks.file_save_result) return;
+  if (st.cand_saving) {
+    const int r = g_hooks.file_save_result();
+    if (r == 0) return;
+    st.cand_saving = false;
+    if (r == 1) ++st.cand_saves; else { ++st.cand_failures; st.cand_dirty = true; }     // a failed write is tried again even if nothing new arrives
+    return;
+  }
+  if (!st.cand_dirty || st.led_n == 0) return;
+  if (!final_flush && now() - st.cand_last_ms < 30000u) return;
+  if (st.db_saving || st.rec_saving || st.cap_saving || st.cap_phase) return;          // the writer is shared: never two jobs at once
+  if (!g_cand_buf) g_cand_buf = static_cast<char*>(heap_caps_malloc(kCandBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!g_cand_buf) return;
+  if (st.cand_session_utc == 0) st.cand_session_utc = g_hooks.utc_epoch ? g_hooks.utc_epoch() : 0;
+  char path[48];
+  std::snprintf(path, sizeof(path), "/orcsdr/dv_cand_%lu.csv", static_cast<unsigned long>(st.cand_session_utc ? st.cand_session_utc : 1u));
+  const size_t n = candidates_csv(st, g_cand_buf, kCandBytes);
+  if (g_hooks.file_save(path, nullptr, 0, g_cand_buf, n)) { st.cand_saving = true; st.cand_dirty = false; st.cand_last_ms = now(); }     // writer busy: tried again next tick
+}
+}  // namespace
+
 void tick() {
   if (!g_state) return;
   service_speech_save(*g_state);
+  service_candidates(*g_state, false);
   service_persistence(*g_state, false);
   run_scanner(*g_state);
   refresh(*g_state);
@@ -1347,6 +1394,18 @@ bool handle_command(const char* command, bool authenticated, void (*write_line)(
     else std::snprintf(line, sizeof(line), "RTL_DV_CAPTURE_OK started (files /orcsdr/cap_*.cu8 + .json; status: RTL_DV CAPTURE STATUS)");
     write_line(line);
     ++st.snapshot.revision;
+    return true;
+  }
+  if (std::strcmp(arg, "CANDIDATES") == 0) {            // the session ledger (every channel that showed activity, with the best evidence), and where it is saved
+    char line[160];
+    std::snprintf(line, sizeof(line), "RTL_DV_CANDIDATES n=%u saves=%lu failures=%lu saving=%d dirty=%d file=/orcsdr/dv_cand_%lu.csv", static_cast<unsigned>(st.led_n), static_cast<unsigned long>(st.cand_saves),
+                  static_cast<unsigned long>(st.cand_failures), st.cand_saving ? 1 : 0, st.cand_dirty ? 1 : 0, static_cast<unsigned long>(st.cand_session_utc));
+    write_line(line);
+    for (uint8_t i = 0; i < st.led_n; ++i) {
+      std::snprintf(line, sizeof(line), "RTL_DV_CAND %u hz=%lu proto=%s level=%u seen=%u utc=%lu", static_cast<unsigned>(i), static_cast<unsigned long>(st.led_hz[i]),
+                    protocol_name(static_cast<Protocol>(st.led_proto[i])), static_cast<unsigned>(st.led_level[i]), static_cast<unsigned>(st.led_seen[i]), static_cast<unsigned long>(st.led_utc[i]));
+      write_line(line);
+    }
     return true;
   }
   if (std::strncmp(arg, "MONITOR", 7) == 0) {            // scan only the discovered systems: RTL_DV MONITOR [ALL|DMR|NXDN48|NXDN96] [CC n|RAN n]

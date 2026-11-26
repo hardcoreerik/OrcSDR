@@ -2,6 +2,12 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Digital Voice: candidate log (sync-level findings survive a restart) — 2026-11-26
+
+- **What it is:** the session ledger (every channel that showed activity, with the best evidence reached: sync only, integrity or identity) is now also counted (times noted, last UTC) and written to `/orcsdr/dv_cand_<session utc>.csv` through the shared SD writer: at most every 30 s while something changed, and once more when the screen closes. One file per session, so a later session never overwrites an earlier one; each file is a few hundred bytes (at most 64 channels). A failed write is retried. `RTL_DV CANDIDATES` prints the same ledger and the save counters.
+- **Why:** sync-only candidates were lost on restart (the four NXDN hits near 455 MHz on 2026-11-25 existed only in RAM). The discovery database still stores only integrity-validated systems; this log is the record of everything weaker.
+- **Verified on the Tab5 (2026-11-26):** a MONITOR scan produced a two-channel ledger (152.1575 MHz DMR integrity, 463.400 MHz DMR identity); the file was written and read back over serial: header plus `152157500,DMR,integrity,144,...` and `463400000,DMR,identity,815,...`. Two of the first three write attempts reported failure and the third succeeded (transient, cause not found); the retry-on-failure change was added afterwards and is built and flashed but that failure path was not forced. **Not verified:** a restart followed by a read of an older session's file, a full ledger of 64 channels.
+
 ## Unreleased — Digital Voice: MONITOR plan (scan only the discovered systems) — 2026-11-25
 
 - **What it is:** a new last scan-plan option, MONITOR. It scans only the frequencies of the systems in the discovery database (newest first, one entry per frequency, at most 16; two protocols on one frequency run both decoders), optionally limited to one protocol and one colour code or RAN. Select it with the PLAN buttons on SCAN (the plan name shows e.g. `MONITOR DMR CC13 (3)`) or by serial: `RTL_DV MONITOR [ALL|DMR|NXDN48|NXDN96] [CC n | CCn | RAN n]` (refused while scanning; with no argument it reports the current list).
