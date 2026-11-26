@@ -169,7 +169,7 @@ bool Frontend::feed(const IQSample* iq,std::size_t count,
                 const float sym=static_cast<float>(prev_rrc_*(1-frac)+rrc*frac);
                 if(have_sym_) {
                     const double e=sign(prev_sym_)*sym-sign(sym)*prev_sym_;
-                    mm_mu_+=static_cast<double>(sps_)+0.05*e;
+                    mm_mu_+=static_cast<double>(sps_)+0.15*e;
                 } else {
                     mm_mu_+=static_cast<double>(sps_);have_sym_=true;
                 }

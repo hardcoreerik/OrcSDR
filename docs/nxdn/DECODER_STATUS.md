@@ -10,8 +10,8 @@
 | FACCH/group/source identities | Not implemented | Not implemented |
 | CAC / Type-C and Type-D trunk tracking | Not implemented | Not implemented |
 | Licensed clear voice | Not implemented | Not implemented |
-| Real-air physical layer (3 REA clips, replayed 2026-11-25) | 12 FSW/LICH, 12 SACCH CRC6-valid, RAN 7 | 19 FSW/LICH, 19 SACCH CRC6-valid, RAN 7; RCCH 19 frames at 192 dibits, -664.9 Hz |
-| Opaque SACCH 72-bit reassembly (no field layout) | Implemented; real air 1 message | Implemented; real air 4 messages |
+| Real-air physical layer (3 REA clips, replayed 2026-11-25) | 12 FSW/LICH, 12 SACCH CRC6-valid, RAN 7 | 19 FSW/LICH, 19 SACCH CRC6-valid, RAN 7; RCCH 22 frames at 192 dibits, -664.9 Hz |
+| Opaque SACCH 72-bit reassembly (no field layout) | Implemented; real air 0 messages (2 lost frames) | Implemented; real air 4 messages |
 | 11.8 s / 15.3 s WaveShark captures | Not acquired | Not acquired |
 | ESP32-P4 / live scanner / M5GFX | Not connected | Not connected |
 
