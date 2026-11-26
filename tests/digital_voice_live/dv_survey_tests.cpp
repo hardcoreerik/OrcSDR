@@ -115,6 +115,24 @@ void test_dc_hole_covered() {
   CHECK(has_hot(sim.s, 153000000u));
 }
 
+void test_skirt_rule() {
+  // A strong carrier with weaker channels beside it: the neighbours that are >= 15 dB down are skirts, a neighbour only 6 dB down is a real signal,
+  // and an isolated weak signal is never touched. The skirt tones are real tones here (what splatter looks like to the survey).
+  Sim sim;
+  const dv::Segment seg{154000000, 12500, 161};
+  sim.tones = {{154500000.0, 0.5}, {154487500.0, 0.06}, {154512500.0, 0.06}, {154525000.0, 0.25}, {155000000.0, 0.06}};
+  CHECK(sim.s.start(&seg, 1, sim.now));
+  sim.run();
+  CHECK(sim.s.finished());
+  CHECK(has_hot(sim.s, 154500000));                 // the strong carrier
+  CHECK(has_hot(sim.s, 154525000));                 // 6 dB down, 25 kHz away: kept
+  CHECK(has_hot(sim.s, 155000000));                 // isolated weak signal: kept
+  CHECK(!has_hot(sim.s, 154487500));                // skirts
+  CHECK(!has_hot(sim.s, 154512500));
+  CHECK(sim.s.skirts_dropped() >= 2);
+  CHECK(sim.s.hot_count() == 3);
+}
+
 void test_noise_floor_adapts() {
   // The same weak signal is found in a quiet window and in a noisy one: the floor moves with the noise.
   for (double sigma : {0.01, 0.06}) {
@@ -215,6 +233,7 @@ int main() {
   test_levels();
   test_survey_finds_signals();
   test_dc_hole_covered();
+  test_skirt_rule();
   test_noise_floor_adapts();
   test_empty_band_is_quiet();
   test_loss_retry_and_rate_ladder();

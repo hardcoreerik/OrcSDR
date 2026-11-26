@@ -72,7 +72,7 @@ bool Survey::start(const dv::Segment* segs, size_t n, uint32_t now_ms, uint8_t f
   }
   nseg_ = n; seg_ = 0; seg_started_ = false;
   rate_i_ = first_rate_index; retries_ = 0; rate_loss_run_ = 0;
-  windows_done_ = 0; lossy_ = 0; rate_steps_ = 0; checked_ = 0; hot_n_ = 0; last_floor_ = 0;
+  windows_done_ = 0; lossy_ = 0; rate_steps_ = 0; checked_ = 0; skirts_ = 0; hot_n_ = 0; last_floor_ = 0;
   frames_.store(0, std::memory_order_relaxed);
   state_since_ms_ = now_ms;
   plan_window();
@@ -103,7 +103,23 @@ void Survey::plan_window() noexcept {
     state_.store(State::tuning, std::memory_order_release);
     return;
   }
+  trim_skirts();
   state_.store(State::done, std::memory_order_release);
+}
+
+void Survey::trim_skirts() noexcept {
+  bool drop[kMaxHot] = {};
+  for (size_t i = 0; i < hot_n_; ++i)
+    for (size_t j = 0; j < hot_n_ && !drop[i]; ++j) {
+      const uint32_t d = hot_[j].hz > hot_[i].hz ? hot_[j].hz - hot_[i].hz : hot_[i].hz - hot_[j].hz;
+      drop[i] = j != i && d <= kSkirtHz && hot_[j].margin_db >= hot_[i].margin_db + kSkirtDb;
+    }
+  size_t w = 0;
+  for (size_t i = 0; i < hot_n_; ++i) {
+    if (drop[i]) { ++skirts_; continue; }
+    hot_[w++] = hot_[i];                               // order (strongest first) is kept
+  }
+  hot_n_ = w;
 }
 
 void Survey::add_hot(uint32_t hz, float margin) noexcept {

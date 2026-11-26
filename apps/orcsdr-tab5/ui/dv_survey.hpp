@@ -20,7 +20,12 @@ namespace orcsdr::dv_survey {
 
 constexpr size_t kFft = 1024;
 constexpr size_t kFrames = 8;                 // independent 1024-sample frames averaged per window
-constexpr size_t kMaxHot = 96;                // hot channels kept per pass (strongest first)
+constexpr size_t kMaxHot = 128;               // hot channels kept per pass (strongest first)
+// Skirt rule: a strong carrier raises the channels beside it (splatter, clipping products: 14 to 18 dB on the 2026-11-25 453 MHz capture). At the end of a pass, a hot
+// channel with another hot channel within kSkirtHz whose margin over its window floor is at least kSkirtDb larger is a skirt, not a signal, and is not sent to the
+// decoders. It is applied to the whole pass, not per window: a strong carrier inside one window's tuner-centre guard zone is invisible there but seen by the overlapping window.
+constexpr float kSkirtDb = 15.0f;
+constexpr uint32_t kSkirtHz = 25000;
 constexpr size_t kMaxWindowChannels = 400;    // channels evaluated per window
 constexpr size_t kRates = 5;
 constexpr uint32_t kRateLadder[kRates] = {2560000, 2400000, 2048000, 1536000, 1024000};   // highest first; driver-supported
@@ -76,6 +81,7 @@ class Survey {
   uint32_t lossy_windows() const noexcept { return lossy_; }
   uint32_t rate_steps() const noexcept { return rate_steps_; }
   uint32_t channels_checked() const noexcept { return checked_; }
+  uint32_t skirts_dropped() const noexcept { return skirts_; }
   uint32_t current_center_hz() const noexcept { return center_hz_; }
   size_t hot_count() const noexcept { return hot_n_; }
   const Hot& hot(size_t i) const noexcept { return hot_[i]; }
@@ -85,6 +91,7 @@ class Survey {
   void plan_window() noexcept;      // next window centre, or done
   void evaluate() noexcept;         // analyze + hot channels of the captured window
   void add_hot(uint32_t hz, float margin) noexcept;
+  void trim_skirts() noexcept;
   void window_failed(uint32_t now_ms, bool lossy) noexcept;
 
   Config cfg_;
@@ -95,7 +102,7 @@ class Survey {
   std::atomic<State> state_{State::idle};
   std::atomic<uint8_t> frames_{0};
   uint8_t rate_i_ = 0, retries_ = 0, rate_loss_run_ = 0;
-  uint32_t center_hz_ = 0, state_since_ms_ = 0, windows_done_ = 0, lossy_ = 0, rate_steps_ = 0, checked_ = 0;
+  uint32_t center_hz_ = 0, state_since_ms_ = 0, windows_done_ = 0, lossy_ = 0, rate_steps_ = 0, checked_ = 0, skirts_ = 0;
   uint64_t lost_at_arm_ = 0;
   float last_floor_ = 0;
   Hot hot_[kMaxHot]{};
