@@ -850,6 +850,7 @@ bool start_batch(State& st) {
   st.hot_at = static_cast<uint8_t>(st.hot_at + n);
   std::memset(st.plan_mask, 0, sizeof(st.plan_mask));                       // every protocol decoder rotates through each dwell
   st.scanner.stop();
+  st.scanner.set_quick_lists(true);                                         // survey-confirmed channels are mostly analog: leave a silent one after quick_ms
   if (!n || !st.scanner.set_plan(plan, n)) return false;
   install_radio_hooks();
   if (!dv_radio::start()) return false;                                     // a failed scan may have stopped it
@@ -867,6 +868,7 @@ void stop_discover(State& st) {
   st.disc_phase = 0;
   st.disc_running = false;
   st.scanner.stop();
+  st.scanner.set_quick_lists(false);
   dv_radio::stop();
   survey_release(st);
   apply_plan_option(st);                                                    // the scan plan goes back to MY BANDS

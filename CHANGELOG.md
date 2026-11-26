@@ -2,6 +2,11 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Digital Voice: DISCOVER leaves a silent survey-confirmed channel after 0.6 s — 2026-11-26
+
+- **What changed:** in the DISCOVER decode phase each channel the survey flagged was listened to for the full 1.5 s dwell (about 2.2 s with the retune settle), although most are analog. List plans can now use the quick exit that range scans already had (`Scanner::set_quick_lists`): a channel with no sync-level sign within 0.6 s is left; a pending candidate still earns the extra dwell. The flag is on only for DISCOVER batches and is cleared when DISCOVER stops, so SCAN and MONITOR keep the full dwell.
+- **Verified:** host test (silent channel left at 1.5 s by default, 0.6 s with the flag, candidate extends to 3 s). On the Tab5 an 8-minute DISCOVER run logged 283 channel visits with a median of about 1.1 s on the channel (sampled once a second, so only roughly; candidate channels show 3.7 s). **Not verified:** that no weak real system is now missed (the same trade-off range scans already accept); no side-by-side run with the old dwell on the same survey. Probe: `artifacts/.../captures/discover_dwell_probe.py` (SCAN STOP, touch DISCOVER then START).
+
 ## Unreleased — Digital Voice: MONITOR visits a channel with decoded speech twice per round — 2026-11-26
 
 - **What changed:** when speech frames are decoded on a channel, the channel is remembered for the session (up to 4, not saved). The next time the MONITOR plan is built (at START or a filter change) each such channel is listed a second time, half a round later, so a reply in a conversation is caught sooner. Control-only channels are never doubled: a first attempt that doubled the most-heard system was dropped because that is a Terra control channel (152.1575 MHz).

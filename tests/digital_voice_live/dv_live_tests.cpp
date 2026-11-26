@@ -199,6 +199,17 @@ void test_scanner_hold_time() {
     CHECK(left_at >= cmax && left_at <= cmax + 1500);                                   // released by the control-only rule, not earlier, not much later
     CHECK(c.status().control_releases == 1);
   }
+  // List plans: a silent channel is left after dwell_ms (1.5 s) normally, after quick_ms (0.6 s) when quick_lists is on; a pending candidate is never cut short.
+  for (int mode = 0; mode < 3; ++mode) {
+    dv::Scanner q; CHECK(q.set_plan(plan, 2)); q.set_quick_lists(mode != 0); CHECK(q.quick_lists() == (mode != 0));
+    uint32_t t = 1000; dv::ScanInputs in; in.receiver_ready = true; in.candidate = (mode == 2);
+    CHECK(q.start(t)); q.service(t, in); q.retune_result(true, t); t += 700; q.service(t, in);
+    const uint32_t begin = t; uint32_t left = 0;
+    for (; t < begin + 4000 && !left; t += 100) { q.service(t, in); if (q.status().index == 1) left = t - begin; }
+    if (mode == 0) CHECK(left >= 1500 && left <= 1700);
+    if (mode == 1) CHECK(left >= 600 && left <= 800);
+    if (mode == 2) CHECK(left >= 3000);
+  }
   // Voice or identity evidence on the held channel overrides the control-only release: the hold continues.
   { dv::Scanner c; CHECK(c.set_plan(plan, 2)); c.set_control_hold_max_ms(6000);
     uint32_t t = 1000; dv::ScanInputs in; in.receiver_ready = true; CHECK(c.start(t));

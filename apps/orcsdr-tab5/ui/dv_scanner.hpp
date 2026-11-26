@@ -32,6 +32,7 @@ struct ScanConfig {
   // Range plans only: a channel that shows no sync-level activity within quick_ms is left at once (0 = always use dwell_ms).
   // Calls last seconds, so a wide scan spends its time on channels that answer instead of 1.5 s on every silent one.
   uint32_t quick_ms = 600;
+  bool quick_lists = false;     // true: list plans use quick_ms too (discovery's decode of survey-confirmed channels, which are mostly analog)
   // A hold that has seen only control traffic (verified events but no identity and no voice) is released after this long (0 = never).
   uint32_t control_hold_max_ms = 20000;
 };
@@ -98,6 +99,8 @@ class Scanner {
   // How long a channel is kept after its last verified activity (500 ms to 60 s). A longer hold catches the reply in a conversation (MONITOR uses 9 s).
   void set_hold_ms(uint32_t ms) noexcept { config_.hold_ms = ms < 500 ? 500 : ms > 60000 ? 60000 : ms; }
   uint32_t hold_ms() const noexcept { return config_.hold_ms; }
+  void set_quick_lists(bool on) noexcept { config_.quick_lists = on; }
+  bool quick_lists() const noexcept { return config_.quick_lists; }
   // A hold that has seen only control traffic (verified events but no identity and no voice) is released after this long (1 s to 60 s). A shorter value
   // revisits more channels per minute; a call that starts on a held channel brings identity evidence, which keeps the hold.
   void set_control_hold_max_ms(uint32_t ms) noexcept { config_.control_hold_max_ms = ms < 1000 ? 1000 : ms > 60000 ? 60000 : ms; }

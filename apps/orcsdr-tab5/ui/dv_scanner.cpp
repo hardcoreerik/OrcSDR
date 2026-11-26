@@ -163,7 +163,7 @@ ScanStep Scanner::service(uint32_t now_ms, const ScanInputs& in) noexcept {
         }
         if (extended_) limit = config_.dwell_ms * 2;
         // Wide scans: a channel with no sync-level sign of life is left early (never while a candidate is pending or the user holds).
-        if (kind_ == PlanKind::range && config_.quick_ms && !in.candidate && !extended_ && limit > config_.quick_ms) limit = config_.quick_ms;
+        if ((kind_ == PlanKind::range || config_.quick_lists) && config_.quick_ms && !in.candidate && !extended_ && limit > config_.quick_ms) limit = config_.quick_ms;
         if (limit < config_.dwell_ms && !manual_hold_ && static_cast<int32_t>(now_ms - state_since_ms_) >= static_cast<int32_t>(limit)) ++quick_skips_;
         if (!manual_hold_ && static_cast<int32_t>(now_ms - state_since_ms_) >= static_cast<int32_t>(limit))
           next_channel(now_ms);
