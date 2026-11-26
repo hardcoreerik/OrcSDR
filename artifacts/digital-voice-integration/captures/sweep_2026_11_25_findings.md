@@ -13,3 +13,7 @@ Many of those CC entries have 1-2 hits and are likely false detections (see the 
 
 Screenshots: sweep_scan.png, sweep_scan_after.png, sweep_lastheard.png, sweep_systems_p1/p2/p3.png.
 Not preserved by the firmware: sync-only candidates live in RAM only and are lost on restart.
+
+## Update: sweep at channel 4974 of 7759 (sweep_463.png)
+- VERIFIED at integrity level: NXDN48 463.250000 MHz, RAN 1, RTCH / TRAFFIC, first 03:38:46, last 03:38:52, observed 1 time. Integrity validated, not identity (no unit or group IDs). Sweep counters: VERIFIED 2, SYNC 7, NEW 2, pass 0.
+- New sync-only candidates: NXDN96 461.7125 MHz (03:35:59), NXDN48 461.2875 MHz (03:35:13), NXDN96 460.750 MHz (03:34:14).
