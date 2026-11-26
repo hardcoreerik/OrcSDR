@@ -1,0 +1,35 @@
+name: Digital voice efficiency A-B
+on:
+  push:
+    branches: ["agents/dv-efficiency-20261126"]
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  host:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Profile frozen base before candidate
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p evidence/base evidence/candidate
+          git worktree add --detach /tmp/dv-base bd7cb282bf93cf72e4d65859959d50c674632161
+          python tools/dv_efficiency/profile_host.py --root /tmp/dv-base --output evidence/base > evidence/base/run.log
+      - name: Candidate A-B
+        shell: bash
+        run: |
+          set -euo pipefail
+          python tools/dv_efficiency/profile_host.py --root . --output evidence/candidate --compare evidence/base/report.json | tee evidence/candidate/run.log
+      - name: Source-only sandbox handoff
+        if: always()
+        run: |
+          git archive HEAD apps/orcsdr-tab5/ui components/orcsdr_dmr components/orcsdr_nxdn components/mbelib components/orcsdr_vocoder tests/digital_voice_live tests/digital_voice_dashboard_preview tests/digital_voice_corpus/manifest.txt tools/dv_efficiency | gzip > evidence/source.tar.gz
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: dv-efficiency-host-evidence
+          path: evidence

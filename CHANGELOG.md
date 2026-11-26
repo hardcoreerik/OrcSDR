@@ -2,19 +2,23 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
-## Unreleased — Digital Voice: scheduler probe; the decode worker is the cause of the slow screen (cause of its cost not found) — 2026-11-27
+## Unreleased - Digital Voice: isolated efficiency A/B harness - 2026-11-26
+
+- Host profiling and exact replay comparison harness added; no firmware behavior changed. Owner-supplied Tab5 baseline preserved in docs/digital-voice/EFFICIENCY_SANDBOX.md; host and device results pending execution. No hardware accessed.
+
+## Unreleased â€” Digital Voice: scheduler probe; the decode worker is the cause of the slow screen (cause of its cost not found) â€” 2026-11-27
 
 - **Found:** in the slow state the decode worker `dv_rx` (core 0, priority 2) runs at 71 to 82 percent of core 0 and the main loop (priority 1, same core) gets about 3 percent, so the screen stalls about 850 ms at a time and touches are lost; the worker's sample ring also overflows (`ring_drops` rose by about 2 a second). Core 1 stays about 80 percent idle. The worker's DMR cost was 4.0 microseconds per sample in the slow state (`us_dmr` delta over `pairs` delta) against about 0.9 in a good run, so something makes the same decoder about 4 times slower. The decoder state is in internal RAM in both (`dec_internal=24144`). Not found: why the cost changes, and what clears it (it cleared after about 3.5 minutes on one boot, not on another; Home, FM and back cleared it for the owner).
 - **Tools added:** `RTL_DV PROBE START | STOP | DUMP` samples which task runs on each core every millisecond (a task on the other core takes the sample) and reports each task's share and its longest unbroken run. Scripts `benchmarks/worker_load_timeline.py`, `boot_stall_timeline.py`, `stall_count.py`, `stall_ab.py`.
 - **Not done:** no fix. A scan left running on a freshly booted unit makes the screen unusable, so stop it (`RTL_DV SCAN STOP`) when touch is needed.
 
-## Unreleased — Digital Voice: loop timing diagnostics; the first minutes after boot are slow while scanning (found, not fixed) — 2026-11-27
+## Unreleased â€” Digital Voice: loop timing diagnostics; the first minutes after boot are slow while scanning (found, not fixed) â€” 2026-11-27
 
 - **Found:** for about 3.5 minutes after a fresh boot, scanning makes the main loop stall for roughly 850 ms at a time, up to about once a second (the firmware's own `RTL_MAIN_STALL stage=loop_gap` lines: 36 to 44 stalls in each 45 s window until 199 s after the flash, then 0). The Digital Voice screen then feels slow and taps are lost. After that the same firmware is fluid (owner confirmed). It also appeared on the commit before today's drawing changes, so it is not the FOLLOW or diff-painting work. Stopped scanning shows no stalls; turning the voice audio and speech recording off did not change it. The cause is not found: the boot period starts Wi-Fi/C6 bring-up and the OrcDial bridge retries every 5 s, which are the suspects. Going Home, then FM, then back to DMR also cleared it for the owner.
 - **Diagnostics added:** `RTL_DV RENDER` now also prints `RTL_DV_TICKS` (how often the main loop reaches the screen, longest gap, longest tick, worst time of each part of the tick and of refresh) and up to 12 `RTL_DV_SLOW` lines for ticks of 100 ms or more with the time of each part.
 - **Not done:** no fix for the boot-time stalls; a temporary timing probe in `main.cpp` found them spread over every part of the loop (the main task is not scheduled), and was removed again, so the flashed firmware has it and the source does not.
 
-## Unreleased — Digital Voice: FOLLOW one channel, plain-language screen with a live RF trace; playback gain 6x — 2026-11-27
+## Unreleased â€” Digital Voice: FOLLOW one channel, plain-language screen with a live RF trace; playback gain 6x â€” 2026-11-27
 
 - **FOLLOW:** on SYSTEMS, select a system and press FOLLOW. The receiver stays on that one channel (no retuning, the control-only release and the demotion are off) and a new page shows it in plain words: the frequency large, the protocol and colour code, and a status line (`Listening - no call right now`, `Call in progress`, `Call ended - waiting for a reply`, `Encrypted call - we can't play it`, `Receiver lost - check the USB cable. Trying again...`). During a call it shows TALKGROUP (or TO RADIO), FROM RADIO, group or private and the slot; nothing is guessed, so unknowns stay a dash. AUTO, SLOT 1, SLOT 2 and MUTE choose what you hear, RECORD toggles saving calls, BACK returns to SYSTEMS and the scan that was running resumes. Volume stays on the speaker icon in the header. Serial: `RTL_DV FOLLOW <hz>` and `RTL_DV FOLLOW STOP`. If the receiver stops, the page says so and the app restarts it every 3 s.
 - **Activity display:** a trace of the receiver's own relative RF level, one sample every 100 ms over the last 6 s, scaled to the window so a quiet channel still moves, with samples 4 dB above the typical level drawn green. It is real receiver data (the SIGNAL page rule "no synthetic waterfall" still holds). It is not a spectrum or waterfall yet.
@@ -23,68 +27,68 @@ This is the **project-level release and current-source index**. It links the aut
 - **Diagnostics:** `RTL_DV RENDER` prints repaint cost per view and how often the main loop reaches this screen (tick count, longest gap, longest tick, and the worst time of each part); `RTL_DV RENDER RESET` clears it.
 - **Verified:** host tests 5 of 5, including FOLLOW tests (button and touch, view change, status words, trace updates without refilling any card, call details, lost receiver, BACK and listen buttons). On the Tab5: screenshots show 464.3625 and 153.645 MHz followed with real bursts in the trace; with MONITOR or FOLLOW running, 20 s measurements show the main loop reaching the screen 60 to 100 times a second, longest gap 61 ms, repaints 5 to 9 ms. **Not verified:** the owner reported the FOLLOW screen lagging on an earlier build; one earlier 20 s measurement just after a flash showed 5 ticks a second with gaps up to 1.8 s, which did not repeat, so I do not know what caused it (the first SD use after boot is a candidate). Not heard: the audio at gain 6 on a live call. Not done: spectrum or waterfall, lockout, hang-time countdown, a nickname for a talkgroup.
 
-## Unreleased — Digital Voice: no more page flicker on LIVE, LAST HEARD, SYSTEMS, SIGNAL, SETUP and DISCOVER — 2026-11-27
+## Unreleased â€” Digital Voice: no more page flicker on LIVE, LAST HEARD, SYSTEMS, SIGNAL, SETUP and DISCOVER â€” 2026-11-27
 
 - **Cause:** while MONITOR scans, the receiver changes channel every 2 s and a heard counter ticks about 7 times a second. Each change repainted the whole page: the card was filled with its background colour and the text drawn again over it, so the page flashed several times a second.
 - **Fix:** the Digital Voice pages now use diff painting (`paint::Diff` in `digital_voice_dashboard_paint.hpp`). Each page, list row and panel remembers what it drew last time. On a repaint, a card, line, label or value that did not change is not touched, and a value that changed clears only its own text rectangle (the wider of the old and new text, in the colour under it) before it is drawn again. The voice panel has its own slot so its changing contents cannot shift the page's. A widget whose number of drawing calls changed is drawn once in full. The memory (about 14 KB) is allocated in PSRAM on first use; without it the old full repaint is used. A page whose only news is a fast value change repaints at most every 250 ms (audio counters every 120 ms); anything you touch is drawn at once. This also fixes the VOICE fact on the analysis LIVE page, which used to go stale during a call.
 - **Verified:** host tests 5 of 5. A new regression test changes a heard counter ten times: the new value is on screen each time, nothing clears the screen, no card or panel is refilled, and each repaint is 12 drawing calls or fewer; the voice test still shows only the voice panel is touched. On the Tab5 (COM17), screenshots of SIGNAL and SYSTEMS after more than a minute of MONITOR scanning are clean (no leftover text, counters and times current). **Not verified:** that the panel is physically flicker-free: I cannot see the screen move, so the owner's eye is the acceptance test. The firmware's `repaints` counter counts present calls, not drawn pixels, so it did not drop and says nothing about this fix.
 - **Test tooling:** the host test mock now ends a failed assertion with a message on stderr instead of opening the Windows debug dialog.
 
-## Unreleased — Digital Voice: MONITOR visits control-only channels every 3rd round — 2026-11-26
+## Unreleased â€” Digital Voice: MONITOR visits control-only channels every 3rd round â€” 2026-11-26
 
 - **What changed:** in MONITOR a channel released by the control-only rule twice in a row (verified traffic, never an identity or voice) is demoted: the scan visits it only every 3rd round, so channels with real or possible traffic come round sooner. A hold that ends by itself (a call) restores the channel at once. Applies to list plans in MONITOR only (`Scanner::set_demote`, `demoted()`, `demote_skips()`); SCAN and DISCOVER are unchanged.
 - **Measured on the Tab5 (15-channel MONITOR list, 12 min before vs 9 min after):** the quiet channels, which are always visited, went from about 2.1 to 3.5 sampled seconds per minute (about 1.7 times as many visits), and the six VHF control channels went from about 0.9 to 0.7 holds per minute. Holds on the intermittent channels (464.3625, 463.400) are not a visit count, so they say nothing about round time. No voice call occurred in either window.
 - **Verified:** host test (control channel visited 4 to 6 times in 9 rounds, demoted flag, skip counter, off by default). The restore path is tested too (one burst with an identity on a demoted channel, then silence: the channel is visited every round again). **Not verified on the device:** that a call starting on a demoted control channel is caught within a few rounds, and the effect on conversation catch rate.
 
-## Unreleased — Digital Voice: DISCOVER leaves a silent survey-confirmed channel after 0.6 s — 2026-11-26
+## Unreleased â€” Digital Voice: DISCOVER leaves a silent survey-confirmed channel after 0.6 s â€” 2026-11-26
 
 - **What changed:** in the DISCOVER decode phase each channel the survey flagged was listened to for the full 1.5 s dwell (about 2.2 s with the retune settle), although most are analog. List plans can now use the quick exit that range scans already had (`Scanner::set_quick_lists`): a channel with no sync-level sign within 0.6 s is left; a pending candidate still earns the extra dwell. The flag is on only for DISCOVER batches and is cleared when DISCOVER stops, so SCAN and MONITOR keep the full dwell.
 - **Verified:** host test (silent channel left at 1.5 s by default, 0.6 s with the flag, candidate extends to 3 s). On the Tab5 an 8-minute DISCOVER run logged 283 channel visits with a median of about 1.1 s on the channel (sampled once a second, so only roughly; candidate channels show 3.7 s). **Not verified:** that no weak real system is now missed (the same trade-off range scans already accept); no side-by-side run with the old dwell on the same survey. Probe: `artifacts/.../captures/discover_dwell_probe.py` (SCAN STOP, touch DISCOVER then START).
 
-## Unreleased — Digital Voice: MONITOR visits a channel with decoded speech twice per round — 2026-11-26
+## Unreleased â€” Digital Voice: MONITOR visits a channel with decoded speech twice per round â€” 2026-11-26
 
 - **What changed:** when speech frames are decoded on a channel, the channel is remembered for the session (up to 4, not saved). The next time the MONITOR plan is built (at START or a filter change) each such channel is listed a second time, half a round later, so a reply in a conversation is caught sooner. Control-only channels are never doubled: a first attempt that doubled the most-heard system was dropped because that is a Terra control channel (152.1575 MHz).
 - **Verified on the Tab5:** the build flashes and MONITOR still lists 9 entries when no speech has been heard. **Not verified:** the doubling itself on the device (no voice call occurred since the flash), and whether it catches more replies. The plan insertion is now a pure function (`add_revisits`) with a host test (order kept, mask follows, unknown channel ignored, no room, last entry).
 
-## Unreleased — Digital Voice: MONITOR leaves a control-only channel after 6 s instead of 20 s — 2026-11-26
+## Unreleased â€” Digital Voice: MONITOR leaves a control-only channel after 6 s instead of 20 s â€” 2026-11-26
 
 - **What changed:** a channel that shows only control traffic (verified events, no identity, no voice) is now released after 6 s in MONITOR (other plans keep 20 s), so MONITOR visits more channels per minute; a call that starts on a held channel brings identity evidence and still keeps the hold. New `Scanner::set_control_hold_max_ms` (1 to 60 s, clamped); `RTL_DV MONITOR` prints `control_hold_ms=`.
 - **Measured on the Tab5 (2026-11-26, MONITOR over 9 channels, soak logs in `artifacts/.../captures/`):** holds per minute rose from about 2.6 (20 s control hold, 25 min, 3 to 65 holds) to about 4.6 (6 s, 10.6 min, 5 to 49 holds). That is 1.8 times, not 3 times, because every visit also pays retune and settling time. No voice call occurred in the 10-minute run, so whether the shorter hold catches more calls is **not verified** (calls are rare: one in the earlier 25 minutes).
 - **Host test:** a control-only channel is released at the set time for 20 s and 6 s (within 1.5 s), identity evidence keeps the hold, limits clamp; the live-chain suite passes.
 
-## Unreleased — Digital Voice: MONITOR filter on the SETUP screen — 2026-11-26
+## Unreleased â€” Digital Voice: MONITOR filter on the SETUP screen â€” 2026-11-26
 
 - **What changed:** the non-working `SCAN PLAN: READY` button on SETUP is now `MONITOR: ALL (9)`. Each tap cycles the protocol filter (ALL, DMR, NXDN48, NXDN96), selects the MONITOR plan and shows how many channels the filter gives; the button is highlighted while MONITOR is the selected plan, disabled when no receiver is connected, and ignored while a scan is running. START is on the SCAN page. The colour-code / RAN filter and `MIN hits` are still serial only (`RTL_DV MONITOR ...`). New action `monitor_filter` (a receiver-plan action, never a UI-local change) and snapshot fields `monitor_proto`, `monitor_entries`, `monitor_selected`.
 - **Verified:** host dashboard tests 5 of 5 (new checks: label `MONITOR: NXDN48 (9)`, touch returns `monitor_filter`, no touch and `MONITOR: NOT CONNECTED` without a receiver, `apply_ui_action` leaves UI state alone). On the Tab5: screenshots show `MONITOR: ALL (9)`, then `MONITOR: DMR (8)` highlighted after one tap; three taps from ALL reach NXDN96 (`RTL_DV MONITOR` reports proto=3, selected=1). A first version of the hint text ran into the neighbouring label; shortened and re-checked on the screen. **Not verified:** a scan started from the touch screen after choosing the filter.
 
-## Unreleased — Digital Voice: MONITOR holds a live channel for 9 s instead of 4 s — 2026-11-26
+## Unreleased â€” Digital Voice: MONITOR holds a live channel for 9 s instead of 4 s â€” 2026-11-26
 
 - **What changed:** after the last verified burst, the scanner now keeps a MONITOR channel for 9 s (other plans keep the 4 s default), so the reply in a conversation is not cut off by the scan moving on. New `Scanner::set_hold_ms` (500 ms to 60 s, clamped); the plan selection sets it (MONITOR 9000 ms, everything else 4000 ms) and `RTL_DV MONITOR` now prints `hold_ms=`. The control-channel release rule (a channel with only control traffic is left after 20 s) is unchanged, so a quiet control channel does not trap the scan.
 - **Verified:** host live-chain suite passes, including a new hold-time test (4 s default releases 5 s after the last verified burst, 9 s still holds at 5 s and releases by 9.1 s, limits clamp). On the Tab5: `RTL_DV MONITOR ALL` reports `hold_ms=9000`, `RTL_DV PRESET 1` returns to 4000, `MONITOR NXDN48` is 9000 again. **Not verified:** that the longer hold actually catches a reply on a live conversation (needs a call in progress), and its cost to the scan rate on busy control channels (each verified burst renews the hold).
 
-## Unreleased — Digital Voice: playback gain for decoded speech — 2026-11-26
+## Unreleased â€” Digital Voice: playback gain for decoded speech â€” 2026-11-26
 
 - **What changed:** decoded DMR speech is now amplified before it goes to the speaker. The first live call (463.400 MHz, 2026-11-26) had a vocoder output of RMS -41.8 dBFS (peak about 3000 of 32767), which is quiet. The service applies a gain of 4 (about +12 dB) by default; `RTL_DV AUDIO GAIN [0.25..16]` shows or sets it (rejected outside the range). The gain is applied in the engine's 8 to 48 kHz playout stage, after the speech sink, so recorded speech WAVs stay raw. Samples that would exceed full scale are hard-limited and counted in the existing `clipped` counter. The engine itself still defaults to unity, so every existing test is unchanged.
 - **Verified:** host voice tests (168 checks, 0 failed) including a new gain test (default unity, 2x gain doubles the level within 2%, 8x gain on a loud tone clips and is counted, limits 0.25 and 16). On the Tab5: `GAIN` reports 4.00 by default, sets and reads back 1, 4 and 8, rejects 0.1, 99 and `abc`. **Not verified:** how it sounds on a live call (nobody has listened yet), and whether a loud call clips at gain 4; the `clipped` counter in `RTL_DV AUDIO` will show it, and 3 or lower is the fallback.
 
-## Unreleased — Digital Voice: survey skirt rule and a larger hot list — 2026-11-26
+## Unreleased â€” Digital Voice: survey skirt rule and a larger hot list â€” 2026-11-26
 
 - **What changed:** at the end of each survey pass, a hot channel is dropped when another hot channel within 25 kHz has a margin over its window floor at least 15 dB larger (a strong carrier raises its neighbours by 14 to 18 dB: splatter and ADC clipping products; on the 2026-11-25 453 MHz recording the rule removes about 6 of 28 occupied channels per window). The rule runs once per pass over the whole hot list, not per window: a strong carrier inside one window's tuner-centre guard zone is invisible in that window but seen by the overlapping one, which a per-window version missed (found by a host test). The hot list holds 128 channels, up from 96, strongest first. `Survey::skirts_dropped()` counts the removals.
 - **Verified:** host test `test_skirt_rule` (strong carrier kept; a neighbour 6 dB down 25 kHz away kept; an isolated weak signal kept; two neighbours about 18 dB down dropped; exactly 3 hot channels); all other survey tests unchanged. On the Tab5 the DISCOVER page now reports 118 signals in the first pass where the old list was pinned at its 96 cap, and the decode phase works through them in batches of 16 at about 3 s per channel (estimated pass about 6 minutes against about 168 minutes for the old full sweep). **Not verified:** how many channels the skirt rule removed on the device (the page does not show it), and that none of the removed channels was a real signal in the field.
 
-## Unreleased — Digital Voice: candidate log (sync-level findings survive a restart) — 2026-11-26
+## Unreleased â€” Digital Voice: candidate log (sync-level findings survive a restart) â€” 2026-11-26
 
 - **What it is:** the session ledger (every channel that showed activity, with the best evidence reached: sync only, integrity or identity) is now also counted (times noted, last UTC) and written to `/orcsdr/dv_cand_<session utc>.csv` through the shared SD writer: at most every 30 s while something changed, and once more when the screen closes. One file per session, so a later session never overwrites an earlier one; each file is a few hundred bytes (at most 64 channels). A failed write is retried. `RTL_DV CANDIDATES` prints the same ledger and the save counters.
 - **Why:** sync-only candidates were lost on restart (the four NXDN hits near 455 MHz on 2026-11-25 existed only in RAM). The discovery database still stores only integrity-validated systems; this log is the record of everything weaker.
 - **Verified on the Tab5 (2026-11-26):** a MONITOR scan produced a two-channel ledger (152.1575 MHz DMR integrity, 463.400 MHz DMR identity); the file was written and read back over serial: header plus `152157500,DMR,integrity,144,...` and `463400000,DMR,identity,815,...`. Two of the first three write attempts reported failure and the third succeeded (transient, cause not found); the retry-on-failure change was added afterwards and is built and flashed but that failure path was not forced. **Not verified:** a restart followed by a read of an older session's file, a full ledger of 64 channels.
 
-## Unreleased — Digital Voice: MONITOR plan (scan only the discovered systems) — 2026-11-25
+## Unreleased â€” Digital Voice: MONITOR plan (scan only the discovered systems) â€” 2026-11-25
 
 - **What it is:** a new last scan-plan option, MONITOR. It scans only the frequencies of the systems in the discovery database (newest first, one entry per frequency, at most 16; two protocols on one frequency run both decoders), optionally limited to one protocol and one colour code or RAN. Select it with the PLAN buttons on SCAN (the plan name shows e.g. `MONITOR DMR CC13 (3)`) or by serial: `RTL_DV MONITOR [ALL|DMR|NXDN48|NXDN96] [CC n | CCn | RAN n]` (refused while scanning; with no argument it reports the current list).
 - **Verified on the Tab5 (2026-11-25):** with a 17-system database `RTL_DV MONITOR ALL` built 9 entries, `NXDN48` gave exactly 463.250 MHz, bad filters were rejected, and a scan started on it held on the verified DMR channel 152.1575 MHz. The colour-code filter (`CC13` gave 4 entries, `CC0` 1, `NXDN48 RAN1` 1) and `CCn` without a space also work, and the SCAN page shows `MONITOR ALL (9)` with an estimated pass of about 19 s (the full MY BANDS sweep is about 168 min). **Not verified:** a monitor scan over live traffic for a long period, a talkgroup filter (not built: needs a release hook in the scanner).
 - **Minimum hits and ranking (revised 2026-11-26):** the first version left out systems heard fewer than 3 times. The candidate log then showed 151.195 MHz (2 database hits) and 463.400 MHz (1 hit) are real activity (integrity and identity evidence, 9 and 815 notes in later scans), so the default is now **no minimum** (`MIN n` still sets one) and the list is **ordered by how often each system has been heard** (ties newest first), so the 16-entry cap drops the weakest ones instead of hiding them up front. Verified on the Tab5: default 9 entries led by 152.1575, 152.685, 153.120 and 463.250 MHz with 151.195 and 463.400 MHz further down; `MIN 100` 3 entries; `DMR CC13` 4; `NXDN48` 1. The database itself is unchanged.
 
-## Unreleased — Digital Voice: on-device raw IQ capture for development (RTL_DV CAPTURE) — 2026-11-25
+## Unreleased â€” Digital Voice: on-device raw IQ capture for development (RTL_DV CAPTURE) â€” 2026-11-25
 
 - **What it is:** a development tool, off unless asked for by serial command. `RTL_DV CAPTURE <MHz> <ksps: 240|1024|1536|2048|2400|2560> <seconds 1-120>` tunes the receiver and records the live CU8 stream (exactly what the Tab5 decoders see) to the SD card as 2 MB segments `/orcsdr/cap_<utc>_<kHz>_<ksps>_NNNN.cu8` plus a sidecar `.json` (centre, rate, UTC, byte counts, and every dropped gap with its stream offset). `RTL_DV CAPTURE STOP` and `STATUS` also exist. Pure logic in `dv_capture.{hpp,cpp}`; the DSP task copies blocks and skips its normal work for them, as the AM finder does. The receiver's rate is released at the end.
 - **Measured limits (Tab5, 2026-11-25):** the card sustains 3.6 to 5.1 MiB/s idle (`RTL_SD_BENCH`), but about 3 MB/s while capturing. 1.536 MS/s (3.07 MB/s) for 10 s: 30,769,152 bytes, 0 drops, 15 of 15 segments written. 2.56 MS/s for 20 s: 56.6 MB kept, 45.7 MB dropped in 21 logged gaps; gaps are recorded, the files stay usable. So continuous capture is clean up to about 1.5 MS/s.
@@ -93,13 +97,13 @@ This is the **project-level release and current-source index**. It links the aut
 - **Verified:** host tests `dv_capture_tests` (byte-exact clean capture, stalled-card gap accounting, gap offsets, wrong rates, failed writes); on the Tab5 a 10 s capture at 463.250 MHz was pulled back and analysed on the PC (no clipping, DC spike at the centre, a strong narrow signal at +124.9 kHz). **Not verified:** capture while scanning, rates between 1.536 and 2.56 MS/s, a UI control for it.
 - **Pre-screen threshold (same branch, known issue):** on the Tab5 the survey hit its 96-signal cap, so the 7 dB threshold above the 25th-percentile floor is too loose on real data; it needs a two-window agreement and a local floor.
 
-## Unreleased — Digital Voice: wideband survey pre-screen for DISCOVER — 2026-11-25
+## Unreleased â€” Digital Voice: wideband survey pre-screen for DISCOVER â€” 2026-11-25
 
 - **What it does:** DISCOVER no longer stops on all 7,759 channels for about 1.3 s each. It first surveys the picked bands at the highest sample rate that stays free of lost samples (ladder 2.56, 2.40, 2.05, 1.54, 1.02 MS/s): one tune shows well over a hundred 12.5 kHz channels. Each window is an averaged 1024-point FFT of 8 captured blocks; a channel is "occupied" when it sits at least 7 dB above the 25th percentile of its own window (the floor adapts to the dongle, antenna and place; there is no fixed level). Only occupied channels go to the decoders, in batches of 16, then the survey repeats. A window that loses samples is retried, then the rate steps down; if no rate is clean the page says so and the old plain sweep runs.
 - **Where:** new `dv_survey.{hpp,cpp}` (pure logic, no radio), thin hooks in `digital_voice_app.cpp`, one condition in the DSP task so wideband blocks skip the normal DSP chain (as the AM finder does), the DISCOVER progress panel (SURVEYING / DECODING, window count, rate, signals). The survey only says a channel is occupied, never that it is DMR or NXDN.
 - **Verified:** host tests for FFT channel levels, finding tones across window edges and the tuner centre hole, noise-floor adaptation, a quiet band staying quiet, loss retry, rate step-down, failure without hanging, refused tunes (`dv_survey_tests`, WSL g++), dashboard host tests 5 of 5, firmware builds. **Not verified:** anything on the Tab5. The real window time, the highest loss-free rate and the false-hit rate are unmeasured; the page's per-pass time is not yet an estimate for the survey.
 
-## Unreleased — Digital Voice: DISCOVER SYSTEMS page (step 1 of the discover / monitor workflow) — 2026-11-25
+## Unreleased â€” Digital Voice: DISCOVER SYSTEMS page (step 1 of the discover / monitor workflow) â€” 2026-11-25
 
 - **What it is:** a DISCOVER button on the SCAN page opens a page that lists the bands that will be swept (the MY BANDS selection from SETUP, ticked), a progress bar with the frequency being examined, the channel position and pass count, and how many channels were found. START DISCOVERY switches the plan to MY BANDS and starts the scan; STOP DISCOVERY stops it; BACK returns to SCAN. The page is reached from SCAN, not from a tab.
 - **Found:** a channel counts as found after 3 integrity-validated sightings in the run; one or two are shown as candidates (noise decoded as DMR looks like that). Nothing is written to the saved list until SAVE TO LIST is tapped; it adds each found channel with its protocol's decoder, skips duplicates and says when the 16-channel list is full.
@@ -107,7 +111,7 @@ This is the **project-level release and current-source index**. It links the aut
 - **Not done yet:** MONITOR (scan only the discovered list with a system / colour code / talkgroup filter), HOLD tied to it, lockout, priority, rename; per-band tick boxes on the page itself (bands are still chosen in SETUP). NXDN hits appear with RAN only.
 - **Verified:** host dashboard tests 5 of 5 (new test: open from SCAN, start / stop / save / back actions, no-bands state). On a Tab5: the page rendered, START DISCOVERY ran (CH 18 / 7759 at 144.2125 MHz), STOP stopped it. **Not verified:** SAVE TO LIST on live hits (nothing reached 3 sightings in the short run), the sweep over a full pass.
 
-## Unreleased — Digital Voice Systems screen: no flicker, paging, text fits; BIAS ON tap — 2026-11-25
+## Unreleased â€” Digital Voice Systems screen: no flicker, paging, text fits; BIAS ON tap â€” 2026-11-25
 
 - **Flicker:** the Systems page used to repaint the whole page on every revision, and a scan bumps the revision constantly. Each of the four rows and the right-hand panel now repaint only when what they show changes (a content signature per part); the page is repainted once when rows appear or go away or the page changes.
 - **Paging:** the screen listed only the newest four of up to 32 stored systems. PREV and NEXT with a "1-4 OF 11" counter now page through all of them (`UiState.system_offset`, `ActionKind::page_systems`; the app refills the rows when the offset changes).
@@ -118,29 +122,29 @@ This is the **project-level release and current-source index**. It links the aut
 - **Also:** shortened "No inference from missing encryption bits" on Live, which was cut off at the panel edge.
 - **Scan list:** the saved scan list had been overwritten with one frequency by the live-hunt test scripts, so the scan sat on 152.1575 MHz. Restored on the Tab5 to 152.1575, 152.685, 152.345 and 153.068 MHz. The test scripts still use `RTL_DV PLAN`, which replaces the saved list; they should not run against a unit used for scanning.
 
-## Unreleased � NXDN: real-air replay results, opaque SACCH reassembly, fetcher fix � 2026-11-25
-
 ## Unreleased — NXDN: real-air replay results, opaque SACCH reassembly, fetcher fix — 2026-11-25
 
+## Unreleased â€” NXDN: real-air replay results, opaque SACCH reassembly, fetcher fix â€” 2026-11-25
+
 - **What was measured:** the three private REA-Results NXDN clips (blobs and SHA-256 verified) replayed through OrcSDR's own production frontend: NXDN48 12 FSW/LICH frames and 12 CRC6-valid SACCH, NXDN96 voice 19 and 19, NXDN96 control 22 frames exactly 192 dibits apart at -664.9 Hz; RAN reads 7 on every voice frame; identical output at chunk sizes 1, 37 and 4096. Voice thresholds (Golay, pitch) are not measured and not claimed. The 11.8 s and 15.3 s WaveShark clips are not decoded.
-- **What was added:** `sacch_reassembly` (host component only) turns CRC-valid SACCH fragments into opaque 72-bit strings with gap, order, context and malformed-input handling; no Layer 3 field is interpreted, because the normative NXDN spec is not held. 10 synthetic tests pass in Release and ASan/UBSan. The frontend's Mueller-Muller timing gain went from 0.05 to 0.15 (control clip 19→22 frames, others unchanged; tuned on three short clips, not tested on weak signals); the decoder is unchanged; no firmware, `main.cpp` or dashboard change.
+- **What was added:** `sacch_reassembly` (host component only) turns CRC-valid SACCH fragments into opaque 72-bit strings with gap, order, context and malformed-input handling; no Layer 3 field is interpreted, because the normative NXDN spec is not held. 10 synthetic tests pass in Release and ASan/UBSan. The frontend's Mueller-Muller timing gain went from 0.05 to 0.15 (control clip 19â†’22 frames, others unchanged; tuned on three short clips, not tested on weak signals); the decoder is unchanged; no firmware, `main.cpp` or dashboard change.
 - **Fix:** the NXDN IQ fetcher compared the extracted file to the archive hash and a nominal length, so valid downloads failed; it now verifies the archive hash and pins the observed extracted length and hash.
 - Assessment, standards gap and an audit of the experimental voice branch: `docs/nxdn/RESEARCH_ASSESSMENT_2026-11-25.md`.
 
-## Unreleased — Investigated, not shipped: P25 decoding from the wide 2.56 MS/s stream — 2026-11-25
+## Unreleased â€” Investigated, not shipped: P25 decoding from the wide 2.56 MS/s stream â€” 2026-11-25
 
 - **What was tried:** the P25 band streaming at 2.56 MS/s (V4/V4L) with the P25 decoder taking its channel through a center decimator (stream/10), a 3/16 resampler to its 48 kS/s channel rate and the same two-pole channel filter its 960 kS/s front end applies. It worked on live P25 traffic (Lane County Fire EMS, 453.925 MHz): it followed clear Phase I voice grants (TGID 2001, source 200107, IMBE voice decoding) with 0 overruns and 0 drops.
 - **Why it was removed:** it costs too much for what it buys. DSP task load, percent of its core: P25 screen 20.9% (960 kS/s) versus 33.7% (wide); Home on the P25 band 24.3% versus 59.6%, for a 2.56 MHz span instead of 960 kHz on a band whose channels fit in 960 kHz. POCSAG, LoRa and P25 therefore keep their decoder's stream rate, and Home shows that rate on those bands (a known limit). The experimental code (wide feed, decimator, tuner, resampler, `RTL_DV DDCBENCH`, `RTL_P25 WIDE`) is not in the tree; the measurements above are the record.
 - **Fix found on the way (kept):** the battery level was read over I2C from many screens on every snapshot, from more than one task; a crash trace (`xTaskPriorityDisinherit` in the I2C unlock, in `p25_dashboard_snapshot`) tied it to overlapping bus use. It is now one cached reading refreshed about once a second (`battery_percent_cached`). The crash occurred once, right after a receiver restart, and did not recur afterwards; the cause is not proven.
 
-## Unreleased — Digital Voice keeps listening in the background when you go to Home — 2026-11-25
+## Unreleased â€” Digital Voice keeps listening in the background when you go to Home â€” 2026-11-25
 
 - **Behaviour:** leaving the Digital Voice screen for Home now hides the screen and leaves the scanner, decoder and speech running (`digital_voice_app::hide()`); coming back shows the screen again with its state intact. If Digital Voice is not running it closes exactly as before. Retuning Home or changing band, and opening another receiver app, end the background listening first (the same way changing frequency ends a P25 call). Home's own analog audio stays blocked while it runs.
 - **Interim limit:** Digital Voice needs its own 240 kS/s stream, so Home shows a 240 kHz span while it runs in the background. Giving DMR its channel out of Home's wide stream is the step 2 extractor work.
 - **Verified on a Tab5 (V4L):** scan running, to Home: link receiving, running, blocks still increasing (155 to 316); back to Digital Voice: state intact; tune on Home: Digital Voice stopped and Home returned to the 2560 kHz span at 2.559 MS/s, with the floor visible to the right edge at 152 MHz. **Not verified:** speech audio in the background (sound was off on the unit).
 - **Investigated and not shipped (wide-stream extraction so decoders could keep Home wide):** measured on a Tab5 (percent of one P4 core at 360 MHz, 2.56 MS/s synthetic input, interrupts off): a center decimator 34.5%, a wide-stream tuner with an integer mixer 44% (unrolling it was slower, 49%), a float rational resampler to 960 kS/s 140-149% plus about 37% for CU8 to float conversion; internal RAM versus PSRAM made no difference. The code was removed again (see the next entry).
 
-## Unreleased — Home streams at 2.56 MS/s on the RTL-SDR Blog V4/V4L — 2026-11-25
+## Unreleased â€” Home streams at 2.56 MS/s on the RTL-SDR Blog V4/V4L â€” 2026-11-25
 
 - **Home:** on every wide band (browse, FM, AM, shortwave, weather, CB, airband) Home now runs the receiver at 2.56 MS/s on a V4/V4L, so the spectrum and waterfall span 2560 kHz. The dedicated dashboards (FM radio, shortwave, CB and so on) keep their own 2.4 MS/s because their decoders are tuned for it; other dongles keep 2.4 MS/s. The span steps and maximum follow the stream rate.
 - **Listening at 2.56 MS/s:** the demodulators decimate by 10 to 256 kS/s (`rtl_rate_plan.hpp`), the FM filter constants and the SSB BFO follow that rate, and the 51.2 kHz audio is converted to 48 kHz once at the source (`audio_rate_conv`, cubic, 15/16) so the speaker, recorder, web audio and meters are unchanged. Stereo/RDS metering at 256 kS/s is not corrected (it is metering only).
@@ -148,14 +152,14 @@ This is the **project-level release and current-source index**. It links the aut
 - **Measured on a Tab5 with a V4L:** Home at 2.56 MS/s for 573 s: 5.123 MB/s (5.12 expected), 0 overruns, 0 drops. Screenshots show the full 2560 kHz span on the FM band.
 - **Not verified:** audio by ear (nobody listened), the upper-edge fix at the exact 152 MHz case where the drop was first seen, Home on the V4 (only the V4L was tested), and the fixed-rate decoders (P25, POCSAG, LoRa), whose bands still pin the stream rate on Home.
 
-## Unreleased — RF Lab: flicker fixed, small text enlarged — 2026-11-24
+## Unreleased â€” RF Lab: flicker fixed, small text enlarged â€” 2026-11-24
 
 - **Flicker:** the live spectrum and the side-panel readouts were cleared and redrawn straight on the display on every update, so the cleared frame was visible. The spectrum is now composed off screen and pushed in one transfer, and each readout row is redrawn only when its value changes, also in one transfer.
 - **Readability:** the side-panel labels, the Controls-page status lines and the notes at the bottom were drawn in the smallest font; they are now the same size as the values. "PEAK FREQUENCY", "FREQUENCY ERROR" and "REFERENCE-EST. POWER" are shortened ("PEAK FREQ", "FREQ ERROR", "REF-EST POWER") to fit. The Controls driver line no longer runs into the -100k button. The SPECTRUM caption, which was hidden under the plot, is drawn inside it; the WATERFALL caption is dropped.
 - **Dark boxes:** text on panels and buttons was drawn on a black background; it now uses the colour behind it.
 - **Verified:** screenshots of the Live and Controls pages on the Tab5 (COM17 Tab5 dev unit). **Not verified:** the flicker itself (a still image cannot show it), and the Measurements and Records pages.
 
-## Unreleased — Home BIAS popup; bias changes only on the owner's request — 2026-11-24
+## Unreleased â€” Home BIAS popup; bias changes only on the owner's request â€” 2026-11-24
 
 - **Home:** tapping BIAS in the bottom status bar opens a confirmation popup (CONFIRM: TURN ON/OFF, CANCEL, tap outside cancels); bias changes only on CONFIRM.
 - **Rule:** bias is never saved, never applied at boot, and never re-applied by firmware after a scan or receiver restart. Only the Home popup, RF Lab and the serial command change it.
@@ -163,31 +167,31 @@ This is the **project-level release and current-source index**. It links the aut
 - **Known gap:** starting a Digital Voice scan from Home restarts the receiver (sample-rate change) and the driver then starts with bias OFF, so the LNA loses power. Removing that restart is the real fix and is not done.
 - **Not verified:** the popup on screen.
 
-## Unreleased — DMR conducted test harness for the Pluto (generator, loopback proof, safety-gated transmit, Tab5 scoring) — 2026-11-24
+## Unreleased â€” DMR conducted test harness for the Pluto (generator, loopback proof, safety-gated transmit, Tab5 scoring) â€” 2026-11-24
 
 - **`tools/dmr_pluto/`:** `dmr_gen.py` builds a known DMR call (voice LC header, N voice superframes with embedded LC, terminator, other slot idle) as 4FSK from 72-bit AMBE+2 frames; `cu8_loopback.py` / `loopback_test.sh` decode it with the production chain with no RF; `pluto_tx.py` transmits through OrcAnomaly's safety layer, cable-only, at 915.0 MHz inside the ISM window; `tab5_loop_test.py` and `sweep.py` score the Tab5 against what was sent across an attenuation ladder. README holds the checklist and the order for the first conducted test.
 - **Verified (no RF):** generated call decodes with the production chain, **144 of 144 frames identical** to those sent, 8 of 8 embedded LCs valid, at clean and down to +3 dB wideband SNR; 126 frames at 0 dB and 36 at -3 dB (a software reference curve for weak-signal work). `pluto_tx.py` refusals exercised (attenuation floor, band, missing wiring statement, level above -20 dBm); `--dry-run` prints the plan, expected level and buffer SHA. The Tab5 side tuned 915.0 MHz and scored an idle baseline.
 - **Not verified:** any actual transmission. The Pluto was not reachable at its known addresses; the real transmit path, the expected levels (estimates, no power measurement) and a decode of a transmitted call are untested. Voice content is recorded frames, there is no AMBE+2 encoder.
 
-## Unreleased — Digital Voice: SAVE DMR IQ (DEV) capture around call-like events — 2026-11-24
+## Unreleased â€” Digital Voice: SAVE DMR IQ (DEV) capture around call-like events â€” 2026-11-24
 
 - **Development toggle "SAVE DMR IQ (DEV)"** on SETUP (off by default, persisted as `dv_iq`; `RTL_DV IQ ON|OFF|SNAP|STATUS`). While on, the live 240 kS/s CU8 stream (channel 60 kHz above the stream centre, the corpus layout) is kept in a 12 s PSRAM ring (5.76 MB, allocated only while enabled). A call-like event (an identity-valid event, a qualified group, voice the call manager could not qualify, or a voice SYNC that never became a full superframe) arms a capture; 8 s later the ring (up to 4 s before and 8 s after) is written to `/orcsdr/dviq_<epoch>_<kHz>.cu8` through the shared background SD writer. One capture at a time, 60 s cooldown, 40 files per card visit. Recorded-IQ replays are never captured. Purpose: real weak-signal recordings to tune the decoder on. New `dv_iq_rec.{hpp,cpp}`.
 - **Verified:** host tests (ring, post-roll, rotation, freeze, cooldown, end to end with the real call capture; 157 checks) and on the Tab5: a live snapshot on 152.1575 MHz saved a 5,760,000-byte file while the receiver kept running (0 IQ loss, 0 ring drops), fetched over serial and decoded on the host (142 DMR events, colour code 13). **Not verified:** a capture triggered by a real call (none arrived since).
 
-## Unreleased — Digital Voice: scan band picker, quick skip, control-only hold release — 2026-11-24
+## Unreleased â€” Digital Voice: scan band picker, quick skip, control-only hold release â€” 2026-11-24
 
 - **Band picker (SETUP, right card):** nine built-in bands as toggle buttons (2 m 144-148, VHF business 150-158, VHF public 158-174, 70 cm 430-450, UHF business 450-470, 800 MHz 806-824, plus new VHF GOV 136-144, 220 MHz 222-225 and 900 MHz 896-901), with the channel count and an estimated time for one pass. The selection is persisted (`dv_bands`; default VHF business + UHF business). SCAN > PLAN > **MY BANDS** scans the picked bands in order as one plan (`Scanner::set_ranges`, up to 12 ranges and 8192 channels in total). `RTL_DV PRESET <n>` also selects it.
 - **Quick skip:** on a range plan a channel with no sync-level sign of life is left after 0.6 s instead of 1.5 s (about 1.3 s per channel instead of 2.2 s). A channel with a candidate, a verified event, a manual hold or a list plan keeps the full dwell.
 - **Control-only hold release:** a hold that has seen only control traffic (verified events, but no identity and no voice) for 20 s is released. A call (identity or qualified voice group) is never cut off, and the manual hold never leaves. `dv_radio::Status::identity_ms` carries the identity evidence.
 - **Verified:** host tests (scanner plans, quick skip, hold release, band picker page and touch; 138 + 5 suites) and on the Tab5: the picker toggles from real taps and renders; a MY BANDS scan of 4,959 channels ran at about 1.25 s per channel (13 quick skips in 15 s) with no IQ loss and no ring drops. **Not verified:** a call found by a wide scan. **Honest limit:** the four default-plus bands need about 100 minutes per pass, so a wide scan still misses short calls; a wideband survey that finds active channels first is the next step and is not built.
 
-## Unreleased — Digital Voice: SAVE DMR SPEECH toggle (decoded calls to WAV on the SD card) — 2026-11-24
+## Unreleased â€” Digital Voice: SAVE DMR SPEECH toggle (decoded calls to WAV on the SD card) â€” 2026-11-24
 
 - **New SETUP toggle "SAVE DMR SPEECH: OFF / ON (n)"** (off by default, persisted as `dv_rec`; also `RTL_DV AUDIO SAVE ON|OFF`). When on, every decoded clear DMR call is written as one 8 kHz mono 16-bit WAV, `/orcsdr/dmr_<epoch>_ts<slot>_<source>.wav` (silence frames and lost-superframe gaps as zeros, up to 120 s per call, calls under 0.4 s of speech discarded). Only the vocoder's output for a qualified, CLEAR call reaches the recorder: no analogue audio, no speaker-path test tone, no protected or unknown voice. New `dv_speech_rec.{hpp,cpp}`; the pump thread collects the call and the UI task writes the file through the shared background SD writer (never at the same time as the discovery-database save).
 - **Verified:** host tests (recorder, engine-to-recorder, SETUP page and touch; 118 checks) and on the Tab5: with the toggle on, an SD replay of the recorded call saved 2 files of 121,004 and 23,084 bytes (7.56 s and 1.44 s, the same lengths as the host decode), fetched back over serial. Device audio correlates 0.936 with the host decode of the same call (same speech, different dither noise from `rand()` on the two platforms). **Not verified:** a human listening; a live RF call (none arrived yet).
 - Limits: the recorder sees only calls the engine voices (AUTO / selected slot, not MUTE); a call that ends while the previous file is still being written is not saved (counted in `rec_busy`); files stay on the card until fetched.
 
-## Unreleased — Native DMR voice audio on the Tab5 (vocoder integrated into the receive chain) — 2026-11-24
+## Unreleased â€” Native DMR voice audio on the Tab5 (vocoder integrated into the receive chain) â€” 2026-11-24
 
 - **Voice path (receive only):** the Codex OrcSDR AMBE+2 vocoder (commits `87e0eec9` V1 and `cb653715` V2, imported with the pinned mbelib backend) now runs inside the production chain. `d1::Decoder` extracts complete BS voice superframes (bursts A to F, 18 frames, EMB QR-checked); `d1::CallManager` (`d1_call.{hpp,cpp}`) qualifies them per slot (UNKNOWN / CLEAR / PROTECTED; only CLEAR reaches the codec); `dv_voice_audio` (`Engine`: per-slot codec, 8 -> 48 kHz resampler, playout ring, AUTO / TS1 / TS2 / MUTE) and `dv_voice_service` (pump task on core 1, `RTL_DV AUDIO ...` commands, self test, `ORC_SUPPORT_DV_AUDIO` support line) feed the existing speaker sink. No Python, no external executable, no second receiver or audio owner. Never decrypts, strips or recovers anything.
 - **Static fixed:** while the audio service runs, `queue_audio_samples()` refuses every producer except the vocoder (`g_dv_audio_exclusive`, `main.cpp` +25 lines). The static was the NFM discriminator of a digital channel reaching the speaker; the counter `nfm_blocked` shows it on the device.
@@ -198,22 +202,22 @@ This is the **project-level release and current-source index**. It links the aut
 - **Device (COM17, M5Stack Tab5):** firmware built (ESP-IDF 5.5.4) and flashed; self test passes on the P4; SD replay of the recorded call gives the same 26 groups, 301 speech and 167 silence frames as the host; speaker path accepted a known-good tone with no drops. Synthesis costs about 6.5 ms per frame on the P4 (about 110 ms of CPU per 360 ms superframe). A first build boot-looped (`Could not reserve internal/DMA pool`) because a self-test buffer was a 38 KB static; buffers moved to PSRAM. **Not verified: a human listening, and speech from live RF.** See the document for the live-session results.
 - **Not done / limits:** AMBE+2 licensing and patent status unassessed (owner decision); a superframe is all-or-nothing; positive clock drift of 50 ppm or more loses voice SYNCs; no Talker Alias; single-slot audio; jitter hold 250 ms (100 ms underran on 18 of 20 groups of an SD replay).
 
-## Unreleased — Digital Voice header shows the Orc badge and dashboard name — 2026-11-23
+## Unreleased â€” Digital Voice header shows the Orc badge and dashboard name â€” 2026-11-23
 
 - **Fix:** the Digital Voice screens were missing the Orc badge and the dashboard name at the top left, which every other dashboard shows. The dashboard's header hook now calls the shared `audio_header::draw_brand("DIGITAL VOICE")` before the shared controls. Verified by PNG screenshot on the Tab5.
 
-## Unreleased — Digital Voice SCAN screen: scan plans, evidence stages, retained-widget rendering — 2026-11-23
+## Unreleased â€” Digital Voice SCAN screen: scan plans, evidence stages, retained-widget rendering â€” 2026-11-23
 
 - **SCAN screen redesigned (`digital_voice_scan_view.{hpp,cpp}`):** status banner (ready / scanning / sync acquired / integrity validated / identity verified / hold / paused / error, each from real scanner and decoder state), frequency, plan line with position and pass estimate, progress, counts, evidence ladder, reason line, six buttons, a discovered-signals list and a selected-signal panel with DMR and NXDN fields. Controls are enabled by one function (`action_state()`) shared by drawing and touch, so a disabled control says why and does nothing.
 - **Scan plans:** the scanner now also runs a frequency range (`dv::Scanner::set_range`, computed channels, up to 4096) with six built-in band presets (`dv_bandplan.hpp`), a custom range (`RTL_DV RANGE`), `RTL_DV PRESET`, and SAVE of a verified signal into the saved channel list (`RTL_DV SAVE`). Window sweep and an energy stage are not built and are never offered.
 - **Flicker fix:** SCAN is drawn as retained widgets. Entry paints the layout once; a change repaints only the widgets whose displayed inputs changed, each in its own rectangle; changes not shown on SCAN draw nothing; the context strip repaints only when origin or density changed. Other pages still repaint a whole page on a changed revision (documented gap). New regression suite `dv_dashboard_scan` (ctest `digital_voice_scan`) uses an extended recording display (clip and text bounds) and a negative control.
 - **Verified:** host suites in Release and ASan/UBSan (scan scenarios x2 densities, flicker regression, corpus, discovery, live chain); firmware built and flashed to COM17; real touch taps, scanning, hold and pause exercised on the Tab5 with PNG screenshots; render cost 0.7 to 2.0 ms average, no IQ loss, gaps or ring drops over about 3.5 minutes. **Not verified:** physical flicker (needs a person watching the panel), analysis-first density on hardware, UI stack high-water mark. See `artifacts/digital-voice-integration/scan/HARDWARE_ACCEPTANCE.md`.
 
-## Unreleased — Screenshot tool renamed — 2026-11-23
+## Unreleased â€” Screenshot tool renamed â€” 2026-11-23
 
 - **`tools/tab5_ft8_shot.py` is now `tools/tab5_png_screenshot.py`.** It was never FT8-specific: the firmware's `FT8 SNAP` streams whatever screen is showing as a PNG, with no documentation mode, no SD card and no radio stop. Callers, comments and current docs were updated; older dated notes in `docs/ft8/CHANGELOG.md` and a validation README keep the old name as history. Behaviour unchanged.
 
-## Unreleased — Digital Voice (DMR / NXDN) dashboard, scanner, discovery database — 2026-11-23
+## Unreleased â€” Digital Voice (DMR / NXDN) dashboard, scanner, discovery database â€” 2026-11-23
 
 - **Digital Voice dashboard and receive chain (`digital_voice_app`, `dv_radio`, `dv_scanner`, `dv_channelizer`):** six views (Scan, Live, Last Heard, Systems, Signal, Setup) fed by a read-only IQ attachment on the existing receiver owner (no second RTL-SDR owner). DMR (D1) and NXDN48/96 decoders run on a core-0 worker behind a bounded ring; the DSP task only channelizes 240 -> 48 kS/s. Serial family `RTL_DV` (STATUS, PLAN, SCAN, MASK, REPLAY, DB). Only integrity- or identity-validated events reach the screen; unknown stays unknown.
 - **Persistent discovery database (`dv_discovery`):** systems (protocol + frequency + colour code or RAN), talkgroups and unit IDs from identity-validated events, saved to `/orcsdr/dv_discovery.txt` through the shared SD writer and reloaded on open. Recorded-IQ replays use a RAM-only table unless the owner opts in (`RTL_DV DB LEARN_REPLAY ON`).
@@ -222,39 +226,39 @@ This is the **project-level release and current-source index**. It links the aut
 - **Not done:** the Tab5's own antenna does not decode the Terra channels (about 1 dB above noise); it frame-locks DMR live only on the strong 451.9125 MHz Capacity Max control channel, whose messages fail their integrity check in both our decoder and DSD-FME. NXDN yields RAN only (no unit IDs). First dashboard open after a boot sometimes closes.
 - **Verified:** host suites (live chain, corpus, discovery database, decoded-field rendering, dashboard contracts) in Release and ASan/UBSan; firmware built with ESP-IDF 5.5.4 and flashed to COM17 (app only, settings kept), replay results matching the host exactly. Not tested on a second Tab5. Branch `local/digital-voice-integration`; not merged.
 
-## Unreleased — Home PPA review fixes (CodeRabbit, PR 262) — 2026-11-22
+## Unreleased â€” Home PPA review fixes (CodeRabbit, PR 262) â€” 2026-11-22
 
 - **`RTL_DISPLAY_BENCH` no longer times failed scrolls as PPA scrolls.** A `ppa_scroll_up` that returns an error did not scroll; any failure now replaces the `ppa_scroll` result with `RTL_DISPLAY_BENCH_ERROR method=ppa_scroll failed=N ...`.
 - **`ppa_clear` is reported only if every iteration used the PPA.** Without the FILL client `dma.begin()` clears on the CPU and still returns a good canvas; the bench now compares the clear counters around the timing and prints `RTL_DISPLAY_BENCH_ERROR method=ppa_clear ppa=.. cpu_fallback=..` otherwise.
 - **`screen_blit::push` respects the display's active clip.** M5GFX's `pushImage` honours the clip rectangle, the PPA copy did not; the PPA is now used only when the whole picture is inside the clip, otherwise the M5GFX path runs. Home sets no clip, so its behaviour is unchanged.
 - Built and host-tested; not flashed (another session was using COM17).
-## Unreleased — Built-in RTL_SUPPORT REPORT command — 2026-11-22
+## Unreleased â€” Built-in RTL_SUPPORT REPORT command â€” 2026-11-22
 
 - **Serial support report (`support_report.hpp`, `serial_support.{hpp,cpp}`):** added the unauthenticated, read-only `RTL_SUPPORT REPORT` command printing 8 bounded lines (`ORC_SUPPORT_BEGIN` schema 1 through `ORC_SUPPORT_END`) covering firmware/build, `esp-rtl-sdr` version, profile, USB VID/PID/speed, receiver/capture state, last error, sample rates, stream counters, reset reason, and heap/DMA/PSRAM headroom while omitting USB serial numbers, Wi-Fi/network identity, location, and credentials. Integrated with the modular serial dispatcher, `RTL_HELP` (+ golden files), `tools/serial_command_routes.py`, `docs/user-guide/support-report.md`, and `docs/API_SERIAL_CLI.md`.
 - **Verified (host & build):** `tools/test-tab5-cadence-history.sh` (including `serial_support PASS` and `serial_help PASS` with ASan/UBSan), `tools/test_support_report.py`, `tools/test_support_report_device.py --self-check`, `tools/test-radio-scan.ps1`, `tools/test-p25-core.sh`, `tools/test-sd-storage.sh`, `tools/test-rtl-tcp.sh` (`RTL_TCP_REPLAY_HOST_TEST SKIP`, no recording given), `tests/serial_command_routes_test.py`, `tools/serial_command_routes.py --check`, `tools/tab5_serial_golden.py --self-check`, `tools/test_home_receiver_header.py`, `tools/test_iq_diagnostic_rate_gate.py`, `tools/test_e4000_gain_serial.py --self-check`, `tools/tab5_exact_response.py`, `tools/check_documentation_truth.py`, `tests/test_documentation_truth.py`, `tools/help_media.py validate`, `tools/validate-help-docs.py`, `mkdocs build --strict`, standard ESP-IDF 5.5.4 Tab5 build (`build-tab5-idf.ps1`), and ELF stack-frame guard (`process_command(char*)` = 448 bytes).
 - **Verified (hardware, COM17, M5Stack Tab5, `app-flash`):** `RTL_HELP` (90 lines, includes `RTL_SUPPORT REPORT`), `RTL_SUPPORT REPORT` pre-recovery at boot (`uptime_ms=22698`, `receiver_ready=0`, `capture="disconnected"`, `state="IDLE"`), `tools/test_support_report_device.py --port COM17 --pairing-key ...` verifying live streaming on RTL-SDR Blog V4 Lite (`receiver_ready=1`, `vid=0bda`, `pid=2838`, `profile="blog_v4l_r828s"`, `state="STREAMING"`, `capture="running"`, `target_sps=2400000`, `effective_sps=2399805`, advancing `bytes`), `RTL_STOP` stopped state (`state="IDLE"`, `capture="complete"`, `effective_sps=0`), and `RTL_TUNE` restored streaming (`state="STREAMING"`, `capture="running"`, `effective_sps=2323971`), `tools/tab5_serial_golden.py --port COM17` (`35/35`), `apps/orcsdr-tab5/tools/run-tab5-ui-regression.ps1 -Port COM17 -Run` (`pass=1`) plus post-regression `RTL_SUPPORT REPORT`, and the `support-report.md` `SerialPort` read loop against `COM17` (note: PnP auto-detect sees both `COM17` and `COM24` on this bench, triggering its multi-device guard as designed). Unexercised on hardware: physical mid-run unplug / faulted dongle states and `Set-Clipboard`.
 - **CodeRabbit review follow-up:** preserved the active `rtl_tcp` sample rate in `collect_rtl_support_snapshot()` (`!rtl_remote_tuning_selected()`), tightened `tools/test_support_report_device.py` (stable field invariance across repeat queries, `RTL_STOP` inside `try/finally`, restored band/frequency check), and re-verified host tests, ESP-IDF 5.5.4 build, ELF frame size, and `COM17` hardware run.
 
-## Unreleased — Map catalog holds up to 64 packs — 2026-11-12
+## Unreleased â€” Map catalog holds up to 64 packs â€” 2026-11-12
 
 - **Maps:** signed catalogs can list up to 64 packs, including a 51-archive US catalog. The catalog size remains limited to 128 KiB and owned packs to 16.
 - **Verified:** signed host cases accept 51 and 64 packs and reject 65; hardware validation remains open.
 
-## Unreleased — Map install recovery (stuck MAP ERROR) — 2026-11-12
+## Unreleased â€” Map install recovery (stuck MAP ERROR) â€” 2026-11-12
 
 - **Bug:** an interrupted map download left a saved-install record in NVS. If the SD files were then deleted, boot recovery failed on every start, the Maps header showed MAP ERROR, and Check catalog and Download stayed blocked. Only a reflash or NVS erase cleared it.
 - **Fix:** missing files retain the saved install for recovery with the original SD card. Maps > Downloads offers RESET STUCK (and `RTL_MAP DOWNLOAD RESET`) to clear the saved intent without deleting map files. Insufficient SD space now suggests freeing space or using a larger card, and download status includes the message over serial.
 - **Verified:** host tests `map_transfer` (new missing-files case) and `map_download_actions`. Not yet flashed. The first-install failure that started this was not reproduced on COM39 (a clean install worked), so its cause is unknown.
 
-## Unreleased — Host UI stub gains TFT_RED — 2026-11-22
+## Unreleased â€” Host UI stub gains TFT_RED â€” 2026-11-22
 
 CI `host-rtl-tcp` failed on PR 261: `settings_app.cpp` (FORGET COMPUTER, armed) uses `TFT_RED`, which the host M5Unified stub (`apps/orcsdr-tab5/tests/maps/ui_stubs/M5Unified.h`) did not define. Added it; `tools/test-rtl-tcp.sh` passes. Test-only change, firmware unaffected.
 
-## Unreleased — Wi-Fi antenna choice is saved again — 2026-11-22
+## Unreleased â€” Wi-Fi antenna choice is saved again â€” 2026-11-22
 
 Settings > Connectivity > antenna (internal / external MMCX) was stored under `set_wifi_ext_ant`, 16 characters; NVS keys are 15 at most, so every save failed and every boot fell back to the internal antenna. The key is now `set_wifi_extant` (save and both reads). Nothing was ever stored under the old key, so there is nothing to migrate; a unit that wants the external antenna needs it chosen once more. A search of `apps/orcsdr-tab5` found no other Preferences key over 15 characters. Built with the refactor PR; not checked on a device.
 
-## Unreleased — Wi-Fi recovery can no longer freeze the Tab5; retries every 30 s; Connect always tries now — 2026-11-22
+## Unreleased â€” Wi-Fi recovery can no longer freeze the Tab5; retries every 30 s; Connect always tries now â€” 2026-11-22
 
 Found the morning after the entry below: overnight on the hub (no cables touched) the C6 kept resetting, and from 04:21, with the battery down to about 35%, it browned out even at 11 dBm, during its own boot. At 04:57 a recovery called `esp_hosted_deinit()` from the main loop and it never returned. A debugger attach (OpenOCD on COM17's USB JTAG, all task stacks) showed why: the C6 had died mid-boot and never sent its transport INIT, ESP-Hosted's `sdio_write` task waits for that INIT in a loop that does not check for shutdown (`eh_host_bus_sdio.c`, `sdio_write_task`), and deinit joins that task with no timeout. Everything else was idle; the radio had been paused for the recovery and was never resumed. Fixed:
 
@@ -266,7 +270,7 @@ Found the morning after the entry below: overnight on the hub (no cables touched
 - **Host tests:** `wifi_supervisor` (30 s spacing, earned recovery once per connection, the 31 s-then-blip case, Connect during a retry wait, with the link failed, with the link up). Full host suite passes.
 - **Device (COM17):** the bounded teardown flashed 08:11; every teardown since finished at once (`esp_hosted_deinit=0`), none timed out, so the timeout path has not run on the device. A boot on the hub with the second device attached reached Wi-Fi in 80 s (11 dBm, C6 power-cycled); a replug at 08:13 dropped it and the old slow retry restored it 08:18. Final build flashed 08:26 with the interference source unplugged: Wi-Fi 19 s after boot. **Not yet seen on the device:** the 30 s retries, the Connect override, the earned recovery.
 
-## Unreleased — Wi-Fi rides through bad USB power: C6 brown-outs recover in seconds — 2026-11-22
+## Unreleased â€” Wi-Fi rides through bad USB power: C6 brown-outs recover in seconds â€” 2026-11-22
 
 Root cause, measured with the C6's own console (adapter on its TX pin) next to the P4 log: with the Tab5's USB-C on a powered hub that has other devices attached, the hub's 5 V most likely dips when those devices draw current (the dip itself was not measured). The USB-C cable powers the Tab5 and carries its serial data, but on that hub it did not cover the whole load: the battery fell from 100% to 34% overnight while connected, never charging (corrected 2026-11-22; an earlier version of this entry said the Tab5 runs from USB and not the battery whenever USB-C is present, which the overnight drain contradicts). The C6 is the part that falls over: during its transmit bursts its log shows "E BOD: Brownout detector was triggered" or rst:0x1 (POWERON), while a diagnostic build showed its reset pin (GPIO 15) and its power switch (WLAN_PWR_EN) did not move. Battery only, or a direct PC port: no fault. Our firmware then turned each blip into a long outage. Fixed:
 
@@ -278,7 +282,7 @@ Root cause, measured with the C6's own console (adapter on its TX pin) next to t
 - **Device (COM17, M5Stack Tab5, on the hub, second device attached):** a C6 reset at full power (00:26:58) -> link loss detected 00:27:03.8 -> recovery 00:27:05.9 with the cap stepped to 15 dBm -> link re-initialised 0.7 s later without a power-cycle (C6 readback 60) -> router rejected the first reconnect (reason 2) -> Wi-Fi connected 00:27:30, 32 s after the reset, no user action. A boot brown-out recovered the same way (Wi-Fi 8.4 s after recovery started). After 10 minutes stable the cap stepped back to full power (C6 readback 80). Back-off on the device: step up to full power at 00:59:24, C6 power-on reset 73 s later (01:00:37), recovered at 15 dBm without a power-cycle, Wi-Fi connected 01:01:10; the next step up came at 01:21:10, 20 minutes stable instead of 10. Full power failed again 18 s later (back at 01:22:00, 15 dBm), and the next step up came 40 minutes later (02:02:00); it failed after 54 s and Wi-Fi was back at 02:03:31 (37 s, no power-cycle), with the next try at 80 minutes. On this hub full power never held (3 of 3) while 15 dBm held for 20 and 40 minutes; every outage recovered by itself in 32 to 37 s. At a fixed 11 dBm, four hub replugs gave no C6 brown-out at all. Before these fixes the same event spent all three recoveries in about 12 s and left Wi-Fi down for 5 minutes (until a reboot before 21654d83).
 - **Not fixed (hardware):** the dip itself; the C6's supply has too little headroom for its transmit current on that input. **Not checked:** range at 15 / 11 dBm over distance; the boot-time USB-A power-cycle of the RTL-SDR (`BOOT_RTL_RECOVERY`) can also reset the C6 through the dongle's inrush (seen once on the hub, not yet handled).
 
-## Unreleased — Wi-Fi no longer gives up for good after three link losses — 2026-11-21
+## Unreleased â€” Wi-Fi no longer gives up for good after three link losses â€” 2026-11-21
 
 Found during the device tests: Wi-Fi went down and stayed down until a reboot. When the C6 link fails, the firmware recovers it (at most three times, the budget refilling only after 5 minutes connected); after the third failure it set "Wi-Fi link lost - restart Wi-Fi" and never tried again. At boot all three recoveries can be spent within a minute. Now, once the budget is spent, `wifi_supervisor` schedules one more recovery after a long pause that grows (5, 10, 20, then every 30 minutes; the status reads "Wi-Fi link lost - retrying in N min" and the console `RTL_WIFI_LINK_RETRY_SCHEDULED retry=N delay_s=S`). Each slow retry is one attempt, not a fresh budget, so a C6 that keeps failing still cannot loop; the series restarts after 5 minutes connected. A slow retry that comes due while Wi-Fi is already back is skipped (`RTL_WIFI_LINK_RETRY_SKIPPED reason=connected`) so a working link is never torn down. The quick recoveries and the opt-in remote keep-alive are unchanged.
 
@@ -288,7 +292,7 @@ Found during the device tests: Wi-Fi went down and stayed down until a reboot. W
 - **Not fixed:** why the dongle drops off USB (cable, connector or power) and the C6 stall it causes.
 - **Trigger found later the same day:** the PC USB port the Tab5's USB-C cable was plugged into. With that port, every boot lost the C6 link about 1 s after the RTL-SDR started streaming or the OrcDial bridge started (and the dongle dropped off USB), on this branch, on a local build of v0.6.0 and on the published v0.6.0 release app (SHA-256 checked) alike; on battery with no PC cable everything worked. Ruled out on the device: the OrcDial bridge (a build without it still failed), the charger (a build with charging off still failed), console output (QUIET verbosity still failed), the dongle (two different dongles failed) and the C6 being switched off by the I/O-expander code (M5Unified changes single bits). Moving the same cable to another PC USB port: two 3-minute boots, Wi-Fi connected, 0 C6 failures, 0 USB drops, streaming and bridge running. Not measured: what is different about the first port.
 
-## Unreleased — Shortwave and P25 touch quirks fixed (owner rulings) — 2026-11-21
+## Unreleased â€” Shortwave and P25 touch quirks fixed (owner rulings) â€” 2026-11-21
 
 Three quirks recorded when the Shortwave and P25 touch handlers left `main.cpp`; the owner ruled on each.
 
@@ -299,14 +303,14 @@ Three quirks recorded when the Shortwave and P25 touch handlers left `main.cpp`;
 - **Device (COM17, M5Stack Tab5):** opened Shortwave and left through the header to Settings and to Home: both screenshots fully drawn (Home with its live waterfall). P25 SKIP on the control channel printed `RTL_P25_SKIP tg=unknown remembered=0 left_call=0`. Boot with no self-check failures, 35 of 35 refusals.
 - **Not checked:** a refused Shortwave retune on the device (the dongle accepted every frequency tried; covered by the host tests), SKIP during a followed voice call on the device.
 
-## Unreleased — Home self-check fixed: it tapped where the speaker button used to be — 2026-11-21
+## Unreleased â€” Home self-check fixed: it tapped where the speaker button used to be â€” 2026-11-21
 
 Every boot printed `ORC_HOME_SELF_CHECK_FAIL` (issue 260). The cause: `home::self_check()` taps (1100, 13) and expects the speaker (mute) button, but the header was re-spaced on 2026-11-11 (5fbdf25e) and that button is now at x 1138 to 1191, so the tap landed in the gap between the Home and speaker buttons. Real touches were never affected (they go to where the button is drawn); only the check was stale. The check now taps the button's centre (1164, 38). The other conditions of the check pass.
 
 - **Device (COM17, M5Stack Tab5):** boot log identical to before except that the `ORC_HOME_SELF_CHECK_FAIL` line is gone (one line interleaved with another task's output aside); no self-check prints FAIL now. 35 of 35 refusals.
 - **Not changed:** non-fatal checks still print their `_OK` line even after a `_FAIL` line; that is a log format question.
 
-## Unreleased — Audio recording buffer: PSRAM only (MEM-C, item 7) — 2026-11-21
+## Unreleased â€” Audio recording buffer: PSRAM only (MEM-C, item 7) â€” 2026-11-21
 
 Owner chose option 1. The 12 s recording buffer (1,152,000 bytes) used to try PSRAM, then fall back to a general 8-bit allocation. That fallback could not succeed: when PSRAM has no room for 1.15 MB, the rest of the heap (the P4 has 768 KB of internal RAM in total, most of it already in use at boot) has no room either. The fallback and its `alloc_internal` hook are removed; when PSRAM is short the recording refuses with the same `RTL_REC_ERR no_buffer` line as before. No change in practice; the code no longer suggests a fallback that cannot work.
 
@@ -314,7 +318,7 @@ Owner chose option 1. The 12 s recording buffer (1,152,000 bytes) used to try PS
 - **Device (COM17, M5Stack Tab5):** boot log identical to the 6a/6c firmware (apart from one line interleaved with another task's output), 35 of 35 refusals, `main_stack_hwm` 6,516, `RTL_MEM_BUF audio_rec bytes=0 place=none` at idle as before.
 - **Not checked:** a recording on the device, and a recording with PSRAM exhausted (the claim that the fallback could never succeed is arithmetic, not measured).
 
-## Unreleased — setup() split into named boot stages: item 6, steps 6a and 6c — 2026-11-21
+## Unreleased â€” setup() split into named boot stages: item 6, steps 6a and 6c â€” 2026-11-21
 
 No behaviour change intended. Owner chose 6a and 6c only; `loop()` and the early part of `setup()` are left as they were. The 30 module self-checks are now `setup_self_checks()`, which returns false where `setup()` used to `return` (the seven fatal checks: Shortwave x4, CB, Airband, receiver controls); `setup()` does `if (!setup_self_checks()) return;`. Everything from there to Home (splash, settings, SD, Wi-Fi, the RTL-SDR, the splash gate, and the `ORC_LORA_TEST_BUILD` alternative boot) is `setup_boot_to_home()`, which keeps the final `rtl_boot_complete` store so the LoRa test branch's early `return` still skips it as before. Both moved by script and checked token for token; both `noinline`. `setup()` is now about 75 lines, ending in two calls.
 
@@ -324,7 +328,7 @@ No behaviour change intended. Owner chose 6a and 6c only; `loop()` and the early
 - **Found, not changed:** every boot prints `ORC_HOME_SELF_CHECK_FAIL` followed by `ORC_HOME_SELF_CHECK_OK`: the Home self-check fails and is non-fatal, and like most non-fatal checks the OK line is printed regardless. Present on the previous firmware too; filed as an issue (Home is the owner's).
 - **Not checked:** a failing fatal self-check (cannot be triggered on the device), the `ORC_LORA_TEST_BUILD` image (not built), a boot with the splash gate off or with no SD card or no dongle.
 
-## Unreleased — Receiver session running loop named: step 3e of the runtime split — 2026-11-19
+## Unreleased â€” Receiver session running loop named: step 3e of the runtime split â€” 2026-11-19
 
 No behaviour change intended. The loop that runs while a stream is live (auto FM scan, hot retune, stall and rate checks, periodic status, spectrum scheduling; 263 statements) is now `rtl_session_run(band, frequency_hz, remote)`, `noinline` in `main.cpp`, moved whole by script and checked token for token. Its locals stay locals of that function, so no state struct was needed, and the `break` and `continue` statements still act on the same loop.
 
@@ -333,7 +337,7 @@ No behaviour change intended. The loop that runs while a stream is live (auto FM
 - **Device, remote (rtl_tcp to the PC server), 3d firmware against 3e firmware, each on a freshly reset unit 6 minutes after the reset:** FM and AM identical; Shortwave identical except that the 3d run had one `RTL_MAIN_STALL stage=loop_gap` timing line the 3e run did not. A first 3e remote run taken 200 s after the local dashboards showed a USB re-probe and DMA-watch lines and was discarded as a disturbed measurement.
 - **Not checked:** the stall restart and the rate-adapter restart (they end this loop with `break`), the auto FM scan, a remote link that falls behind, and the real stack high-water mark of the `rtl_app` task.
 
-## Unreleased — Receiver session begin and start named: step 3d of the runtime split — 2026-11-19
+## Unreleased â€” Receiver session begin and start named: step 3d of the runtime split â€” 2026-11-19
 
 No behaviour change intended. The gate of a session start (source choice, band and frequency clamp, the unsupported-frequency exit) is `rtl_session_begin(plan)` with a small `RtlSessionPlan` (remote, band, frequency, volume); the stream configuration, HF route, offset tuning, gain reset, start, HF warning and no-memory retry (87 statements) are `rtl_session_start(band, frequency_hz, remote, st)`, which returns the error code. Both are `noinline` in `main.cpp`; the start block was moved by script and checked token for token, the gate was rewritten by hand (`continue` became `return false`, the volume is read at the same point).
 
@@ -342,7 +346,7 @@ No behaviour change intended. The gate of a session start (source choice, band a
 - **Device, remote (rtl_tcp to a PC server, Blog V4, `192.168.1.15:1234`), old firmware against new, both 6 minutes after a flash:** FM and AM sequences identical (start at 1.44 MS/s, `RTL_REMOTE_HF` on AM, stop lines); Shortwave identical except one extra `RTL_MAIN_STALL stage=loop_gap` line (a timing report) in the new run. The first remote run of the new firmware, taken straight after the local run, showed a USB re-probe and was discarded as a disturbed measurement. The Tab5's saved source (usb) and server (192.168.1.219:1234) were restored after every run.
 - **Not checked:** a failed remote start (server off), the cancelled-by-a-newer-request restart, the no-memory retry, V4/V4L HF routing on a USB dongle other than the one fitted.
 
-## Unreleased — Three review quirks dealt with — 2026-11-19
+## Unreleased â€” Three review quirks dealt with â€” 2026-11-19
 
 Owner asked for the review quirks to be dealt with by best practice. One real fix, two deliberate non-changes.
 
@@ -352,7 +356,7 @@ Owner asked for the review quirks to be dealt with by best practice. One real fi
 - **Still open, owner's call:** Shortwave settings/home refresh, Shortwave retune result ignored, P25 `skip_talkgroup` with no talkgroup known.
 - **Device (COM17, M5Stack Tab5), 3 minutes after the flash:** 35 of 35 refusals, `main_stack_hwm` 6,468. The remote health and keep-alive lines were not exercised on the device (they need a remote source and an outage, which are not allowed).
 
-## Unreleased — Receiver session start outcome named: step 3c of the runtime split — 2026-11-18
+## Unreleased â€” Receiver session start outcome named: step 3c of the runtime split â€” 2026-11-18
 
 No behaviour change intended. The failure branch of a stream start (35 statements: roll back the sample rate, capture state and source, honour a newer request, say why, cancel an AM scan) is now `rtl_session_start_failed(remote, err)`, and the success branch up to the speaker resume (13 statements) is `rtl_session_start_ok(band)`, both `noinline` in `main.cpp`, moved by script and checked token for token.
 
@@ -360,7 +364,7 @@ No behaviour change intended. The failure branch of a stream start (35 statement
 - **Device (COM17, M5Stack Tab5), same recorder and baseline as 3a/3b, 6 minutes after the flash:** 8 of 11 dashboards identical; SSTV has the same extra `RTL_DMA_WATCH` line as in 3a/3b; P25 has the same sequence with fewer follow-the-call retunes (live RF); LoRa shows two extra `RTL_IQ_START`/`RTL_IQ_DONE` lines, an energy-triggered capture on air, not part of the session sequence (start and stop lines match). 35 of 35 refusals; `main_stack_hwm` 6,336.
 - **Not checked:** a failed start (server off, wrong address), the cancelled-by-a-newer-request restart, the AM finder failure path, the remote (rtl_tcp) start, and the real stack high-water mark of the `rtl_app` task (the firmware does not report it).
 
-## Unreleased — Receiver session stop and restart named: step 3b of the runtime split — 2026-11-17
+## Unreleased â€” Receiver session stop and restart named: step 3b of the runtime split â€” 2026-11-17
 
 No behaviour change intended. The stop sequence of a receiver session (22 statements) is now `rtl_session_stop(remote)` and the restart check after it (6 statements) `rtl_session_restart_if_requested()`, both `noinline` in `main.cpp`, moved by script and checked token for token.
 
@@ -368,7 +372,7 @@ No behaviour change intended. The stop sequence of a receiver session (22 statem
 - **Device (COM17, M5Stack Tab5), same recorder and baseline as 3a, taken 6 minutes after the flash:** 9 of 11 dashboards identical; SSTV has the same extra `RTL_DMA_WATCH` line as in 3a; P25 has the same sequence with fewer follow-the-call retunes (live RF). 35 of 35 refusals.
 - **Not checked:** a failed stop (`RTL_STOP_RESULT` not OK), the restart path after a band change during a running stream, and the remote (rtl_tcp) stop.
 
-## Unreleased — Receiver session reset named: step 3a of the runtime split — 2026-11-17
+## Unreleased â€” Receiver session reset named: step 3a of the runtime split â€” 2026-11-17
 
 No behaviour change intended. The 64 statements that reset counters, per-band decoder state and UI flags at the start of every receiver session are now `rtl_session_reset(band, frequency_hz, volume)` (`noinline`, in `main.cpp`), called from `rtl_driver_app_task`. Moved by script: the new body is checked token-for-token against the old text (whitespace aside), so a slip cannot hide. Owner-approved step 3 of `refactor-workspace/ITEM5_PLAN.md`; 3b to 3e not started.
 
@@ -378,7 +382,7 @@ No behaviour change intended. The 64 statements that reset counters, per-band de
 - **Seen, not changed:** free PSRAM falls from about 22.6 MB at the first dashboard to about 1.7 MB after visiting LoRa, ADS-B, POCSAG, FT8 and SSTV, and does not come back until a reset. The pre-3a firmware does the same (the baseline log shows the same fall). `RTL_DRAM_BUDGET` internal free also varies from 31 KB to 10 KB between runs after Wi-Fi recoveries. Two console lines from different tasks sometimes interleave mid-line (`RTL_WBFM_DSP`), which made one section of the first comparison look different.
 - **Not checked:** the remote (rtl_tcp) start and stop path; the start-failed and restart paths; hot-plug.
 
-## Unreleased — Remote-boot autostart and Wi-Fi supervision rules moved out of main.cpp — 2026-11-17
+## Unreleased â€” Remote-boot autostart and Wi-Fi supervision rules moved out of main.cpp â€” 2026-11-17
 
 No behaviour change intended. Two decision cores come out of the receiver runtime; every device call stays in `main.cpp` behind a hook table. Flashed to COM17 (M5Stack Tab5 dev unit). The owner approved steps 0 to 2 of `refactor-workspace/ITEM5_PLAN.md`.
 
@@ -390,7 +394,7 @@ No behaviour change intended. Two decision cores come out of the receiver runtim
 - **Not checked** (the plan asked the owner before disturbing the unit and no such test was allowed): hot-plug unplug and replug, a remote-boot start with the rtl_tcp server off and on, an access-point outage with the keep-alive on and off, a 30-minute soak. The 5-minute budget refill and the keep-alive were not reached on the device (host-tested only).
 - **Seen while moving, not changed:** `down_since_ms` is set to `millis() | 1`; if the first down poll lands on an even millisecond, `down_s` in the health line reads 4,294,967 for that one millisecond. The old code reads the capture state twice in the boot-start test (once for the retry test, once for the not-running test); the module reads it twice as well.
 
-## Unreleased — Spectrum number crunching moved out of draw_spectrum() — 2026-11-17
+## Unreleased â€” Spectrum number crunching moved out of draw_spectrum() â€” 2026-11-17
 
 No behaviour change intended. The RF scope's maths (Hann window, Welch-averaged FFT, dB, smoothing, peak hold, strongest bin) is now `spectrum_compute`; `draw_spectrum()` keeps the screen, the frame timing and the hand-off to each dashboard. Flashed and checked on COM17 (M5Stack Tab5 dev unit).
 
@@ -401,7 +405,7 @@ No behaviour change intended. The RF scope's maths (Hann window, Welch-averaged 
 - **A trap I fell into:** measured on a unit that had been up for hours, the old firmware read 49 % average load (24-72) and the new one, just after a flash, 69 %. That was boot state (the decoders' share of the load, not the scope's), not the split: the old firmware also reads 70 % when measured the same way after a boot. Compare like with like.
 - **Not checked:** the other dashboards' scopes (FM, AM, Shortwave, P25, LoRa, Airband, CB) on the new firmware beyond the shared maths; the web console's spectrum stream; frame time of `draw_spectrum` itself (only fps and DSP-task load were measured).
 
-## Unreleased — Shortwave and P25 touch actions moved out of main.cpp — 2026-11-17
+## Unreleased â€” Shortwave and P25 touch actions moved out of main.cpp â€” 2026-11-17
 
 No behaviour change intended. Moves only: what a tap on the Shortwave or the P25 dashboard does to the receiver is now in its own module, reached through a hook table in `main.cpp`. Flashed and checked on COM17 (M5Stack Tab5 dev unit).
 
@@ -414,7 +418,7 @@ No behaviour change intended. Moves only: what a tap on the Shortwave or the P25
 - **Not moved:** `handle_global_settings_action()` (294 lines), `handle_sdr_touch()` (282) and `poll_sdr_touch()` (349). They use the Wi-Fi profile table (a struct private to `main.cpp`), the settings store, about 25 screen modules and function-static gesture state, none of which has an owner module yet. A hook table for them would be 60 or more pointers with the logic still in `main.cpp`.
 - **Not checked:** the Shortwave Memory, Logbook and Hunt tabs (SD writes, taps below y=630 were avoided; host-tested only) and the gain drawer; the P25 Spectrum, Talkgroups and Program views (profile select, import, export, rename, delete and reload write the SD card and user configuration; host-tested only); span, sound and volume taps on P25; the frame of the P25 profile paths on the device.
 
-## Unreleased — FT8 serial command parser moved out of main.cpp — 2026-11-17
+## Unreleased â€” FT8 serial command parser moved out of main.cpp â€” 2026-11-17
 
 No behaviour change intended. Parsing only; the decoder, tuner, SD card, screen capture and settings are untouched. Flashed and checked on COM17 (M5Stack Tab5 dev unit).
 
@@ -430,7 +434,7 @@ No behaviour change intended. Parsing only; the decoder, tuner, SD card, screen 
   - `FT8 CONFIG 0 0 0 0` is refused by the decoder with the usage text, but only after it was asked.
 - **Not checked:** the signed-in paths that write the SD card (`ADIF`, `SAVE`, `SHOT`: their replies are host-tested only) and `SNAP` (PNG stream); the state changes of `FT8 BAND`, `MODE`, `DIAL`, `HUNT`, `CLOCKTEST`, `SNR OFFSET` and `LOG ON/OFF` (only their refusals and bad-argument replies were recorded, so the unit's settings were not touched); a started `FT8 WWV` measurement; receiving real FT8 on air.
 
-## Unreleased — Session journal, identity lines and hex helpers moved out of main.cpp — 2026-11-16
+## Unreleased â€” Session journal, identity lines and hex helpers moved out of main.cpp â€” 2026-11-16
 
 No behaviour change intended. Flashed and checked on COM17 (M5Stack Tab5 dev unit).
 
@@ -448,7 +452,7 @@ No behaviour change intended. Flashed and checked on COM17 (M5Stack Tab5 dev uni
   - `node_snapshot` on the Tab5 reports `"pmic_detected":false`, `"vbus_mv":-1` and `"charging":"unknown"`.
 - **Not checked:** on the device, the hex paths of `SD_GET` / `SD_PUT`, `RTL_IQ_GET`, `LORA_MESSAGE` / `LORA_PACKET` and the LoRa key file (host tests only); a valid signed `INSTALL_STATUS` (workflow install and offline run are host-tested only); the touch journal entry (`operator_touch`). The check itself cleared the unit's dropped-event counter and acknowledged its pending journal entries.
 
-## Unreleased — IQ download and LoRa replay upload engine moved out of main.cpp — 2026-11-16
+## Unreleased â€” IQ download and LoRa replay upload engine moved out of main.cpp â€” 2026-11-16
 
 No behaviour change intended. Flashed and checked on COM17.
 
@@ -459,7 +463,7 @@ No behaviour change intended. Flashed and checked on COM17.
   - 35 of 35 refusals; main-task free stack 6,468 bytes.
 - **Found, not caused by this change:** a LoRa replay started in the first seconds after boot fails with `RTL_LORA_REPLAY_ERROR chunk_timeout` on both this build and the previous one (`7511d9cc`). The same replay works once the unit has been up about 40 s. Filed as hardcoreerik/OrcSDR issue 255.
 
-## Unreleased — SD transfer engine moved out of main.cpp — 2026-11-16
+## Unreleased â€” SD transfer engine moved out of main.cpp â€” 2026-11-16
 
 No behaviour change intended. Flashed and checked on COM17.
 
@@ -476,12 +480,12 @@ No behaviour change intended. Flashed and checked on COM17.
     - Abort, `not_active`, `invalid_path`, `invalid_begin`, remove, and remove again (`SD_REMOVE_MISSING`) all reply correctly.
   - 35 of 35 refusals; main-task free stack 6,468 bytes; reception resumed after reset.
 
-## Unreleased — UI documentation mode commands moved out of process_command — 2026-11-15
+## Unreleased â€” UI documentation mode commands moved out of process_command â€” 2026-11-15
 
 No behaviour change intended. Host-tested and built.
 
 - **`UI_DOC_LIST`, `UI_DOC_SHOW <screen-id> <live|demo>`, `UI_CAPTURE <slug>` and `UI_DOC_EXIT`** moved into `apps/orcsdr-tab5/ui/serial_ui_doc.{hpp,cpp}` with `tests/serial_ui_doc_tests.cpp`. Only the parsing and replies moved (option B). The screen catalogue, `ui_doc_render()`, the settings renderer, reception pause and BMP capture stay in `main.cpp` behind hooks: they touch most dashboards' state. Moving them too (option C) belongs with the later screen/receiver decomposition. Route table unchanged (229 routes).
-- **Stack, measured on COM17:** the first version of this move made `UI_DOC_SHOW home demo` 208 bytes deeper (main task 3,900 → 3,692 bytes free). Two changes fixed it:
+- **Stack, measured on COM17:** the first version of this move made `UI_DOC_SHOW home demo` 208 bytes deeper (main task 3,900 â†’ 3,692 bytes free). Two changes fixed it:
   - The handler formats its replies in small `noinline` helpers, so its own frame is 96 bytes.
   - `ui_doc_render()` no longer builds the FM, P25 and LoRa snapshots itself. They are built in `noinline` `ui_doc_show_fm/p25/lora()`, so the renderer's frame fell from 6,320 to 1,360 bytes and each snapshot costs stack only on its own screen.
 
@@ -490,13 +494,13 @@ No behaviour change intended. Host-tested and built.
 - **Scan, noted not changed:** a signed-in line such as `UI_DOC_WHATEVER` or `UI_DOC_LIST ` (trailing space) restarts the ping clock and gets no reply.
 - **Measured:** `process_command` complexity 132 to 91, 254 to 125 lines; `main.cpp` 22,495 lines.
 
-## Unreleased — reset and USB safe-mode commands moved out of process_command — 2026-11-15
+## Unreleased â€” reset and USB safe-mode commands moved out of process_command â€” 2026-11-15
 
 No behaviour change intended. Host-tested and built.
 
 - **`RTL_RESET`, `RTL_RESET CPU`, `RTL_USB_SAFE_MODE_STATUS` and `RTL_USB_SAFE_MODE_RESET CONFIRM`** moved into `apps/orcsdr-tab5/ui/serial_reset.{hpp,cpp}` with `tests/serial_reset_tests.cpp`. The restarts stay in `main.cpp` behind hooks. Route table unchanged (229 routes).
 
-## Unreleased — session, FORGET COMPUTER and SD batch device-checked; AUTH_OK line fix — 2026-11-15
+## Unreleased â€” session, FORGET COMPUTER and SD batch device-checked; AUTH_OK line fix â€” 2026-11-15
 
 Tab5, flashed on COM17 and checked.
 
@@ -504,7 +508,7 @@ Tab5, flashed on COM17 and checked.
 - **Device check (COM17):** 35 of 35 refusals; 18 of 18 in `refactor-workspace` device check. Signed out, `PING` is silent and `SD_LIST` / `SD_GET_ABORT` / `SD_PUT_ABORT` answer. A wrong key gives `PAIR_LOCKED` then `PAIR_HINT`. With the key file, `AUTH_OK` carries the right device signature. Bad `ROTATE_KEY`, `INSTALL_STATUS`, `SET_WIFI` and `PREPARE_FLASH` lines are refused. Tapping FORGET COMPUTER twice prints `PAIR_FORGOTTEN` and ends the session; the same key then pairs as a first use and signs in. SD round trip: 70,000 bytes up and back with the same SHA-256 (the radio has to be stopped first: `SD_PUT_ERROR radio_busy` otherwise, as intended). Main-task free stack 6,364 bytes after the run (baseline 6,336). Radio state restored afterwards.
 - **Not checked:** how the FORGET COMPUTER button looks on the screen; a real `SET_WIFI` / `INSTALL_STATUS` / `ROTATE_KEY` with a valid signature.
 
-## Unreleased — SD transfer commands moved out of process_command — 2026-11-15
+## Unreleased â€” SD transfer commands moved out of process_command â€” 2026-11-15
 
 No behaviour change intended (owner ruling: plain move, still no sign-in). Host-tested and built.
 
@@ -512,16 +516,16 @@ No behaviour change intended (owner ruling: plain move, still no sign-in). Host-
 - **Measured:** `process_command` 448 bytes of stack (was 480), complexity 141 to 132, 290 to 254 lines.
 - **Docs fixed:** `docs/API_SERIAL_CLI.md` named the upload command `SD_PUT_DATA`; the command is `SD_PUT_CHUNK <bytes>` and `SD_PUT_DATA` is its reply.
 
-## Unreleased — forget the paired computer from Settings; PAIR_LOCKED explains itself — 2026-11-14
+## Unreleased â€” forget the paired computer from Settings; PAIR_LOCKED explains itself â€” 2026-11-14
 
 Tab5. Owner-approved behaviour change. Host-tested and built; not flashed.
 
-- **Settings → System → FORGET COMPUTER:** two taps on the screen clear the stored serial pairing key (`pair_key`). Any other tap, leaving the page or a pairing change from serial cancels the first tap. It ends any open serial session, prints `PAIR_FORGOTTEN` and journals `pairing_forgotten`; every other setting stays. There is deliberately no serial command for it. Before this, a lost key file could only be cleared by erasing the whole flash.
+- **Settings â†’ System â†’ FORGET COMPUTER:** two taps on the screen clear the stored serial pairing key (`pair_key`). Any other tap, leaving the page or a pairing change from serial cancels the first tap. It ends any open serial session, prints `PAIR_FORGOTTEN` and journals `pairing_forgotten`; every other setting stays. There is deliberately no serial command for it. Before this, a lost key file could only be cleared by erasing the whole flash.
 - **`PAIR_LOCKED`** is now followed by one `PAIR_HINT ...` line naming the default key file, the Settings button and `docs/API_SERIAL_CLI.md`. `PAIR_LOCKED` stays the first line, so tools that read one reply are unaffected (`help_media.py`, `tab5_ft8.py`, `run-tab5-ui-regression.ps1`, `run-tab5-boot-cycles.py`, `run-pocsag-validation.ps1` all stop on anything but `PAIR_OK`).
 - **Docs:** `docs/API_SERIAL_CLI.md` (lost key) and `docs/user-guide/settings.md` (new section). `tests/serial_session_tests.cpp` checks the hint.
 - **Not changed, noted:** the "Companion web console" section of `docs/user-guide/settings.md` describes today's Tab5 TV page and is stale against the unified OrcSDR web interface; it belongs to that work's landing.
 
-## Unreleased — host session protocol moved out of process_command — 2026-11-14
+## Unreleased â€” host session protocol moved out of process_command â€” 2026-11-14
 
 No behaviour change intended. Host-tested and built; not flashed.
 
@@ -532,7 +536,7 @@ No behaviour change intended. Host-tested and built; not flashed.
 - **Measured:** `process_command` 480 bytes of stack (was 624), the session handler 416 bytes and only while a session command runs; `process_command` complexity 200 to 141, 522 to 290 lines; `main.cpp` 22,568 lines. Firmware image 4,525,136 bytes.
 - **Scan, noted not changed:** `AUTH` takes its nonce from the host and the Tab5 adds none, so a recorded `AUTH` line can be sent again to sign in. Using it needs the serial traffic itself. There is also no way to clear a forgotten pairing key short of erasing the flash, which wipes every setting.
 
-## Unreleased — main-task stack regression from the overnight moves, fixed — 2026-11-14
+## Unreleased â€” main-task stack regression from the overnight moves, fixed â€” 2026-11-14
 
 Tab5. Found by the device check of the overnight batch on COM17; fixed, flashed and checked.
 
@@ -542,7 +546,7 @@ Tab5. Found by the device check of the overnight batch on COM17; fixed, flashed 
 - **Guard:** new `tools/tab5_function_frames.py` reads a function's whole stack frame from the firmware (including adjustments after the register saves) and fails over a limit; the serial-module guide now asks for it after each build that moves routes.
 - **Overnight batch device check:** with the fix, 35 of 35 refusals match, read-only replies keep their shape, and the moved commands answer correctly signed in (`RTL_TOOL`, `RTL_REC_STATUS`, `RTL_SCREEN_STATUS`, `UI_TAP` usage, `RTL_LAB`/`RTL_VIS STATUS` and unknown, `RTL_CAPTURE_STATUS`, `RTL_IQ_STATUS`, `RTL_IQ_DIAG_STATUS`, `RTL_IQ_RETRIEVE_BEGIN`, `RTL_UI ACTION` range and unknown replies, `RTL_VOLUME` out of range, `RTL_SPLASH_GATE STATUS`, `FT8 STATUS`, `JS8 STATUS`). Not run: anything that starts, stops or retunes the radio, records, taps the screen or changes a setting.
 
-## Unreleased — JS8/FT8 prefixes and RTL_SPLASH_GATE moved out of process_command — 2026-11-14
+## Unreleased â€” JS8/FT8 prefixes and RTL_SPLASH_GATE moved out of process_command â€” 2026-11-14
 
 No behaviour change intended. Host-tested and built; not flashed.
 
@@ -551,7 +555,7 @@ No behaviour change intended. Host-tested and built; not flashed.
 - **Measured:** `process_command` complexity 212 to 200, 543 to 522 lines; `main.cpp` 22,736 lines. Firmware image 4,522,496 bytes.
 - **What is left in `process_command` (about 35 routes), each waiting on a decision:** `UI_DOC_*` / `UI_CAPTURE` (documentation mode; reaches deep into `main.cpp`), `RTL_TCP` / `RTL_TCPD` (owned by the rtl_tcp branch), `RTL_MAP_STATUS`, the OrcDial pairing commands, the SD transfer commands (`SD_LIST`, `SD_GET_*`, `SD_PUT_*`, `SD_REMOVE`, none signed in), `RTL_RESET` / `RTL_RESET CPU` / `RTL_USB_SAFE_MODE_*`, and the pairing and session protocol (`PAIR`, `AUTH`, `PING`, `PREPARE_FLASH`, `SET_WIFI`, `INSTALL_STATUS`, `ROTATE_KEY`, `TEST_PRESSURE`, `PRESSURE_ACK`, `ACK`).
 
-## Unreleased — receiver start/stop commands moved out of process_command — 2026-11-14
+## Unreleased â€” receiver start/stop commands moved out of process_command â€” 2026-11-14
 
 No behaviour change intended. Host-tested and built; not flashed.
 
@@ -560,7 +564,7 @@ No behaviour change intended. Host-tested and built; not flashed.
 - **Scan, noted not changed:** `RTL_VOLUME` parses with `atoi`, so `RTL_VOLUME x` sets the volume to 0 (silent) and `RTL_VOLUME 12abc` sets 12; signed out, `RTL_STOP`, `RTL_CAPTURE`, `RTL_LISTEN` and `RTL_VOLUME` give no reply at all.
 - **Measured:** `process_command` complexity 240 to 212, 615 to 543 lines; `main.cpp` 22,741 lines. Firmware image 4,520,992 bytes.
 
-## Unreleased — RTL_UI ACTION moved out of process_command — 2026-11-14
+## Unreleased â€” RTL_UI ACTION moved out of process_command â€” 2026-11-14
 
 No behaviour change intended. Host-tested and built; not flashed.
 
@@ -569,7 +573,7 @@ No behaviour change intended. Host-tested and built; not flashed.
 - **One compile-level change:** the Wi-Fi profile move check compared an unsigned value with a signed `count - 1`; the module casts it, which gives the same result because the preceding check guarantees `count >= 2`.
 - **Measured:** `process_command` complexity 418 to 240, 785 to 615 lines; `main.cpp` 22,756 lines. Firmware image 4,519,904 bytes.
 
-## Unreleased — IQ transfer commands moved out of process_command — 2026-11-14
+## Unreleased â€” IQ transfer commands moved out of process_command â€” 2026-11-14
 
 No behaviour change intended. Host-tested and built; not flashed.
 
@@ -577,7 +581,7 @@ No behaviour change intended. Host-tested and built; not flashed.
 - **Scan, noted not changed:** `RTL_IQ_RETRIEVE_READY` reports `rate=` from the default sample-rate constant, not the rate the capture used; `RTL_IQ_RETRIEVE_END` releases the finished capture without sign-in, while the LoRa replay upload needs it.
 - **Measured:** `process_command` complexity 437 to 418, 855 to 785 lines; `main.cpp` 22,900 lines. Firmware image 4,518,992 bytes.
 
-## Unreleased — capture and IQ-recording commands moved out of process_command — 2026-11-14
+## Unreleased â€” capture and IQ-recording commands moved out of process_command â€” 2026-11-14
 
 No behaviour change intended. Host-tested and built; not flashed.
 
@@ -585,7 +589,7 @@ No behaviour change intended. Host-tested and built; not flashed.
 - **Scan, noted not changed:** `RTL_IQ_START`, `RTL_IQ_STOP` and `RTL_IQ_SAVE` need no sign-in, while `RTL_IQ_DIAG_START` does; `RTL_IQ_STOP` forgets the SD card state so a newly inserted card is tried, as `RTL_REC_SAVE` does.
 - **Measured:** `process_command` complexity 454 to 437, 921 to 855 lines; `main.cpp` 22,925 lines. Firmware image 4,520,816 bytes.
 
-## Unreleased — RF Lab and Visualizer commands moved out of process_command — 2026-11-14
+## Unreleased â€” RF Lab and Visualizer commands moved out of process_command â€” 2026-11-14
 
 No behaviour change intended. Host-tested and built; not flashed.
 
@@ -593,14 +597,14 @@ No behaviour change intended. Host-tested and built; not flashed.
 - **Scan, noted not changed:** an unknown `UI_DOC_...` subcommand (for example `UI_DOC_FOO`) is not answered by its block and falls through the rest of the dispatcher; `RTL_LAB` and `RTL_VIS` also match longer words such as `RTL_LABX` (which then answer `unknown_command`, or `auth_required` when not signed in).
 - **Measured:** `process_command` complexity 472 to 454, 967 to 921 lines; `main.cpp` 22,931 lines. Firmware image 4,520,800 bytes.
 
-## Unreleased — screen test-automation commands moved out of process_command — 2026-11-14
+## Unreleased â€” screen test-automation commands moved out of process_command â€” 2026-11-14
 
 No behaviour change intended. Host-tested and built; not flashed.
 
 - **`UI_TAP <x> <y>`, `RTL_TAG_DOC ON|OFF`, `RTL_SCREEN_STATUS`, `RTL_UI_REGRESSION CHECK|RUN`** moved into `apps/orcsdr-tab5/ui/serial_ui_debug.{hpp,cpp}` with `tests/serial_ui_debug_tests.cpp` (sign-in refusals, the tap range and trailing-text checks, the busy reply, counters above 2^31, near misses). Route table unchanged; same replies and write pattern. The screen counters are now printed through an explicit `unsigned` cast (same text).
 - **Measured:** `process_command` complexity 486 to 472, 1,017 to 967 lines; `main.cpp` 22,965 lines. Firmware image 4,523,488 bytes.
 
-## Unreleased — recording and tool commands moved out of process_command — 2026-11-14
+## Unreleased â€” recording and tool commands moved out of process_command â€” 2026-11-14
 
 No behaviour change intended. Host-tested and built; not flashed.
 
@@ -608,12 +612,12 @@ No behaviour change intended. Host-tested and built; not flashed.
 - **Scan:** none of these commands needs sign-in, as before. `RTL_TOOL` names are case-sensitive except all-lower and all-upper (`Radio` is rejected), as before; noted, not changed.
 - **Measured:** `process_command` complexity 496 to 486, 1,051 to 1,017 lines; `main.cpp` 22,987 lines. Firmware image 4,522,688 bytes.
 
-## Unreleased — Home waterfall scroll back on the CPU — 2026-11-14
+## Unreleased â€” Home waterfall scroll back on the CPU â€” 2026-11-14
 
 - **Home's waterfall scroll uses M5GFX again** (`M5.Display.scroll`). The owner does not accept a lower Home frame rate, and the two-pass PPA scroll cost about 15% of it. The spectrum copy and clear stay on the PPA. `screen_blit::scroll_up` stays available and tested. Flashed to COM17 and measured on Home, WFM 96.1 MHz, three steady 20 s windows: about **24 frames/s** (was 20.6 before any PPA work), frame 28 to 29.5 ms (was 36 ms), DSP load **56%** (was 64%; 46% with no drawing).
 - **Context from the owner:** Home was meant to run at 60 frames/s. For scale, one 60 frames/s frame is 16.7 ms, and the spectrum copy alone takes 12 to 19 ms.
 
-## Unreleased — Home spectrum clear and waterfall scroll on the PPA — 2026-11-13
+## Unreleased â€” Home spectrum clear and waterfall scroll on the PPA â€” 2026-11-13
 
 Tab5. Flashed to one Tab5 (COM17) and measured. The owner saw no visible difference on Home with the PPA spectrum copy (previous entry); the clear and scroll are not yet looked at.
 
@@ -623,7 +627,7 @@ Tab5. Flashed to one Tab5 (COM17) and measured. The owner saw no visible differe
 - **Measured on Home:** DSP load **49%** (64% before any PPA work, 60% with the PPA copy alone; 46% with no drawing). But each frame now takes 44.6 ms (was 31 ms) because the PPA scroll waits about 25 ms for two passes over the waterfall, so Home draws about 17.7 frames/s (20.6 before any PPA work, 24 with the copy alone). The waterfall's speed is set by time, not frames, so it moves at the same speed in slightly larger steps.
 - **Open:** a ring-buffer waterfall would need one pass instead of two; the main loop's lowest free stack fell to 4,264 bytes during the benchmark run (6,336 to 6,468 before).
 
-## Unreleased — Home spectrum copied by the PPA — 2026-11-13
+## Unreleased â€” Home spectrum copied by the PPA â€” 2026-11-13
 
 Tab5. Flashed to one Tab5 (COM17) and measured; the owner's visual check of Home is still to do.
 
@@ -632,7 +636,7 @@ Tab5. Flashed to one Tab5 (COM17) and measured; the owner's visual check of Home
 - **Measured on Home:** spectrum copy 12.7 to 13.1 ms (was 19 ms), whole frame 31 ms (was 36 ms), about 24 frames/s (was 20.6). DSP load 60% (was 64%); the FM dashboard and the no-drawing baseline are 45 to 46%.
 - **What is left:** the remaining Home load comes from CPU work that still runs every frame in PSRAM: drawing the spectrum picture (8.6 to 9.2 ms, including clearing 333 KB) and scrolling the waterfall (9.4 to 9.7 ms, a CPU copy of the whole waterfall area). Home also draws more frames now, which adds to it. Correction to the earlier description: M5GFX's rotated copy writes each framebuffer row in order and reads the source picture one pixel per row; the panel itself does not rotate (only a colour-order bit is sent).
 
-## Unreleased — DSP load measured by screen; screen-copy benchmark — 2026-11-13
+## Unreleased â€” DSP load measured by screen; screen-copy benchmark â€” 2026-11-13
 
 Measurement only, Tab5. Nothing on screen changes.
 
@@ -642,7 +646,7 @@ Measurement only, Tab5. Nothing on screen changes.
 - **Result:** no copy 45% DSP load; M5GFX 18.5 ms per copy, 61%; tiled CPU 17.3 ms, 88%; PPA 12.0 ms, 46%, pixel-exact with a 90-degree rotation. The PPA moves the same pixels without slowing the DSP, and the CPU is free while it runs. No screen uses it yet.
 - **Tests:** `tests/display_rotate_tests.cpp` (all eight rotations against the LovyanGFX mapping) and `tests/serial_display_bench_tests.cpp`, in `tools/test-tab5-cadence-history.sh` and the workflow.
 
-## Unreleased — audio recordings save in the background — 2026-11-13
+## Unreleased â€” audio recordings save in the background â€” 2026-11-13
 
 Behaviour change, Tab5. Flashed to one Tab5 (COM17) and measured.
 
@@ -653,7 +657,7 @@ Behaviour change, Tab5. Flashed to one Tab5 (COM17) and measured.
 - **Measured on the Tab5:** a full 12 s recording (1.15 MB) saved in 0.66 s after the buffer filled, a 3 s clip in 0.26 s; no `RTL_MAIN_STALL`; receiver input stayed at 2.40 MS/s and no audio chunks were dropped across the saves; DSP load 64 to 65%, the same as before in the same conditions.
 - **Tests:** `tests/audio_rec_tests.cpp` (ASan/UBSan and ThreadSanitizer: WAV header bytes, refusals, record, full buffer saved from the main loop once, manual stop after full, no card, existing file, open failure, short write, reclaim), in `tools/test-tab5-cadence-history.sh` and the workflow.
 
-## Unreleased — RDS capture saves in the background — 2026-11-13
+## Unreleased â€” RDS capture saves in the background â€” 2026-11-13
 
 Behaviour change, Tab5. Flashed to one Tab5 (COM17) and measured.
 
@@ -664,7 +668,7 @@ Behaviour change, Tab5. Flashed to one Tab5 (COM17) and measured.
 - **Measured on the Tab5:** a full 3.84 MB capture saved in about 2.0 s (was 10 to 12 s), no `RTL_MAIN_STALL`, receiver input stayed at 2.40 MS/s through the save, no dropped audio chunks. DSP load with no capture running is the same as the previous build in the same conditions (63% and 4,325 us per block against 64% and 4,400 us). The owner's listening check of the new build is still to do.
 - **Tests:** `tests/sd_writer_tests.cpp` and `tests/rds_capture_tests.cpp` (ASan/UBSan and ThreadSanitizer), in `tools/test-tab5-cadence-history.sh` and the workflow; route table unchanged.
 
-## Unreleased — capture buffers given back when idle — 2026-11-13
+## Unreleased â€” capture buffers given back when idle â€” 2026-11-13
 
 Behaviour change, Tab5. Host-tested, built, and run on one Tab5 (COM17) with the serial commands below.
 
@@ -679,7 +683,7 @@ Behaviour change, Tab5. Host-tested, built, and run on one Tab5 (COM17) with the
 - **Why a lock:** memory can be asked back from two tasks (the main loop, and the radio driver task when a hotplug resume lands on LoRa). New `apps/orcsdr-tab5/ui/buffer_claim.hpp` holds the rule and a try-lock taken to arm, export or free the buffer; a release that finds it busy gives up at once. The DSP task's "I am writing" flag is now set with sequentially consistent ordering (capture-only path; no cost when no capture runs). `dsp_ab_harness.inc` carries the same change.
 - **Tests:** `tests/buffer_claim_tests.cpp` (rule table, lock, and a three-thread model of writer, owner and reclaimer) passes under the address/undefined and thread sanitizers; added to `tools/test-tab5-cadence-history.sh` and the workflow.
 
-## Unreleased — main.cpp refactor groundwork — 2026-11-12
+## Unreleased â€” main.cpp refactor groundwork â€” 2026-11-12
 
 No behaviour change intended. The state up to the P25 family move was flashed to one Tab5 for a short read-only and signed-in serial check (see **Device check** below); the six families moved after it (Wi-Fi, catalog, location, ADS-B, gain, driver) were flashed to the same Tab5 and checked with status and error-path commands only (see **Device check 2** below). The clock, status, audio, web, tuning, scope, verbosity, health and LoRa families were then flashed too and checked the same way (**Device check 3**). The diagnostics, bench and UI families were flashed and checked the same way afterwards (**Device check 4**).
 
@@ -706,14 +710,14 @@ No behaviour change intended. The state up to the P25 family move was flashed to
 - **Device check 4 (same Tab5, state at the UI navigation move):** 35 of 35 unauthenticated refusals matched exactly; the 17 read-only status replies kept their shape against the previous build; signed in, `RTL_UI STATUS`, `RTL_ACARS STATUS`, `RTL_AIS STATUS` and `RTL_DROPLOG` printed in the expected shapes and the bad-argument forms of `RTL_UI OPEN`, `RTL_UI TAP`, `RTL_RF24_PAGE` and `RTL_SD_BENCH` returned their usage lines. The ACARS self-test, archive test, AIS bench, SD self-check and benchmark, C6 power route and any screen change were not run.
 - **Not verified:** capture, record and replay commands, P25 and POCSAG decoding, long-run stability, and any command that changes gain, driver, Wi-Fi, catalog or location state. `tests/receiver_start_pause_test.py` and `tools/test_wifi_reconnect_policy.py` fail the same way before and after this change; they are out of date with `main.cpp` and are not run by CI.
 
-## Unreleased — Volume tray redesign, Visualizer entry — 2026-11-11
+## Unreleased â€” Volume tray redesign, Visualizer entry â€” 2026-11-11
 
 - **Volume tray:** now 840x280 (3:1, twice the previous size), centred just below the status bar, drawn as the top item: it is composited from a sprite, and the dashboards (scopes, waterfalls, FT8 waterfall) hold still while it is open. The tray reads touch itself; dashboards see no touch until the finger is up and 250 ms have passed, so a tap that opens, adjusts or dismisses the tray never reaches "touch to tune". Only the slider reacts to a held finger; mute fires once per press and the second tap of a double tap on the speaker does not mute.
 - **Header:** the VIS button is gone and Home, speaker and Settings are spaced out. The Visualizer is the last entry in All Dashboards (`RTL_UI OPEN VISUALIZER`). `RTL_UI STATUS` now reports `volume`, `audio_enabled` and `tray`.
 - **Verified:** host test `tests/audio_header_tray_tests.cpp`; hand-tested by the owner on COM17. `tools/tab5_volume_tray_test.py` (on-device) still shows intermittent failures on a few dashboards that are not yet explained (suspected test timing).
 - **Shared code note:** the shared dashboard registry now has a `visualizer` entry and the header geometry changed; P4 Core must treat the entry as unavailable until it has one.
 
-## Unreleased — AIS receiver and dashboard on the Tab5 — 2026-11-10
+## Unreleased â€” AIS receiver and dashboard on the Tab5 â€” 2026-11-10
 
 **New dashboard (AIS, the 20th All Dashboards entry).** Receives AIS on both channels (161.975 and 162.025 MHz) from one 162.000 MHz / 240 kS/s stream, from the USB dongle or an rtl_tcp server, and shows vessels, base stations and aids to navigation on seven pages. Branch `claude/ais-integration-hardware-79f921`; checkpoint in [docs/AIS_INTEGRATION_CHECKPOINT.md](docs/AIS_INTEGRATION_CHECKPOINT.md), evidence in [docs/evidence/ais/2026-11-10-tab5-replay.md](docs/evidence/ais/2026-11-10-tab5-replay.md).
 
@@ -725,7 +729,7 @@ No behaviour change intended. The state up to the P25 family move was flashed to
 - **Safety:** the dashboard never shows synthetic data on its own; `RTL_AIS TEST ON` (authenticated) only labels replayed data.
 - **Serial:** `RTL_UI OPEN AIS`, `RTL_AIS STATUS`, `RTL_AIS TEST ON|OFF`, `RTL_AIS BENCH`.
 
-## Unreleased — rtl_tcp remote receiver — 2026-11-09
+## Unreleased â€” rtl_tcp remote receiver â€” 2026-11-09
 
 **New receiver source.** The Tab5 can take its IQ from a standard `rtl_tcp` server on the network (for example a Raspberry Pi with an RTL-SDR) instead of a dongle on its own USB port, and can serve its own dongle with an `rtl_tcp` server. Branch `claude/orcsdr-rtl-tcp-interop-f12b5d`; full test record in [docs/RTL_TCP_RELEASE_TEST_PLAN.md](docs/RTL_TCP_RELEASE_TEST_PLAN.md).
 
@@ -740,7 +744,7 @@ No behaviour change intended. The state up to the P25 family move was flashed to
 - **Server:** off by default, binds only to a named LAN address, never all interfaces. `rtl_tcp` has no authentication; do not expose port 1234 to the internet.
 - **Verified on the Tab5 against a Pi 4B running stock RTL-SDR Blog `rtl_tcp` 1.4.0:** all 19 dashboards open on the remote stream; one-hour soak; FT8 decodes (7-16 messages per slot) with and without a local dongle; remote gain changes the measured input level; recovery after a 2-minute server outage. **Not yet verified:** ACARS, SSTV and ADS-B decoding on a remote stream, frequency correction, direct sampling and offset tuning on a real signal, the gain popups on every dashboard, and audio judged by ear, and a server on a public address with no relay. The stock `rtl_tcp` on a Pi was also measured across a real cellular hop through an SSH relay: live FT8, 194 decodes in 31 slots over 8 minutes at 100% link. Changing the receiver source applies at the next stream start, not immediately.
 
-## Unreleased — esp-rtl-sdr driver v0.9.6 — 2026-11-09
+## Unreleased â€” esp-rtl-sdr driver v0.9.6 â€” 2026-11-09
 
 **Firmware dependency update.** The Tab5 build now pins `esp_rtl_sdr` to the published release [`v0.9.6`](https://github.com/hardcoreerik/esp-rtl-sdr/blob/v0.9.6/docs/releases/v0.9.6.md) at immutable commit `dabdda1aff6aa196f3c1523d791adf80d2c24ccc` (previously `v0.9.5`, `4bf0171`), in both `idf_component.yml` and `dependencies.lock`.
 
@@ -748,7 +752,7 @@ No behaviour change intended. The state up to the P25 family move was flashed to
 - **No public API change.** The header changes only its version macro to 0.9.6. OrcSDR's existing start-failure path already handles any non-`ESP_OK` start result, so no caller change is needed.
 - **Separate from the SDK USB recovery patch.** The ESP-IDF USB root-port recovery patch from PR #239 is still applied by OrcSDR's build; driver v0.9.6 does not include it.
 
-## Unreleased source/documentation reconciliation — 2026-11-04
+## Unreleased source/documentation reconciliation â€” 2026-11-04
 
 **Documentation update, not a new firmware release.** The current-source documentation was reconciled with the native build, implementation, dated hardware records and specific firsthand maintainer acceptance:
 
@@ -764,9 +768,9 @@ No behaviour change intended. The state up to the P25 family move was flashed to
 
 **No firmware code change or new physical device test is implied by this documentation entry.** A feature integrated into current source is not guaranteed to be present in an older published installer image.
 
-## v0.5.0-beta.1 — published 2026-10-26
+## v0.5.0-beta.1 â€” published 2026-10-26
 
-[Full release notes](docs/releases/v0.5.0-beta.1.md) · [GitHub release](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.5.0-beta.1)
+[Full release notes](docs/releases/v0.5.0-beta.1.md) Â· [GitHub release](https://github.com/hardcoreerik/OrcSDR/releases/tag/v0.5.0-beta.1)
 
 Key themes: guided first-time setup, OrcMaps and downloadable offline maps, native SSTV, live ACARS, Dead Air, improved Shortwave USB/LSB, LoRa memory improvements and FT8 time/clock improvements. Exact release package and RF-acceptance boundaries are preserved in those release notes; later source or maintainer confirmation does not retroactively change the October 26 build.
 
