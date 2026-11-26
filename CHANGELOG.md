@@ -2,6 +2,11 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Digital Voice: MONITOR filter on the SETUP screen — 2026-11-26
+
+- **What changed:** the non-working `SCAN PLAN: READY` button on SETUP is now `MONITOR: ALL (9)`. Each tap cycles the protocol filter (ALL, DMR, NXDN48, NXDN96), selects the MONITOR plan and shows how many channels the filter gives; the button is highlighted while MONITOR is the selected plan, disabled when no receiver is connected, and ignored while a scan is running. START is on the SCAN page. The colour-code / RAN filter and `MIN hits` are still serial only (`RTL_DV MONITOR ...`). New action `monitor_filter` (a receiver-plan action, never a UI-local change) and snapshot fields `monitor_proto`, `monitor_entries`, `monitor_selected`.
+- **Verified:** host dashboard tests 5 of 5 (new checks: label `MONITOR: NXDN48 (9)`, touch returns `monitor_filter`, no touch and `MONITOR: NOT CONNECTED` without a receiver, `apply_ui_action` leaves UI state alone). On the Tab5: screenshots show `MONITOR: ALL (9)`, then `MONITOR: DMR (8)` highlighted after one tap; three taps from ALL reach NXDN96 (`RTL_DV MONITOR` reports proto=3, selected=1). A first version of the hint text ran into the neighbouring label; shortened and re-checked on the screen. **Not verified:** a scan started from the touch screen after choosing the filter.
+
 ## Unreleased — Digital Voice: MONITOR holds a live channel for 9 s instead of 4 s — 2026-11-26
 
 - **What changed:** after the last verified burst, the scanner now keeps a MONITOR channel for 9 s (other plans keep the 4 s default), so the reply in a conversation is not cut off by the scan moving on. New `Scanner::set_hold_ms` (500 ms to 60 s, clamped); the plan selection sets it (MONITOR 9000 ms, everything else 4000 ms) and `RTL_DV MONITOR` now prints `hold_ms=`. The control-channel release rule (a channel with only control traffic is left after 20 s) is unchanged, so a quiet control channel does not trap the scan.

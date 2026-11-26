@@ -695,6 +695,14 @@ void refresh(State& st) {
       ++s.revision;
     s.discover_running = run; s.discover_found = found; s.discover_candidates = cand;
     s.discover_saved = st.disc_saved; s.discover_skipped = st.disc_skipped; s.discover_can_start = can_disc;
+    {
+      uint32_t mhz[dv::kMaxScanChannels];
+      uint8_t mmk[dv::kMaxScanChannels];
+      const uint16_t mn = static_cast<uint16_t>(build_monitor_list(st, mhz, mmk, dv::kMaxScanChannels));
+      const bool msel = st.plan_option == monitor_option(st);
+      if (s.monitor_proto != st.mon_proto || s.monitor_entries != mn || s.monitor_selected != msel) ++s.revision;
+      s.monitor_proto = st.mon_proto; s.monitor_entries = mn; s.monitor_selected = msel;
+    }
     s.discover_phase = st.disc_phase; s.survey_done = sv_done; s.survey_total = sv_total; s.survey_hot = sv_hot;
     s.survey_rate_khz = sv_rate; s.survey_center_hz = sv_center; s.survey_passes = sv_pass;
   }
@@ -1079,6 +1087,12 @@ void apply_radio_action(State& st, const Action& a) {
       st.disc_running = true;
       break;
     }
+    case ActionKind::monitor_filter:                 // SETUP > MONITOR: next protocol filter (ALL, DMR, NXDN48, NXDN96) and select the MONITOR plan; START is on SCAN
+      if (st.scanner.active()) { ++g_unapplied_actions; return; }
+      st.mon_proto = static_cast<uint8_t>((st.mon_proto + 1) % 4);
+      st.plan_option = static_cast<uint8_t>(monitor_option(st));
+      apply_plan_option(st);
+      break;
     case ActionKind::discover_stop: if (st.disc_phase) stop_discover(st); else { stop_scan(st); st.disc_running = false; } break;
     case ActionKind::discover_save: save_found(st); break;
     case ActionKind::toggle_band: {

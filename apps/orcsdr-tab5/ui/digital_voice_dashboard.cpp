@@ -525,8 +525,14 @@ void setup(Paint& p,const Snapshot& s,Density mode) {
   p.fact("PROTOCOL","SELECTOR NOT INTEGRATED",a.x+18,a.y+155,a,kAmber);
   p.fact("SCAN PLAN",s.can_scan?"AVAILABLE":"NOT AVAILABLE",a.x+18,a.y+208,a,s.can_scan?kGreen:kAmber);
   p.fact("HOLD / FILTER",s.can_filter?"AVAILABLE":"NOT AVAILABLE",a.x+18,a.y+261,a,s.can_filter?kGreen:kAmber);
-  p.button(s.can_scan?"SCAN PLAN: READY":"SCAN PLAN: NOT CONNECTED",
-           {a.x+18,a.y+322,370,44},false);
+  {
+    char t[48];
+    const char* pn=s.monitor_proto==1?"DMR":s.monitor_proto==2?"NXDN48":s.monitor_proto==3?"NXDN96":"ALL";
+    if(!s.can_scan)std::snprintf(t,sizeof(t),"MONITOR: NOT CONNECTED");
+    else std::snprintf(t,sizeof(t),"MONITOR: %s (%u)",pn,static_cast<unsigned>(s.monitor_entries));
+    p.button(t,{a.x+18,a.y+322,370,44},s.can_scan,s.monitor_selected);
+  }
+  p.label("Tap to cycle; START on SCAN",a.x+18,a.y+440,a);
   p.button(mode==Density::discovery_first?"DENSITY: DISCOVERY":"DENSITY: ANALYSIS",
            {a.x+18,a.y+376,370,44},true);
   {
@@ -655,6 +661,7 @@ Action Dashboard::handle_touch(int32_t x,int32_t y,const Snapshot& s,
   if(state.view==View::setup) {
     const auto a=state.density==Density::discovery_first?layout::kBasicHero:layout::kAdvancedMain;
     if(Rect{a.x+18,a.y+376,370,44}.contains(x,y))return {ActionKind::toggle_density};
+    if(s.can_scan&&Rect{a.x+18,a.y+322,370,44}.contains(x,y))return {ActionKind::monitor_filter};
     if(s.can_save_speech&&Rect{a.x+408,a.y+322,376,44}.contains(x,y))return {ActionKind::toggle_save_speech};
     if(s.can_save_speech&&Rect{a.x+408,a.y+376,376,44}.contains(x,y))return {ActionKind::toggle_save_iq};
     {

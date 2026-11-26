@@ -220,6 +220,19 @@ int main(){
   host_stub::reset();assert(dashboard.present(display,nx,ui,true,false));
   assert(host_stub::contains("DENSITY: ANALYSIS"));
   assert(!apply_ui_action(ui,{ActionKind::scan,0},nx)); // no receiver side effects
+  {
+    // SETUP > MONITOR: the filter button shows the filter and how many channels it gives, and is a receiver-plan action (never a UI-local change).
+    const auto adv=layout::kAdvancedMain;
+    Snapshot ms=nx;ms.can_scan=true;ms.monitor_proto=2;ms.monitor_entries=9;ms.monitor_selected=true;ms.revision=nx.revision+1;                       // present() draws nothing for an unchanged revision; the app bumps it when these fields change
+    host_stub::reset();assert(dashboard.present(display,ms,ui,true,false));
+    assert(host_stub::contains("MONITOR: NXDN48 (9)"));
+    assert(dashboard.handle_touch(adv.x+100,adv.y+330,ms,ui).kind==ActionKind::monitor_filter);
+    assert(!apply_ui_action(ui,{ActionKind::monitor_filter,0},ms));
+    ms.can_scan=false;ms.revision+=1;
+    assert(dashboard.handle_touch(adv.x+100,adv.y+330,ms,ui).kind==ActionKind::none);
+    host_stub::reset();assert(dashboard.present(display,ms,ui,true,false));
+    assert(host_stub::contains("MONITOR: NOT CONNECTED"));
+  }
   // All 8 history events are accessible by paging; unknown timestamps remain unknown.
   ui.view=View::last_heard;ui.density=Density::discovery_first;
   auto many=demo::make(demo::Case::history_demo);many.revision=14;

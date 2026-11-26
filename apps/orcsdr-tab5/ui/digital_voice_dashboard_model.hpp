@@ -179,6 +179,10 @@ struct Snapshot {
   uint8_t discover_phase = 0;
   uint16_t survey_done = 0, survey_total = 0, survey_hot = 0, survey_passes = 0, survey_rate_khz = 0;
   uint32_t survey_center_hz = 0;
+  // MONITOR (scan only the discovered systems): the protocol filter (0 all, 1 DMR, 2 NXDN48, 3 NXDN96), how many channels the filter gives, and whether MONITOR is the selected plan.
+  uint8_t monitor_proto = 0;
+  uint16_t monitor_entries = 0;
+  bool monitor_selected = false;
   uint32_t audio_revision = 0;           // moves when the voice panel's content changes; the page revision does not
 };
 struct UiState {
@@ -193,7 +197,7 @@ struct UiState {
 enum class ActionKind : uint8_t { none, switch_view, selected_history, save_channel, scan, setup_protocol,
                                   toggle_hold, skip_frequency, toggle_density, select_scan_hit,
                                   select_system, page_history, plan_prev, plan_next, set_listen, toggle_save_speech, toggle_band, toggle_save_iq, page_systems,
-                                  open_discover, close_discover, discover_start, discover_stop, discover_save };
+                                  open_discover, close_discover, discover_start, discover_stop, discover_save, monitor_filter };
 // Why a control is unavailable, in words the screen can show. `none` = the control is usable.
 enum class Disabled : uint8_t { none, no_receiver, no_plan, not_scanning, no_signal_selected, not_verified, already_saved,
                                 list_full, no_storage, scan_running, single_plan, no_frequency };
