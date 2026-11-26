@@ -2,6 +2,12 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
+## Unreleased — Digital Voice: MONITOR leaves a control-only channel after 6 s instead of 20 s — 2026-11-26
+
+- **What changed:** a channel that shows only control traffic (verified events, no identity, no voice) is now released after 6 s in MONITOR (other plans keep 20 s), so MONITOR visits more channels per minute; a call that starts on a held channel brings identity evidence and still keeps the hold. New `Scanner::set_control_hold_max_ms` (1 to 60 s, clamped); `RTL_DV MONITOR` prints `control_hold_ms=`.
+- **Measured on the Tab5 (2026-11-26, MONITOR over 9 channels, soak logs in `artifacts/.../captures/`):** holds per minute rose from about 2.6 (20 s control hold, 25 min, 3 to 65 holds) to about 4.6 (6 s, 10.6 min, 5 to 49 holds). That is 1.8 times, not 3 times, because every visit also pays retune and settling time. No voice call occurred in the 10-minute run, so whether the shorter hold catches more calls is **not verified** (calls are rare: one in the earlier 25 minutes).
+- **Host test:** a control-only channel is released at the set time for 20 s and 6 s (within 1.5 s), identity evidence keeps the hold, limits clamp; the live-chain suite passes.
+
 ## Unreleased — Digital Voice: MONITOR filter on the SETUP screen — 2026-11-26
 
 - **What changed:** the non-working `SCAN PLAN: READY` button on SETUP is now `MONITOR: ALL (9)`. Each tap cycles the protocol filter (ALL, DMR, NXDN48, NXDN96), selects the MONITOR plan and shows how many channels the filter gives; the button is highlighted while MONITOR is the selected plan, disabled when no receiver is connected, and ignored while a scan is running. START is on the SCAN page. The colour-code / RAN filter and `MIN hits` are still serial only (`RTL_DV MONITOR ...`). New action `monitor_filter` (a receiver-plan action, never a UI-local change) and snapshot fields `monitor_proto`, `monitor_entries`, `monitor_selected`.

@@ -98,6 +98,10 @@ class Scanner {
   // How long a channel is kept after its last verified activity (500 ms to 60 s). A longer hold catches the reply in a conversation (MONITOR uses 9 s).
   void set_hold_ms(uint32_t ms) noexcept { config_.hold_ms = ms < 500 ? 500 : ms > 60000 ? 60000 : ms; }
   uint32_t hold_ms() const noexcept { return config_.hold_ms; }
+  // A hold that has seen only control traffic (verified events but no identity and no voice) is released after this long (1 s to 60 s). A shorter value
+  // revisits more channels per minute; a call that starts on a held channel brings identity evidence, which keeps the hold.
+  void set_control_hold_max_ms(uint32_t ms) noexcept { config_.control_hold_max_ms = ms < 1000 ? 1000 : ms > 60000 ? 60000 : ms; }
+  uint32_t control_hold_max_ms() const noexcept { return config_.control_hold_max_ms; }
   void skip(uint32_t now_ms) noexcept;      // go to the next channel now (any active state)
   void retune_result(bool accepted, uint32_t now_ms) noexcept;   // the answer to the last ScanStep::tune
   void stream_discontinuity(uint32_t now_ms) noexcept;           // IQ gap or reset: listen again on this channel

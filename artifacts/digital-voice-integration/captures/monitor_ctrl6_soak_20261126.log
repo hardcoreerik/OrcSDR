@@ -1,0 +1,14 @@
+02:37:52 RTL_DV_MONITOR hold_ms=9000 control_hold_ms=6000 proto=0 cc=255 min_hits=1 entries=9 selected=1
+02:37:54 RTL_DV_SCAN_OK started
+02:38:52 ch=152157500 scan=HOLD idx=0 holds=5 | dmr_ev=174 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=19
+02:39:49 ch=463400000 scan=HOLD idx=1 holds=9 | dmr_ev=348 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=19
+02:40:48 ch=151195000 scan=HOLD idx=3 holds=14 | dmr_ev=521 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=19
+02:41:45 ch=? scan=? idx=? holds=? | dmr_ev=? dmr_id=? n48_ok=? n96_ok=? | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=?
+02:42:43 ch=153645000 scan=SCAN idx=5 holds=22 | dmr_ev=857 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=19
+02:43:42 ch=463250000 scan=SCANNER idx=6 holds=26 | dmr_ev=1030 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=19
+02:44:39 ch=152682500 scan=HOLD idx=7 holds=30 | dmr_ev=1185 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=19
+02:45:38 ch=152157500 scan=HOLD idx=0 holds=34 | dmr_ev=1332 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=19
+02:46:36 ch=463400000 scan=HOLD idx=1 holds=39 | dmr_ev=1501 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=19
+02:47:34 ch=153120000 scan=HOLD idx=2 holds=44 | dmr_ev=1695 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=19
+02:48:32 ch=463400000 scan=HOLD idx=1 holds=49 | dmr_ev=1849 dmr_id=0 n48_ok=0 n96_ok=0 | voice groups=0 frames=0 speech=0 phase=LISTENING | db_sys=19
+02:48:32 DONE voice_seen=False

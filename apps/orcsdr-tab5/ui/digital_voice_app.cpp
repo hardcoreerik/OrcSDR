@@ -295,11 +295,13 @@ size_t my_bands_count(const State& st) {
 }
 
 // The scan plan follows the selected option: the saved channel list, a built-in band range, or the custom range.
+constexpr uint32_t kDefaultControlHoldMs = 20000, kMonitorControlHoldMs = 6000;      // MONITOR leaves a control-only channel sooner: more visits per minute
 constexpr uint32_t kDefaultHoldMs = 4000, kMonitorHoldMs = 9000;      // MONITOR keeps a live channel longer so a reply in a conversation is heard
 
 void apply_plan_option(State& st) {
   if (st.scanner.active()) return;
   st.scanner.set_hold_ms(st.plan_option == monitor_option(st) ? kMonitorHoldMs : kDefaultHoldMs);
+  st.scanner.set_control_hold_max_ms(st.plan_option == monitor_option(st) ? kMonitorControlHoldMs : kDefaultControlHoldMs);
   if (st.plan_option >= plan_option_count(st)) st.plan_option = 0;
   if (st.plan_option == 0) {
     if (st.saved_n && st.scanner.set_plan(st.saved_hz, st.saved_n)) std::memcpy(st.plan_mask, st.saved_mask, sizeof(st.plan_mask));
@@ -1474,7 +1476,7 @@ bool handle_command(const char* command, bool authenticated, void (*write_line)(
       apply_plan_option(st);
       ++st.snapshot.revision;
     }
-    std::snprintf(line, sizeof(line), "RTL_DV_MONITOR hold_ms=%lu proto=%u cc=%u min_hits=%u entries=%u selected=%d", static_cast<unsigned long>(st.scanner.hold_ms()), static_cast<unsigned>(st.mon_proto), static_cast<unsigned>(st.mon_cc), static_cast<unsigned>(st.mon_min_hits),
+    std::snprintf(line, sizeof(line), "RTL_DV_MONITOR hold_ms=%lu control_hold_ms=%lu proto=%u cc=%u min_hits=%u entries=%u selected=%d", static_cast<unsigned long>(st.scanner.hold_ms()), static_cast<unsigned long>(st.scanner.control_hold_max_ms()), static_cast<unsigned>(st.mon_proto), static_cast<unsigned>(st.mon_cc), static_cast<unsigned>(st.mon_min_hits),
                   static_cast<unsigned>(st.plan_option == monitor_option(st) ? st.scanner.plan_count() : 0u), st.plan_option == monitor_option(st) ? 1 : 0);
     write_line(line);
     if (st.plan_option == monitor_option(st))

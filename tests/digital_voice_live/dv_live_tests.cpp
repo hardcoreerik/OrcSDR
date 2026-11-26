@@ -168,6 +168,29 @@ void test_scanner_hold_time() {
     if (hold == 9000u) { CHECK(s.status().state == dv::ScanState::holding); t = verified + 9100; s.service(t, in); CHECK(s.status().index == 1); }
   }
   dv::Scanner s; s.set_hold_ms(1); CHECK(s.hold_ms() == 500); s.set_hold_ms(1000000); CHECK(s.hold_ms() == 60000);
+  s.set_control_hold_max_ms(1); CHECK(s.control_hold_max_ms() == 1000); s.set_control_hold_max_ms(1000000); CHECK(s.control_hold_max_ms() == 60000);
+  // Control-only traffic (verified events renewed every second, never an identity) holds a channel until control_hold_max_ms, then the scan moves on.
+  for (uint32_t cmax : {20000u, 6000u}) {
+    dv::Scanner c; CHECK(c.set_plan(plan, 2)); c.set_control_hold_max_ms(cmax);
+    uint32_t t = 1000; dv::ScanInputs in; in.receiver_ready = true;
+    CHECK(c.start(t));
+    auto st = c.service(t, in); CHECK(st.tune); c.retune_result(true, t);
+    t += 700; c.service(t, in);
+    const uint32_t begin = t;
+    in.verified_ms = t + 50; t += 100; c.service(t, in); CHECK(c.status().state == dv::ScanState::holding);
+    uint32_t left_at = 0;
+    for (; t < begin + 25000 && !left_at; t += 1000) { in.verified_ms = t; c.service(t, in); if (c.status().index == 1) left_at = t - begin; }
+    CHECK(left_at >= cmax && left_at <= cmax + 1500);                                   // released by the control-only rule, not earlier, not much later
+    CHECK(c.status().control_releases == 1);
+  }
+  // Voice or identity evidence on the held channel overrides the control-only release: the hold continues.
+  { dv::Scanner c; CHECK(c.set_plan(plan, 2)); c.set_control_hold_max_ms(6000);
+    uint32_t t = 1000; dv::ScanInputs in; in.receiver_ready = true; CHECK(c.start(t));
+    c.service(t, in); c.retune_result(true, t); t += 700; c.service(t, in);
+    const uint32_t begin = t;
+    in.verified_ms = t + 50; t += 100; c.service(t, in);
+    for (; t < begin + 15000; t += 1000) { in.verified_ms = t; in.identity_ms = t; c.service(t, in); }
+    CHECK(c.status().index == 0 && c.status().state == dv::ScanState::holding && c.status().control_releases == 0); }
 }
 
 void test_dmr_end_to_end() {
