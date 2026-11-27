@@ -65,6 +65,66 @@ void write_wav(const char* path, const std::vector<short>& pcm) {
   std::fclose(file);
 }
 
+// Injected-error test: correct codewords must survive up to three flipped bits,
+// and a full 72-bit frame must still yield the original payload when both
+// codewords are damaged.
+int golay_selftest() {
+  std::uint32_t seed = 987654321u;
+  int codeword_fail = 0, frame_fail = 0;
+  for (int trial = 0; trial < 500; ++trial) {
+    seed = seed * 1103515245u + 12345u;
+    const std::uint32_t data = (seed >> 8) & 0xFFFu;
+    const std::uint32_t codeword = orc::zero::dv::golay_encode12(data);
+    for (int errors = 1; errors <= 3; ++errors) {
+      std::uint32_t damaged = codeword;
+      for (int e = 0; e < errors; ++e) {
+        seed = seed * 1103515245u + 12345u;
+        damaged ^= 1u << ((seed >> 12) % 23);
+      }
+      std::uint32_t back = damaged;
+      const int fixed = orc::zero::dv::detail::golay_correct(back);
+      if (fixed < 0 || back != codeword) ++codeword_fail;
+    }
+  }
+  std::printf("golay selftest: %d codeword failures\n", codeword_fail);
+
+  for (int trial = 0; trial < 200; ++trial) {
+    std::uint8_t payload[49];
+    for (int i = 0; i < 49; ++i) {
+      seed = seed * 1103515245u + 12345u;
+      payload[i] = std::uint8_t((seed >> 16) & 1u);
+    }
+    // Build the frame from the payload using the inverse of the derived map.
+    std::uint8_t onair[72] = {0};
+    for (int k = 0; k < 7; ++k) onair[46 + 4 * k] = payload[24 + k];
+    for (int k = 0; k < 18; ++k) onair[3 + 4 * k] = payload[31 + k];
+    std::uint32_t c0 = 0, c1 = 0;
+    for (int i = 0; i < 12; ++i) {
+      c0 = (c0 << 1) | payload[i];
+      c1 = (c1 << 1) | payload[12 + i];
+    }
+    const std::uint32_t c0_word = orc::zero::dv::golay_encode12(c0);
+    const std::uint32_t c1_word = orc::zero::dv::golay_encode12(c1);
+    for (int bit = 0; bit < 23; ++bit)
+      onair[orc::zero::dv::c0_position(bit)] = (c0_word >> (22 - bit)) & 1u;
+    for (int bit = 0; bit < 23; ++bit) {
+      const std::uint8_t ks = orc::zero::dv::keystream_bit(payload, bit + 1);
+      onair[orc::zero::dv::c1_position(bit)] = ((c1_word >> (22 - bit)) & 1u) ^ ks;
+    }
+    // Damage up to three bits in each codeword.
+    for (int e = 0; e < 3; ++e) {
+      seed = seed * 1103515245u + 12345u;
+      onair[orc::zero::dv::c0_position((seed >> 10) % 23)] ^= 1u;
+      seed = seed * 1103515245u + 12345u;
+      onair[orc::zero::dv::c1_position((seed >> 11) % 23)] ^= 1u;
+    }
+    std::uint8_t back[49];
+    orc::zero::dv::extract_ambe_corrected(onair, back, nullptr);
+    if (std::memcmp(back, payload, 49) != 0) ++frame_fail;
+  }
+  std::printf("frame selftest with injected errors: %d failures\n", frame_fail);
+  return (codeword_fail || frame_fail) ? 1 : 0;
+}
 // Round-trip check of the schedule: build a 72-bit frame from a payload with the
 // inverse mapping, extract it, expect the same payload. No third-party data used.
 int selftest() {
@@ -96,6 +156,7 @@ int selftest() {
 
 int main(int argc, char** argv) {
   if (argc > 1 && std::strcmp(argv[1], "--selftest") == 0) return selftest();
+  if (argc > 1 && std::strcmp(argv[1], "--golay") == 0) return golay_selftest();
   if (argc < 2) {
     std::printf("usage: %s <capture.cu8> [out.wav]\n       %s --selftest\n", argv[0], argv[0]);
     return 2;
