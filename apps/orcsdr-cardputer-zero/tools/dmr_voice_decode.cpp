@@ -7,11 +7,14 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <unistd.h>
 #include <string>
 #include <vector>
 
 #include "dv_ambe.hpp"
 #include "dv_channelizer.hpp"
+#include "dv_voice.hpp"
+#include "linux_audio.hpp"
 #include "orcsdr_dmr/d1_bridge.hpp"
 
 extern "C" {
@@ -24,33 +27,15 @@ constexpr int kFrameSamples = 160;
 constexpr int kSampleRate = 8000;
 
 struct DecoderState {
-  mbe_parms cur{}, prev{}, prev_enh{};
-  std::vector<short> pcm;
+  orc::zero::dv::VoicePlayer player;
   unsigned groups = 0;
-  unsigned frames = 0;
 };
 
 void on_voice(const orcsdr::dmr::d1::VoiceGroup& group, void* user) noexcept {
   auto* state = static_cast<DecoderState*>(user);
   if (!state) return;
   // 162 bytes = 18 frames of 9 bytes, three per burst, bursts A-F.
-  for (int frame = 0; frame < 18; ++frame) {
-    const std::uint8_t* bytes = group.payload.data() + frame * 9;
-    std::uint8_t payload[49];
-    orc::zero::dv::extract_ambe_bytes(bytes, payload);
-
-    char ambe_d[49];
-    for (int i = 0; i < 49; ++i) ambe_d[i] = char(payload[i]);
-
-    short out[kFrameSamples];
-    int errs = 0, errs2 = 0;
-    char err_str[64] = {0};
-    std::memset(out, 0, sizeof(out));
-    mbe_processAmbe2450Data(out, &errs, &errs2, err_str, ambe_d, &state->cur, &state->prev,
-                            &state->prev_enh, 3);
-    state->pcm.insert(state->pcm.end(), out, out + kFrameSamples);
-    ++state->frames;
-  }
+  state->player.decode_superframe(group.payload.data(), group.payload.size());
   ++state->groups;
 }
 
@@ -151,23 +136,52 @@ int main(int argc, char** argv) {
     receiver.process(samples, out_pairs, nullptr, nullptr);
   }
 
-  if (!state.frames) {
+  if (!state.player.frames_decoded()) {
     std::printf("no voice frames decoded\n");
     return 1;
   }
 
+  std::vector<short> pcm;
+  std::vector<std::int16_t> upsampled(4800);
+  for (;;) {
+    const size_t got = state.player.take_upsampled(upsampled.data(), upsampled.size());
+    if (!got) break;
+    pcm.insert(pcm.end(), upsampled.begin(), upsampled.begin() + std::ptrdiff_t(got));
+  }
+
   double sum_sq = 0, peak = 0;
-  for (short value : state.pcm) {
+  for (short value : pcm) {
     const double v = double(value);
     sum_sq += v * v;
     if (std::fabs(v) > peak) peak = std::fabs(v);
   }
-  const double rms = std::sqrt(sum_sq / double(state.pcm.size()));
-  std::printf("groups %u  frames %u  %.2f s at %d Hz  rms %.1f  peak %.0f\n", state.groups,
-              state.frames, double(state.pcm.size()) / kSampleRate, kSampleRate, rms, peak);
+  const double rms = pcm.empty() ? 0.0 : std::sqrt(sum_sq / double(pcm.size()));
+  std::printf("groups %u  vocoder frames %llu  %.2f s at 48 kHz  rms %.1f  peak %.0f\n",
+              state.groups, (unsigned long long)state.player.frames_decoded(),
+              double(pcm.size()) / 48000.0, rms, peak);
   if (argc > 2) {
-    write_wav(argv[2], state.pcm);
+    write_wav(argv[2], pcm);
     std::printf("wrote %s\n", argv[2]);
   }
+
+  // --play sends the same PCM to the codec, which is how the dashboard will do it.
+  if (argc > 3 && std::strcmp(argv[3], "--play") == 0) {
+    orc::zero::AudioSink sink;
+    if (!sink.open("plughw:ES8389Audio,0", false)) {
+      std::printf("audio open failed\n");
+      return 1;
+    }
+    size_t offset = 0;
+    while (offset < pcm.size()) {
+      // AudioSink's scratch buffer is 4096 frames; asking for more is refused.
+      const size_t chunk = std::min<size_t>(4000, pcm.size() - offset);
+      if (!sink.write_mono(pcm.data() + offset, chunk, 100, false)) break;
+      offset += chunk;
+      ::usleep(100000);
+    }
+    sink.close();
+    std::printf("played %zu samples through the codec\n", offset);
+  }
   return rms > 1.0 ? 0 : 1;
+
 }

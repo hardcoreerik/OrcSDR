@@ -298,7 +298,7 @@ add_executable(orc_zero_ambe_decode tools/ambe_decode.cpp)
 target_link_libraries(orc_zero_ambe_decode PRIVATE orc_zero_mbelib)
 target_include_directories(orc_zero_ambe_decode PRIVATE ${ORC_MBELIB_DIR} src)
 add_executable(orc_zero_dmr_voice_decode tools/dmr_voice_decode.cpp)
-target_link_libraries(orc_zero_dmr_voice_decode PRIVATE orc_zero_dmr_d1 orc_zero_dv orc_zero_mbelib)
+target_link_libraries(orc_zero_dmr_voice_decode PRIVATE orc_zero_dmr_d1 orc_zero_dv orc_zero_mbelib orc_linux_runtime orc_zero_audio)
 target_include_directories(orc_zero_dmr_voice_decode PRIVATE src ${ORC_MBELIB_DIR})
 # DMR digital voice, vendored from the Tab5 branch. NOTE: these sources carry
 # SPDX AGPL-3.0-or-later while mbelib is ISC - see docs/dv_licensing.md.
