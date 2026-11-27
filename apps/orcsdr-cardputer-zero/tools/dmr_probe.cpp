@@ -114,6 +114,47 @@ int replay_file(const char* path) {
 //
 //   --chain <file>        x5 -> channeliser (240k -> 48k)
 //   --chain <file> full   x20 -> CIC 4:1 (960k -> 240k) -> channeliser
+// Replays a 240 kS/s CU8 recording through the exact live path: channeliser into
+// the d1 receiver, no CIC. These are the corpus captures in
+// tests/digital_voice_corpus/iq, which document their own content, so a mismatch
+// here is a real regression rather than an unknown signal.
+int replay_cu8(const char* path) {
+  std::ifstream in(path, std::ios::binary);
+  if (!in) {
+    std::printf("cannot open %s\n", path);
+    return 2;
+  }
+  in.seekg(0, std::ios::end);
+  const std::streamoff bytes = in.tellg();
+  in.seekg(0);
+  const size_t byte_count = size_t(bytes);
+  std::vector<std::uint8_t> cu8(byte_count);
+  in.read(reinterpret_cast<char*>(cu8.data()), bytes);
+  std::printf("cu8 %s: %zu pairs (%.1f s at 240 kS/s)\n", path, cu8.size() / 2,
+              double(cu8.size() / 2) / 240000.0);
+
+  static integration::Receiver receiver;
+  receiver.reset();
+  Counters counters;
+  orcsdr::dv::Channelizer channelizer;
+  std::vector<orcsdr::dv::Iq48> baseband(2400 / 5 + 16);
+  for (size_t offset = 0; offset + 2 <= cu8.size(); offset += 2400 * 2) {
+    const size_t chunk = std::min<size_t>(2400, (cu8.size() - offset) / 2);
+    const size_t out_pairs =
+        channelizer.process_cu8(cu8.data() + offset, chunk, baseband.data(), baseband.size());
+    if (!out_pairs) continue;
+    const auto* samples =
+        reinterpret_cast<const orcsdr::dmr::d1::ComplexSample*>(baseband.data());
+    receiver.process(samples, out_pairs, on_event, &counters);
+  }
+  const auto& stats = receiver.stats();
+  std::printf("acquisitions %llu  dibits %llu  events %llu  identities %llu\n",
+              (unsigned long long)stats.acquisitions, (unsigned long long)stats.dibits_sent,
+              (unsigned long long)stats.protocol_events,
+              (unsigned long long)stats.validated_identities);
+  return stats.validated_identities ? 0 : 1;
+}
+
 int replay_chain(const char* path, bool full) {
   std::ifstream in(path, std::ios::binary);
   if (!in) {
@@ -196,6 +237,7 @@ int replay_chain(const char* path, bool full) {
 
 int main(int argc, char** argv) {
   if (argc > 2 && std::strcmp(argv[1], "--file") == 0) return replay_file(argv[2]);
+  if (argc > 2 && std::strcmp(argv[1], "--cu8") == 0) return replay_cu8(argv[2]);
   if (argc > 2 && std::strcmp(argv[1], "--chain") == 0)
     return replay_chain(argv[2], argc > 3 && std::strcmp(argv[3], "full") == 0);
   const unsigned long channel_hz = argc > 1 ? std::strtoul(argv[1], nullptr, 0) : 463406250UL;
