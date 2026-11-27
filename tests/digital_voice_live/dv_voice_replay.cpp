@@ -99,6 +99,8 @@ int main(int argc, char** argv) {
   std::string stem = argc > 4 ? argv[4] : "capture";
   const uint32_t jitter = argc > 5 ? static_cast<uint32_t>(std::atoi(argv[5])) : 100;
   Impair im;
+  bool agc_on = false;
+  float gain = 1.0f;
   for (int a = 6; a < argc; ++a) {
     double v = 0; char key[32];
     if (std::sscanf(argv[a], "%31[^=]=%lf", key, &v) != 2) continue;
@@ -106,6 +108,8 @@ int main(int argc, char** argv) {
     else if (!std::strcmp(key, "drift_ppm")) im.drift_ppm = v; else if (!std::strcmp(key, "zero_at_s")) im.zero_at_s = v;
     else if (!std::strcmp(key, "zero_ms")) im.zero_ms = v; else if (!std::strcmp(key, "cut_at_s")) im.cut_at_s = v;
     else if (!std::strcmp(key, "cut_ms")) im.cut_ms = v;
+    else if (!std::strcmp(key, "agc")) agc_on = (v != 0.0);
+    else if (!std::strcmp(key, "gain")) gain = static_cast<float>(v);
   }
   double sigma = 0;
   if (im.noise_db < 1e8) {   // measured signal power of the capture (DC removed) fixes the noise level
@@ -125,6 +129,8 @@ int main(int argc, char** argv) {
   dv_voice::Engine eng;
   if (!eng.begin(cfg)) return 4;
   eng.set_enabled(true);
+  eng.set_agc(agc_on);
+  eng.set_gain(gain);
   eng.set_listen(dv_voice::Listen::automatic);
   eng.set_frame_tap(tap, nullptr);
   dv_radio::tune_channel(static_cast<uint32_t>(std::strtoul(argv[2], nullptr, 10)));

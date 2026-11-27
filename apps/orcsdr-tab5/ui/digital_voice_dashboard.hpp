@@ -18,7 +18,7 @@ class Dashboard final {
                const UiState& state, bool owns_screen, bool overlay_open);
   Action handle_touch(int32_t x, int32_t y, const Snapshot& snapshot,
                       const UiState& state) const;
-  void leave() { ready_ = false; sys_ready_ = false; disc_ready_ = false; live_ready_ = false; scan_.reset(); pb_.release(); graphs_.release(); }
+  void leave() { ready_ = false; sys_ready_ = false; disc_ready_ = false; live_ready_ = false; scan_.release(); pb_.release(); graphs_.release(); }
   bool active() const { return ready_; }
   // Optional real telemetry for the LIVE monitor (spectrum, symbol levels, SNR / BER / deviation, directory hint). The owner keeps the object
   // alive and refreshes it on the UI task; nullptr (the default) means no producer: every plot then shows that it has no data.

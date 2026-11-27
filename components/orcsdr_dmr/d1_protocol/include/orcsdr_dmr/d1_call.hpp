@@ -63,16 +63,17 @@ private:
         std::uint64_t t = 0;
         std::uint8_t slot = 0, colour_code = 0, type = 0xff;
         bool identity = false;
+        bool group = false;
         std::uint32_t src = 0, dst = 0;
-        std::uint8_t flco = 0, service = 0;
+        std::uint8_t service = 0;
         bool protect_flag = false;
     };
     struct Call {
         bool live = false;
+        bool group = false;
         std::uint64_t t = 0, anchor = 0, epoch = 0;
         std::uint8_t colour_code = 0;
         std::uint32_t src = 0, dst = 0;
-        std::uint8_t flco = 0;
     };
     std::array<Data, 8> data_{};
     unsigned data_head_ = 0, data_count_ = 0;

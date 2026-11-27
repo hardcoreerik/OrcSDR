@@ -38,7 +38,9 @@ void pump();            // one service step: queue -> engine -> speaker. Called 
 void set_enabled(bool on);
 bool enabled();
 void set_listen(dv_voice::Listen listen);
-void set_gain(float gain);          // playback gain for decoded speech, 0.25 to 16 (default 4); recordings stay raw
+void set_agc(bool on);              // 8 kHz speech leveler + soft limiter (on by default; test tone & recordings stay untouched)
+bool agc();
+void set_gain(float gain);          // playback trim/gain for decoded speech, 0.25 to 16 (default 1.0 with AGC on); recordings stay raw
 float gain();
 void reset();           // drop audio and codec state
 void set_buffer_ms(uint32_t ms);

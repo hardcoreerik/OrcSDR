@@ -54,10 +54,20 @@ public:
             reset();
             return result;
         }
-        if (have_previous_ && start > previous_start_ &&
-            start - previous_start_ == kBurstStrideDibits &&
-            slot != previous_slot_) {
-            if (streak_ < kConfirmationBursts) ++streak_;
+        if (have_previous_ && start > previous_start_) {
+            const std::uint64_t delta = start - previous_start_;
+            if (delta == kBurstStrideDibits && slot != previous_slot_) {
+                if (streak_ < kConfirmationBursts) ++streak_;
+            } else if (streak_ >= kConfirmationBursts && delta % kBurstStrideDibits == 0) {
+                // Keep BS CACH cadence locked across voice EMB bursts (no 48-bit SYNC)
+                // or single missed bursts as long as slot parity matches stride count.
+                const std::uint64_t steps = delta / kBurstStrideDibits;
+                const bool expect_flip = (steps & 1ULL) != 0ULL;
+                const bool parity_ok = expect_flip ? (slot != previous_slot_) : (slot == previous_slot_);
+                if (steps < 1 || steps > 4 || !parity_ok) streak_ = 1;
+            } else {
+                streak_ = 1;
+            }
         } else {
             streak_ = 1;
         }

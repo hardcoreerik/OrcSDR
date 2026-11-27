@@ -27,8 +27,10 @@ std::atomic<bool> g_enabled{true};
 std::atomic<uint8_t> g_listen_req{0xff};     // 0xff = no request
 std::atomic<bool> g_reset_req{false};
 std::atomic<uint32_t> g_tone_ms{0};
+std::atomic<bool> g_agc_on{true};
+std::atomic<uint8_t> g_agc_req{0xff};              // 0/1 = requested, 0xff = none
 std::atomic<uint32_t> g_gain_req{0xffffffffu};      // requested playback gain x100; all-ones = none
-std::atomic<uint32_t> g_gain_x100{600};              // current playback gain x100 (default 6.00: the vocoder output is quiet; peaks of a real call were -20 dBFS raw)
+std::atomic<uint32_t> g_gain_x100{100};              // current playback trim/gain x100 (default 1.00 with speech AGC enabled)
 std::atomic<uint32_t> g_buffer_req{0xffffffffu};   // requested playout hold (ms); all-ones = none
 std::atomic<uint32_t> g_nfm_blocked{0};
 std::atomic<uint8_t> g_save_req{0xff};          // 0/1 = requested, 0xff = none
@@ -124,6 +126,8 @@ bool running() { return g_running.load(std::memory_order_acquire); }
 bool enabled() { return g_enabled.load(std::memory_order_relaxed); }
 void set_enabled(bool on) { g_enabled.store(on, std::memory_order_relaxed); }
 void set_listen(dv_voice::Listen l) { g_listen_req.store(static_cast<uint8_t>(l), std::memory_order_release); }
+void set_agc(bool on) { g_agc_on.store(on, std::memory_order_relaxed); g_agc_req.store(on ? 1 : 0, std::memory_order_release); }
+bool agc() { return g_agc_on.load(std::memory_order_relaxed); }
 void set_gain(float g) { const uint32_t x = static_cast<uint32_t>((g < 0.25f ? 0.25f : g > 16.0f ? 16.0f : g) * 100.0f + 0.5f); g_gain_x100.store(x, std::memory_order_relaxed); g_gain_req.store(x, std::memory_order_release); }
 float gain() { return static_cast<float>(g_gain_x100.load(std::memory_order_relaxed)) / 100.0f; }
 void reset() { g_reset_req.store(true, std::memory_order_release); }
@@ -156,6 +160,7 @@ bool start() {
     g_engine = nullptr;
     return false;
   }
+  g_engine->set_agc(g_agc_on.load(std::memory_order_relaxed));
   g_engine->set_gain(static_cast<float>(g_gain_x100.load(std::memory_order_relaxed)) / 100.0f);
   g_engine->set_enabled(g_enabled.load());
   g_rec = new (alloc(sizeof(dv_speech_rec::Recorder))) dv_speech_rec::Recorder();
@@ -210,6 +215,8 @@ void pump() {
   const uint8_t lr = g_listen_req.exchange(0xff, std::memory_order_acq_rel);
   if (lr <= 3) e.set_listen(static_cast<dv_voice::Listen>(lr));
   if (g_reset_req.exchange(false, std::memory_order_acq_rel)) e.reset_stream();
+  const uint8_t ar = g_agc_req.exchange(0xff, std::memory_order_acq_rel);
+  if (ar != 0xff) e.set_agc(ar != 0);
   const uint32_t gr = g_gain_req.exchange(0xffffffffu, std::memory_order_acq_rel);
   if (gr != 0xffffffffu) e.set_gain(static_cast<float>(gr) / 100.0f);
   const uint32_t br = g_buffer_req.exchange(0xffffffffu, std::memory_order_acq_rel);
@@ -279,7 +286,8 @@ void format_status(char* out, size_t size) {
       "RTL_DV_AUDIO buffer_ms=%u running=%d enabled=%d allowed=%d path=%d phase=%s listen=%s slot=%u priv1=%u priv2=%u groups=%llu frames=%llu speech=%llu "
       "silence=%llu errors=%llu concealed=%llu corrected=%llu uncorrectable=%llu lost_sf=%llu underruns=%llu overruns=%llu flushes=%llu "
       "synth_us=%u/%u/%u buffered_ms=%u peak_ms=%u latency_ms=%u gap_ms=%u/%u rms=%d peak=%d clipped=%llu test_samples=%llu nfm_blocked=%u "
-      "q_pending=%u q_drops=%u qual=%u prot=%u unq=%u calls=%u pumps=%u pump_max_us=%u stack_hwm=%u rec=%d rec_saved=%u rec_discarded=%u rec_busy=%u",
+      "q_pending=%u q_drops=%u qual=%u prot=%u unq=%u calls=%u pumps=%u pump_max_us=%u stack_hwm=%u rec=%d rec_saved=%u rec_discarded=%u rec_busy=%u "
+      "anc=%u ab_emb=%u ab_sync=%u elc=%u/%u unk_slot=%u conflict=%u agc=%d agc_g=%.2f gain=%.2f",
       U(p.engine.stats.target_buffer_ms), p.running ? 1 : 0, enabled() ? 1 : 0, p.allowed ? 1 : 0, p.path_ready ? 1 : 0, dv_voice::phase_name(p.engine.phase),
       dv_voice::listen_name(p.engine.listen), static_cast<unsigned>(p.engine.active_slot), static_cast<unsigned>(p.engine.privacy[1]),
       static_cast<unsigned>(p.engine.privacy[2]), (unsigned long long)s.groups, (unsigned long long)s.frames,
@@ -290,7 +298,9 @@ void format_status(char* out, size_t size) {
       U(s.latency_ms_last), U(s.gap_min_ms), U(s.gap_max_ms), static_cast<int>(s.rms_last), static_cast<int>(s.peak_last), (unsigned long long)s.clipped_samples,
       (unsigned long long)s.test_samples, U(p.nfm_blocked_blocks), U(p.queue_pending), U(vs.queue_drops), U(vs.qualified),
       U(vs.protected_groups), U(vs.unqualified), U(vs.calls_started), U(p.pumps), U(p.max_pump_us), U(p.stack_hwm_bytes), save_speech() ? 1 : 0,
-      U(speech_stats().calls_saved), U(speech_stats().calls_discarded), U(speech_stats().calls_dropped_busy));
+      U(speech_stats().calls_saved), U(speech_stats().calls_discarded), U(speech_stats().calls_dropped_busy),
+      U(vs.anchors), U(vs.emb_abandoned), U(vs.sync_abandoned), U(vs.embedded_lc_ok), U(vs.embedded_lc_bad), U(vs.unknown_slot), U(vs.conflicting_identity),
+      agc() ? 1 : 0, static_cast<double>(s.agc_gain_x100) / 100.0, static_cast<double>(gain()));
 }
 
 void format_support(char* out, size_t size) {
@@ -394,7 +404,7 @@ bool handle_command(const char* arg, bool authenticated, void (*write_line)(cons
   if (!arg || !write_line || std::strncmp(arg, "AUDIO", 5) != 0) return false;
   const char* op = arg + 5;
   while (*op == ' ') ++op;
-  char line[900];
+  char line[1024];
   if (!*op || std::strcmp(op, "STATUS") == 0) {
     format_status(line, sizeof(line));
     write_line(line);
@@ -405,6 +415,14 @@ bool handle_command(const char* arg, bool authenticated, void (*write_line)(cons
   if (std::strcmp(op, "DISABLE") == 0) { set_enabled(false); reset(); write_line("RTL_DV_AUDIO_OK disabled"); return true; }
   if (std::strcmp(op, "MUTE") == 0) { set_listen(dv_voice::Listen::mute); write_line("RTL_DV_AUDIO_OK listen=MUTE"); return true; }
   if (std::strcmp(op, "UNMUTE") == 0) { set_listen(dv_voice::Listen::automatic); write_line("RTL_DV_AUDIO_OK listen=AUTO"); return true; }
+  if (std::strcmp(op, "AGC") == 0 || std::strcmp(op, "AGC ON") == 0 || std::strcmp(op, "AGC OFF") == 0) {
+    if (std::strcmp(op, "AGC ON") == 0) set_agc(true);
+    else if (std::strcmp(op, "AGC OFF") == 0) set_agc(false);
+    std::snprintf(line, sizeof(line), "RTL_DV_AUDIO_OK agc=%s gain=%.2f (decoded speech playback only; recordings stay raw)",
+                  agc() ? "on" : "off", static_cast<double>(gain()));
+    write_line(line);
+    return true;
+  }
   if (std::strncmp(op, "GAIN", 4) == 0) {                  // playback gain for decoded speech: RTL_DV AUDIO GAIN [0.25..16]
     if (op[4] == ' ') {
       char* end = nullptr;
@@ -451,7 +469,7 @@ bool handle_command(const char* arg, bool authenticated, void (*write_line)(cons
     write_line(line);
     return true;
   }
-  write_line("RTL_DV_AUDIO_UNKNOWN use STATUS|ENABLE|DISABLE|SLOT AUTO|1|2|MUTE|UNMUTE|RESET|BUFFER <ms>|SAVE ON|OFF|TONE [ms]|SELFTEST");
+  write_line("RTL_DV_AUDIO_UNKNOWN use STATUS|ENABLE|DISABLE|SLOT AUTO|1|2|MUTE|UNMUTE|RESET|AGC [ON|OFF]|GAIN <0.25..16>|BUFFER <ms>|SAVE ON|OFF|TONE [ms]|SELFTEST");
   return true;
 }
 

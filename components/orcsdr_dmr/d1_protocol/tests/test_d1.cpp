@@ -443,6 +443,86 @@ bool test_voice_superframe() {
     VoiceCollect vc; std::vector<std::uint8_t> noise(4000);unsigned x=12345;for(auto& v:noise){x=x*1103515245U+12345U;v=static_cast<std::uint8_t>((x>>16)&3U);}
     feed(noise,vc);CHECK(vc.groups.empty());
   }
+  { // private fuzzy voice anchor (1-bit and 2-bit SYNC errors): 0 public Events, delivers VoiceGroup when >=4 clean CACHs
+    for (unsigned errs : {1U, 2U}) {
+      auto w = superframe(frag, 7);
+      w[12 + 54] ^= 2U;
+      if (errs == 2U) w[12 + 55] ^= 2U;
+      std::vector<Event> evs;
+      VoiceCollect vc;
+      Decoder d;
+      d.set_voice_sink(collect_voice, &vc);
+      CHECK(d.feed(w.data(), w.size(), collect, &evs));
+      for (const auto& ev : evs) CHECK(ev.sync != SyncKind::bs_voice && !ev.late_entry);
+      CHECK(vc.groups.size() == 1 && vc.groups[0].slot == 1 && vc.groups[0].colour_code == 7 && vc.groups[0].lc_valid);
+      CHECK(vc.groups[0].lc[5] == 77);
+    }
+    // fuzzy anchor with <4 clean CACHs (<4 clean out of 6 stages) delivers 0 VoiceGroups
+    auto w3 = superframe(frag, 7);
+    w3[12 + 54] ^= 2U;
+    for (unsigned s : {1U, 2U, 3U}) w3[s * 288U] ^= 2U; // corrupt CACH prefix of stages 1..3
+    std::vector<Event> evs;
+    VoiceCollect vc;
+    Decoder d;
+    d.set_voice_sink(collect_voice, &vc);
+    CHECK(d.feed(w3.data(), w3.size(), collect, &evs));
+    for (const auto& ev : evs) CHECK(ev.sync != SyncKind::bs_voice && !ev.late_entry);
+    CHECK(vc.groups.empty());
+  }
+  { // 1-EMB-burst miss tolerance (exact anchor) vs 2-EMB abandon and SYNC collision abandon
+    auto w1 = superframe(frag, 7);
+    // Flip 3 bits in burst C's (stage 2) QR(16,7,6) EMB so distance >= 3 from every codeword (fails decode_emb without colliding)
+    const std::size_t emb_c = 2U * 288U + 12U;
+    w1[emb_c + 54] ^= 3U;
+    w1[emb_c + 77] ^= 1U;
+    VoiceCollect vc1;
+    auto st1 = feed(w1, vc1);
+    CHECK(vc1.groups.size() == 1 && st1.groups == 1 && st1.abandoned_emb == 0 && !vc1.groups[0].lc_valid);
+    // Corrupt TWO EMBs (stages 2 and 3) -> abandons
+    auto w2 = w1;
+    const std::size_t emb_d = 3U * 288U + 12U;
+    w2[emb_d + 54] ^= 3U;
+    w2[emb_d + 77] ^= 1U;
+    VoiceCollect vc2;
+    auto st2 = feed(w2, vc2);
+    CHECK(vc2.groups.empty() && st2.abandoned_emb == 1);
+  }
+  { // VoiceGroup cross-checked 1-bit ELC repair recovers LC while scan_embedded late_entry stays strict
+    auto frag1 = frag;
+    frag1[10] ^= 1U;
+    VoiceCollect vc;
+    feed(superframe(frag1, 7), vc);
+    CHECK(vc.groups.size() == 1 && vc.groups[0].lc_valid);
+    CHECK(vc.groups[0].lc[5] == 77 && vc.groups[0].lc[8] == static_cast<std::uint8_t>(1234567 & 255));
+    std::vector<std::uint8_t> late_wire;
+    add(late_wire, cach(1), voice_sync(SyncKind::bs_voice));
+    for (unsigned stage = 0; stage < 4; ++stage) {
+      add(late_wire, cach(2), voice_sync(SyncKind::ms_voice));
+      add(late_wire, cach(1), voice_embedded(frag1, stage, 7));
+    }
+    auto late_evs = run(late_wire, 5);
+    for (const auto& e : late_evs) CHECK(!e.late_entry);
+  }
+  { // feed_soft propagates 4-bit C0 soft reliabilities per DMR AMBE interleave while feed() leaves has_c0_soft false
+    const auto w = superframe(frag, 7);
+    {
+      VoiceCollect vc_hard;
+      feed(w, vc_hard);
+      CHECK(vc_hard.groups.size() == 1 && !vc_hard.groups[0].has_c0_soft);
+    }
+    std::vector<std::uint8_t> soft(w.size(), 0xFFU);
+    soft[12 + 0] = 0x35U; // frame 0: i=0 -> msb q=3 (j=23 hi of byte 11), lsb q=5 (j=5 hi of byte 2)
+    soft[12 + 2] = 0x79U; // frame 0: i=2 -> msb q=7 (j=22 lo of byte 11), lsb q=9 (j=4 lo of byte 2)
+    VoiceCollect vc_soft;
+    Decoder d;
+    d.set_voice_sink(collect_voice, &vc_soft);
+    CHECK(d.feed_soft(w.data(), soft.data(), w.size(), nullptr, nullptr));
+    CHECK(vc_soft.groups.size() == 1 && vc_soft.groups[0].has_c0_soft);
+    if (vc_soft.groups.size() == 1) {
+      CHECK(vc_soft.groups[0].c0_soft[11] == 0x37U);
+      CHECK(vc_soft.groups[0].c0_soft[2] == 0x59U);
+    }
+  }
   return true;
 }
 } // namespace

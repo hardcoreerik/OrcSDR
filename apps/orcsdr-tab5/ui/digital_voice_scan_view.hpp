@@ -25,7 +25,12 @@ Geometry geometry(Density d);
 class ScanView {
  public:
   static constexpr int kWidgets = 6 + 6 + 1 + static_cast<int>(kScanHits) + 1 + 1 + 2;   // counted in the .cpp (static_assert there)
+  ScanView() = default;
+  ~ScanView();
+  ScanView(const ScanView&) {}
+  ScanView& operator=(const ScanView&) { release(); return *this; }
   void reset() { entered_ = false; }
+  void release();
   bool entered() const { return entered_; }
   // Paint everything (static layout + every widget). Returns the number of widgets painted.
   int enter(lgfx::LovyanGFX& g, const Snapshot& s, const UiState& u);
@@ -37,6 +42,11 @@ class ScanView {
   int paint(lgfx::LovyanGFX& g, const Snapshot& s, const UiState& u, bool force);
   uint32_t sig_[kWidgets + 4]{};
   bool entered_ = false;
+#if defined(ESP_PLATFORM)
+  lgfx::LGFX_Sprite* wide_spr_ = nullptr;   // reusable 800x68 PSRAM buffer for flicker-free left-card widget pushes
+  lgfx::LGFX_Sprite* tall_spr_ = nullptr;   // reusable 610x220 PSRAM buffer for right-card rows & detail panel
+  lgfx::LGFX_Sprite* sprite_for(layout::Rect r);
+#endif
 };
 
 }  // namespace orcsdr::digital_voice_ui

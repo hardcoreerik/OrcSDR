@@ -55,6 +55,7 @@ struct Stats {
   uint32_t latency_ms_last = 0;         // group arrival -> first sample of that group leaves the ring
   int32_t peak_last = 0, rms_last = 0;  // of the last group, 8 kHz PCM
   uint64_t clipped_samples = 0;
+  uint32_t agc_gain_x100 = 100;         // current speech AGC gain x100
   uint32_t gap_min_ms = 0, gap_max_ms = 0;   // spacing between consecutive groups of one call (ideal 360): the jitter the buffer must absorb
   uint64_t test_samples = 0;            // injected via inject_test_pcm, NOT decoded speech
 };
@@ -99,11 +100,16 @@ public:
   Listen listen() const { return listen_; }
   void set_target_buffer_ms(uint32_t ms) { cfg_.target_buffer_ms = ms > 1000 ? 1000 : ms; }
   uint32_t target_buffer_ms() const { return cfg_.target_buffer_ms; }
-  // Playback gain applied to decoded speech on its way to the speaker (the speech sink / recordings stay raw). The vocoder's output is quiet
-  // (live DMR call 2026-11-26: peak about 3000 of 32767), so the service raises it; the engine itself defaults to unity. Clipping is counted.
+  // Playback trim/gain applied to decoded speech on its way to the speaker (the speech sink / recordings stay raw). With AGC on,
+  // gain defaults to 1.0 (trim); with AGC off, gain directly scales linear PCM. Clipping is counted.
   void set_gain(float g) { gain_ = g < 0.25f ? 0.25f : g > 16.0f ? 16.0f : g; }
   float gain() const { return gain_; }
+  // Optional 8 kHz speech leveler (AGC) + smooth soft limiter for real DMR speech (slots 1..2; test tone slot 0 and
+  // raw speech_sink recordings stay untouched). Engine defaults to off so unit tests stay strictly linear; dv_voice_service enables it.
+  void set_agc(bool on) { agc_ = on; }
+  bool agc() const { return agc_; }
   float gain_ = 1.0f;
+  bool agc_ = false;
 
   // Voice task: apply one queued item (any kind). now_ms is a monotonic millisecond clock.
   // `defer` = true only queues a qualified group; service() then synthesizes it a few frames at a time so a pump thread keeps
@@ -129,7 +135,7 @@ private:
   void begin_group(const dv_radio::VoiceMsg& m, uint32_t now_ms);
   void finish_group();
   void emit_silence(uint8_t slot, size_t frames8k);
-  void push_frame(uint8_t slot, const int16_t pcm[160], bool silent);
+  void push_frame(uint8_t slot, const int16_t pcm[160], bool silent, bool freeze_agc = false);
   void drop_playout();
   bool selected(uint8_t slot) const;
 

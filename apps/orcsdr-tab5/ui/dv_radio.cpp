@@ -180,6 +180,10 @@ void on_qualified(const dmr::d1::QualifiedGroup& q, void*) noexcept {
   if (q.new_call) ++g_call_serial;
   m.call_serial = g_call_serial;
   for (size_t i = 0; i < kVoicePayloadBytes; ++i) m.payload[i] = q.group->payload[i];
+  m.has_c0_soft = q.group->has_c0_soft;
+  if (m.has_c0_soft) {
+    for (size_t i = 0; i < kVoiceC0SoftBytes; ++i) m.c0_soft[i] = q.group->c0_soft[i];
+  }
   // A qualified voice group is verified activity: it extends the scanner's hold for as long as the call lasts.
   g_verified_ms.store(now() ? now() : 1u, std::memory_order_release);
   g_identity_ms.store(now() ? now() : 1u, std::memory_order_release);   // a qualified call is the strongest evidence there is
@@ -280,7 +284,7 @@ void publish_stats() {
         static_cast<uint32_t>(c.groups_qualified), static_cast<uint32_t>(c.groups_protected), static_cast<uint32_t>(c.groups_unqualified),
         static_cast<uint32_t>(c.calls_started), static_cast<uint32_t>(c.calls_ended), static_cast<uint32_t>(c.lost_superframes),
         static_cast<uint32_t>(v.abandoned_emb), static_cast<uint32_t>(v.abandoned_sync), static_cast<uint32_t>(v.embedded_lc_ok),
-        static_cast<uint32_t>(v.embedded_lc_bad), 0, 0, 0, 0};
+        static_cast<uint32_t>(v.embedded_lc_bad), static_cast<uint32_t>(c.unknown_slot), static_cast<uint32_t>(c.conflicting_identity), 0, 0};
     for (int i = 0; i < 16; ++i) g_vs[i].store(vals[i], std::memory_order_relaxed);
     for (unsigned sl = 1; sl <= 2; ++sl) {
       g_vpriv[sl].store(static_cast<uint8_t>(g_state->dec->calls.privacy(sl)), std::memory_order_relaxed);
@@ -532,6 +536,7 @@ VoiceStatus voice_status() {
   v.calls_ended = g_vs[6].load(std::memory_order_relaxed); v.lost_superframes = g_vs[7].load(std::memory_order_relaxed);
   v.emb_abandoned = g_vs[8].load(std::memory_order_relaxed); v.sync_abandoned = g_vs[9].load(std::memory_order_relaxed);
   v.embedded_lc_ok = g_vs[10].load(std::memory_order_relaxed); v.embedded_lc_bad = g_vs[11].load(std::memory_order_relaxed);
+  v.unknown_slot = g_vs[12].load(std::memory_order_relaxed); v.conflicting_identity = g_vs[13].load(std::memory_order_relaxed);
   v.queue_drops = g_voice_dropped.load(std::memory_order_relaxed); v.flushes = g_voice_flushes.load(std::memory_order_relaxed);
   v.queue_pending = g_vring_head.load(std::memory_order_acquire) - g_vring_tail.load(std::memory_order_relaxed);
   for (unsigned i = 1; i <= 2; ++i) { v.privacy[i] = g_vpriv[i].load(std::memory_order_relaxed); v.active[i] = g_vactive[i].load(std::memory_order_relaxed) != 0; }

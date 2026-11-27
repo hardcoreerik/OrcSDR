@@ -5,15 +5,23 @@
 
 namespace orcsdr::dmr::d1 {
 namespace {
-struct Ident { bool ok = false; std::uint32_t src = 0, dst = 0; std::uint8_t flco = 0; };
+struct Ident { bool ok = false; bool group = false; std::uint32_t src = 0, dst = 0; };
 Ident identity_of(const std::uint8_t* lc) noexcept {
     Ident r;
     const auto flco = static_cast<std::uint8_t>(lc[0] & 0x3fU);
-    if ((lc[0] & 0x40U) != 0 || lc[1] != 0 || (flco != 0 && flco != 3)) return r;
-    r.dst = static_cast<std::uint32_t>((lc[3] << 16U) | (lc[4] << 8U) | lc[5]);
-    r.src = static_cast<std::uint32_t>((lc[6] << 16U) | (lc[7] << 8U) | lc[8]);
-    r.flco = flco;
-    r.ok = r.src != 0 && r.dst != 0;
+    const auto fid = lc[1];
+    if ((lc[0] & 0x40U) != 0) return r;
+    if ((fid == 0 || fid == 0x10U) && (flco == 0 || flco == 3)) {
+        r.dst = static_cast<std::uint32_t>((lc[3] << 16U) | (lc[4] << 8U) | lc[5]);
+        r.src = static_cast<std::uint32_t>((lc[6] << 16U) | (lc[7] << 8U) | lc[8]);
+        r.group = (flco == 0);
+        r.ok = r.src != 0 && r.dst != 0;
+    } else if (fid == 0x10U && flco == 0x04U && lc[3] == 0 && lc[4] == 0) {
+        r.dst = static_cast<std::uint32_t>(lc[5]);
+        r.src = static_cast<std::uint32_t>((lc[7] << 8U) | lc[8]);
+        r.group = true;
+        r.ok = r.src != 0 && r.dst != 0;
+    }
     return r;
 }
 }
@@ -34,7 +42,7 @@ void CallManager::end_call(unsigned slot, std::uint64_t at) noexcept {
 }
 
 void CallManager::on_data(const Event& e) noexcept {
-    if (e.sync != SyncKind::bs_data) return;
+    if (e.sync != SyncKind::bs_data && e.sync != SyncKind::direct_ts1_data && e.sync != SyncKind::direct_ts2_data) return;
     Data d;
     d.t = e.burst_start_dibit;
     d.slot = e.slot ? e.slot
@@ -42,7 +50,8 @@ void CallManager::on_data(const Event& e) noexcept {
     d.colour_code = e.colour_code;
     d.type = e.golay_valid ? e.data_type : std::uint8_t{0xff};
     if (e.golay_valid && e.data_type == 1 && e.evidence == Evidence::identity_valid) {
-        d.identity = true; d.src = e.source_id; d.dst = e.destination_id; d.flco = e.flco;
+        d.identity = true; d.group = (e.identity == IdentityKind::group);
+        d.src = e.source_id; d.dst = e.destination_id;
         d.service = e.service_options; d.protect_flag = e.protected_flag;
     }
     data_[(data_head_ + data_count_) % data_.size()] = d;
@@ -95,7 +104,7 @@ void CallManager::on_group(const VoiceGroup& g) noexcept {
     Ident header_id;
     Data header_copy;
     if (header_adjacent && last->type == 1 && last->identity) {
-        header_id.ok = true; header_id.src = last->src; header_id.dst = last->dst; header_id.flco = last->flco;
+        header_id.ok = true; header_id.group = last->group; header_id.src = last->src; header_id.dst = last->dst;
         header_copy = *last;
     }
     Ident ident;
@@ -105,35 +114,36 @@ void CallManager::on_group(const VoiceGroup& g) noexcept {
         lc_protect = (g.lc[0] & 0x80U) != 0;
         lc_privacy_bit = (g.lc[2] & 0x40U) != 0;
         const auto flco = static_cast<std::uint8_t>(g.lc[0] & 0x3fU);
-        if (lc_protect || ((flco == 0 || flco == 3) && !ident.ok)) { unqualified(lc_protect); return; }
+        const bool is_voice_lc = (flco == 0 || flco == 3 || (g.lc[1] == 0x10U && flco == 4));
+        if (lc_protect || (is_voice_lc && !ident.ok)) { unqualified(lc_protect); return; }
         if (ident.ok && lc_privacy_bit) { unqualified(true); return; }
     }
     if (last && last->type == 0 && near(t - last->t, kBurstPairDibits)) { unqualified(true); return; }   // PI header: protected, never decoded
     if (header_id.ok && (header_copy.protect_flag || (header_copy.service & 0x40U))) { unqualified(true); return; }
-    if (ident.ok && header_id.ok && (ident.src != header_id.src || ident.dst != header_id.dst || ident.flco != header_id.flco)) {
+    if (ident.ok && header_id.ok && (ident.src != header_id.src || ident.dst != header_id.dst || ident.group != header_id.group)) {
         ++stats_.conflicting_identity; unqualified(false); return;
     }
     Ident use;
     std::uint64_t anchor = 0;
     if (ident.ok) { use = ident; anchor = t; }
     else if (header_id.ok) { use = header_id; anchor = last->t; }
-    else if (continuity) { use.ok = true; use.src = old.src; use.dst = old.dst; use.flco = old.flco; anchor = old.anchor; }
+    else if (continuity) { use.ok = true; use.group = old.group; use.src = old.src; use.dst = old.dst; anchor = old.anchor; }
     else { unqualified(false); return; }
 
-    const bool same_call = continuity && old.src == use.src && old.dst == use.dst && old.flco == use.flco;
+    const bool same_call = continuity && old.src == use.src && old.dst == use.dst && old.group == use.group;
     if (old.live && !same_call) end_call(slot, t);
     Call& c = calls_[slot];
     const std::uint64_t epoch = same_call ? old.epoch : t;
     const bool fresh = !same_call;
     c.live = true; c.t = t; c.anchor = anchor; c.epoch = epoch; c.colour_code = g.colour_code;
-    c.src = use.src; c.dst = use.dst; c.flco = use.flco;
+    c.src = use.src; c.dst = use.dst; c.group = use.group;
     privacy_[slot] = Privacy::clear;
     ++stats_.groups_qualified;
     if (fresh) ++stats_.calls_started; else stats_.lost_superframes += lost;
     if (gs_) {
         QualifiedGroup q;
         q.slot = static_cast<std::uint8_t>(slot); q.colour_code = g.colour_code;
-        q.source_id = use.src; q.destination_id = use.dst; q.group_call = use.flco == 0;
+        q.source_id = use.src; q.destination_id = use.dst; q.group_call = use.group;
         q.epoch = epoch; q.new_call = fresh; q.lost_superframes = same_call ? lost : 0; q.group = &g;
         gs_(q, user_);
     }

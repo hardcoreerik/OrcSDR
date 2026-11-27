@@ -35,7 +35,7 @@ class Channelizer {
   uint8_t phase_ = 0;       // n mod 4 of the mixer
   uint8_t decim_ = 0;       // inputs since the last output
   uint64_t dropped_ = 0;
-  double power_sum_ = 0;
+  float power_sum_ = 0.0f;
   uint32_t power_n_ = 0;
 };
 

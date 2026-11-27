@@ -95,8 +95,10 @@ void Scanner::next_channel(uint32_t now_ms) noexcept {
   manual_hold_ = false;
   extended_ = false;
   state_since_ms_ = now_ms;
-  if (count_ == 1) {          // single channel: no retune needed, listen again
+  if (count_ == 1) {          // single channel: no retune needed, listen for NEW activity only
     state_ = ScanState::sampling;
+    const uint32_t latest = static_cast<int32_t>(now_ms - hold_reason_ms_) >= 0 ? now_ms : hold_reason_ms_;
+    tune_ms_ = latest + 1u;
     return;
   }
   begin_tune();
@@ -156,7 +158,7 @@ ScanStep Scanner::service(uint32_t now_ms, const ScanInputs& in) noexcept {
       }
       break;
     case ScanState::sampling:
-      if (in.verified_ms != 0 && in.verified_ms >= tune_ms_) {
+      if (in.verified_ms != 0 && static_cast<int32_t>(in.verified_ms - tune_ms_) >= 0) {
         state_ = ScanState::holding;
         hold_begin_ms_ = now_ms;
         hold_reason_ms_ = in.verified_ms;
@@ -187,7 +189,7 @@ ScanStep Scanner::service(uint32_t now_ms, const ScanInputs& in) noexcept {
         next_channel(now_ms); break;
       }
       // Control-only channel: verified events keep renewing the hold, but no identity and no voice ever arrived. Move on.
-      if (!manual_hold_ && config_.control_hold_max_ms &&
+      if (!manual_hold_ && count_ > 1 && config_.control_hold_max_ms &&
           static_cast<int32_t>(now_ms - hold_begin_ms_) >= static_cast<int32_t>(config_.control_hold_max_ms) &&
           (in.identity_ms == 0 || static_cast<int32_t>(in.identity_ms - hold_begin_ms_) < 0)) {
         ++control_releases_;

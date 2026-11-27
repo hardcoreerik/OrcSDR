@@ -100,8 +100,10 @@ void test_channelizer_tone() {
     return std::sqrt(p / (n - 200));
   };
   const double in_band = run(63000);
+  const double adj_12p5k = run(72500); // 12.5 kHz adjacent channel
   const double reject = run(100000);   // 40 kHz above the channel
   CHECK(in_band > 0.6 && in_band < 0.9);   // 100/127.5 = 0.784
+  CHECK(adj_12p5k < in_band * 0.07);       // > 23 dB adjacent-channel rejection at +12.5 kHz
   CHECK(reject < in_band * 0.02);          // > 34 dB
 }
 
@@ -371,12 +373,48 @@ void test_no_receiver_and_restart() {
   CHECK(dv_radio::start());          // clean restart after stop
   dv_radio::stop();
 }
+
+void test_single_channel_follow_no_pingpong() {
+  const uint32_t ch[1] = {463400000u};
+  dv::Scanner s;
+  CHECK(s.set_plan(ch, 1));
+  s.set_control_hold_max_ms(60000);
+  uint32_t t = 1000;
+  CHECK(s.start(t));
+  dv::ScanInputs in;
+  in.receiver_ready = true;
+  auto st = s.service(t, in);
+  CHECK(st.tune && st.tune_hz == ch[0]);
+  s.retune_result(true, t);
+  t += 700; s.service(t, in);
+  CHECK(s.status().state == dv::ScanState::sampling);
+  in.verified_ms = t + 100;
+  t += 100; s.service(t, in);
+  CHECK(s.status().state == dv::ScanState::holding && s.status().holds == 1);
+  // Hold expires 4 s after verified_ms (at t=1800+4000=5800). Afterwards stale verified_ms must NOT re-trigger hold!
+  for (int i = 0; i < 500; ++i) {
+    t += 20;
+    s.service(t, in);
+  }
+  const auto idle_st = s.status();
+  CHECK(idle_st.state == dv::ScanState::sampling);
+  CHECK(idle_st.holds == 1);
+  CHECK(idle_st.passes >= 1 && idle_st.passes <= 6);
+  CHECK(idle_st.visited == idle_st.passes);
+  CHECK(idle_st.control_releases == 0);
+  // A fresh verified event wakes holding cleanly.
+  in.verified_ms = t + 10;
+  t += 10;
+  s.service(t, in);
+  CHECK(s.status().state == dv::ScanState::holding && s.status().holds == 2);
+}
 }  // namespace
 
 int main() {
   test_channelizer_tone();
   test_scanner();
   test_scanner_hold_time();
+  test_single_channel_follow_no_pingpong();
   test_monitor_revisits();
   test_control_demotion();
   test_dmr_end_to_end();

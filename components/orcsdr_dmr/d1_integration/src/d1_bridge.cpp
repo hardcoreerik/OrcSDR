@@ -1,5 +1,6 @@
 #include "orcsdr_dmr/d1_bridge.hpp"
 #include <algorithm>
+#include <cmath>
 
 namespace orcsdr::dmr::d1::integration {
 
@@ -107,7 +108,15 @@ Result Receiver::process(const ComplexSample* input, std::size_t count,
             sample_history_[static_cast<std::size_t>(index % sample_history_.size())] =
                 symbol.sample_index;
             const std::uint8_t dibit = symbol.dibit;
-            if (!protocol_.feed(&dibit, 1, on_protocol, this)) {
+            const float level_hz = std::max(fs.deviation_per_level_hz, 1.0F);
+            const float scaled = dibit_level(dibit) + (symbol.error_hz / level_hz);
+            const auto q4 = [](float d) noexcept -> std::uint8_t {
+                const float clamped = std::clamp(d * 15.0F, 0.0F, 15.0F);
+                return static_cast<std::uint8_t>(std::lroundf(clamped));
+            };
+            const std::uint8_t soft_dibit = static_cast<std::uint8_t>(
+                (q4(std::fabs(scaled)) << 4U) | q4(std::fabs(std::fabs(scaled) - 2.0F)));
+            if (!protocol_.feed_soft(&dibit, &soft_dibit, 1, on_protocol, this)) {
                 result.ok = false;
                 ++stats_.invalid_calls;
                 break;

@@ -11,7 +11,7 @@ namespace {
 constexpr double kPi = 3.14159265358979323846;
 constexpr float kToHz = static_cast<float>(kSampleRate / (2.0 * kPi));
 constexpr std::uint64_t kSyncSymbols = 24;
-constexpr float kMinimumSyncCorrelation = 0.955F;
+constexpr float kMinimumSyncCorrelation = 0.89F;
 // Only reject effectively-zero complex IQ, not a weak but numerically
 // representable radio capture. The atan2 discriminator divides out the
 // absolute amplitude; a 1e-5 *power* threshold previously discarded every
@@ -84,8 +84,9 @@ void Frontend::reset_tracking() noexcept {
     previous_ = {};
     have_previous_ = false;
     locked_ = false;
-    next_center_ = 0.0;
-    timing_step_ = 10.0;
+    next_center_int_ = 0;
+    next_center_frac_ = 0.0F;
+    timing_step_ = 10.0F;
     cfo_hz_ = 0.0F;
     level_hz_ = kInnerDeviationHz;
     prev_level_ = 0.0F;
@@ -93,7 +94,18 @@ void Frontend::reset_tracking() noexcept {
     decision_mse_ = 0.0F;
     bad_symbols_ = 0;
     iq_power_ = 0.0F;
+    acq_pending_ = false;
+    acq_best_pos_ = 0;
+    acq_best_corr_ = 0.0F;
+    acq_best_cfo_ = 0.0F;
+    acq_best_level_ = 0.0F;
+    acq_prev_corr_ = -1.0F;
+    acq_next_corr_ = -1.0F;
+    acq_best_kind_ = 255U;
+    acq_countdown_ = 0;
+    acq_age_ = 0;
     preroll_first_center_ = 0;
+    preroll_frac_ = 0.0F;
     preroll_cursor_ = static_cast<std::uint8_t>(kPrerollSymbols);
     stats_.locked = false;
     stats_.sync_kind = 255U;
@@ -117,13 +129,14 @@ void Frontend::discontinuity() noexcept {
 float Frontend::filtered_at(std::uint64_t i) const noexcept {
     return filtered_history_[static_cast<std::size_t>(i) % kHistory];
 }
-float Frontend::interpolate(double t) const noexcept {
-    const double lo = std::floor(t);
-    const auto n = static_cast<std::uint64_t>(lo);
+float Frontend::interpolate(std::uint64_t base, float frac) const noexcept {
+    std::int64_t idx = static_cast<std::int64_t>(base);
+    while (frac < 0.0F) { --idx; frac += 1.0F; }
+    while (frac >= 1.0F) { ++idx; frac -= 1.0F; }
+    const auto n = static_cast<std::uint64_t>(idx);
     const float a = filtered_at(n);
-    const double fractional = t - lo;
-    if (fractional <= 0.0) return a;
-    return a + static_cast<float>(fractional) * (filtered_at(n + 1) - a);
+    if (frac <= 0.0F) return a;
+    return a + frac * (filtered_at(n + 1) - a);
 }
 
 void Frontend::consume_one(const ComplexSample& sample) noexcept {
@@ -167,106 +180,165 @@ void Frontend::consume_one(const ComplexSample& sample) noexcept {
     filtered_history_[static_cast<std::size_t>(processed_) % kHistory] = filt;
     ++processed_;
     ++stats_.samples;
-    if (!locked_ && processed_ > 320 && processed_ % 2U == 0U)
-        try_acquire();
+    if (!locked_) {
+        if (acq_pending_) {
+            try_acquire();
+        } else if (processed_ > 320 && processed_ % 2U == 0U) {
+            try_acquire();
+        }
+    }
 }
 
-void Frontend::try_acquire() noexcept {
-    // Sync acquisition with full affine regression (offset and deviation)
-    // at 10-sample spacing, from the *measured* FSK discriminator waveform.
-    // Only eight D0 ETSI syncs are considered. No CRC or identity is inferred.
+float Frontend::evaluate_sync_at(std::uint64_t end_center, float screen_min,
+                                  float& out_cfo, float& out_level,
+                                  std::uint8_t& out_kind) const noexcept {
+    // Sync acquisition with full affine regression (offset and deviation) in single-precision float
+    // (ESP32-P4 has single-precision FPU only). Mean-subtracted y avoids cancellation at large CFO.
+    constexpr float kVarX = 216.0F;
     float observed[kSyncSymbols];
-    float fsum_y=0.0F, fsum_yy=0.0F;
-    for(std::size_t i=0;i<kSyncSymbols;++i) {
-        observed[i]=filtered_at(processed_-1-(kSyncSymbols-1-i)*10);
-        fsum_y+=observed[i];
-        fsum_yy+=observed[i]*observed[i];
+    float sum_y = 0.0F;
+    for (std::size_t i = 0; i < kSyncSymbols; ++i) {
+        const float v = filtered_at(end_center - (kSyncSymbols - 1U - i) * 10ULL);
+        observed[i] = v;
+        sum_y += v;
     }
-    // Cost screen. This runs every second sample while unlocked (24,000 times a second) and the exact path below uses
-    // double precision, which a single-precision-FPU target (ESP32-P4) executes in software. The screen is single precision
-    // and deliberately conservative: it rejects only when the exact path could not accept either (the exact variance gate
-    // is 100000 and the exact score gate is kMinimumSyncCorrelation; float error is ~1e-6 relative, the margins are 10 %).
-    // Anything that might pass falls through to the unchanged exact code, so decoded results are identical.
-    {
-        const float fvar_y=fsum_yy-fsum_y*fsum_y/static_cast<float>(kSyncSymbols);
-        if (fvar_y < 90000.0F) return;
-        // Each x vector sums to zero and has squared norm 216. The
-        // opposite polarity has the negated covariance; its square is equal.
-        // Preserve the original per-term float multiply/add order and score
-        // division, and leave the exact double-precision decision unchanged.
-        bool possible = false;
-        for (const auto& levels : kScreenLevels) {
-            float sxy = 0.0F;
-            for (std::size_t i = 0; i < kSyncSymbols; ++i)
-                sxy += levels[i] * observed[i];
-            const float score = (sxy * sxy) / (216.0F * fvar_y);
-            if (score >= kMinimumSyncCorrelation*0.9F) { possible = true; break; }
-        }
-        if (!possible) return;
+    const float mean_y = sum_y / static_cast<float>(kSyncSymbols);
+    float var_y = 0.0F;
+    for (std::size_t i = 0; i < kSyncSymbols; ++i) {
+        const float dy = observed[i] - mean_y;
+        observed[i] = dy;
+        var_y += dy * dy;
     }
-    double sum_y=0.0, sum_yy=0.0;
-    for(std::size_t i=0;i<kSyncSymbols;++i) {
-        sum_y+=observed[i];
-        sum_yy+=static_cast<double>(observed[i])*observed[i];
-    }
-    const double var_y=sum_yy-sum_y*sum_y/kSyncSymbols;
-    if (var_y < 100000.0) return;
-    float best=0.0F,best_offset=0.0F,best_level=0.0F;
-    std::uint8_t best_kind=255U;
-    for(std::size_t kind=0;kind<kSyncCount;++kind) {
-        const std::uint64_t word=kSyncWords[kind];
-        double sum_x=0.0,sum_xx=0.0,sum_xy=0.0;
-        for(std::size_t i=0;i<kSyncSymbols;++i) {
-            const auto b=static_cast<std::uint8_t>((word >> (46-2*i)) & 3U);
-            const double x=dibit_level(b);
-            sum_x+=x;sum_xx+=x*x;sum_xy+=x*observed[i];
-        }
-        const double var_x=sum_xx-sum_x*sum_x/kSyncSymbols;
-        const double cov=sum_xy-sum_x*sum_y/kSyncSymbols;
-        if(cov<=0.0) continue;
-        const double gain=cov/var_x;
-        const double offset=(sum_y-gain*sum_x)/kSyncSymbols;
-        if (gain<400.0||gain>950.0||std::abs(offset)>4000.0) continue;
-        const double score=(cov*cov)/(var_x*var_y);
-        if(score>best) {
-            best=static_cast<float>(score);
-            best_offset=static_cast<float>(offset);
-            best_level=static_cast<float>(gain);
-            best_kind=static_cast<std::uint8_t>(kind);
+    if (var_y < 100000.0F) return 0.0F;
+    float best = 0.0F, best_offset = 0.0F, best_level = 0.0F;
+    std::uint8_t best_kind = 255U;
+    const float inv_denom = 1.0F / (kVarX * var_y);
+    for (std::size_t pair = 0; pair < kScreenLevels.size(); ++pair) {
+        float cov = 0.0F;
+        for (std::size_t i = 0; i < kSyncSymbols; ++i) cov += kScreenLevels[pair][i] * observed[i];
+        const float score = (cov * cov) * inv_denom;
+        if (score < screen_min) continue;
+        const std::uint8_t kind = static_cast<std::uint8_t>(cov >= 0.0F ? (2U * pair) : (2U * pair + 1U));
+        const float abs_cov = std::abs(cov);
+        const float gain = abs_cov / kVarX;
+        if (gain < 400.0F || gain > 950.0F || std::abs(mean_y) > 4000.0F) continue;
+        if (score > best) {
+            best = score;
+            best_offset = mean_y;
+            best_level = gain;
+            best_kind = kind;
         }
     }
-    if(best<kMinimumSyncCorrelation) return;
-    // The first burst starts 54 payload symbols before its 24-symbol sync.
-    // A claimed pre-roll requires all 78 measured discriminator symbol centers
-    // plus a complete 61-tap FIR history for the EARLIEST symbol. Reject a
-    // sync if the original IQ began mid-burst; never zero-fill missing payload.
+    out_cfo = best_offset;
+    out_level = best_level;
+    out_kind = best_kind;
+    return best;
+}
+
+void Frontend::commit_acquire() noexcept {
     constexpr std::uint64_t distance = kBurstStartToSyncEndSymbols * kSamplesPerSymbol;
     static_assert(kHistory >= distance + kPrerollSymbols + kPulseTaps,
                   "History must survive one-symbol backpressure replay");
-    if (processed_ <= distance + kPulseTaps) {
+    acq_pending_ = false;
+    if (acq_best_pos_ + 1ULL <= distance + kPulseTaps) {
         ++stats_.incomplete_preroll_rejections;
         return;
     }
-    locked_=true;
-    cfo_hz_=best_offset;
-    level_hz_=best_level;
-    // This sample is the detected end-sync center in *filtered* time.
-    preroll_first_center_ = processed_-1-distance;
+    if (processed_ - 1ULL - acq_best_pos_ > 8ULL) return;
+    float delta = 0.0F;
+    if (acq_prev_corr_ >= 0.0F && acq_next_corr_ >= 0.0F) {
+        const float denom = acq_prev_corr_ - 2.0F * acq_best_corr_ + acq_next_corr_;
+        if (denom < -1.0e-6F) {
+            delta = std::clamp(0.5F * (acq_prev_corr_ - acq_next_corr_) / denom, -0.5F, 0.5F);
+        }
+    }
+    locked_ = true;
+    cfo_hz_ = acq_best_cfo_;
+    level_hz_ = acq_best_level_;
+    preroll_first_center_ = acq_best_pos_ - distance;
+    preroll_frac_ = delta;
     preroll_cursor_ = 0;
-    next_center_=static_cast<double>(processed_-1)+10.0;
-    timing_step_=10.0;
-    have_prev_level_=true;
-    prev_level_=static_cast<float>(dibit_level(static_cast<std::uint8_t>(
-        kSyncWords[best_kind]&3U)));
-    decision_mse_=0.0F;
-    bad_symbols_=0;
-    stats_.locked=true;
-    stats_.sync_kind=best_kind;
-    stats_.sync_correlation=best;
-    stats_.carrier_offset_hz=cfo_hz_;
-    stats_.deviation_per_level_hz=level_hz_;
+    std::int64_t next_i = static_cast<std::int64_t>(acq_best_pos_) + 10;
+    float next_f = delta;
+    while (next_f < 0.0F) { --next_i; next_f += 1.0F; }
+    while (next_f >= 1.0F) { ++next_i; next_f -= 1.0F; }
+    next_center_int_ = static_cast<std::uint64_t>(next_i);
+    next_center_frac_ = next_f;
+    timing_step_ = 10.0F;
+    have_prev_level_ = true;
+    prev_level_ = static_cast<float>(dibit_level(static_cast<std::uint8_t>(
+        kSyncWords[acq_best_kind_] & 3U)));
+    decision_mse_ = 0.0F;
+    bad_symbols_ = 0;
+    stats_.locked = true;
+    stats_.sync_kind = acq_best_kind_;
+    stats_.sync_correlation = acq_best_corr_;
+    stats_.carrier_offset_hz = cfo_hz_;
+    stats_.deviation_per_level_hz = level_hz_;
     ++stats_.locks;
     ++stats_.full_preroll_acquisitions;
+}
+
+void Frontend::try_acquire() noexcept {
+    constexpr std::uint64_t distance = kBurstStartToSyncEndSymbols * kSamplesPerSymbol;
+    const std::uint64_t pos = processed_ - 1ULL;
+    float cfo = 0.0F, level = 0.0F;
+    std::uint8_t kind = 255U;
+    const float score = evaluate_sync_at(pos, acq_pending_ ? 0.50F : kMinimumSyncCorrelation * 0.92F,
+                                         cfo, level, kind);
+    if (!acq_pending_) {
+        if (score < kMinimumSyncCorrelation) return;
+        if (processed_ <= distance + kPulseTaps) {
+            ++stats_.incomplete_preroll_rejections;
+            return;
+        }
+        // Check pos-1 too since idle probing steps by 2 samples.
+        float cfo_p = 0.0F, lvl_p = 0.0F;
+        std::uint8_t kind_p = 255U;
+        const float score_p = (pos > 231ULL) ? evaluate_sync_at(pos - 1ULL, 0.50F, cfo_p, lvl_p, kind_p) : 0.0F;
+        if (score_p > score && kind_p == kind) {
+            float cfo_pp = 0.0F, lvl_pp = 0.0F;
+            std::uint8_t kind_pp = 255U;
+            const float score_pp = (pos > 232ULL) ? evaluate_sync_at(pos - 2ULL, 0.50F, cfo_pp, lvl_pp, kind_pp) : -1.0F;
+            acq_best_pos_ = pos - 1ULL;
+            acq_best_corr_ = score_p;
+            acq_best_cfo_ = cfo_p;
+            acq_best_level_ = lvl_p;
+            acq_best_kind_ = kind_p;
+            acq_prev_corr_ = score_pp;
+            acq_next_corr_ = score;
+            acq_countdown_ = 1U;
+        } else {
+            acq_best_pos_ = pos;
+            acq_best_corr_ = score;
+            acq_best_cfo_ = cfo;
+            acq_best_level_ = level;
+            acq_best_kind_ = kind;
+            acq_prev_corr_ = score_p > 0.0F ? score_p : -1.0F;
+            acq_next_corr_ = -1.0F;
+            acq_countdown_ = 2U;
+        }
+        acq_pending_ = true;
+        acq_age_ = 0U;
+        return;
+    }
+    ++acq_age_;
+    if (score >= kMinimumSyncCorrelation && score > acq_best_corr_) {
+        acq_prev_corr_ = (pos == acq_best_pos_ + 1ULL) ? acq_best_corr_ : -1.0F;
+        acq_best_pos_ = pos;
+        acq_best_corr_ = score;
+        acq_best_cfo_ = cfo;
+        acq_best_level_ = level;
+        acq_best_kind_ = kind;
+        acq_next_corr_ = -1.0F;
+        acq_countdown_ = 2U;
+    } else {
+        if (pos == acq_best_pos_ + 1ULL) acq_next_corr_ = score;
+        if (acq_countdown_ > 0U) --acq_countdown_;
+    }
+    if (acq_countdown_ == 0U || acq_age_ >= 4U) {
+        commit_acquire();
+    }
 }
 
 bool Frontend::replay_preroll(Symbol& out) noexcept {
@@ -275,7 +347,7 @@ bool Frontend::replay_preroll(Symbol& out) noexcept {
         static_cast<std::uint64_t>(preroll_cursor_) * kSamplesPerSymbol;
     // Defensive guard against an overwritten ring, even if caller violates
     // expected producer/consumer cadence. Do not issue stale/fake decisions.
-    if (center >= processed_ || processed_ - center > kHistory - 2) {
+    if (center >= processed_ || processed_ - center > kHistory - 3ULL) {
         locked_ = false;
         stats_.locked = false;
         stats_.sync_kind = 255U;
@@ -283,7 +355,7 @@ bool Frontend::replay_preroll(Symbol& out) noexcept {
         preroll_cursor_ = static_cast<std::uint8_t>(kPrerollSymbols);
         return false;
     }
-    const float observed = filtered_at(center);
+    const float observed = interpolate(center, preroll_frac_);
     const float scaled = (observed - cfo_hz_) / level_hz_;
     const auto dibit = level_dibit(scaled);
     const float residual = observed - (cfo_hz_ +
@@ -296,40 +368,55 @@ bool Frontend::replay_preroll(Symbol& out) noexcept {
 }
 
 bool Frontend::decide(Symbol& out) noexcept {
-    if (!locked_ || next_center_>static_cast<double>(processed_-1)) return false;
-    const float observed=interpolate(next_center_);
-    const float scaled=(observed-cfo_hz_)/level_hz_;
-    const std::uint8_t dibit=level_dibit(scaled);
-    const float level=static_cast<float>(dibit_level(dibit));
-    const float err=observed-(cfo_hz_+level_hz_*level);
-    out={dibit,err,static_cast<std::uint64_t>(next_center_+0.5)};
-    // Gardner-like transition-centered timing-error detector.
+    if (!locked_) return false;
+    const std::uint64_t needed = next_center_int_ + (next_center_frac_ > 0.0F ? 1ULL : 0ULL);
+    if (needed >= processed_) return false;
+    const float observed = interpolate(next_center_int_, next_center_frac_);
+    const float scaled = (observed - cfo_hz_) / level_hz_;
+    const std::uint8_t dibit = level_dibit(scaled);
+    const float level = static_cast<float>(dibit_level(dibit));
+    const float err = observed - (cfo_hz_ + level_hz_ * level);
+    out = {dibit, err, next_center_int_ + (next_center_frac_ >= 0.5F ? 1ULL : 0ULL)};
+    // Gardner-like transition-centered timing-error detector (single-precision FPU).
+    float step = timing_step_;
     if (have_prev_level_) {
-        const float mid=interpolate(next_center_-5.0);
-        const float mid_level=(mid-cfo_hz_)/level_hz_;
-        const float e=(prev_level_-level) *
-                      (mid_level-0.5F*(prev_level_+level));
-        const double bounded=std::clamp(static_cast<double>(e),-12.0,12.0);
-        timing_step_=std::clamp(timing_step_+0.00004*bounded,9.95,10.05);
-        next_center_ += timing_step_ + 0.008*bounded;
-    } else {
-        next_center_+=timing_step_;
+        const float mid = interpolate(next_center_int_, next_center_frac_ - 5.0F);
+        const float mid_level = (mid - cfo_hz_) / level_hz_;
+        const float e = (prev_level_ - level) * (mid_level - 0.5F * (prev_level_ + level));
+        const float bounded = std::clamp(e, -12.0F, 12.0F);
+        timing_step_ = std::clamp(timing_step_ + 0.00004F * bounded, 9.95F, 10.05F);
+        step = timing_step_ + 0.008F * bounded;
     }
-    prev_level_=level;
-    have_prev_level_=true;
-    cfo_hz_=std::clamp(cfo_hz_+0.004F*err,-4000.0F,4000.0F);
-    decision_mse_ += 0.01F*(err*err-decision_mse_);
-    stats_.decision_rms_hz=std::sqrt(std::max(0.0F,decision_mse_));
-    stats_.carrier_offset_hz=cfo_hz_;
-    stats_.timing_step_samples=static_cast<float>(timing_step_);
+    const float advance = next_center_frac_ + step;
+    const auto whole = static_cast<std::int64_t>(std::floor(advance));
+    next_center_int_ = static_cast<std::uint64_t>(static_cast<std::int64_t>(next_center_int_) + whole);
+    next_center_frac_ = advance - static_cast<float>(whole);
+    prev_level_ = level;
+    have_prev_level_ = true;
+    const float abs_err = std::abs(err);
+    if (abs_err <= 0.65F * level_hz_) {
+        cfo_hz_ = std::clamp(cfo_hz_ + 0.004F * err, -4000.0F, 4000.0F);
+        if (abs_err <= 0.55F * level_hz_ && (dibit == 1U || dibit == 3U)) {
+            const float signed_err = (dibit == 1U) ? err : -err;
+            level_hz_ = std::clamp(level_hz_ + 0.002F * (signed_err / 3.0F), 450.0F, 900.0F);
+            stats_.deviation_per_level_hz = level_hz_;
+        }
+    }
+    if (abs_err <= 0.72F * level_hz_) {
+        if (bad_symbols_ > 0) --bad_symbols_;
+    } else {
+        ++bad_symbols_;
+    }
+    decision_mse_ += 0.01F * (err * err - decision_mse_);
+    stats_.decision_rms_hz = std::sqrt(std::max(0.0F, decision_mse_));
+    stats_.carrier_offset_hz = cfo_hz_;
+    stats_.timing_step_samples = timing_step_;
     ++stats_.symbols;
-    if (std::abs(err)>0.65F*level_hz_) ++bad_symbols_;
-    else if (bad_symbols_>0) --bad_symbols_;
-    if (bad_symbols_>=20) {
-        locked_=false;
-        have_prev_level_=false;
-        stats_.locked=false;
-        stats_.sync_kind=255U;
+    if (bad_symbols_ >= 64U) {
+        locked_ = false;
+        have_prev_level_ = false;
+        stats_.locked = false;
+        stats_.sync_kind = 255U;
         ++stats_.lost_locks;
     }
     return true;

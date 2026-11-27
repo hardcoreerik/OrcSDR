@@ -5,8 +5,9 @@
 namespace orcsdr::dv {
 
 Channelizer::Channelizer() noexcept {
-  // Hamming-windowed sinc, cutoff 18 kHz of 240 kS/s, unity DC gain.
-  const double fc = 18000.0 / Channelizer::kInputRate;
+  // Hamming-windowed sinc, cutoff 8.2 kHz of 240 kS/s, unity DC gain:
+  // passes DMR/NXDN + +/-3 kHz CFO cleanly while rejecting +/-12.5 kHz neighbors by >26 dB and cutting ENBW by >3.5 dB.
+  const double fc = 8200.0 / Channelizer::kInputRate;
   const double centre = (kTaps - 1) / 2.0;
   double sum = 0;
   std::array<double, kTaps> t{};
@@ -62,7 +63,7 @@ size_t Channelizer::process_cu8(const uint8_t* cu8, size_t pairs, Iq48* out, siz
       idx = idx + 1 == kTaps ? 0 : idx + 1;
     }
     out[written++] = {acc_re, acc_im};
-    power_sum_ += static_cast<double>(acc_re) * acc_re + static_cast<double>(acc_im) * acc_im;
+    power_sum_ += acc_re * acc_re + acc_im * acc_im;
     ++power_n_;
   }
   return written;
@@ -70,8 +71,8 @@ size_t Channelizer::process_cu8(const uint8_t* cu8, size_t pairs, Iq48* out, siz
 
 float Channelizer::take_level() noexcept {
   if (power_n_ == 0) return 0.f;
-  const float level = static_cast<float>(std::sqrt(power_sum_ / power_n_));
-  power_sum_ = 0;
+  const float level = std::sqrt(power_sum_ / static_cast<float>(power_n_));
+  power_sum_ = 0.0f;
   power_n_ = 0;
   return level;
 }

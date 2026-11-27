@@ -128,10 +128,8 @@ std::uint16_t crc_ccitt(const std::uint8_t* bytes, std::size_t count) noexcept {
 // layout, a plain 7x11 row-major fill with the checksum in the last five positions, never validated real data).
 // Strict: any row or column parity inconsistency fails (no speculative correction). Measured on the corpus, correcting a
 // single bit per row would have recovered one more LC in 22 (20 vs 19 validated) and was not worth the false-accept risk.
-bool decode_embedded_lc(const std::array<std::uint8_t, 128>& wire,
-                        std::array<std::uint8_t, 9>& lc) noexcept {
-    std::uint8_t matrix[8][16]{};
-    for (unsigned i = 0; i < 128; ++i) matrix[i % 8][i / 8] = wire[i];
+bool extract_embedded_lc(const std::uint8_t (&matrix)[8][16],
+                         std::array<std::uint8_t, 9>& lc) noexcept {
     for (unsigned r = 0; r < 7; ++r) {
         if (parity_syndrome(matrix[r], 11, 5, kRow16) != 0) return false;
     }
@@ -153,6 +151,46 @@ bool decode_embedded_lc(const std::array<std::uint8_t, 128>& wire,
     if (check != (sum % 31U)) return false;
     lc = received;
     return true;
+}
+bool decode_embedded_lc(const std::array<std::uint8_t, 128>& wire,
+                        std::array<std::uint8_t, 9>& lc) noexcept {
+    std::uint8_t matrix[8][16]{};
+    for (unsigned i = 0; i < 128; ++i) matrix[i % 8][i / 8] = wire[i];
+    return extract_embedded_lc(matrix, lc);
+}
+// Bounded cross-checked 1-bit row/column repair for VoiceGroup embedded LC ONLY (scan_embedded late-entry stays strict).
+bool decode_voice_embedded_lc(const std::array<std::uint8_t, 128>& wire,
+                              std::array<std::uint8_t, 9>& lc) noexcept {
+    if (decode_embedded_lc(wire, lc)) return true;
+    std::uint8_t matrix[8][16]{};
+    for (unsigned i = 0; i < 128; ++i) matrix[i % 8][i / 8] = wire[i];
+    std::uint8_t col_odd[16]{};
+    unsigned odd_cols = 0;
+    for (unsigned col = 0; col < 16; ++col) {
+        unsigned parity = 0;
+        for (unsigned r = 0; r < 8; ++r) parity ^= matrix[r][col];
+        col_odd[col] = static_cast<std::uint8_t>(parity & 1U);
+        odd_cols += col_odd[col];
+    }
+    if (odd_cols == 0 || odd_cols > 3U) return false;
+    unsigned flips = 0;
+    for (unsigned r = 0; r < 7; ++r) {
+        const auto syn = parity_syndrome(matrix[r], 11, 5, kRow16);
+        if (!syn) continue;
+        unsigned matches = 0, index = 0;
+        for (unsigned i = 0; i < 11U; ++i) if (kRow16[i] == syn) { ++matches; index = i; }
+        for (unsigned i = 0; i < 5U; ++i) if ((1U << (4U - i)) == syn) { ++matches; index = 11U + i; }
+        if (matches != 1U || col_odd[index] == 0U || ++flips > 3U) return false;
+        matrix[r][index] ^= 1U;
+        col_odd[index] ^= 1U;
+    }
+    for (unsigned col = 0; col < 16; ++col) {
+        if (col_odd[col]) {
+            if (++flips > 3U) return false;
+            matrix[7][col] ^= 1U;
+        }
+    }
+    return extract_embedded_lc(matrix, lc);
 }
 
 std::uint8_t slot_for_sync(SyncKind kind) noexcept {
@@ -275,23 +313,38 @@ bool parse_identity(const std::uint8_t* lc, Event& event) noexcept {
     if (!lc || !event.integrity_valid) return false;
     const auto flco = static_cast<std::uint8_t>(lc[0] & 0x3fU);
     const auto feature_id = lc[1];
-    const auto dest = static_cast<std::uint32_t>((lc[3] << 16U) | (lc[4] << 8U) | lc[5]);
-    const auto src = static_cast<std::uint32_t>((lc[6] << 16U) | (lc[7] << 8U) | lc[8]);
-    if ((lc[0] & 0x40U) != 0 || feature_id != 0 || (flco != 0 && flco != 3) ||
-        src == 0 || dest == 0) return false;
+    if ((lc[0] & 0x40U) != 0) return false;
+    std::uint32_t dest = 0, src = 0;
+    IdentityKind kind = IdentityKind::none;
+    if ((feature_id == 0 || feature_id == 0x10U) && (flco == 0 || flco == 3)) {
+        // Standard ETSI (FID 0x00) and Motorola MOTOTRBO (FID 0x10) Group/Private Voice LC: 24-bit dst/src.
+        dest = static_cast<std::uint32_t>((lc[3] << 16U) | (lc[4] << 8U) | lc[5]);
+        src = static_cast<std::uint32_t>((lc[6] << 16U) | (lc[7] << 8U) | lc[8]);
+        kind = (flco == 0) ? IdentityKind::group : IdentityKind::private_call;
+    } else if (feature_id == 0x10U && flco == 0x04U && lc[3] == 0 && lc[4] == 0) {
+        // Motorola Capacity Plus Group Voice Channel User (FID 0x10, FLCO 0x04): 8-bit TG in lc[5], 16-bit radio ID in lc[7..8].
+        dest = static_cast<std::uint32_t>(lc[5]);
+        src = static_cast<std::uint32_t>((lc[7] << 8U) | lc[8]);
+        kind = IdentityKind::group;
+    } else {
+        return false;
+    }
+    if (src == 0 || dest == 0) return false;
     event.flco = flco;
     event.feature_id = feature_id;
     event.protected_flag = (lc[0] & 0x80U) != 0;
     event.service_options = lc[2];
     event.destination_id = dest;
     event.source_id = src;
-    event.identity = flco == 0 ? IdentityKind::group : IdentityKind::private_call;
+    event.identity = kind;
     event.evidence = Evidence::identity_valid;
     return true;
 }
 
 void Decoder::reset() noexcept {
     history_.fill(0);
+    soft_history_.fill(0xffU);
+    last_feed_soft_ = false;
     consumed_ = 0;
     late_ = {};
     tracks_ = {};
@@ -330,7 +383,31 @@ void Decoder::scan(EventSink sink, void* user) noexcept {
                 candidate = static_cast<int>(i);
             }
         }
-        if (candidate < 0) return;
+        if (candidate < 0) {
+            // Private fuzzy (1-2 bit error) voice anchor: NEVER emit a public Event, NEVER touch CACH cadence or late_!
+            // Downstream still requires all 5 clean EMBs with matching Colour Code + >=4 clean matching CACHs + CallManager qualification.
+            int vcand = -1;
+            unsigned vbest = 3U;
+            bool vambig = false;
+            for (std::size_t i = 0; i < kSyncCount; ++i) {
+                const auto kind_i = static_cast<SyncKind>(i);
+                if (is_data(kind_i)) continue;
+                const std::uint64_t diff = sync ^ kSyncWords[i];
+                const unsigned d = weight(static_cast<std::uint32_t>((diff >> 24U) & 0xffffffU)) +
+                                   weight(static_cast<std::uint32_t>(diff & 0xffffffU));
+                if (d <= 2U) {
+                    if (d < vbest) { vbest = d; vcand = static_cast<int>(i); vambig = false; }
+                    else if (d == vbest) { vambig = true; }
+                }
+            }
+            if (!vambig && vcand >= 0) {
+                const auto fkind = static_cast<SyncKind>(vcand);
+                if (fkind == SyncKind::bs_voice || fkind == SyncKind::direct_ts1_voice || fkind == SyncKind::direct_ts2_voice) {
+                    begin_voice(start, slot_for_sync(fkind), true);
+                }
+            }
+            return;
+        }
         std::uint8_t bits[264]{};
         burst_bits(start, bits);
         std::uint8_t cc = 0, type = 0, corrected = 0;
@@ -411,7 +488,10 @@ void Decoder::scan(EventSink sink, void* user) noexcept {
                 target.cach_checks = 1;
             }
         }
-        if (kind == SyncKind::bs_voice && sync_bit_errors == 0) begin_voice(start);
+        if (sync_bit_errors == 0 &&
+            (kind == SyncKind::bs_voice || kind == SyncKind::direct_ts1_voice || kind == SyncKind::direct_ts2_voice)) {
+            begin_voice(start, slot_for_sync(kind));
+        }
         if (sink) sink(e, user);
         return;
     }
@@ -527,8 +607,11 @@ bool Decoder::feed(const std::uint8_t* dibits, std::size_t count,
                    EventSink sink, void* user) noexcept {
     if (count && !dibits) return false;
     for (std::size_t i = 0; i < count; ++i) if (dibits[i] > 3U) return false;
+    last_feed_soft_ = false;
     for (std::size_t i = 0; i < count; ++i) {
-        history_[static_cast<std::size_t>(consumed_ % kRingCapacity)] = dibits[i];
+        const auto pos = static_cast<std::size_t>(consumed_ % kRingCapacity);
+        history_[pos] = dibits[i];
+        soft_history_[pos] = 0xffU;
         ++consumed_;
         scan(sink, user);
         scan_embedded(sink, user);
@@ -537,9 +620,27 @@ bool Decoder::feed(const std::uint8_t* dibits, std::size_t count,
     return true;
 }
 
-// ---- BS voice superframe extraction (bursts A..F, 288 dibits apart) --------------------------------------------
-void Decoder::begin_voice(std::uint64_t start) noexcept {
-    ++voice_stats_.anchors;
+bool Decoder::feed_soft(const std::uint8_t* dibits, const std::uint8_t* soft_dibits,
+                        std::size_t count, EventSink sink, void* user) noexcept {
+    if (!soft_dibits) return feed(dibits, count, sink, user);
+    if (count && !dibits) return false;
+    for (std::size_t i = 0; i < count; ++i) if (dibits[i] > 3U) return false;
+    last_feed_soft_ = true;
+    for (std::size_t i = 0; i < count; ++i) {
+        const auto pos = static_cast<std::size_t>(consumed_ % kRingCapacity);
+        history_[pos] = dibits[i];
+        soft_history_[pos] = soft_dibits[i];
+        ++consumed_;
+        scan(sink, user);
+        scan_embedded(sink, user);
+        scan_voice();
+    }
+    return true;
+}
+
+// ---- BS and direct-mode voice superframe extraction (bursts A..F, 288 dibits apart) ----------------------------
+void Decoder::begin_voice(std::uint64_t start, std::uint8_t fixed_slot, bool fuzzy_anchor) noexcept {
+    if (!fuzzy_anchor) ++voice_stats_.anchors;
     Track* slot = nullptr;
     for (auto& t : tracks_) {
         if (t.active && t.base == start) return;
@@ -548,6 +649,8 @@ void Decoder::begin_voice(std::uint64_t start) noexcept {
     if (!slot) slot = &tracks_[0];   // four tracks always suffice for two slots; never reached on well-formed input
     *slot = {};
     slot->active = true;
+    slot->fuzzy_anchor = fuzzy_anchor;
+    slot->fixed_slot = fixed_slot;
     slot->base = start;
     if (!take_voice_burst(*slot, start, 0)) slot->active = false;
 }
@@ -556,7 +659,10 @@ bool Decoder::take_voice_burst(Track& track, std::uint64_t start, unsigned k) no
     std::uint8_t bits[264]{};
     burst_bits(start, bits);
     std::uint8_t slot = 0;
-    if (start >= kCachDibits) {
+    std::uint8_t slot_repaired = 0;
+    if (track.fixed_slot != 0) {
+        slot = track.fixed_slot;
+    } else if (start >= kCachDibits) {
         CachWire cach{};
         for (unsigned i = 0; i < kCachDibits; ++i) {
             const auto dibit = at(start - kCachDibits + i);
@@ -564,9 +670,14 @@ bool Decoder::take_voice_burst(Track& track, std::uint64_t start, unsigned k) no
         }
         CachFields fields{};
         std::uint8_t corrected = 0;
-        if (unpack_cach(cach, fields, corrected) && corrected == 0) slot = fields.tdma_channel ? 2U : 1U;
+        if (unpack_cach(cach, fields, corrected)) {
+            const auto s = static_cast<std::uint8_t>(fields.tdma_channel ? 2U : 1U);
+            if (corrected == 0) slot = s;
+            else if (corrected == 1) slot_repaired = s;
+        }
     }
     track.slot[k] = slot;
+    track.slot_repaired[k] = slot_repaired;
     if (k > 0) {
         std::uint64_t centre = 0;
         for (unsigned i = 54; i < 78; ++i) centre = (centre << 2U) | at(start + i);
@@ -578,20 +689,58 @@ bool Decoder::take_voice_burst(Track& track, std::uint64_t start, unsigned k) no
         for (unsigned i = 108; i < 116; ++i) qr = static_cast<std::uint16_t>((qr << 1U) | bits[i]);
         for (unsigned i = 148; i < 156; ++i) qr = static_cast<std::uint16_t>((qr << 1U) | bits[i]);
         std::uint8_t info = 0, repairs = 0;
-        if (!decode_emb(qr, info, repairs) ||
-            (k > 1 && (info >> 3U) != (track.emb[1] >> 3U))) {
-            last_voice_fail_ = 2;
-            return false;
+        if (!decode_emb(qr, info, repairs)) {
+            if (!track.fuzzy_anchor && track.emb_misses == 0U) {
+                ++track.emb_misses;
+                track.emb_valid[k] = false;
+                track.emb[k] = 0;
+            } else {
+                last_voice_fail_ = 2;
+                return false;
+            }
+        } else {
+            const auto cc = static_cast<std::uint8_t>(info >> 3U);
+            if (track.have_emb_cc && cc != track.emb_cc) {
+                last_voice_fail_ = 2;
+                return false;
+            }
+            track.have_emb_cc = true;
+            track.emb_cc = cc;
+            track.emb[k] = info;
+            track.emb_valid[k] = true;
+            if (((info >> 2U) & 1U) != 0) track.pi_seen = true;
+            if (track.fixed_slot == 0 && slot != 0) {
+                cach_cadence_.observe(start, true, true, slot, 0);
+            }
+            if (k >= 1 && k <= 4)
+                for (unsigned i = 0; i < 32; ++i) track.fragments[(k - 1) * 32 + i] = bits[116 + i];
         }
-        track.emb[k] = info;
-        if (((info >> 2U) & 1U) != 0) track.pi_seen = true;
-        if (k >= 1 && k <= 4)
-            for (unsigned i = 0; i < 32; ++i) track.fragments[(k - 1) * 32 + i] = bits[116 + i];
     }
     std::uint8_t* out = track.payload.data() + k * kVoiceBurstBytes;
     for (unsigned i = 0; i < 216; ++i) {
         const unsigned src = i < 108 ? i : i + 48;
         if (bits[src]) out[i / 8] = static_cast<std::uint8_t>(out[i / 8] | (0x80U >> (i % 8U)));
+    }
+    track.has_c0_soft = (k == 0) ? last_feed_soft_ : (track.has_c0_soft && last_feed_soft_);
+    if (track.has_c0_soft) {
+        const auto put_q4 = [](std::uint8_t* frame_c0, unsigned j, std::uint8_t q4) noexcept {
+            const auto v = static_cast<std::uint8_t>(q4 & 0x0FU);
+            if ((j & 1U) == 0U) frame_c0[j >> 1U] = static_cast<std::uint8_t>((frame_c0[j >> 1U] & 0xF0U) | v);
+            else frame_c0[j >> 1U] = static_cast<std::uint8_t>((frame_c0[j >> 1U] & 0x0FU) | (v << 4U));
+        };
+        for (unsigned f = 0; f < 3U; ++f) {
+            std::uint8_t* fc0 = track.c0_soft.data() + static_cast<std::size_t>(k * 3U + f) * 12U;
+            for (unsigned z = 0; z < 12U; ++z) fc0[z] = 0xFFU;
+            for (unsigned i = 0; i <= 34U; i += 2U) {
+                const unsigned v = f * 36U + i;
+                const unsigned bd = (v < 54U) ? v : (v + 24U);
+                const std::uint8_t s = soft_at(start + bd);
+                put_q4(fc0, 23U - (i >> 1U), static_cast<std::uint8_t>((s >> 4U) & 0x0FU));
+                if (i <= 10U) {
+                    put_q4(fc0, 5U - (i >> 1U), static_cast<std::uint8_t>(s & 0x0FU));
+                }
+            }
+        }
     }
     track.taken = static_cast<std::uint8_t>(k + 1);
     return true;
@@ -607,28 +756,51 @@ void Decoder::scan_voice() noexcept {
         const auto next = track.base + static_cast<std::uint64_t>(track.taken) * 2U * kFrameDibits;
         if (start != next) continue;
         if (!take_voice_burst(track, start, track.taken)) {
-            if (last_voice_fail_ == 1) ++voice_stats_.abandoned_sync; else ++voice_stats_.abandoned_emb;
+            if (!track.fuzzy_anchor) {
+                if (last_voice_fail_ == 1) ++voice_stats_.abandoned_sync; else ++voice_stats_.abandoned_emb;
+            }
             track.active = false;
             continue;
         }
         if (track.taken < kVoiceBursts) continue;
         track.active = false;
+        if (!track.have_emb_cc) continue;
         VoiceGroup g{};
         g.start_dibit = track.base;
-        g.colour_code = static_cast<std::uint8_t>(track.emb[1] >> 3U);
-        unsigned clean = 0;
-        std::uint8_t first = 0;
-        bool same = true;
-        for (std::size_t i = 0; i < kVoiceBursts; ++i) {
-            if (!track.slot[i]) continue;
-            if (!clean++) first = track.slot[i]; else if (track.slot[i] != first) same = false;
+        g.colour_code = track.emb_cc;
+        if (track.fixed_slot != 0) {
+            g.slot = track.fixed_slot;
+        } else {
+            unsigned clean = 0;
+            std::uint8_t first = 0;
+            bool same = true;
+            for (std::size_t i = 0; i < kVoiceBursts; ++i) {
+                if (!track.slot[i]) continue;
+                if (!clean++) first = track.slot[i]; else if (track.slot[i] != first) same = false;
+            }
+            unsigned repaired_match = 0, repaired_conflict = 0;
+            if (same && first != 0) {
+                for (std::size_t i = 0; i < kVoiceBursts; ++i) {
+                    if (track.slot[i] != 0 || track.slot_repaired[i] == 0) continue;
+                    if (track.slot_repaired[i] == first) ++repaired_match; else ++repaired_conflict;
+                }
+            }
+            if (track.fuzzy_anchor) {
+                g.slot = (same && clean >= 4) ? first : 0;
+            } else {
+                g.slot = (same && (clean >= 4 || (clean >= 3 && repaired_conflict == 0 && clean + repaired_match >= 5))) ? first : 0;
+            }
         }
-        g.slot = (clean >= 5 && same) ? first : 0;
+        if (track.fuzzy_anchor && g.slot == 0) continue;
+        if (track.fuzzy_anchor) ++voice_stats_.anchors;
         g.pi_seen = track.pi_seen;
         g.payload = track.payload;
-        if ((track.emb[1] & 3U) == 1 && (track.emb[2] & 3U) == 3 && (track.emb[3] & 3U) == 3 &&
-            (track.emb[4] & 3U) == 2) {
-            if (decode_embedded_lc(track.fragments, g.lc)) { g.lc_valid = true; ++voice_stats_.embedded_lc_ok; }
+        g.has_c0_soft = track.has_c0_soft;
+        if (g.has_c0_soft) g.c0_soft = track.c0_soft;
+        if (track.emb_valid[1] && track.emb_valid[2] && track.emb_valid[3] && track.emb_valid[4] &&
+            (track.emb[1] & 3U) == 1 && (track.emb[2] & 3U) == 3 &&
+            (track.emb[3] & 3U) == 3 && (track.emb[4] & 3U) == 2) {
+            if (decode_voice_embedded_lc(track.fragments, g.lc)) { g.lc_valid = true; ++voice_stats_.embedded_lc_ok; }
             else ++voice_stats_.embedded_lc_bad;
         }
         ++voice_stats_.groups;

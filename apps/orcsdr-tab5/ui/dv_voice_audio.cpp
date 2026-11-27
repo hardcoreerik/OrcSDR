@@ -25,6 +25,26 @@ constexpr size_t kTaps = kUp * kTapsPerPhase;   // 192
 constexpr size_t kFramesPerGroup = 18;
 constexpr size_t kLatencyQueue = 8;
 
+constexpr float kAgcTargetRms = 8500.0f;       // ~-11.7 dBFS RMS at 1.0x trim (loud, clear Tab5 speaker speech)
+constexpr float kAgcNoiseFloorRms = 55.0f;     // hold gain on dead-air/codec-floor frames (never pump silence)
+constexpr float kAgcMinGain = 1.0f;
+constexpr float kAgcMaxGain = 32.0f;           // brings 207..367 raw RMS handhelds cleanly to target
+constexpr float kAgcInitGain = 18.0f;          // fast loudness even on short ~1s calls
+constexpr float kAgcPeakBudget = 52000.0f;     // pre-limiter peak budget (smoothly soft-limited below 30500 at 48 kHz)
+constexpr float kAgcAttack = 0.65f;            // fast downward attack (20 ms/frame)
+constexpr float kAgcRelease = 0.24f;           // smooth upward release (~60-80 ms)
+constexpr float kLimitKnee = 23000.0f;         // linear below -3.1 dBFS
+constexpr float kLimitCeil = 30500.0f;         // asymptotic ceiling -0.6 dBFS at 48 kHz -> mathematically 0 hard clips
+
+inline float soft_limit(float x) {
+  const float ax = std::fabs(x);
+  if (ax <= kLimitKnee) return x;
+  const float over = ax - kLimitKnee;
+  const float head = kLimitCeil - kLimitKnee;
+  const float y = kLimitKnee + (head * over) / (head + over);
+  return x < 0.0f ? -y : y;
+}
+
 float* g_taps = nullptr;   // 768 B, allocated once in PSRAM: the Tab5 internal RAM boot pool has no room for statics
 void* alloc_psram(size_t bytes);
 void build_taps() {
@@ -98,6 +118,10 @@ const char* phase_name(Phase p) {
 struct Engine::Slot {
   orc_vocoder codec;
   float hist[kTapsPerPhase - 1];
+  float hp_z1, hp_z2;
+  float eq_z1, eq_z2;
+  float agc_gain;
+  bool agc_fresh;
   uint32_t serial;
   bool live;
   struct Lat { uint64_t pos; uint32_t ms; } lat[kLatencyQueue];
@@ -116,8 +140,15 @@ bool Engine::begin(const Config& cfg) {
     end();
     return false;
   }
-  for (int i = 0; i < 3; ++i) orc_vocoder_reset(&slots_[i].codec);
+  for (int i = 0; i < 3; ++i) {
+    orc_vocoder_reset(&slots_[i].codec);
+    slots_[i].hp_z1 = slots_[i].hp_z2 = 0.0f;
+    slots_[i].eq_z1 = slots_[i].eq_z2 = 0.0f;
+    slots_[i].agc_gain = kAgcInitGain;
+    slots_[i].agc_fresh = true;
+  }
   stats_ = {};
+  stats_.agc_gain_x100 = 100;
   synth_total_us_ = 0;
   rd_ = wr_ = 0;
   playing_ = false;
@@ -169,22 +200,88 @@ void Engine::reset_stream() {
   voiced_slot_ = 0;
   voiced_serial_ = 0;
   for (auto& p : privacy_) p = 0;
-  if (slots_) for (int i = 0; i < 3; ++i) { orc_vocoder_reset(&slots_[i].codec); slots_[i].live = false; std::memset(slots_[i].hist, 0, sizeof(slots_[i].hist)); }
+  if (slots_) for (int i = 0; i < 3; ++i) {
+    orc_vocoder_reset(&slots_[i].codec);
+    slots_[i].live = false;
+    slots_[i].hp_z1 = slots_[i].hp_z2 = 0.0f;
+    slots_[i].eq_z1 = slots_[i].eq_z2 = 0.0f;
+    slots_[i].agc_gain = kAgcInitGain;
+    slots_[i].agc_fresh = true;
+    std::memset(slots_[i].hist, 0, sizeof(slots_[i].hist));
+  }
+  stats_.agc_gain_x100 = 100;
 }
 size_t Engine::buffered_samples() const { return static_cast<size_t>(wr_ - rd_); }
 
-void Engine::push_frame(uint8_t slot, const int16_t pcm[160], bool silent) {
+void Engine::push_frame(uint8_t slot, const int16_t pcm[160], bool silent, bool freeze_agc) {
   Slot& s = slots_[slot];
   if (speech_sink_ && slot >= 1 && slot <= 2) speech_sink_(slot, s.serial, src_, dst_, pcm, silent, pending_now_ms_, speech_user_);
   if (ring_cap_ - static_cast<size_t>(wr_ - rd_) < kFrameSamples8k * kUp) { ++stats_.overruns; return; }
   float buf[kTapsPerPhase - 1 + kFrameSamples8k];
   std::memcpy(buf, s.hist, sizeof(s.hist));
-  for (size_t i = 0; i < kFrameSamples8k; ++i) buf[kTapsPerPhase - 1 + i] = silent ? 0.0f : static_cast<float>(pcm[i]) * gain_;
+  const bool use_agc = agc_ && slot >= 1 && slot <= 2;
+  if (!use_agc) {
+    for (size_t i = 0; i < kFrameSamples8k; ++i) buf[kTapsPerPhase - 1 + i] = silent ? 0.0f : static_cast<float>(pcm[i]) * gain_;
+  } else if (silent) {
+    for (size_t i = 0; i < kFrameSamples8k; ++i) buf[kTapsPerPhase - 1 + i] = 0.0f;
+  } else {
+    // 8 kHz voice shaping before AGC: 250 Hz 2nd-order Butterworth HPF + 2000 Hz +2.5 dB Q=1.0 peaking EQ.
+    // Keeps low-frequency rumble from driving AGC and restores clarity on the 8 kHz AMBE+2 bandwidth.
+    constexpr float kHpB0 = 0.870330784f, kHpB1 = -1.740661568f, kHpB2 = 0.870330784f;
+    constexpr float kHpA1 = -1.723776197f, kHpA2 = 0.757546958f;
+    constexpr float kEqB0 = 1.100775029f, kEqB1 = 0.0f, kEqB2 = 0.294915747f;
+    constexpr float kEqA1 = 0.0f, kEqA2 = 0.395690776f;
+    float shaped[kFrameSamples8k];
+    float sq = 0.0f, peak = 0.0f;
+    for (size_t i = 0; i < kFrameSamples8k; ++i) {
+      const float x0 = static_cast<float>(pcm[i]);
+      const float y_hp = kHpB0 * x0 + s.hp_z1;
+      s.hp_z1 = kHpB1 * x0 - kHpA1 * y_hp + s.hp_z2;
+      s.hp_z2 = kHpB2 * x0 - kHpA2 * y_hp;
+      const float y_eq = kEqB0 * y_hp + s.eq_z1;
+      s.eq_z1 = kEqB1 * y_hp - kEqA1 * y_eq + s.eq_z2;
+      s.eq_z2 = kEqB2 * y_hp - kEqA2 * y_eq;
+      shaped[i] = y_eq;
+      sq += y_eq * y_eq;
+      const float ax = std::fabs(y_eq);
+      if (ax > peak) peak = ax;
+    }
+    const float frame_rms = std::sqrt(sq / static_cast<float>(kFrameSamples8k));
+    float prev_g = s.agc_gain;
+    float next_g = prev_g;
+    if (!freeze_agc && frame_rms >= kAgcNoiseFloorRms) {
+      const float g_rms = kAgcTargetRms / frame_rms;
+      const float g_pk = peak > 1.0f ? (kAgcPeakBudget / peak) : kAgcMaxGain;
+      float desired = g_rms < g_pk ? g_rms : g_pk;
+      if (desired < kAgcMinGain) desired = kAgcMinGain;
+      if (desired > kAgcMaxGain) desired = kAgcMaxGain;
+      if (s.agc_fresh) {
+        next_g = desired < kAgcInitGain ? desired : kAgcInitGain;
+        prev_g = next_g;
+        s.agc_fresh = false;
+      } else {
+        const float alpha = desired < prev_g ? kAgcAttack : kAgcRelease;
+        next_g = prev_g + alpha * (desired - prev_g);
+        if (peak > 1.0f && next_g * peak > kAgcPeakBudget) {
+          const float cap = kAgcPeakBudget / peak;
+          next_g = cap < kAgcMinGain ? kAgcMinGain : cap;
+        }
+      }
+    }
+    const float dg = (next_g - prev_g) / static_cast<float>(kFrameSamples8k);
+    for (size_t i = 0; i < kFrameSamples8k; ++i) {
+      const float g = (prev_g + dg * static_cast<float>(i)) * gain_;
+      buf[kTapsPerPhase - 1 + i] = shaped[i] * g;
+    }
+    s.agc_gain = next_g;
+    stats_.agc_gain_x100 = static_cast<uint32_t>(next_g * 100.0f + 0.5f);
+  }
   for (size_t i = 0; i < kFrameSamples8k; ++i) {
     const float* x = buf + kTapsPerPhase - 1 + i;
     for (size_t p = 0; p < kUp; ++p) {
       float acc = 0.0f;
       for (size_t k = 0; k < kTapsPerPhase; ++k) acc += g_taps[p + kUp * k] * x[-static_cast<ptrdiff_t>(k)];
+      if (use_agc) acc = soft_limit(acc);
       int32_t v = static_cast<int32_t>(acc >= 0.0f ? acc + 0.5f : acc - 0.5f);
       if (v > 32767) { v = 32767; ++stats_.clipped_samples; }
       if (v < -32768) { v = -32768; ++stats_.clipped_samples; }
@@ -218,6 +315,10 @@ void Engine::begin_group(const dv_radio::VoiceMsg& m, uint32_t now_ms) {
   if (m.new_call || !s.live || s.serial != m.call_serial) {
     orc_vocoder_reset(&s.codec);
     std::memset(s.hist, 0, sizeof(s.hist));
+    s.hp_z1 = s.hp_z2 = 0.0f;
+    s.eq_z1 = s.eq_z2 = 0.0f;
+    s.agc_gain = kAgcInitGain;
+    s.agc_fresh = true;
     s.live = true;
     s.serial = m.call_serial;
     ++stats_.calls;
@@ -225,6 +326,8 @@ void Engine::begin_group(const dv_radio::VoiceMsg& m, uint32_t now_ms) {
     // Whole superframes are missing: the predictor state is stale. Fill with silence, never with repeated speech.
     orc_vocoder_reset(&s.codec);
     std::memset(s.hist, 0, sizeof(s.hist));
+    s.hp_z1 = s.hp_z2 = 0.0f;
+    s.eq_z1 = s.eq_z2 = 0.0f;
     emit_silence(m.slot, static_cast<size_t>(m.lost_superframes) * kFramesPerGroup);
     stats_.lost_superframes += m.lost_superframes;
   }
@@ -251,10 +354,11 @@ size_t Engine::service(uint32_t now_ms, size_t max_frames) {
     const uint8_t* wire = m.payload + b * 27 + f * 9;
     int16_t pcm[kFrameSamples8k];
     orc_vocoder_result r;
-    const int ok = orc_vocoder_dmr(&s.codec, wire, ORC_PRIVACY_CLEAR, pcm, &r);
+    const uint8_t* c0s = m.has_c0_soft ? (m.c0_soft + pending_next_ * 12u) : nullptr;
+    const int ok = orc_vocoder_dmr_soft(&s.codec, wire, c0s, ORC_PRIVACY_CLEAR, pcm, &r);
     ++stats_.frames;
     const bool error = !ok || std::strchr(r.flags, 'E') != nullptr;
-    const bool silence = !error && std::strchr(r.flags, 'S') != nullptr;
+    const bool silence = !error && (std::strchr(r.flags, 'S') != nullptr || std::strchr(r.flags, 'T') != nullptr);
     if (tap_) tap_(m.slot, m.call_serial, wire, pcm, r.corrected, r.total, r.flags, tap_user_);
     stats_.corrected_bits += static_cast<uint64_t>(r.corrected);
     stats_.total_corrected_bits += static_cast<uint64_t>(r.total);
@@ -262,7 +366,8 @@ size_t Engine::service(uint32_t now_ms, size_t max_frames) {
       ++stats_.frames_error;
       ++stats_.frames_concealed;
       pending_bad_ = true;
-      push_frame(m.slot, pcm, true);          // uncorrectable: silence, codec already reset by the adapter
+      const bool concealed_repeat = ok && std::strchr(r.flags, 'R') != nullptr;
+      push_frame(m.slot, pcm, !concealed_repeat, true);   // 1-2 bad frames repeat attenuated speech (freeze AGC); 3+ emit silence and reset
     } else if (silence) {
       ++stats_.frames_silence;
       push_frame(m.slot, pcm, true);

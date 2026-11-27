@@ -89,6 +89,7 @@ struct Status {
 // kind==group; everything else is a notice. Single consumer.
 enum class VoiceKind : uint8_t { group, flush, call_ended, protected_voice, unqualified };
 constexpr size_t kVoicePayloadBytes = 162;      // 6 bursts x 27 bytes of over-the-air voice bits
+constexpr size_t kVoiceC0SoftBytes = 216;       // 18 AMBE frames x 12 bytes (4-bit LLR magnitude per C0 bit)
 struct VoiceMsg {
   VoiceKind kind = VoiceKind::flush;
   uint8_t slot = 0, colour_code = 0;
@@ -98,11 +99,14 @@ struct VoiceMsg {
   uint32_t call_serial = 0;                      // increments per call; stable within one call
   uint32_t t_ms = 0, frequency_hz = 0;
   uint8_t payload[kVoicePayloadBytes] = {};
+  bool has_c0_soft = false;
+  uint8_t c0_soft[kVoiceC0SoftBytes] = {};
 };
 struct VoiceStatus {
   uint32_t anchors = 0, groups_seen = 0, qualified = 0, protected_groups = 0, unqualified = 0;
   uint32_t calls_started = 0, calls_ended = 0, lost_superframes = 0;
   uint32_t emb_abandoned = 0, sync_abandoned = 0, embedded_lc_ok = 0, embedded_lc_bad = 0;
+  uint32_t unknown_slot = 0, conflicting_identity = 0;
   uint32_t queue_drops = 0, queue_pending = 0, flushes = 0;
   uint8_t privacy[3] = {0, 0, 0};                // index = slot; 0 unknown, 1 clear, 2 protected
   bool active[3] = {false, false, false};

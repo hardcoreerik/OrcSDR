@@ -19,6 +19,7 @@
 #include "dv_bandplan.hpp"
 #include "orcsdr_dmr/d1.hpp"
 #include "orcsdr_dmr/d1_call.hpp"
+#include "orcsdr_vocoder.h"
 
 using namespace orcsdr;
 namespace d1 = dmr::d1;
@@ -155,6 +156,88 @@ static void gate_tests() {
     m.on_time(1288 + SF + 20 * SF);
     CHECK(!m.active(1));
   }
+  { // Motorola Capacity Plus (FLCO=0x04, FID=0x10) Voice LC header opens clear call and matches FLCO=0x00 embedded LC
+    d1::Decoder dec; d1::CallManager m; Sink s;
+    struct { d1::CallManager* cm; } ctx{&m};
+    auto on_d = [](const d1::Event& e, void* u) noexcept { static_cast<decltype(ctx)*>(u)->cm->on_data(e); };
+    auto on_vg = [](const d1::VoiceGroup& g, void* u) noexcept { static_cast<decltype(ctx)*>(u)->cm->on_group(g); };
+    m.set_sinks(on_g, on_n, &s);
+    dec.set_voice_sink(on_vg, &ctx);
+    d1::Event hdr;
+    hdr.burst_start_dibit = 1000; hdr.sync = dmr::SyncKind::bs_data; hdr.slot = 2; hdr.slot_from_cach = true;
+    hdr.colour_code = 1; hdr.golay_valid = true; hdr.data_type = 1; hdr.integrity_valid = true;
+    const uint8_t cap_lc[9] = {0x04, 0x10, 0x00, 0x00, 0x00, 16, 0x01, 0xAF, 0x0E};
+    CHECK(d1::parse_identity(cap_lc, hdr));
+    CHECK(hdr.source_id == 44814 && hdr.destination_id == 16 && hdr.identity == d1::IdentityKind::group);
+    m.on_data(hdr);
+    auto vg = group(1288, 2, 1);
+    vg.lc_valid = true;
+    vg.lc = {0x00, 0x00, 0x00, 0x00, 0x00, 16, 0x00, 0xAF, 0x0E};
+    m.on_group(vg);
+    CHECK(s.g.size() == 1 && s.g[0].source_id == 44814 && s.g[0].destination_id == 16 && s.g[0].group_call);
+    CHECK(m.stats().conflicting_identity == 0);
+    // Privacy bits in Cap+ LC still fail closed to protected_voice
+    d1::CallManager mp; Sink sp; mp.set_sinks(on_g, on_n, &sp);
+    d1::Event prot_hdr = hdr; prot_hdr.service_options = 0x40;
+    mp.on_data(prot_hdr);
+    mp.on_group(group(1288, 2, 1));
+    CHECK(sp.g.empty() && mp.privacy(2) == d1::Privacy::protected_voice);
+    // Direct-mode simplex call (direct_ts1_data + direct_ts1_voice without CACH) qualifies on TS1
+    d1::CallManager md; Sink sd; md.set_sinks(on_g, on_n, &sd);
+    auto dh = data_ev(2000, 1, 5, 1, 1001, 50); dh.sync = dmr::SyncKind::direct_ts1_data; dh.slot_from_cach = false;
+    md.on_data(dh);
+    md.on_group(group(2288, 1, 5));
+    CHECK(sd.g.size() == 1 && sd.g[0].slot == 1 && sd.g[0].source_id == 1001 && sd.g[0].destination_id == 50);
+    (void)dec; (void)on_d;
+  }
+  { // Motorola FID=0x10 FLCO=0x00 embedded LC & terminators (463.400 MHz SD capture sequence)
+    d1::CallManager m; Sink s; m.set_sinks(on_g, on_n, &s);
+    d1::Event hdr{};
+    hdr.burst_start_dibit = 1000; hdr.sync = dmr::SyncKind::bs_data; hdr.slot = 1; hdr.slot_from_cach = true;
+    hdr.colour_code = 1; hdr.golay_valid = true; hdr.data_type = 1; hdr.integrity_valid = true;
+    const uint8_t cap_hdr[9] = {0x04, 0x10, 0x20, 0x00, 0x00, 11, 0x02, 0xAE, 0xBD};
+    CHECK(d1::parse_identity(cap_hdr, hdr));
+    CHECK(hdr.source_id == 44733 && hdr.destination_id == 11 && hdr.identity == d1::IdentityKind::group);
+    m.on_data(hdr);
+    m.on_group(group(1288, 1, 1));
+    auto vg2 = group(1288 + SF, 1, 1); vg2.lc_valid = true; vg2.lc = {0x00, 0x10, 0x30, 0x00, 0x00, 11, 0x00, 0xAE, 0xBD};
+    m.on_group(vg2);
+    auto vg3 = group(1288 + 2 * SF, 1, 1); vg3.lc_valid = true; vg3.lc = {0x00, 0x10, 0x20, 0x00, 0x00, 11, 0x00, 0xAE, 0xBD};
+    m.on_group(vg3);
+    CHECK(s.g.size() == 3 && s.g[0].new_call && !s.g[1].new_call && !s.g[2].new_call);
+    for (const auto& q : s.g) CHECK(q.source_id == 44733 && q.destination_id == 11 && q.group_call);
+    CHECK(m.stats().conflicting_identity == 0 && m.privacy(1) == d1::Privacy::clear);
+    d1::Event term{}; term.data_type = 2; term.integrity_valid = true;
+    const uint8_t cap_term[9] = {0x00, 0x10, 0x20, 0x00, 0x00, 11, 0x00, 0xAE, 0xBD};
+    CHECK(d1::parse_identity(cap_term, term));
+    CHECK(term.source_id == 44733 && term.destination_id == 11 && term.identity == d1::IdentityKind::group);
+    // Late entry with no header using FID=0x10 FLCO=0x00 embedded LC
+    d1::CallManager ml; Sink sl; ml.set_sinks(on_g, on_n, &sl);
+    auto vgl = group(5000, 1, 1); vgl.lc_valid = true; vgl.lc = {0x00, 0x10, 0x20, 0x00, 0x00, 11, 0x00, 0xAE, 0xBD};
+    ml.on_group(vgl);
+    CHECK(sl.g.size() == 1 && sl.g[0].source_id == 44733 && sl.g[0].destination_id == 11 && sl.g[0].group_call);
+    // Privacy bit (0x40) and protect flag (0x80) in FID=0x10 FLCO=0x00 fail closed to protected_voice
+    d1::CallManager mp1; Sink sp1; mp1.set_sinks(on_g, on_n, &sp1);
+    auto vgp1 = group(6000, 1, 1); vgp1.lc_valid = true; vgp1.lc = {0x00, 0x10, 0x60, 0x00, 0x00, 11, 0x00, 0xAE, 0xBD};
+    mp1.on_group(vgp1);
+    CHECK(sp1.g.empty() && mp1.privacy(1) == d1::Privacy::protected_voice);
+    d1::CallManager mp2; Sink sp2; mp2.set_sinks(on_g, on_n, &sp2);
+    auto vgp2 = group(7000, 1, 1); vgp2.lc_valid = true; vgp2.lc = {0x80, 0x10, 0x20, 0x00, 0x00, 11, 0x00, 0xAE, 0xBD};
+    mp2.on_group(vgp2);
+    CHECK(sp2.g.empty() && mp2.privacy(1) == d1::Privacy::protected_voice);
+    // Unrecognized FID=0x01 fails closed to unknown
+    d1::CallManager mu; Sink su; mu.set_sinks(on_g, on_n, &su);
+    auto vgu = group(8000, 1, 1); vgu.lc_valid = true; vgu.lc = {0x00, 0x01, 0x00, 0x00, 0x00, 11, 0x00, 0xAE, 0xBD};
+    mu.on_group(vgu);
+    CHECK(su.g.empty() && mu.privacy(1) == d1::Privacy::unknown);
+  }
+  { // CachCadence stays locked across voice superframe EMB gaps (delta = 288 or 432 dibits with matching parity)
+    d1::CachCadence cc;
+    for (int i = 0; i < 4; ++i) CHECK(cc.observe(100 + i * 144, true, true, (i % 2) + 1, 0).confidence == (i == 3 ? d1::CachConfidence::cadence_validated : d1::CachConfidence::tentative));
+    // Opposite slot data burst 288 dibits later (2 steps -> same slot 2) remains cadence_validated
+    auto res = cc.observe(100 + 3 * 144 + 288, true, true, 2, 0);
+    CHECK(res.confidence == d1::CachConfidence::cadence_validated && res.candidate_slot == 2);
+  }
 }
 
 // ---- Speech engine ---------------------------------------------------------------------------------------------------
@@ -273,6 +356,142 @@ static void engine_tests() {
     CHECK(std::fabs(r2 / r1 - 2.0) < 0.02 && clip1 == 0 && clip2 == 0);
     CHECK(clip8 > 0 && r8 <= 32767.0);                                       // 8000 x 8 = 64000 peak: hard-limited at full scale, counted
     Engine g; g.set_gain(100.0f); CHECK(g.gain() == 16.0f); g.set_gain(0.0f); CHECK(g.gain() == 0.25f);   // limits
+  }
+  { // Motorola DTX/erasure filler (b0=122) & ETSI null (b0=120) classify as silence with 0 errors; 1-2 C0>3 frames conceal then reset
+    Engine e; Config c; c.target_buffer_ms = 0; CHECK(e.begin(c)); e.set_enabled(true);
+    std::string flags_seen;
+    struct TapCap { std::vector<std::string> flags; std::vector<int> peaks; } tc;
+    e.set_frame_tap([](uint8_t, uint32_t, const uint8_t[9], const int16_t pcm[160], int, int, const char* fl, void* u) {
+      auto* p = static_cast<TapCap*>(u);
+      p->flags.emplace_back(fl ? fl : "");
+      int pk = 0; for (int i = 0; i < 160; ++i) pk = std::max(pk, std::abs(int(pcm[i])));
+      p->peaks.push_back(pk);
+    }, &tc);
+    e.handle(msg(1, 1, true, "ACAA40210044408080"), now);    // Motorola Cap+ DTX (b0=122)
+    e.handle(msg(1, 1, false, "ACAA40200044408080"), now + 360);  // ETSI null (b0=120)
+    auto sn = e.snapshot(now + 360);
+    CHECK(sn.stats.frames == 36 && sn.stats.frames_silence == 36 && sn.stats.frames_error == 0);
+    CHECK(sn.phase != Phase::degraded);
+    // Active speech followed by 3 corrupted C0 frames: first 2 conceal via 'R' (non-zero PCM, fade-to-zero on 2nd), 3rd resets to zero
+    tc.flags.clear(); tc.peaks.clear();
+    struct TapCap2 { std::vector<std::string> flags; std::vector<int> peaks; std::vector<int16_t> last; } tc2;
+    e.set_frame_tap([](uint8_t, uint32_t, const uint8_t[9], const int16_t pcm[160], int, int, const char* fl, void* u) {
+      auto* p = static_cast<TapCap2*>(u);
+      p->flags.emplace_back(fl ? fl : "");
+      int pk = 0; for (int i = 0; i < 160; ++i) pk = std::max(pk, std::abs(int(pcm[i])));
+      p->peaks.push_back(pk);
+      p->last.push_back(pcm[159]);
+    }, &tc2);
+    auto m_bad = msg(1, 2, true, "C499A5267CBACD3062");
+    for (int f = 14; f < 17; ++f) { m_bad.payload[f * 9 + 0] ^= 0x88; m_bad.payload[f * 9 + 1] ^= 0x88; }
+    for (int f = 17; f < 18; ++f) { m_bad.payload[f * 9 + 0] = 0xAC; }
+    e.handle(m_bad, now + 720);
+    CHECK(tc2.flags[14].find('R') != std::string::npos && tc2.peaks[14] > 0);
+    CHECK(tc2.flags[15].find('R') != std::string::npos && tc2.peaks[15] > 0 && tc2.last[15] == 0);
+    CHECK(tc2.flags[16].find('R') == std::string::npos && tc2.peaks[16] == 0);
+    CHECK(e.snapshot(now + 720).stats.frames_error == 3);
+    (void)tc;
+  }
+  { // 8 kHz speech leveler (AGC) + 48 kHz soft limiter: boosts quiet handhelds, prevents loud clipping, leaves recordings & test tone untouched
+    static const char* kQuietFrames[18] = {
+      "759F6E6B02B94AECBB", "77D9826307A311F441", "F7E0840121B1B73DBE", "F5C2A70722F2C45DEF", "AD84C751375BFAC363", "7EB6C511529146D895",
+      "68B0E173765C71C05A", "4D95C67553A3758B90", "A892E21116D3CE899D", "9E96E531777FECD262", "4DA5E44571B670CAE7", "E0F6A373775B813403",
+      "C5F3A62011D5B408FD", "84A54BEDC6C6ACDE9B", "0FD01BBFA6951D2C97", "1D3457ABE442DFA60B", "679A32FD9210270082", "33FA13FB33A25A304D"
+    };
+    auto build_seq = [&](uint32_t serial, bool nc) {
+      dv_radio::VoiceMsg m; m.kind = dv_radio::VoiceKind::group; m.slot = 1; m.call_serial = serial; m.new_call = nc; m.colour_code = 1;
+      m.source_id = 44733; m.destination_id = 11;
+      for (int idx = 0; idx < 18; ++idx) {
+        for (int b = 0; b < 9; ++b) { unsigned x; std::sscanf(kQuietFrames[idx] + 2 * b, "%2x", &x); m.payload[idx * 9 + b] = static_cast<uint8_t>(x); }
+      }
+      return m;
+    };
+    Engine eq; Config cq; cq.target_buffer_ms = 0; CHECK(eq.begin(cq)); eq.set_enabled(true); eq.set_agc(true);
+    std::vector<int16_t> raw_agc, raw_lin;
+    eq.set_speech_sink([](uint8_t, uint32_t, uint32_t, uint32_t, const int16_t pcm[160], bool, uint32_t, void* u) {
+      auto* v = static_cast<std::vector<int16_t>*>(u);
+      v->insert(v->end(), pcm, pcm + 160);
+    }, &raw_agc);
+    std::srand(12345u);
+    eq.handle(build_seq(10, true), now);
+    eq.handle(build_seq(10, false), now + 360);
+    auto q48 = drain(eq, now, 800);
+    double sq_agc = 0;
+    for (size_t i = 4800; i < q48.size(); ++i) sq_agc += double(q48[i]) * q48[i];
+    const double rms_agc = std::sqrt(sq_agc / double(q48.size() - 4800));
+    CHECK(rms_agc > 4000.0 && eq.snapshot(now).stats.clipped_samples == 0);
+    CHECK(eq.snapshot(now).stats.agc_gain_x100 > 100);
+    // Raw speech_sink PCM with AGC on is bit-identical to raw PCM with AGC off (recordings stay untouched; seed mbelib rand())
+    Engine elin; CHECK(elin.begin(cq)); elin.set_enabled(true); elin.set_agc(false);
+    elin.set_speech_sink([](uint8_t, uint32_t, uint32_t, uint32_t, const int16_t pcm[160], bool, uint32_t, void* u) {
+      auto* v = static_cast<std::vector<int16_t>*>(u);
+      v->insert(v->end(), pcm, pcm + 160);
+    }, &raw_lin);
+    std::srand(12345u);
+    elin.handle(build_seq(10, true), now);
+    elin.handle(build_seq(10, false), now + 360);
+    CHECK(raw_agc.size() == raw_lin.size() && std::equal(raw_agc.begin(), raw_agc.end(), raw_lin.begin()));
+    // Loud speech stays below 48 kHz soft-limiter ceiling with 0 hard clips even at 2.0x trim
+    Engine eloud; CHECK(eloud.begin(cq)); eloud.set_enabled(true); eloud.set_agc(true); eloud.set_gain(2.0f);
+    eloud.handle(msg(2, 11, true, "C499A5267CBACD3062"), now);
+    auto l48 = drain(eloud, now, 500);
+    int pk_loud = 0;
+    for (int16_t v : l48) pk_loud = std::max(pk_loud, std::abs(int(v)));
+    CHECK(pk_loud <= 31000 && eloud.snapshot(now).stats.clipped_samples == 0);
+    // Test tone on slot 0 stays strictly linear when AGC is on; silence stays zero
+    Engine etone; CHECK(etone.begin(cq)); etone.set_enabled(true); etone.set_agc(true);
+    std::vector<int16_t> tone(160 * 20);
+    for (size_t i = 0; i < tone.size(); ++i) tone[i] = static_cast<int16_t>(8000 * std::sin(2 * 3.14159265 * 1000.0 * i / 8000.0));
+    CHECK(etone.inject_test_pcm(tone.data(), tone.size(), now));
+    std::vector<int16_t> tout(960 * 20);
+    CHECK(etone.pull(tout.data(), tout.size(), now + 1) == tout.size());
+    double tsq = 0; for (size_t i = 960; i < tout.size() - 960; ++i) tsq += double(tout[i]) * tout[i];
+    const double trms = std::sqrt(tsq / (tout.size() - 1920));
+    CHECK(std::fabs(trms - 8000 / std::sqrt(2.0)) < 250.0);
+    etone.handle(msg(1, 12, true, "ACAA40210044408080"), now + 100);
+    auto sout = drain(etone, now, 500);
+    int spk = 0; for (int16_t v : sout) spk = std::max(spk, std::abs(int(v)));
+    CHECK(spk == 0);
+    // 8 kHz 250 Hz HPF + 2000 Hz +2.5 dB presence EQ: boost ~2 kHz vs ~250 Hz relative to linear path on identical speech
+    auto dft_mag = [](const std::vector<int16_t>& x, size_t start, size_t n, double freq_hz) {
+      double re = 0.0, im = 0.0;
+      const double w = 2.0 * 3.14159265358979323846 * freq_hz / 48000.0;
+      for (size_t i = 0; i < n; ++i) {
+        const double s = static_cast<double>(x[start + i]);
+        re += s * std::cos(w * static_cast<double>(i));
+        im -= s * std::sin(w * static_cast<double>(i));
+      }
+      return std::sqrt(re * re + im * im);
+    };
+    Engine e_lin, e_shp; CHECK(e_lin.begin(cq) && e_shp.begin(cq));
+    e_lin.set_enabled(true); e_lin.set_agc(false);
+    e_shp.set_enabled(true); e_shp.set_agc(true);
+    std::srand(777u); e_lin.handle(msg(1, 13, true, "C499A5267CBACD3062"), now);
+    auto o_lin = drain(e_lin, now, 500);
+    std::srand(777u); e_shp.handle(msg(1, 13, true, "C499A5267CBACD3062"), now);
+    auto o_shp = drain(e_shp, now, 500);
+    const size_t nfft = 4800;
+    const double r_low = dft_mag(o_shp, 4800, nfft, 150.0) / std::max(1.0, dft_mag(o_lin, 4800, nfft, 150.0));
+    const double r_hi = dft_mag(o_shp, 4800, nfft, 2000.0) / std::max(1.0, dft_mag(o_lin, 4800, nfft, 2000.0));
+    CHECK(r_hi > r_low * 2.5);
+  }
+  { // Steiner-sextet soft-ML 4-bit C0 rescue vs clean-downlink rejection
+    uint8_t wire[9] = {0xC4, 0x99, 0xA5, 0x26, 0x7C, 0xBA, 0xCD, 0x30, 0x62};
+    wire[0] ^= 0xC8; wire[1] ^= 0x80; // flip 4 C0 bits: j=23, 22, 21, 5
+    int16_t pcm[160]{};
+    orc_vocoder vh, vc, vs; orc_vocoder_result rh{}, rc{}, rs{};
+    orc_vocoder_reset(&vh); orc_vocoder_reset(&vc); orc_vocoder_reset(&vs);
+    CHECK(orc_vocoder_dmr(&vh, wire, ORC_PRIVACY_CLEAR, pcm, &rh) == 1 && std::strchr(rh.flags, 'E') != nullptr);
+    uint8_t clean_q[12]; std::memset(clean_q, 0xFF, sizeof(clean_q));
+    CHECK(orc_vocoder_dmr_soft(&vc, wire, clean_q, ORC_PRIVACY_CLEAR, pcm, &rc) == 1 && std::strchr(rc.flags, 'E') != nullptr);
+    uint8_t soft_q[12]; std::memset(soft_q, 0xFF, sizeof(soft_q));
+    soft_q[11] = 0x11; // j=23, 22 -> q=1
+    soft_q[10] = 0x1F; // j=21 -> q=1, j=20 -> q=15
+    soft_q[2] = 0x1F;  // j=5 -> q=1, j=4 -> q=15
+    CHECK(orc_vocoder_dmr_soft(&vs, wire, soft_q, ORC_PRIVACY_CLEAR, pcm, &rs) == 1);
+    CHECK(std::strchr(rs.flags, 'E') == nullptr && rs.corrected == 4);
+    int pk = 0; for (int16_t x : pcm) pk = std::max(pk, std::abs(int(x)));
+    CHECK(pk > 0);
   }
 }
 

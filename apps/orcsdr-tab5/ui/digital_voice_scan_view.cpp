@@ -133,7 +133,7 @@ void draw_freq(Paint& p, Rect r, const Snapshot& s) {
 }
 uint32_t sig_plan(const Snapshot& s) {
   Hash h; h.u32(static_cast<uint32_t>(s.scan.mode)); h.str(s.scan.plan_name); h.u32(s.scan.channel_index); h.u32(s.scan.planned);
-  h.u32(s.scan.est_pass_seconds); h.u32(s.scan.passes); h.u32(s.scan.range_start_hz); h.u32(s.scan.range_end_hz); h.u32(s.scan.range_step_hz); return h.h;
+  h.u32(s.scan.est_pass_seconds); h.u32(s.scan.range_start_hz); h.u32(s.scan.range_end_hz); h.u32(s.scan.range_step_hz); return h.h;
 }
 void draw_plan(Paint& p, Rect r, const Snapshot& s) {
   p.g.fillRect(r.x, r.y, r.w, r.h, kPanel);
@@ -350,8 +350,7 @@ uint32_t signature(int w, const Snapshot& s, const UiState& u, const Geometry& g
     default:return sig_row(static_cast<size_t>(w - w_row0), s, u);
   }
 }
-void draw_widget(int w, Paint& p, const Geometry& g, const Snapshot& s, const UiState& u) {
-  const Rect r = rect_of(g, w);
+void draw_widget(int w, Paint& p, Rect r, const Snapshot& s, const UiState& u) {
   switch (w) {
     case w_status:draw_status(p, r, s); break;
     case w_freq:draw_freq(p, r, s); break;
@@ -369,6 +368,38 @@ void draw_widget(int w, Paint& p, const Geometry& g, const Snapshot& s, const Ui
 }
 }  // namespace
 
+ScanView::~ScanView() { release(); }
+
+void ScanView::release() {
+  entered_ = false;
+#if defined(ESP_PLATFORM)
+  delete wide_spr_;
+  wide_spr_ = nullptr;
+  delete tall_spr_;
+  tall_spr_ = nullptr;
+#endif
+}
+
+#if defined(ESP_PLATFORM)
+lgfx::LGFX_Sprite* ScanView::sprite_for(Rect r) {
+  auto ensure = [](lgfx::LGFX_Sprite*& spr, int w, int h) -> lgfx::LGFX_Sprite* {
+    if (spr) return spr;
+    auto* s = new lgfx::LGFX_Sprite();
+    s->setColorDepth(16);
+    s->setPsram(true);
+    if (!s->createSprite(w, h)) {
+      delete s;
+      return nullptr;
+    }
+    spr = s;
+    return spr;
+  };
+  if (r.w <= 800 && r.h <= 68) return ensure(wide_spr_, 800, 68);
+  if (r.w <= 610 && r.h <= 220) return ensure(tall_spr_, 610, 220);
+  return nullptr;
+}
+#endif
+
 int ScanView::paint(lgfx::LovyanGFX& display, const Snapshot& s, const UiState& u, bool force) {
   Paint p{display};
   const Geometry g = scan_layout::geometry(u.density);
@@ -385,7 +416,27 @@ int ScanView::paint(lgfx::LovyanGFX& display, const Snapshot& s, const UiState& 
     if (!force && sg == sig_[w]) continue;
     sig_[w] = sg;
     if (w == w_trace && !g.trace.h) continue;     // no room for the strip in the analysis density
-    draw_widget(w, p, g, s, u);
+    const Rect r = rect_of(g, w);
+#if defined(ESP_PLATFORM)
+    if (w != w_trace && r.w > 0 && r.h > 0) {
+      if (auto* spr = sprite_for(r)) {
+        spr->fillRect(0, 0, r.w, r.h, kPanel);
+        Paint sp{*spr};
+        draw_widget(w, sp, Rect{0, 0, r.w, r.h}, s, u);
+        if (w == w_bar) {
+          spr->drawRoundRect(0, 0, r.w, r.h, 3, kEdge);
+          display.setClipRect(r.x + 1, r.y + 1, r.w - 2, r.h - 2);
+        } else {
+          display.setClipRect(r.x, r.y, r.w, r.h);
+        }
+        spr->pushSprite(&display, r.x, r.y);
+        display.clearClipRect();
+        ++painted;
+        continue;
+      }
+    }
+#endif
+    draw_widget(w, p, r, s, u);
     ++painted;
   }
   return painted;

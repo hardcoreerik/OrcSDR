@@ -74,8 +74,12 @@ private:
     void reset_tracking() noexcept;
     void consume_one(const ComplexSample& sample) noexcept;
     void try_acquire() noexcept;
+    float evaluate_sync_at(std::uint64_t end_center, float screen_min,
+                           float& out_cfo, float& out_level,
+                           std::uint8_t& out_kind) const noexcept;
+    void commit_acquire() noexcept;
     [[nodiscard]] float filtered_at(std::uint64_t i) const noexcept;
-    [[nodiscard]] float interpolate(double i) const noexcept;
+    [[nodiscard]] float interpolate(std::uint64_t base, float frac) const noexcept;
     bool decide(Symbol& out) noexcept;
     bool replay_preroll(Symbol& out) noexcept;
 
@@ -87,8 +91,9 @@ private:
     ComplexSample previous_{};
     bool have_previous_ = false;
     bool locked_ = false;
-    double next_center_ = 0.0;
-    double timing_step_ = 10.0;
+    std::uint64_t next_center_int_ = 0;
+    float next_center_frac_ = 0.0F;
+    float timing_step_ = 10.0F;
     float cfo_hz_ = 0.0F;
     float level_hz_ = kInnerDeviationHz;
     float prev_level_ = 0.0F;
@@ -96,9 +101,21 @@ private:
     float decision_mse_ = 0.0F;
     std::uint32_t bad_symbols_ = 0;
     float iq_power_ = 0.0F;
+    // Causal local-peak sync search state (no future lookahead; deterministic per sample).
+    bool acq_pending_ = false;
+    std::uint64_t acq_best_pos_ = 0;
+    float acq_best_corr_ = 0.0F;
+    float acq_best_cfo_ = 0.0F;
+    float acq_best_level_ = 0.0F;
+    float acq_prev_corr_ = -1.0F;
+    float acq_next_corr_ = -1.0F;
+    std::uint8_t acq_best_kind_ = 255U;
+    std::uint8_t acq_countdown_ = 0;
+    std::uint8_t acq_age_ = 0;
     // A replay cursor, NOT a fabricated dibit buffer: each Symbol is sliced
     // from the measured, retained, filtered IQ discriminator history.
     std::uint64_t preroll_first_center_ = 0;
+    float preroll_frac_ = 0.0F;
     std::uint8_t preroll_cursor_ = 0;
     Stats stats_{};
 };
