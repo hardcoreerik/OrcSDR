@@ -1,0 +1,24 @@
+name: FCC Database coordinator host gate
+on:
+  push:
+    paths:
+      - 'apps/orcsdr-tab5/ui/fcc_lookup_gate.hpp'
+      - 'tests/fcc_database_coordinator/**'
+      - '.github/workflows/fcc-database-coordinator.yml'
+  pull_request:
+    paths:
+      - 'apps/orcsdr-tab5/ui/fcc_lookup_gate.hpp'
+      - 'tests/fcc_database_coordinator/**'
+      - '.github/workflows/fcc-database-coordinator.yml'
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  gate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: |
+          set -eux
+          c++ -std=c++17 -Wall -Wextra -Werror -pedantic -fsanitize=address,undefined -g -Iapps/orcsdr-tab5/ui tests/fcc_database_coordinator/lookup_gate_test.cpp -o /tmp/fcc_gate
+          /tmp/fcc_gate
