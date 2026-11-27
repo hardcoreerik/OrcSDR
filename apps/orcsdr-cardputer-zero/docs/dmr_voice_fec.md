@@ -246,3 +246,31 @@ Implementing it needs two things this project does not yet have:
 
 Until then the honest description is: strong calls decode and play; marginal calls
 garble. That is a quality gap, not a broken feature.
+## Where weak captures actually lose (2026-11-27)
+
+Decoding all three corpus captures with the same binary:
+
+| Capture | Voice groups | Frames | Audio |
+| --- | --- | --- | --- |
+| terra_152p1575_call_cc13 | 26 | 468 | 9.36 s |
+| terra_152p685_call_cc8 | 5 | 90 | 1.80 s |
+| terra_153p068_call_cc8 (2.4 kHz off tune) | 1 | 18 | 0.36 s |
+
+The strong capture yields 26 superframes, the weak one 5, the off-tune one 1. That
+gap is **superframes**, not bits: a group is only delivered once the call manager
+qualifies it, so a weak signal loses whole 360 ms units rather than producing
+slightly corrupt audio.
+
+This reframes the Golay work. Per-frame error correction improves *bit* quality
+inside a frame that was delivered; it does not by itself recover a superframe that
+was never qualified. So the ordering is:
+
+1. Find out why groups are rejected on weak captures - the decoder already tracks
+   `abandoned_emb`, `abandoned_sync`, `embedded_lc_ok/bad` and per-frame Golay
+   error counts. That instrumentation answers whether these calls were short, or
+   whether qualification dropped them.
+2. Only then decide whether Golay correction changes the count.
+
+Worth stating because it would be easy to implement a correct Golay decoder,
+measure no change in superframe count, and conclude it was worthless - when the
+real limit was upstream in qualification.
