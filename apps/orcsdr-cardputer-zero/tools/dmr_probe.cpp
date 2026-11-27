@@ -41,6 +41,28 @@ const char* sync_name(orcsdr::dmr::SyncKind kind) {
   }
 }
 
+struct VoiceCounters {
+  unsigned groups = 0;
+  unsigned lc_ok = 0;
+  unsigned protected_groups = 0;
+  unsigned printed = 0;
+};
+
+void on_voice(const orcsdr::dmr::d1::VoiceGroup& group, void* user) noexcept {
+  auto* c = static_cast<VoiceCounters*>(user);
+  if (!c) return;
+  ++c->groups;
+  if (group.lc_valid) ++c->lc_ok;
+  if (group.pi_seen) ++c->protected_groups;
+  if (c->printed < 3) {
+    ++c->printed;
+    std::printf("  voice group: slot %u cc %u lc %s pi %s payload %02X%02X%02X...\n",
+                unsigned(group.slot), unsigned(group.colour_code),
+                group.lc_valid ? "ok" : "no", group.pi_seen ? "SET" : "clear",
+                group.payload[0], group.payload[1], group.payload[2]);
+  }
+}
+
 void on_event(const integration::Event& event, void* user) noexcept {
   auto* counters = static_cast<Counters*>(user);
   ++counters->events;
@@ -135,6 +157,8 @@ int replay_cu8(const char* path) {
 
   static integration::Receiver receiver;
   receiver.reset();
+  static VoiceCounters voices;
+  receiver.set_voice_sink(on_voice, &voices);
   Counters counters;
   orcsdr::dv::Channelizer channelizer;
   std::vector<orcsdr::dv::Iq48> baseband(2400 / 5 + 16);
@@ -148,6 +172,8 @@ int replay_cu8(const char* path) {
     receiver.process(samples, out_pairs, on_event, &counters);
   }
   const auto& stats = receiver.stats();
+  std::printf("voice groups %u (lc ok %u, protected %u)\n", voices.groups, voices.lc_ok,
+              voices.protected_groups);
   std::printf("acquisitions %llu  dibits %llu  events %llu  identities %llu\n",
               (unsigned long long)stats.acquisitions, (unsigned long long)stats.dibits_sent,
               (unsigned long long)stats.protocol_events,
