@@ -51,8 +51,9 @@ void on_event(const integration::Event& event, void* user) noexcept {
   const auto& d = event.decoded;
   const bool interesting = d.integrity_valid || (counters->events % 40 == 1);
   if (!interesting) return;
-  std::printf("  %-9s slot %u cc %u %s", sync_name(d.sync), unsigned(d.slot),
-              unsigned(d.colour_code), d.integrity_valid ? "VALID" : "sync");
+  std::printf("  %-9s slot %u cc %u ev %u id %u flco %u %s", sync_name(d.sync), unsigned(d.slot),
+              unsigned(d.colour_code), unsigned(d.evidence), unsigned(d.identity), unsigned(d.flco),
+              d.integrity_valid ? "VALID" : "sync");
   if (d.integrity_valid)
     std::printf(" src %u dst %u", d.source_id, d.destination_id);
   std::printf("\n");
@@ -113,6 +114,9 @@ int main(int argc, char** argv) {
   // div > 1 runs the RTL at div*240 kS/s and subsamples into the channeliser, to
   // test whether 240 kS/s is too low a rate for this tuner.
   const unsigned div = argc > 3 ? (unsigned)std::atoi(argv[3]) : 1;
+  // 4FSK polarity is not exposed by the frontend; negating Q is the cheapest
+  // way to test whether this carrier is inverted relative to the recording.
+  const bool invert = argc > 4 && std::atoi(argv[4]) != 0;
 
   std::printf("DMR probe: channel %lu Hz, %.1f s, RTL centre %lu Hz at 240 kS/s\n", channel_hz,
               double(seconds), channel_hz - 60000UL);
@@ -129,7 +133,7 @@ int main(int argc, char** argv) {
 
   Counters counters;
   std::vector<std::uint8_t> cu8(2400 * 2 * div);        // 10 ms at div*240 kS/s
-  std::vector<std::uint8_t> decimated((2400 * 2 * div) / 10 + 16);
+  std::vector<std::uint8_t> decimated((2400 * 2 * div) / div + 16);
   std::vector<orcsdr::dv::Iq48> baseband(2400 / 5 + 16);
 
   double level_sum = 0; double level_max = 0; unsigned level_n = 0;
@@ -143,8 +147,8 @@ int main(int argc, char** argv) {
     if (div > 1) {
       // 10:1 through the CIC, not naive subsampling: unfiltered decimation folds
       // everything above 120 kHz into the channel and buries the bursts.
-      static orc::zero::dv::CicDecimator cic;
-      if (div != orc::zero::dv::CicDecimator::kRate) { std::printf("div must be 10 for the CIC\n"); return 2; }
+      static orc::zero::dv::CicDecimator cic(div);
+
       pairs = cic.process_cu8(cu8.data(), pairs, decimated.data(), decimated.size() / 2);
       std::memcpy(cu8.data(), decimated.data(), pairs * 2);
     }
@@ -157,6 +161,11 @@ int main(int argc, char** argv) {
         reinterpret_cast<const orcsdr::dmr::d1::ComplexSample*>(baseband.data());
     const double level = double(channelizer.take_level());
     level_sum += level; level_max = level > level_max ? level : level_max; ++level_n;
+    if (invert) {
+      for (size_t n = 0; n < produced; ++n) {
+        const_cast<orcsdr::dmr::d1::ComplexSample*>(samples)[n].im = -samples[n].im;
+      }
+    }
     receiver.process(samples, produced, on_event, &counters);
     processed += produced;
     elapsed = (long long)(processed * 1000ULL / 48000ULL);
