@@ -284,6 +284,18 @@ add_library(orc_zero_mesh_radio STATIC src/mesh/sx1262.cpp src/mesh/cap_lora.cpp
 target_include_directories(orc_zero_mesh_radio PUBLIC src)
 target_link_libraries(orc_zero_mesh_radio PUBLIC Threads::Threads)
 
+# Digital voice: the 240 kS/s -> 48 kS/s channeliser from the Tab5 branch. Pure
+# C++, no radio and no allocation, so it ports to this target unchanged.
+add_library(orc_zero_dv STATIC "${ORC_NATIVE_DECODER_DIR}/dv_channelizer.cpp")
+target_include_directories(orc_zero_dv PUBLIC "${ORC_NATIVE_DECODER_DIR}" src)
+
+if(BUILD_TESTING)
+  add_executable(orc_zero_dv_channelizer_test tests/dv_channelizer_test.cpp)
+  target_link_libraries(orc_zero_dv_channelizer_test PRIVATE orc_zero_dv)
+  target_compile_options(orc_zero_dv_channelizer_test PRIVATE -UNDEBUG)
+  add_test(NAME zero_dv_channelizer COMMAND orc_zero_dv_channelizer_test)
+endif()
+
 # Meshtastic application layer: the 16-byte MeshPacket header, AES-128-CTR with
 # the channel key, and the Data protobuf (portnum + payload). The LoRa PHY -
 # symbols, whitening, CRC - stays where it is, in the shared native decoder.
