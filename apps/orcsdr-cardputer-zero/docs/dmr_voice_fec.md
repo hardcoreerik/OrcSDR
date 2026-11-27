@@ -70,3 +70,34 @@ pass/fail test, but the search space must be constrained by the known structure
 - `orc_zero_ambe_decode` turns 49-bit vectors into PCM and writes a WAV.
 
 So once the schedule is in hand, the whole chain is testable in minutes.
+
+## Deriving the schedule from data we already hold
+
+There is a third route that needs neither the ETSI text nor anyone's tables, and it
+is worth trying before transcribing anything.
+
+The 49-bit payload is C0(12) + C1(12) + C2(11) + C3(14). Only C1 is whitened, so
+**37 of the 49 bits appear verbatim in the 72 on-air bits**. Both sides of the
+correspondence are already in the repository:
+
+- 20 superframes x 18 frames = 360 on-air 72-bit frames, from the capture;
+- 408 correct 49-bit vectors from the reference log, from the same capture.
+
+If frame *k* of ours corresponds to the *k*-th logged vector, the mapping is a
+plain correlation problem: for every pair (on-air bit position 0..71, payload bit
+position 0..48), count agreement across all frames. A true pair agrees 100%; every
+false pair agrees about 50%. 360 samples is ample to separate them, and the result
+is the deinterleave schedule itself, recovered rather than copied.
+
+Alignment has to be established first - the reference decoder logs from its own
+sync, and may skip frames - but that is a short search over a few hundred
+candidates scored by the number of 100%-agreement columns, not a guess.
+
+Once the 37 unwhitened bits are placed, C0 is known, so the keystream can be
+generated and C1's 12 positions identified the same way after de-whitening. At that
+point the full schedule is recovered and the Golay layer can be validated by
+syndrome instead of by ear.
+
+This is the recommended next step: it is deterministic, it uses only material
+already in the tree, and it produces the schedule as evidence rather than as a
+transcription.
