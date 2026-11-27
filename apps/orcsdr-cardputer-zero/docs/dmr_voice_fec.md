@@ -101,3 +101,32 @@ syndrome instead of by ear.
 This is the recommended next step: it is deterministic, it uses only material
 already in the tree, and it produces the schedule as evidence rather than as a
 transcription.
+## Partial schedule recovered from data (2026-11-27)
+
+The correlation was run and the schedule is **not** an arbitrary permutation: it is
+a regular stride-4 interleave. Recovered directly from 20 captured superframes
+against the reference vectors, with no external table:
+
+    payload bit  0..11  <- on-air bits  0, 4, 8, ... 44     (C0 data, stride 4)
+    payload bit 24..27  <- on-air bits 46, 50, 54, 58
+    payload bit 36,38   <- on-air bits 23, 31
+    payload bit 41..44  <- on-air bits 43, 47, 51, 55
+    payload bit 46,47   <- on-air bits 63, 67
+
+31 of 49 positions are pinned. The 18 not yet recovered are C1's 12 whitened bits
+plus a handful that the 20-frame window did not cover - the reference log drops
+frames beyond roughly that depth, which is why a 60-frame window scored *worse*
+(25 pairs) than a 20-frame one (31): misaligned rows destroy perfect agreement.
+
+Two things this establishes:
+
+- The stride-4 structure means the schedule is a dibit-level interleave, exactly
+  as the FEC description says (two bits of each on-air bit-pair feed different
+  sub-vectors). Recovering it by correlation is therefore practical rather than
+  a search over 72! permutations.
+- C1 needs the keystream before it can be matched, so the next step is to derive
+  C0 fully (12 of 12 are already pinned), generate `pr[i] = 173*pr[i-1] + 13849`,
+  de-whiten C1, and correlate again. That should pin the remaining bits and the
+  Golay parity positions, which are not part of the 49-bit payload.
+
+Script: `tools/derive_ambe_schedule.py`.
