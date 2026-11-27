@@ -1,0 +1,72 @@
+# DMR voice: from superframe payload to 49-bit AMBE frames
+
+Recorded after three rounds of failed guessing, because the structure is now known
+and the next attempt should not repeat the search.
+
+## What the earlier attempts got wrong
+
+The decoder's own README describes the **data** burst split as 98-bit payload +
+10-bit slot type + 48-bit SYNC + 10-bit slot type + 98-bit payload, and I assumed a
+voice burst had the same shape with two 49-bit frames per 98-bit half.
+
+It does not. A **voice** burst carries no slot-type fields: the split is
+108 + 48 + 108, and the 216 bits of information are **three 72-bit on-air AMBE+2
+frames**. Six bursts per superframe therefore carry **18 frames**, which matches
+`VoiceGroup::payload` exactly: 162 bytes = 1296 bits = 18 x 72.
+
+That is why 16 stride/contiguity candidates all failed against the oracle. The
+window was wrong, not the bit order. Nothing about a 49-bit walk over the payload
+can work, because a frame is 72 bits and needs channel decoding.
+
+Source: [DMR burst](http://gophertrunk.org/reference/dmr-burst/) and
+[DMR voice superframe](http://gophertrunk.org/reference/dmr-voice-superframe/).
+
+## The per-frame channel code
+
+Each 72-bit on-air frame carries 49 information bits inside a "3600x2450" envelope
+([AMBE+2 on-air FEC](http://gophertrunk.org/reference/ambe-plus-2-fec/)):
+
+1. **Deinterleave** the 72 bits into four sub-vectors by a fixed rW/rX/rY/rZ
+   schedule: for dibit *i*, the high bit goes to `ambe_fr[rW[i]][rX[i]]` and the
+   low bit to `ambe_fr[rY[i]][rZ[i]]`. Sub-vectors: **C0 24 bits, C1 23, C2 11,
+   C3 14**.
+2. **Golay(23,12)** on C0 (12 data + 11 parity, corrects up to 3 errors).
+3. **De-whiten C1** with a keystream seeded by C0's 12 data bits:
+   `pr[0] = 16 * (c0data & 0x0FFF)`, then `pr[i] = (173*pr[i-1] + 13849) & 0xFFFF`
+   for i = 1..23, keystream bit *i* = `pr[i] >> 15`; XOR `ks[23-j]` onto C1 bit *j*.
+4. **Golay(23,12)** on the de-whitened C1.
+5. **C2 and C3 carry no ECC** and pass through.
+6. Assemble the 49-bit payload as **C0(12) + C1(12) + C2(11) + C3(14)**.
+
+Then mbelib decodes it — which already works here: `orc_zero_ambe_decode` produces
+9.36 s of real speech from the reference vectors.
+
+## The licensing constraint on the tables
+
+The rW/rX/rY/rZ schedules are widely published and originate in `szechyjs/dsd`.
+This project's own reference-pack README states the rule: no GPL code is copied or
+ported. GopherTrunk's page says its tables were "ported verbatim" from that
+reference, so they are not a source we can copy either.
+
+The schedule is an ETSI fact (interleaving grid), not an invention, so it can be
+reimplemented from the specification. Two legitimate routes:
+
+- transcribe the interleaving schedule from ETSI TS 102 361-1 (the primary source);
+- or derive it empirically against the oracle already in the repo, since the
+  reference frame log gives 408 correct 49-bit vectors from this same capture, and
+  a candidate schedule is provable: its Golay syndrome must be valid and its
+  de-whitened C0+C1 must reproduce those vectors.
+
+The empirical route is attractive because it needs no new material and has a
+pass/fail test, but the search space must be constrained by the known structure
+(4 sub-vectors of 24/23/11/14 bits, dibit pairing) rather than guessed blindly.
+
+## Harness that is ready
+
+- `tools/dmr_probe.cpp --cu8 <file>` replays a 240 kS/s capture through the live
+  path and dumps `PAYLOAD <hex>` (162 bytes) for the first 20 superframes.
+- `tools/find_ambe_mapping.py` already parses those payloads and the reference
+  frame log, and reports set intersection against the oracle.
+- `orc_zero_ambe_decode` turns 49-bit vectors into PCM and writes a WAV.
+
+So once the schedule is in hand, the whole chain is testable in minutes.
