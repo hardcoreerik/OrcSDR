@@ -284,6 +284,23 @@ add_library(orc_zero_mesh_radio STATIC src/mesh/sx1262.cpp src/mesh/cap_lora.cpp
 target_include_directories(orc_zero_mesh_radio PUBLIC src)
 target_link_libraries(orc_zero_mesh_radio PUBLIC Threads::Threads)
 
+# DMR digital voice, vendored from the Tab5 branch. NOTE: these sources carry
+# SPDX AGPL-3.0-or-later while mbelib is ISC - see docs/dv_licensing.md.
+set(ORC_DMR_DIR "${ORC_REPO_ROOT}/components/orcsdr_dmr")
+add_library(orc_zero_dmr_d1 STATIC
+  ${ORC_DMR_DIR}/src/d0.cpp
+  ${ORC_DMR_DIR}/d1_protocol/src/d1.cpp
+  ${ORC_DMR_DIR}/d1_protocol/src/d1_call.cpp
+  ${ORC_DMR_DIR}/d1_frontend/src/frontend.cpp
+  ${ORC_DMR_DIR}/d1_integration/src/d1_bridge.cpp)
+target_include_directories(orc_zero_dmr_d1 PUBLIC
+  ${ORC_DMR_DIR}/include ${ORC_DMR_DIR}/d1_protocol/include
+  ${ORC_DMR_DIR}/d1_frontend/include ${ORC_DMR_DIR}/d1_integration/include)
+target_compile_features(orc_zero_dmr_d1 PUBLIC cxx_std_17)
+
+add_executable(orc_zero_dmr_probe tools/dmr_probe.cpp)
+target_link_libraries(orc_zero_dmr_probe PRIVATE orc_zero_dmr_d1 orc_zero_dv orc_linux_runtime)
+target_include_directories(orc_zero_dmr_probe PRIVATE src)
 # Digital voice: the 240 kS/s -> 48 kS/s channeliser from the Tab5 branch. Pure
 # C++, no radio and no allocation, so it ports to this target unchanged.
 add_library(orc_zero_dv STATIC "${ORC_NATIVE_DECODER_DIR}/dv_channelizer.cpp")
