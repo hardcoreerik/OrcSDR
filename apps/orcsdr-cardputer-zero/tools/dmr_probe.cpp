@@ -1,4 +1,5 @@
 // Runs the DMR receive chain against the real RTL, to prove the links connect
+#include <cmath>
 // before any UI exists: 240 kS/s CU8 -> channeliser -> 48 kS/s complex ->
 // d1_integration::Receiver -> protocol events.
 //
@@ -107,8 +108,96 @@ int replay_file(const char* path) {
               counters.identified, counters.with_colour);
   return stats.acquisitions || counters.events ? 0 : 1;
 }
+// Replays a known-good 48 kS/s recording through the same stages the live path
+// uses, to find which one damages it. The recording is upsampled by zero-order
+// hold, which leaves images the following filter removes.
+//
+//   --chain <file>        x5 -> channeliser (240k -> 48k)
+//   --chain <file> full   x20 -> CIC 4:1 (960k -> 240k) -> channeliser
+int replay_chain(const char* path, bool full) {
+  std::ifstream in(path, std::ios::binary);
+  if (!in) {
+    std::printf("cannot open %s\n", path);
+    return 2;
+  }
+  in.seekg(0, std::ios::end);
+  const std::streamoff bytes = in.tellg();
+  in.seekg(0);
+  std::vector<std::int16_t> raw(size_t(bytes) / 2);
+  in.read(reinterpret_cast<char*>(raw.data()), bytes);
+  const size_t samples = raw.size() / 2;
+
+  static integration::Receiver receiver;
+  receiver.reset();
+  Counters counters;
+
+  const unsigned hold = full ? 20 : 5;
+  std::printf("chain %s: %zu samples, x%u upsample%s\n", path, samples, hold,
+              full ? " + CIC 4:1" : "");
+
+  std::vector<std::uint8_t> cu8(samples * hold * 2);
+  for (size_t n = 0; n < samples; ++n) {
+    const std::uint8_t re =
+        std::uint8_t(std::max(0, std::min(255, 128 + (raw[n * 2 + 0] >> 8))));
+    const std::uint8_t im =
+        std::uint8_t(std::max(0, std::min(255, 128 + (raw[n * 2 + 1] >> 8))));
+    for (unsigned h = 0; h < hold; ++h) {
+      cu8[(n * hold + h) * 2 + 0] = re;
+      cu8[(n * hold + h) * 2 + 1] = im;
+    }
+  }
+
+  // The channeliser mixes by (-j)^n, expecting the wanted channel 60 kHz above
+  // centre. A baseband recording must be rotated to +60 kHz first, or the mixer
+  // throws it out of band - which is why the first run of this test read zero.
+  {
+    const double rate = 48000.0 * double(hold);
+    for (size_t n = 0; n < cu8.size() / 2; ++n) {
+      const double phase = 6.283185307179586 * 60000.0 * double(n) / rate;
+      const double re = double(cu8[n * 2 + 0]) - 128.0;
+      const double im = double(cu8[n * 2 + 1]) - 128.0;
+      const double nr = re * std::cos(phase) - im * std::sin(phase);
+      const double ni = re * std::sin(phase) + im * std::cos(phase);
+      cu8[n * 2 + 0] = std::uint8_t(std::max(0, std::min(255, 128 + int(nr))));
+      cu8[n * 2 + 1] = std::uint8_t(std::max(0, std::min(255, 128 + int(ni))));
+    }
+  }
+
+  std::vector<std::uint8_t> stage;
+  if (full) {
+    orc::zero::dv::CicDecimator cic(4);
+    stage.assign(cu8.size() / 4 + 16, 0);
+    const size_t produced =
+        cic.process_cu8(cu8.data(), cu8.size() / 2, stage.data(), stage.size() / 2);
+    stage.resize(produced * 2);
+  } else {
+    stage = cu8;
+  }
+
+  orcsdr::dv::Channelizer channelizer;
+  std::vector<orcsdr::dv::Iq48> baseband(2400 / 5 + 16);
+  for (size_t offset = 0; offset + 2 <= stage.size(); offset += 2400 * 2) {
+    const size_t chunk = std::min<size_t>(2400, (stage.size() - offset) / 2);
+    const size_t out_pairs = channelizer.process_cu8(stage.data() + offset, chunk,
+                                                     baseband.data(), baseband.size());
+    if (!out_pairs) continue;
+    const auto* samples_ptr =
+        reinterpret_cast<const orcsdr::dmr::d1::ComplexSample*>(baseband.data());
+    receiver.process(samples_ptr, out_pairs, on_event, &counters);
+  }
+
+  const auto& stats = receiver.stats();
+  std::printf("acquisitions %llu  events %llu  identities %llu\n",
+              (unsigned long long)stats.acquisitions,
+              (unsigned long long)stats.protocol_events,
+              (unsigned long long)stats.validated_identities);
+  return stats.acquisitions ? 0 : 1;
+}
+
 int main(int argc, char** argv) {
   if (argc > 2 && std::strcmp(argv[1], "--file") == 0) return replay_file(argv[2]);
+  if (argc > 2 && std::strcmp(argv[1], "--chain") == 0)
+    return replay_chain(argv[2], argc > 3 && std::strcmp(argv[3], "full") == 0);
   const unsigned long channel_hz = argc > 1 ? std::strtoul(argv[1], nullptr, 0) : 463406250UL;
   const int seconds = argc > 2 ? std::atoi(argv[2]) : 20;
   // div > 1 runs the RTL at div*240 kS/s and subsamples into the channeliser, to
