@@ -1,0 +1,68 @@
+{
+  "qualification": "user_supplied_integrity_verified_not_production",
+  "AU": {
+    "archive": "spectra_rrl.zip",
+    "bytes": 72059963,
+    "sha256": "0afd8e725fcb873ebec0a6962062ef75910b2381324d643533c546f953a7052a",
+    "members": 31,
+    "expanded_bytes": 607178705,
+    "device_records": 2188029,
+    "roles": {
+      "T": 1099477,
+      "R": 1083095,
+      "blank": 5457
+    },
+    "unique_assigned_integral_hz": 20056,
+    "missing_frequency": 5457,
+    "licences": 164543,
+    "sites": 130307,
+    "range_rows": 3511,
+    "numeric_pairs": 3665,
+    "clients": 14224,
+    "person_clients": 2874,
+    "antennas": 8735
+  },
+  "CA": {
+    "archive": "TAFL_LTAF.zip",
+    "bytes": 63775565,
+    "sha256": "6d949498b34f384e7c1cf1302633cd12365e5b6bcd487e43c301e38136934f27",
+    "member_sha256": "714b26dca2bcefd5861a0fec09f5962a5efd94a2d762d5c4c0accdaba2b62972",
+    "expanded_bytes": 425169824,
+    "strict_parse_failure_after": 113141,
+    "diagnostic": {
+      "width61": 899821,
+      "width60": 1,
+      "TX": 453688,
+      "RX": 446133,
+      "unique_integral_hz": 16767,
+      "invalid_frequency": 137
+    }
+  },
+  "docs": [
+    [
+      "mw_req_conditions.pdf",
+      172914,
+      "3c527d5029f2440573ec0ebe5565136a692a4ed5d0775694d3970e2e8a9e83ff"
+    ],
+    [
+      "mw_req_info.pdf",
+      892837,
+      "9c00a9e310d79f47b6dc4b74c8ffcaef4b4d38747aaeeb0b0c69ca0a14199b6d"
+    ],
+    [
+      "tafl_description_ltaf.pdf",
+      728971,
+      "7097a6bb4d1455edc1a15513c0d872863475bab93a0cbb19378567a4ef4763bb"
+    ],
+    [
+      "Field Descriptions - Satellite Spectrum Licence Site Data Extract - Feb 5 2025 - Final v2.pdf",
+      854403,
+      "2cabf8049cbfb82958427a53ca9c52c5d354b01df91527b94637873d08d026c1"
+    ],
+    [
+      "Field Descriptions - Descriptions des champs_0.pdf",
+      654509,
+      "259208e7a429d8f59c481d71beaa2a6f243fc959b7bc59f1b4c8fef8ae50bb20"
+    ]
+  ]
+}

@@ -1,0 +1,27 @@
+Python 3.13.5
+git hash-object uls_stage.py: 05c7c35f9e153ddecd1f82fbdc0bc56d653c14d8
+git hash-object test_uls_stage.py: f7240e0d947d9e02713e092499c58a8329f87ac2
+python -m unittest -v test_uls_stage
+test_bad_schema (test_uls_stage.Tests.test_bad_schema) ... ok
+test_composite_join (test_uls_stage.Tests.test_composite_join) ... ok
+test_duplicate (test_uls_stage.Tests.test_duplicate) ... ok
+test_range_and_fractional (test_uls_stage.Tests.test_range_and_fractional) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.004s
+
+OK
+python -m unittest -v coordinator_uls_audit
+test_blank_key_rolls_back_data (coordinator_uls_audit.Boundary.test_blank_key_rolls_back_data) ... ok
+test_conflict_counter_does_not_quarantine_join (coordinator_uls_audit.Boundary.test_conflict_counter_does_not_quarantine_join) ... ok
+test_emission_sequence_and_numeric_key_equivalence (coordinator_uls_audit.Boundary.test_emission_sequence_and_numeric_key_equivalence) ... ok
+test_fractional_hz_retained_but_not_indexable (coordinator_uls_audit.Boundary.test_fractional_hz_retained_but_not_indexable) ... ok
+test_inside_block_center_flagged_not_proven_conflict (coordinator_uls_audit.Boundary.test_inside_block_center_flagged_not_proven_conflict) ... ok
+test_malformed_orphan_frequency_not_validated (coordinator_uls_audit.Boundary.test_malformed_orphan_frequency_not_validated) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.004s
+
+OK
+git hash-object coordinator_uls_audit.py: 378764aec8c74802acfdf94498aa1add036a93c8
+Historical audit executed from scratch with exact pinned source. Rename published uls_checkpoint_audit.py to coordinator_uls_audit.py to reproduce exact module name; or run python -m unittest -v uls_checkpoint_audit with both source files in same directory. No real archives ingested.
