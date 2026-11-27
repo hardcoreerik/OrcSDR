@@ -182,7 +182,7 @@ int main(){
     FCHK(host_stub::contains("NOW LISTENING")&&host_stub::contains("SCAN STOPPED")&&host_stub::contains("-- MHz")&&host_stub::contains("NO CHANNEL TUNED"));
     FCHK(host_stub::contains("NOT LISTENING")&&host_stub::contains("REPEATER UNKNOWN"));
     FCHK(host_stub::contains("SIGNAL DIAGNOSTICS")&&host_stub::contains("SNR")&&host_stub::contains("BER")&&host_stub::contains("CRC FAIL --"));
-    FCHK(host_stub::contains("RF LEVEL / WATERFALL")&&host_stub::contains("SPECTRUM DATA UNAVAILABLE")&&host_stub::contains("NO WATERFALL")&&host_stub::contains("NO SYMBOL DATA"));
+    FCHK(host_stub::contains("RF LEVEL / WATERFALL")&&host_stub::contains("SPECTRUM DATA UNAVAILABLE")&&host_stub::contains("NO WATERFALL")&&host_stub::contains("NO SYMBOLS"));
     FCHK(host_stub::contains("DECODER STATUS")&&host_stub::contains("N48")&&host_stub::contains("P25 II")&&host_stub::contains("D-STAR")&&host_stub::contains("YSF"));
     FCHK(host_stub::contains("RECEIVER CONTROLS")&&host_stub::contains("HOLD")&&host_stub::contains("SKIP")&&host_stub::contains("RECORD VOICE [OFF]"));
     FCHK(host_stub::contains("AUDIO")&&host_stub::contains("FILTER")&&host_stub::contains("TUNE")&&host_stub::contains("OPTIONS"));
@@ -275,7 +275,7 @@ int main(){
     ++ls.revision;show(ls);
     FCHK(host_stub::contains("12.3 dB")&&host_stub::contains("2.1 %")&&host_stub::contains("-1500.0 Hz")==false&&host_stub::contains("-150.0 Hz")&&host_stub::contains("-84.7 dBm"));
     FCHK(host_stub::contains("FSK LEVELS")&&host_stub::contains("LIKELY SYSTEM (DIRECTORY)")&&host_stub::contains("TEST REPEATER [LOCAL LIST]"));
-    pd.symbol_protocol=Protocol::nxdn96;++pd.symbol_seq;show(ls);FCHK(host_stub::contains("NO SYMBOL DATA"));   // levels of another protocol are not shown for this one
+    pd.symbol_protocol=Protocol::nxdn96;++pd.symbol_seq;show(ls);FCHK(host_stub::contains("NO SYMBOLS"));   // levels of another protocol are not shown for this one
     ld.set_plot(nullptr);
   }
   {

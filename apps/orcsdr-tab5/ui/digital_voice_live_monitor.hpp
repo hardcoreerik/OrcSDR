@@ -240,7 +240,7 @@ inline void panel(Paint& p,const Snapshot& s,const PlotData& d,const UiState& u,
       for(unsigned i=0;i<4;++i)p.button(i==0?"AUTO":i==1?"SLOT 1":i==2?"SLOT 2":"MUTE",popup_button(open,i),s.voice.available,s.voice.available&&static_cast<int>(s.voice.listen)==int(i));
       p.label("AUTO plays whichever time slot is talking.",680,364,popup_area);
       p.label("SLOT 1 or SLOT 2 locks to one. MUTE is silent.",680,392,popup_area);
-      p.label("Volume: the speaker icon at the top of the screen.",680,432,popup_area);
+      p.label("Volume: the speaker icon at the top.",680,432,popup_area);
       if(!s.voice.available)p.text("Voice audio is not running.",680,472,kAmber,2,popup_area);
       break;
     case Popup::filter: {
@@ -345,7 +345,7 @@ class Graphs {
         label(g,"FSK LEVELS",{symbols.x+2,symbols.y+2,symbols.w-4,18});
         for(unsigned i=0;i<d.reference_count;++i)g.drawFastHLine(symbols.x+2,y(d.reference[i]),symbols.w-4,kEdge);
         for(unsigned i=0;i<d.symbol_count;++i)g.fillRect(symbols.x+2+int(i)*(symbols.w-5)/int(points-1),y(d.deviation[i]),2,2,kGreen);
-      }else label(g,"NO SYMBOL DATA",symbols);
+      }else label(g,"NO SYMBOLS",symbols);
     }
     if(symbols_visible){sym_seq_=d.symbol_seq;have_symbols_=so;}
     have_=ok;previous_ok_=ok;initialized_=true;
