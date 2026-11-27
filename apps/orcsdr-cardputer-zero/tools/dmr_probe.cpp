@@ -15,6 +15,7 @@
 #include <vector>
 
 #include "dv_channelizer.hpp"
+#include "dv_decimator.hpp"
 #include "orcsdr_dmr/d1_bridge.hpp"
 #include "rtl_receiver.hpp"
 
@@ -128,7 +129,7 @@ int main(int argc, char** argv) {
 
   Counters counters;
   std::vector<std::uint8_t> cu8(2400 * 2 * div);        // 10 ms at div*240 kS/s
-  std::vector<std::uint8_t> decimated(2400 * 2);
+  std::vector<std::uint8_t> decimated((2400 * 2 * div) / 10 + 16);
   std::vector<orcsdr::dv::Iq48> baseband(2400 / 5 + 16);
 
   double level_sum = 0; double level_max = 0; unsigned level_n = 0;
@@ -140,9 +141,11 @@ int main(int argc, char** argv) {
     if (!got) continue;
     size_t pairs = got / 2;
     if (div > 1) {
-      size_t n = 0;
-      for (size_t i = 0; i + 1 < got; i += 2 * div) { decimated[n * 2] = cu8[i]; decimated[n * 2 + 1] = cu8[i + 1]; ++n; }
-      pairs = n;
+      // 10:1 through the CIC, not naive subsampling: unfiltered decimation folds
+      // everything above 120 kHz into the channel and buries the bursts.
+      static orc::zero::dv::CicDecimator cic;
+      if (div != orc::zero::dv::CicDecimator::kRate) { std::printf("div must be 10 for the CIC\n"); return 2; }
+      pairs = cic.process_cu8(cu8.data(), pairs, decimated.data(), decimated.size() / 2);
       std::memcpy(cu8.data(), decimated.data(), pairs * 2);
     }
     const size_t produced =

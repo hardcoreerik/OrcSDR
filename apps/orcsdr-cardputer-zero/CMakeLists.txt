@@ -303,7 +303,9 @@ target_link_libraries(orc_zero_dmr_probe PRIVATE orc_zero_dmr_d1 orc_zero_dv orc
 target_include_directories(orc_zero_dmr_probe PRIVATE src)
 # Digital voice: the 240 kS/s -> 48 kS/s channeliser from the Tab5 branch. Pure
 # C++, no radio and no allocation, so it ports to this target unchanged.
-add_library(orc_zero_dv STATIC "${ORC_NATIVE_DECODER_DIR}/dv_channelizer.cpp")
+add_library(orc_zero_dv STATIC
+  "${ORC_NATIVE_DECODER_DIR}/dv_channelizer.cpp"
+  src/dv_decimator.cpp)
 target_include_directories(orc_zero_dv PUBLIC "${ORC_NATIVE_DECODER_DIR}" src)
 
 if(BUILD_TESTING)
@@ -311,6 +313,10 @@ if(BUILD_TESTING)
   target_link_libraries(orc_zero_dv_channelizer_test PRIVATE orc_zero_dv)
   target_compile_options(orc_zero_dv_channelizer_test PRIVATE -UNDEBUG)
   add_test(NAME zero_dv_channelizer COMMAND orc_zero_dv_channelizer_test)
+  add_executable(orc_zero_dv_decimator_test tests/dv_decimator_test.cpp)
+  target_link_libraries(orc_zero_dv_decimator_test PRIVATE orc_zero_dv)
+  target_compile_options(orc_zero_dv_decimator_test PRIVATE -UNDEBUG)
+  add_test(NAME zero_dv_decimator COMMAND orc_zero_dv_decimator_test)
 endif()
 
 # Meshtastic application layer: the 16-byte MeshPacket header, AES-128-CTR with
