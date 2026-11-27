@@ -1,0 +1,2 @@
+# International acquisition implementation checkpoint
+See tests/fcc_database_coordinator/international/README.md for actual source attempts, executable private staging bridge, exact synthetic test evidence and limitations. AU/JP first-class scope unchanged. Neither real dataset acquired; local Antigravity must retrieve authorized sources and review actual schemas. No national records added, no production package/reader acceptance. Research and testing branches untouched.

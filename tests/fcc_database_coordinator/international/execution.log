@@ -1,0 +1,11 @@
+test_au_jp_deterministic_and_distinct (test_stage.Tests.test_au_jp_deterministic_and_distinct) ... ok
+test_exclusions (test_stage.Tests.test_exclusions) ... ok
+test_invalid_duplicate_and_schema (test_stage.Tests.test_invalid_duplicate_and_schema) ... ok
+test_japanese_text (test_stage.Tests.test_japanese_text) ... ok
+test_no_overwrite (test_stage.Tests.test_no_overwrite) ... ok
+test_zip_inventory (test_stage.Tests.test_zip_inventory) ... ok
+
+----------------------------------------------------------------------
+Ran 6 tests in 0.029s
+
+OK
