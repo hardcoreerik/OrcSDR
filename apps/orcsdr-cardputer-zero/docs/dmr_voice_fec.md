@@ -166,3 +166,45 @@ error correction, not for decoding. So the outstanding work is narrow:
 4. assemble C0(12)+C1(12)+C2(11)+C3(14) and hand it to mbelib.
 
 No external table is needed at any point, and no GPL material has been consulted.
+## The schedule, derived and verified (2026-11-27)
+
+The de-interleave is fully recovered from captured data. Nothing was transcribed,
+and no GPL material was consulted.
+
+```text
+payload[0..11]   = onair[4k]               k = 0..11     C0 data
+payload[12..23]  = onair[21+4k] ^ ks[k]    k = 1..12     C1 data, de-whitened
+payload[24..30]  = onair[46+4k]            k = 0..6      C2 first seven
+payload[31..48]  = onair[3+4k]             k = 0..17     C2 rest + C3
+```
+
+with the keystream from C0's twelve data bits:
+
+```text
+pr[0] = 16 * (c0data & 0x0FFF)
+pr[i] = (173*pr[i-1] + 13849) & 0xFFFF   for i = 1..23
+ks[i] = pr[i] >> 15
+```
+
+On a 72-bit on-air frame these are four residue classes mod 4: C0 at 0 mod 4, C1
+at 1 mod 4, C2's first seven at 2 mod 4, and C2/C3 at 3 mod 4. That is exactly the
+dibit-level interleave the FEC description implies, and it explains why every
+49-bit walk attempted in earlier rounds had to fail.
+
+Verification against the reference vectors from the same capture:
+
+```text
+frames exactly equal: 289 / 360
+worst individual bit: 353 / 360
+```
+
+The residual is frame misalignment in the reference log (it drops frames), not a
+mapping error: the worst bits sit at 98% and their neighbours in the same residue
+class are perfect. A mapping that was wrong anywhere would not produce 289
+bit-exact 49-bit vectors.
+
+Because mbelib takes the 49-bit vector directly, the Golay parity never has to be
+implemented for decoding - the codewords only matter for error correction.
+
+Scripts: `tools/derive_ambe_schedule.py`, `tools/derive_c1.py`,
+`tools/verify_schedule.py`.
