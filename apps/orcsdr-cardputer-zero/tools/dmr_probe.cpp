@@ -41,6 +41,7 @@ const char* sync_name(orcsdr::dmr::SyncKind kind) {
   }
 }
 
+std::string ambe_hex(const unsigned char* payload, int first_bit, int stride = 1);
 struct VoiceCounters {
   unsigned groups = 0;
   unsigned lc_ok = 0;
@@ -54,13 +55,46 @@ void on_voice(const orcsdr::dmr::d1::VoiceGroup& group, void* user) noexcept {
   ++c->groups;
   if (group.lc_valid) ++c->lc_ok;
   if (group.pi_seen) ++c->protected_groups;
-  if (c->printed < 3) {
+  if (c->printed < 2) {
     ++c->printed;
+    std::printf("    A %s  B %s\n", ambe_hex(group.payload.data(), 0, 2).c_str(),
+                ambe_hex(group.payload.data(), 1, 2).c_str());
+    std::printf("    C %s  D %s\n", ambe_hex(group.payload.data(), 108, 2).c_str(),
+                ambe_hex(group.payload.data(), 109, 2).c_str());
     std::printf("  voice group: slot %u cc %u lc %s pi %s payload %02X%02X%02X...\n",
                 unsigned(group.slot), unsigned(group.colour_code),
                 group.lc_valid ? "ok" : "no", group.pi_seen ? "SET" : "clear",
                 group.payload[0], group.payload[1], group.payload[2]);
   }
+}
+
+// Candidate AMBE extraction. The burst README documents the split as
+// 98-bit payload + 10-bit slot type + 48-bit SYNC + 10-bit slot type + 98-bit
+// payload, so each 98-bit half should hold two 49-bit AMBE frames. VoiceGroup
+// gives 27 bytes (216 bits) per burst with the sync already stripped, which is
+// 98 + 10 + 98 + 10.
+//
+// Printed rather than trusted: the reference frame log from this same capture
+// begins 81B7109B585500, 80BF7DB2858380, so the layout is right only if it
+// reproduces those.
+std::string ambe_hex(const unsigned char* payload, int first_bit, int stride) {
+  unsigned char bits[49];
+  for (int i = 0; i < 49; ++i) {
+    const int bit = first_bit + i * stride;
+    bits[i] = (payload[bit / 8] >> (7 - (bit % 8))) & 1;
+  }
+  static const char* hex = "0123456789ABCDEF";
+  std::string out;
+  for (int i = 0; i < 7; ++i) {
+    unsigned value = 0;
+    for (int b = 0; b < 8; ++b) {
+      const int idx = i * 8 + b;
+      value = (value << 1) | (idx < 49 ? bits[idx] : 0);
+    }
+    out.push_back(hex[(value >> 4) & 0xF]);
+    out.push_back(hex[value & 0xF]);
+  }
+  return out;
 }
 
 void on_event(const integration::Event& event, void* user) noexcept {
