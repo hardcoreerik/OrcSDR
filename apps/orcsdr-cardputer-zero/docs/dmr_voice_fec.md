@@ -224,7 +224,7 @@ with `rtlsdr_demod_read_reg failed` and killed the handle within seconds. At
 960 kS/s with 4:1 decimation the stream is stable for minutes, and the codec sits
 PREPARED between calls rather than being opened mid-burst.
 
-## Known limitation: no Golay error correction
+## Golay error correction (implemented 2026-11-27)
 
 C0 and C1 are Golay(23,12) codewords, and this implementation does not correct
 them. mbelib takes the 49-bit vector directly, so decoding works without Golay -
@@ -326,3 +326,22 @@ With both codewords recoverable, correction up to three bit errors per codeword 
 now implementable: extract 23 bits, compute the syndrome, apply the matching
 one/two/three-bit error pattern, then rebuild the payload from corrected C0 and C1
 and the uncorrected C2/C3.
+Both codewords are now corrected, which supersedes the "not implemented" note below.
+C0 must be corrected first because C1 is whitened from it: one uncorrected C0 bit
+re-randomises all twelve C1 bits, so correcting C1 against a dirty C0 would be worse
+than not correcting it at all.
+
+Verification is by injection rather than assertion:
+
+```text
+golay selftest: 0 codeword failures   500 codewords x 1, 2 and 3 flipped bits
+frame selftest: 0 failures            200 frames, 3 errors in C0 AND 3 in C1
+```
+
+The frame test builds a valid 72-bit frame from a random payload with the inverse of
+the derived map, damages both codewords, and requires the original 49 bits back.
+
+Clean captures decode identically to before (26 groups / 468 frames / rms 2510.4),
+which is the required outcome: correction must be invisible when there is nothing to
+correct. Where it earns its place is live marginal signals, which this corpus cannot
+demonstrate - all three captures showed anchors == groups with nothing abandoned.
