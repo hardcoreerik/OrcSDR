@@ -284,6 +284,19 @@ add_library(orc_zero_mesh_radio STATIC src/mesh/sx1262.cpp src/mesh/cap_lora.cpp
 target_include_directories(orc_zero_mesh_radio PUBLIC src)
 target_link_libraries(orc_zero_mesh_radio PUBLIC Threads::Threads)
 
+# AMBE+2 vocoder (ISC). mbelib ships as an ESP-IDF component with no standalone
+# CMake project, so its C sources are compiled directly here.
+set(ORC_MBELIB_DIR "${ORC_REPO_ROOT}/components/mbelib")
+add_library(orc_zero_mbelib STATIC
+  ${ORC_MBELIB_DIR}/mbelib.c
+  ${ORC_MBELIB_DIR}/ambe3600x2450.c
+  ${ORC_MBELIB_DIR}/imbe7200x4400.c
+  ${ORC_MBELIB_DIR}/ecc.c)
+target_include_directories(orc_zero_mbelib PUBLIC ${ORC_MBELIB_DIR})
+
+add_executable(orc_zero_ambe_decode tools/ambe_decode.cpp)
+target_link_libraries(orc_zero_ambe_decode PRIVATE orc_zero_mbelib)
+target_include_directories(orc_zero_ambe_decode PRIVATE ${ORC_MBELIB_DIR} src)
 # DMR digital voice, vendored from the Tab5 branch. NOTE: these sources carry
 # SPDX AGPL-3.0-or-later while mbelib is ISC - see docs/dv_licensing.md.
 set(ORC_DMR_DIR "${ORC_REPO_ROOT}/components/orcsdr_dmr")
