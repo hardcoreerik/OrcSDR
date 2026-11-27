@@ -8,6 +8,7 @@
 #include "memory_reclaim.hpp"
 
 #include "dashboard_audio_control.hpp"
+#include "dashboard_info_button.hpp"
 #include "ft8_decoder_backend.hpp"
 #include "ft8_tuning.hpp"
 #include "ft8_info_text.hpp"
@@ -242,11 +243,7 @@ void draw_utc() {
 
 void draw_info_button() {
   focus_nav::note(kInfoBtn.x, kInfoBtn.y, kInfoBtn.w, kInfoBtn.h);
-  const int c_x = cx(kInfoBtn), c_y = cy(kInfoBtn);
-  M5.Display.fillCircle(c_x, c_y, 23, g_info_open ? kSelected : kPanel);
-  M5.Display.drawCircle(c_x, c_y, 23, g_info_open ? kGreen : kCyan);
-  M5.Display.drawCircle(c_x, c_y, 22, g_info_open ? kGreen : kCyan);
-  text("i", c_x, c_y, g_info_open ? kGreen : kCyan, 3);
+  orcsdr::info_button::draw(M5.Display, g_info_open);   // the shared (i): same look and place on every dashboard
 }
 
 void draw_header() {

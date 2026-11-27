@@ -132,19 +132,13 @@ int main(){
     const auto bf=layout::kBasicFacts;
     const Action act=fd.handle_touch(bf.x+300,bf.y+350,fs,fu);
     FCHK(act.kind==ActionKind::follow_system&&act.value==0);
-    FCHK(!apply_ui_action(fu,act,fs)&&fu.view==View::follow);        // the view moved; the action still goes to the receiver owner
-    fs.can_scan=false;
-    FCHK(fd.handle_touch(bf.x+300,bf.y+350,fs,fu).kind==ActionKind::none||fu.view==View::follow);
-    fs.can_scan=true;
-    // the FOLLOW page
-    fs.follow_active=true;fs.follow_frequency_hz=463400000;fs.follow_protocol=Protocol::dmr;fs.follow_area=1;fs.follow_area_valid=true;
+    FCHK(!apply_ui_action(fu,act,fs)&&fu.view==View::live);          // FOLLOW is shown on the LIVE monitor; the action still goes to the receiver owner
+    fs.follow_active=true;fs.follow_frequency_hz=463400000;fs.follow_protocol=Protocol::dmr;fs.protocol=Protocol::dmr;fs.rf_trace_on=true;
     fs.voice.available=true;fs.voice.phase=VoicePhase::listening;++fs.revision;
     host_stub::reset();FCHK(fd.present(fdisp,fs,fu,true,false));
-    FCHK(host_stub::contains("463.4000 MHz")&&host_stub::contains("Colour Code 1"));
-    FCHK(host_stub::contains("Listening - no call right now"));
-    FCHK(host_stub::contains("BACK")&&host_stub::contains("MUTE"));
+    FCHK(host_stub::contains("463.400000 MHz")&&host_stub::contains("FOLLOWING")&&host_stub::contains("UNFOLLOW")&&host_stub::contains("RECORD VOICE"));
     FCHK(host_stub::full_clear_count==0&&!host_stub::out_of_bounds);
-    // the trace moves every quarter second: only bars repaint, no card or panel is refilled
+    // the RF level moves every tenth of a second: only bars repaint, no card or panel is refilled
     for(int step=0;step<10;++step) {
       for(size_t i=0;i+1<Snapshot::kFollowTrace;++i)fs.follow_trace[i]=fs.follow_trace[i+1];
       fs.follow_trace[Snapshot::kFollowTrace-1]=static_cast<uint8_t>((step*3)%16);
@@ -152,19 +146,11 @@ int main(){
       host_stub::reset();FCHK(fd.present(fdisp,fs,fu,true,false));
       FCHK(host_stub::full_clear_count==0);
       for(const auto& c:host_stub::calls) FCHK(!((c.kind==host_stub::Prim::round_fill||c.kind==host_stub::Prim::round_line)&&c.w>=100));
-      FCHK(host_stub::calls.size()<=220);
+      FCHK(host_stub::calls.size()<=260);
     }
-    // a call in progress, then lost receiver
-    fs.voice.phase=VoicePhase::decoding;fs.voice.active_slot=1;fs.voice.source_id=65535;fs.voice.destination_id=16;fs.voice.group_call=true;++fs.revision;
-    host_stub::reset();FCHK(fd.present(fdisp,fs,fu,true,false));
-    FCHK(host_stub::contains("Call in progress")&&host_stub::contains("65535")&&host_stub::contains("TALKGROUP")&&host_stub::contains("Group call"));
-    fs.follow_lost=true;++fs.revision;
-    host_stub::reset();FCHK(fd.present(fdisp,fs,fu,true,false));
-    FCHK(host_stub::contains("Receiver lost"));
-    // controls
-    FCHK(fd.handle_touch(bf.x+60,bf.y+430,fs,fu).kind==ActionKind::follow_stop);
-    FCHK(fd.handle_touch(20+60,568+20,fs,fu).kind==ActionKind::set_listen);
-    FCHK(!apply_ui_action(fu,{ActionKind::follow_stop,0},fs)&&fu.view==View::systems);
+    FCHK(fd.handle_touch(750,525,fs,fu).kind==ActionKind::follow_stop);                 // the left button leaves the channel
+    FCHK(fd.handle_touch(900,525,fs,fu).kind==ActionKind::none);                        // SKIP is off while following
+    FCHK(!apply_ui_action(fu,{ActionKind::follow_stop,0},fs)&&fu.view==View::live);
   }
   {
     // SETUP > LOG DATA: shows off, on with the line count, is N/A without storage, and is a receiver-owner action (never a UI-local change).
@@ -304,7 +290,7 @@ int main(){
       iu.view=views[k];iu.info_open=false;++is.revision;
       host_stub::reset();FCHK(id.present(idisp,is,iu,true,false));
       FCHK(host_stub::contains("DIGITAL VOICE  /  RECEIVE ONLY"));
-      const Action open=id.handle_touch(1230,130,is,iu);
+      const Action open=id.handle_touch(828,40,is,iu);
       FCHK(open.kind==ActionKind::toggle_info);
       FCHK(apply_ui_action(iu,open,is)&&iu.info_open);
       host_stub::reset();FCHK(id.present(idisp,is,iu,true,false));
@@ -349,7 +335,7 @@ int main(){
       ui.density=density;
       host_stub::reset();assert(dashboard.present(display,s,ui,true,false));
       assert(!host_stub::out_of_bounds && host_stub::full_clear_count==0);
-      for(const auto& c:host_stub::calls) assert(c.y>=104); // shared header is never drawn by this module
+      for(const auto& c:host_stub::calls) assert(c.y>=104||(c.x>=804&&c.x+c.w<=852&&c.y>=16&&c.y+c.h<=64)); // the shared header is never drawn by this module, except the standard (i) button
     }
   }
   // NXDN field-level evidence gates: untrusted candidate cannot expose RAN/site/identity.

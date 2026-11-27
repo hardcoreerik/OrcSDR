@@ -6,6 +6,7 @@ This is the **project-level release and current-source index**. It links the aut
 
 ### Digital Voice
 
+- FOLLOW now opens the LIVE monitor (the left button becomes UNFOLLOW) instead of a separate page. The (i) help button moved to the shared header spot (x804, y16, 48 px) with one rounded-square look, used by Digital Voice, FT8 and Dead Air (Dead Air's small orb moved left to x744 to make room; Dead Air and FT8 not yet checked on the device).
 - LIVE screen is now the approved radio monitor (Now Listening, Signal Diagnostics, Decoder Status, Receiver Controls, RF level / waterfall area) with Audio, Filter, Tune and Options popups. Spectrum, symbol levels, SNR, BER and deviation have no producer yet and show as unavailable; see docs/digital-voice/LIVE_MONITOR_INTEGRATION.md. Host tested and flashed; native screenshots pending.
 
  — Digital Voice: scan-aware LIVE screen, mode badge and RF strip on SCAN, (i) help cards, Digital Voice home icon — 2026-11-27

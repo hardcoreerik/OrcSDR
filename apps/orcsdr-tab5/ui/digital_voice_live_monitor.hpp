@@ -110,6 +110,7 @@ inline Action touch(int x,int y,const Snapshot& s,uint8_t popup_id) {
     }
     return {};
   }
+  if(hold.contains(x,y)&&s.follow_active)return {ActionKind::follow_stop,0};           // while following, the left button leaves the channel
   if(hold.contains(x,y)&&hold_ok(s))return {ActionKind::toggle_hold,0};
   if(skip.contains(x,y)&&skip_ok(s))return {ActionKind::skip_frequency,0};
   if(record.contains(x,y)&&record_ok(s))return {ActionKind::toggle_save_speech,0};
@@ -223,7 +224,8 @@ inline void panel(Paint& p,const Snapshot& s,const PlotData& d,const UiState& u,
     break;
   case kControls:
     p.card(controls);p.title("RECEIVER CONTROLS",680,486,controls);
-    p.button(s.scan_on_hold?"RELEASE":"HOLD",hold,hold_ok(s),s.scan_on_hold);
+    if(s.follow_active)p.button("UNFOLLOW",hold,true,true);
+    else p.button(s.scan_on_hold?"RELEASE":"HOLD",hold,hold_ok(s),s.scan_on_hold);
     p.button("SKIP",skip,skip_ok(s));
     p.button(s.save_speech?"RECORD VOICE [ON]":"RECORD VOICE [OFF]",record,record_ok(s),s.save_speech);
     p.button("AUDIO",audio,true,u.popup==static_cast<uint8_t>(Popup::audio));p.button("FILTER",filter,true,u.popup==static_cast<uint8_t>(Popup::filter));

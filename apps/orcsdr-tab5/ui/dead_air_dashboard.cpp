@@ -1,6 +1,7 @@
 #include "dead_air_dashboard.hpp"
 #include "dead_air_info.hpp"
 #include "dashboard_audio_control.hpp"
+#include "dashboard_info_button.hpp"
 #include "screen_controller.hpp"
 #include <M5Unified.h>
 #include <algorithm>
@@ -277,7 +278,7 @@ void sanitize_snapshot() {
 // (below the header, above the tab bar); while it is open the body is not repainted underneath it.
 bool g_info_open = false;
 size_t g_info_page = 0;
-constexpr int kInfoBtnX = 374, kInfoBtnY = 17, kInfoBtnW = 44, kInfoBtnH = 44;
+constexpr int kInfoBtnX = info_button::kX, kInfoBtnY = info_button::kY, kInfoBtnW = info_button::kW, kInfoBtnH = info_button::kH;   // the standard header spot
 constexpr int kInfoPanelX = 160, kInfoPanelY = 108, kInfoPanelW = 960, kInfoPanelH = 520;
 constexpr size_t kInfoLinesPerPage = 12;
 constexpr int kInfoPrevX = 180, kInfoNextX = 350, kInfoCloseX = 950, kInfoBtnRowY = 560, kInfoBtnRowW = 150;
@@ -290,15 +291,7 @@ size_t info_page_count() {
   return (p.line_count + kInfoLinesPerPage - 1) / kInfoLinesPerPage;
 }
 void draw_info_button() {
-  const int cx = kInfoBtnX + kInfoBtnW / 2, cy = kInfoBtnY + kInfoBtnH / 2;
-  const uint16_t c = g_info_open ? kGreen : kCyan;
-  M5.Display.fillCircle(cx, cy, 21, g_info_open ? kEdge : kPanel);
-  M5.Display.drawCircle(cx, cy, 21, c);
-  M5.Display.drawCircle(cx, cy, 20, c);
-  M5.Display.setTextDatum(middle_center);
-  M5.Display.setTextSize(3);
-  M5.Display.setTextColor(c);
-  M5.Display.drawString("i", cx, cy);
+  info_button::draw(M5.Display, g_info_open);
 }
 void draw_info_panel() {
   g.t = &M5.Display;
@@ -349,7 +342,7 @@ void chrome() {
   nav();
 }
 constexpr int kFxBigX = 500, kFxBigY = 138, kFxBigS = 120;      // the orb on the Overview
-constexpr int kFxBeaconX = 800, kFxBeaconY = 13, kFxBeaconS = 52;  // the same orb, small, in every tab's header
+constexpr int kFxBeaconX = 744, kFxBeaconY = 13, kFxBeaconS = 52;  // the same orb, small, in every tab's header
 constexpr int kSessionBtnX = 498, kSessionBtnY = 305, kSessionBtnW = 122;
 constexpr int kVeilVeilBtnX = 366, kVeilVeilBtnY = 305, kVeilVeilBtnW = 122;  // VEIL-26 overlay, beside SESSION
 constexpr int kEvVeilBtnX = 372, kEvVeilBtnW = 200;                           // VEIL-26 button in the Events nav row (kEvNavY)

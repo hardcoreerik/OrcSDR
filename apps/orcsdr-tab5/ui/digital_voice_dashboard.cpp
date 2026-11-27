@@ -1,6 +1,7 @@
 #include "digital_voice_dashboard.hpp"
 #include "digital_voice_dashboard_paint.hpp"
 #include "digital_voice_live_common.hpp"
+#include "dashboard_info_button.hpp"
 #include "dv_bandplan.hpp"
 #include <algorithm>
 #include <cstdio>
@@ -84,7 +85,7 @@ void protocol_facts(Paint& p,const Snapshot& s,Rect card,int x,int y) {
     p.fact("MODE","NOT VERIFIED",x,y+52,card,kAmber);
   }
 }
-constexpr Rect kInfoButton{1212,115,42,32};
+constexpr Rect kInfoButton{info_button::kX,info_button::kY,info_button::kW,info_button::kH};   // in the header, the same place on every dashboard
 void context(Paint& p,const Snapshot& s,Density mode,bool info) {
   const Rect r=layout::kContext;
   p.fillRoundRect(r.x,r.y,r.w,r.h,6,kPanel);
@@ -93,7 +94,7 @@ void context(Paint& p,const Snapshot& s,Density mode,bool info) {
   p.text(mode==Density::discovery_first?"DISCOVERY FIRST":"ANALYSIS FIRST",r.x+540,r.y+r.h/2,kGreen,2,r);
   p.text(origin_name(s.origin),r.x+864,r.y+r.h/2,
          s.origin==Origin::live?kWhite:kAmber,2,r);
-  p.button("i",kInfoButton,true,info);      // the help card for this screen
+  info_button::draw(p.g,info);              // the help card for this screen: the standard header (i)
 }
 void nav(Paint& p,const UiState& state) {
   p.fillRect(0,642,1280,78,kBg);
@@ -682,14 +683,14 @@ const InfoText& info_text(View v) {
     "The strip shows the receiver's real signal level, so you can see it is working.",
     "A channel is only called a system after its data passes its own checks.",nullptr,nullptr}};
   static const InfoText kLive={"LIVE",{
-    "This screen shows what you are listening to right now.",
-    "The big number is the tuned frequency. Under it: the system type, colour code (or RAN) and slot.",
-    "TALKGROUP is the group being called. FROM RADIO is the radio that is talking.",
-    "The strip at the top says what the scan is doing: MONITOR, HOLD, DISCOVERY, SWEEP or stopped.",
-    "HOLD keeps the scan on this channel, RELEASE lets it go on, SKIP jumps to the next channel.",
-    "AUTO plays whichever time slot is talking. SLOT 1 or SLOT 2 locks to one. MUTE silences it.",
-    "Volume is the speaker icon at the top of the screen.",
-    "Nothing is guessed: if the radio cannot verify something it shows a dash.",nullptr,nullptr}};
+    "This is the radio monitor: what you are listening to right now.",
+    "NOW LISTENING: the frequency, system type, colour code or RAN, and who is talking.",
+    "The coloured word says what the scan is doing: MONITOR, HOLD, DISCOVERY, SWEEP or FOLLOWING.",
+    "The graphs and diagnostics show real receiver data. A dash means it is not measured.",
+    "DECODER STATUS lights the system type the receiver verified. It is not a selector.",
+    "HOLD stays on a channel, SKIP moves on, UNFOLLOW leaves a channel you followed.",
+    "RECORD VOICE saves clear calls. AUDIO, FILTER, TUNE and OPTIONS open popups.",
+    "Volume is the speaker icon at the top. The (i) at the top closes this card.",nullptr,nullptr}};
   static const InfoText kHeard={"LAST HEARD",{
     "Events the receiver verified, newest first. Tap a row to see its details.",
     "CC is the DMR colour code and TS the time slot. TG is a talkgroup number.",
@@ -701,7 +702,7 @@ const InfoText& info_text(View v) {
     "Every system the receiver has found and verified, newest first, with how often it was heard.",
     "TG and UNITS count the talkgroups and radios seen on it. The time is the last time it was heard.",
     "Tap a system to select it. SAVE CHANNEL adds it to your saved list.",
-    "FOLLOW stays on that one channel and shows it in plain words. BACK returns to the scan.",
+    "FOLLOW stays on that one channel and shows it on LIVE. UNFOLLOW there returns to the scan.",
     "Directory matches are never treated as radio evidence.",nullptr,nullptr,nullptr,nullptr,nullptr}};
   static const InfoText kSignal={"SIGNAL",{
     "Health numbers for the receiver and the decoder.",
