@@ -55,12 +55,11 @@ void on_voice(const orcsdr::dmr::d1::VoiceGroup& group, void* user) noexcept {
   ++c->groups;
   if (group.lc_valid) ++c->lc_ok;
   if (group.pi_seen) ++c->protected_groups;
-  if (c->printed < 2) {
+  if (c->printed < 20) {
     ++c->printed;
-    std::printf("    A %s  B %s\n", ambe_hex(group.payload.data(), 0, 2).c_str(),
-                ambe_hex(group.payload.data(), 1, 2).c_str());
-    std::printf("    C %s  D %s\n", ambe_hex(group.payload.data(), 108, 2).c_str(),
-                ambe_hex(group.payload.data(), 109, 2).c_str());
+    std::printf("PAYLOAD ");
+    for (size_t b = 0; b < group.payload.size(); ++b) std::printf("%02X", group.payload[b]);
+    std::printf("\n");
     std::printf("  voice group: slot %u cc %u lc %s pi %s payload %02X%02X%02X...\n",
                 unsigned(group.slot), unsigned(group.colour_code),
                 group.lc_valid ? "ok" : "no", group.pi_seen ? "SET" : "clear",
