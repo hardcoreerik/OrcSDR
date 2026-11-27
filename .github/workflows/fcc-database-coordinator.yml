@@ -3,11 +3,13 @@ on:
   push:
     paths:
       - 'apps/orcsdr-tab5/ui/fcc_lookup_gate.hpp'
+      - 'apps/orcsdr-tab5/ui/fcc_package_admission.hpp'
       - 'tests/fcc_database_coordinator/**'
       - '.github/workflows/fcc-database-coordinator.yml'
   pull_request:
     paths:
       - 'apps/orcsdr-tab5/ui/fcc_lookup_gate.hpp'
+      - 'apps/orcsdr-tab5/ui/fcc_package_admission.hpp'
       - 'tests/fcc_database_coordinator/**'
       - '.github/workflows/fcc-database-coordinator.yml'
   workflow_dispatch:

@@ -1,8 +1,8 @@
 #pragma once
 #include <cstdint>
 namespace orcsdr::fcc {
-// UI-owner-only gate; worker returns this key unchanged in a value-owned message.
-// No SD, decoder, allocation, locks, or worker callbacks. One gate per visible association.
+// UI-owner-only gate. Ticket source lives for the entire async service
+// lifetime, longer than screens, rows and pending worker results.
 enum class LookupOutcome : uint8_t { unavailable, pending, no_match, candidates, partial, cancelled, error };
 struct LookupKey {
   uint64_t ticket=0, observation=0, package_generation=0, location_generation=0;
@@ -11,13 +11,26 @@ struct LookupKey {
       package_generation==b.package_generation && location_generation==b.location_generation;
   }
 };
+class LookupTicketSource {
+ public:
+  LookupTicketSource() = default;
+  LookupTicketSource(const LookupTicketSource&) = delete;
+  LookupTicketSource& operator=(const LookupTicketSource&) = delete;
+  uint64_t next() { return last_==UINT64_MAX ? 0 : ++last_; }
+ private:
+  uint64_t last_=0;
+};
 class LookupGate {
  public:
-  // observation must be stable within this owner's lifetime, never a row index.
-  // Ticket counter does not wrap: exhaust rather than reuse.
+  explicit LookupGate(LookupTicketSource& tickets):tickets_(tickets) {}
+  LookupGate(const LookupGate&) = delete;
+  LookupGate& operator=(const LookupGate&) = delete;
+  // Stable observation identity, never a row index. No allocation or I/O.
   bool begin(uint64_t observation, uint64_t package_generation, uint64_t location_generation, LookupKey& out) {
-    if (!observation || !package_generation || next_==UINT64_MAX) return false;
-    key_={++next_,observation,package_generation,location_generation};
+    if (!observation || !package_generation) return false;
+    const auto ticket=tickets_.next();
+    if (!ticket) return false;
+    key_={ticket,observation,package_generation,location_generation};
     outcome_=LookupOutcome::pending;
     out=key_;
     return true;
@@ -36,7 +49,7 @@ class LookupGate {
   LookupOutcome outcome() const { return outcome_; }
   LookupKey key() const { return key_; }
  private:
-  uint64_t next_=0;
+  LookupTicketSource& tickets_;
   LookupKey key_{};
   LookupOutcome outcome_=LookupOutcome::unavailable;
 };
