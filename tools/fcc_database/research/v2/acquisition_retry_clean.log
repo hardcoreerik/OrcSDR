@@ -1,0 +1,10 @@
+Fri Nov 27 08:11:48 UTC 2026
+DNS unavailable: github.com
+DNS unavailable: data.fcc.gov
+DNS unavailable: www.ic.gc.ca
+https://data.fcc.gov/download/pub/uls/complete/
+curl: (6) Could not resolve host: data.fcc.gov
+exit=6
+https://www.ic.gc.ca/engineering/SMS_TAFL_Files/TAFL_LTAF.zip
+curl: (6) Could not resolve host: www.ic.gc.ca
+exit=6
