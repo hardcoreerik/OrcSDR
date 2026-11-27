@@ -1,0 +1,8 @@
+3a28b47aa099994b2922629147c903be65edf6ae
+c++ (Debian 14.2.0-19) 14.2.0
++ c++ -std=c++17 -Wall -Wextra -Werror -pedantic -fsanitize=address,undefined -g v2_semantic_boundary.cpp -o v2_semantic_boundary
++ ./v2_semantic_boundary
+PASS valid control: exact+interval, interval-only and inclusive endpoint
+REPRODUCED: inconsistent leaf maximum accepted; false no-match (semantic validation precondition violated)
+REPRODUCED: unsorted discrete rows accepted; false no-match (semantic validation precondition violated)
+PASS bounded step read count; experimental reader boundary audit, not production acceptance
