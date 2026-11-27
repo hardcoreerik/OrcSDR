@@ -355,25 +355,32 @@ void apply_plan_option(State& st) {
 
 void save_list(State& st) {
   if (!g_hooks.save_plan) return;
-  char csv[400];
+  constexpr size_t kCsv = 3900;                       // the settings store holds a string up to 4000 bytes: 128 channels at about 18 bytes each fit
+  char* csv = static_cast<char*>(heap_caps_malloc(kCsv, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!csv) return;
   size_t w = 0;
   csv[0] = 0;
-  for (size_t i = 0; i < st.saved_n && w + 28 < sizeof(csv); ++i) {
+  for (size_t i = 0; i < st.saved_n && w + 28 < kCsv; ++i) {
     const uint8_t m = st.saved_mask[i];
     const char* tok = m == dv_radio::kMaskDmr ? "dmr" : m == dv_radio::kMaskNxdn48 ? "nxdn48" : m == dv_radio::kMaskNxdn96 ? "nxdn96" : "auto";
-    w += static_cast<size_t>(std::snprintf(csv + w, sizeof(csv) - w, "%s%lu.%06lu:%s", i ? "," : "", static_cast<unsigned long>(st.saved_hz[i] / 1000000u),
+    w += static_cast<size_t>(std::snprintf(csv + w, kCsv - w, "%s%lu.%06lu:%s", i ? "," : "", static_cast<unsigned long>(st.saved_hz[i] / 1000000u),
                                            static_cast<unsigned long>(st.saved_hz[i] % 1000000u), tok));
   }
   g_hooks.save_plan(csv);
+  heap_caps_free(csv);
 }
 
 void load_saved_plan() {
   if (!g_state || !g_hooks.load_plan) return;
-  char csv[400];
-  if (!g_hooks.load_plan(csv, sizeof(csv))) return;
+  constexpr size_t kCsv = 3900;
+  char* csv = static_cast<char*>(heap_caps_malloc(kCsv, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT));
+  if (!csv) return;
+  const bool have = g_hooks.load_plan(csv, kCsv);
+  if (!have) {heap_caps_free(csv);return;}
   uint32_t plan[dv::kMaxScanChannels];
   uint8_t masks[dv::kMaxScanChannels];
   const size_t n = parse_plan(csv, plan, masks, dv::kMaxScanChannels);
+  heap_caps_free(csv);
   if (!n) return;
   std::memcpy(g_state->saved_hz, plan, sizeof(plan));
   std::memcpy(g_state->saved_mask, masks, sizeof(masks));

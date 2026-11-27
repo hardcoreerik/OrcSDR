@@ -15,7 +15,7 @@ namespace orcsdr::dv {
 enum class ScanState : uint8_t { idle, tuning, settling, sampling, holding, paused, failed };
 enum class FailReason : uint8_t { none, no_plan, receiver_removed, retune_refused, unsupported };
 
-constexpr size_t kMaxScanChannels = 16;            // saved channel list
+constexpr size_t kMaxScanChannels = 128;           // saved channel list and scan plan (was 16: one location already hears 30+ systems)
 constexpr size_t kMaxRangeChannels = 8192;          // a frequency plan (one or more ranges): channels are computed, not stored
 constexpr size_t kMaxSegments = 12;                 // ranges in one plan (the band picker)
 struct Segment { uint32_t start_hz = 0, step_hz = 0; uint32_t count = 0; };

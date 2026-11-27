@@ -48,8 +48,8 @@ struct SubscriberRec {
   uint32_t first_utc = 0, last_utc = 0, count = 0, seq = 0;
 };
 
-constexpr size_t kMaxSystems = 32, kMaxTalkgroups = 128, kMaxSubscribers = 256;
-constexpr size_t kMaxSerializedBytes = 24 * 1024;   // upper bound for the text form (checked by a test)
+constexpr size_t kMaxSystems = 128, kMaxTalkgroups = 128, kMaxSubscribers = 256;   // systems were 32: the oldest were being forgotten
+constexpr size_t kMaxSerializedBytes = 40 * 1024;   // upper bound for the text form (checked by a test)
 
 class Discovery {
  public:
