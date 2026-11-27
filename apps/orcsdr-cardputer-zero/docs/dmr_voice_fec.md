@@ -208,3 +208,41 @@ implemented for decoding - the codewords only matter for error correction.
 
 Scripts: `tools/derive_ambe_schedule.py`, `tools/derive_c1.py`,
 `tools/verify_schedule.py`.
+## Live stability (2026-11-27)
+
+Three-minute soak on the DMR dashboard at 463.4000 MHz with the codec open:
+
+```text
+process alive            yes (single instance throughout)
+USB read failures        0
+dashboard restarts       1   (the initial start only)
+ALSA card1 pcm0p         PREPARED
+```
+
+Zero USB errors matters most here: the 2.4 MS/s experiment earlier filled the log
+with `rtlsdr_demod_read_reg failed` and killed the handle within seconds. At
+960 kS/s with 4:1 decimation the stream is stable for minutes, and the codec sits
+PREPARED between calls rather than being opened mid-burst.
+
+## Known limitation: no Golay error correction
+
+C0 and C1 are Golay(23,12) codewords, and this implementation does not correct
+them. mbelib takes the 49-bit vector directly, so decoding works without Golay -
+which is why strong calls decode cleanly today.
+
+What is lost is marginal performance. A frame with a few bit errors inside C0 or
+C1 will be passed through wrong instead of corrected, and because C1 is whitened
+from C0, a single uncorrected C0 bit re-randomises all twelve C1 bits. On weak or
+multipath-impaired calls that shows up as garble where a correcting decoder would
+produce speech.
+
+Implementing it needs two things this project does not yet have:
+
+1. **Parity bit positions.** The 12 data bits of C0 and 12 of C1 are mapped; the
+   11+11 parity bits sit among the on-air positions not claimed by data. They can
+   be located the same way the data bits were - compute expected parity from the
+   known data across many frames and correlate - so this is tractable, not blocked.
+2. **The Golay generator and bit order** for this codec's convention.
+
+Until then the honest description is: strong calls decode and play; marginal calls
+garble. That is a quality gap, not a broken feature.
