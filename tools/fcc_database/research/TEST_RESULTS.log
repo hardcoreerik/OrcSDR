@@ -1,0 +1,15 @@
+test_download_limit (test_acquire.AcquisitionTests.test_download_limit) ... ok
+test_duplicate_member (test_acquire.AcquisitionTests.test_duplicate_member) ... /usr/lib/python3.13/zipfile/__init__.py:1642: UserWarning: Duplicate name: 'same'
+  return self._open_to_write(zinfo, force_zip64=force_zip64)
+ok
+test_expansion_limit (test_acquire.AcquisitionTests.test_expansion_limit) ... ok
+test_insecure_url (test_acquire.AcquisitionTests.test_insecure_url) ... ok
+test_invalid_zip (test_acquire.AcquisitionTests.test_invalid_zip) ... ok
+test_path_traversal (test_acquire.AcquisitionTests.test_path_traversal) ... ok
+test_verified_inventory (test_acquire.AcquisitionTests.test_verified_inventory) ... ok
+test_wrong_hash (test_acquire.AcquisitionTests.test_wrong_hash) ... ok
+
+----------------------------------------------------------------------
+Ran 8 tests in 0.014s
+
+OK

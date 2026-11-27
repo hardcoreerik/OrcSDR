@@ -1,0 +1,9 @@
+test_bad_schema (test_uls_stage.Tests.test_bad_schema) ... ok
+test_composite_join (test_uls_stage.Tests.test_composite_join) ... ok
+test_duplicate (test_uls_stage.Tests.test_duplicate) ... ok
+test_range_and_fractional (test_uls_stage.Tests.test_range_and_fractional) ... ok
+
+----------------------------------------------------------------------
+Ran 4 tests in 0.002s
+
+OK

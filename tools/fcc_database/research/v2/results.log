@@ -1,0 +1,8 @@
+test_duplicate (test_probe.Tests.test_duplicate) ... ok
+test_oracle (test_probe.Tests.test_oracle) ... ok
+
+----------------------------------------------------------------------
+Ran 2 tests in 2.655s
+
+OK
+{"bytes": 244176, "country": "US", "exact": 8573, "full_range_reads": 10111, "nodes": 127, "qualification": "experimental_unsigned", "queries": 504, "ranges": 1429, "sha256": "8e9e51ff1b79e4a0e970b1a21329af64e43f2f0280b96ab50b4670067353a6da", "typical_max_reads": 133}
