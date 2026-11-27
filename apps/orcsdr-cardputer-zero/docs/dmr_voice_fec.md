@@ -130,3 +130,39 @@ Two things this establishes:
   Golay parity positions, which are not part of the 49-bit payload.
 
 Script: `tools/derive_ambe_schedule.py`.
+## Complete mapping for the 37 unwhitened bits (2026-11-27)
+
+The full correlation table resolves the schedule into four residue classes mod 4,
+which is what a dibit-level interleave looks like:
+
+| Payload bits | Count | On-air positions | Class |
+| --- | --- | --- | --- |
+| 0..11  (C0 data) | 12 | 0, 4, 8, ... 44        | 0 mod 4 |
+| 24..30 (C2 first) | 7 | 46, 50, ... 70          | 2 mod 4 |
+| 31..48 (C2 rest + C3) | 18 | 3, 7, 11, ... 71    | 3 mod 4 |
+| 12..23 (C1 data) | 12 | **not yet resolved**  | 1 mod 4, whitened |
+
+That is 37 of 49 payload bits pinned, matching the prediction exactly: every bit
+that is not whitened has been recovered from data alone.
+
+Six of them scored 19/20 rather than 20/20 (payload 34, 37, 39, 40, 45, 48), which
+is frame misalignment rather than a wrong position - their neighbours in the same
+residue class are 20/20, and the positions are consistent with the stride.
+
+Residue class 1 (on-air 1, 5, ... 69, eighteen positions) holds C1's twelve data
+bits plus parity. The payload bits 12..23 correlate at only 15-18 of 20, which is
+the signature of whitening: the bits are there, XORed with the C0-seeded keystream.
+
+## What this means for the decoder
+
+mbelib's `mbe_processAmbe2450Data` takes the **49-bit vector directly**, so the
+Golay parity bits are not needed at all - the C0 and C1 codewords only matter for
+error correction, not for decoding. So the outstanding work is narrow:
+
+1. extract the 37 known bits by the table above;
+2. recover C0's twelve bits (already at 0 mod 4) and seed the keystream;
+3. de-whiten the twelve C1 positions in class 1 and correlate once more to pin
+   which class-1 positions carry data rather than parity;
+4. assemble C0(12)+C1(12)+C2(11)+C3(14) and hand it to mbelib.
+
+No external table is needed at any point, and no GPL material has been consulted.
