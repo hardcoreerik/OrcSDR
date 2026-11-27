@@ -14,6 +14,7 @@ struct Geometry {
   Rect a, b;                                   // the two cards
   Rect status, freq, plan, bar, counts, ladder, reason;
   Rect start, hold, skip, save, plan_prev, plan_next, discover;
+  Rect mode, trace;                            // the mode badge (what kind of scan this is) and the RF level strip; trace is empty in the analysis density
   Rect row[kScanHits];
   Rect detail;
   int list_title_y, detail_title_y, footer_y;
@@ -23,7 +24,7 @@ Geometry geometry(Density d);
 
 class ScanView {
  public:
-  static constexpr int kWidgets = 6 + 6 + 1 + static_cast<int>(kScanHits) + 1 + 1;   // counted in the .cpp (static_assert there)
+  static constexpr int kWidgets = 6 + 6 + 1 + static_cast<int>(kScanHits) + 1 + 1 + 2;   // counted in the .cpp (static_assert there)
   void reset() { entered_ = false; }
   bool entered() const { return entered_; }
   // Paint everything (static layout + every widget). Returns the number of widgets painted.

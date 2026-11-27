@@ -78,7 +78,7 @@ int main(){
   scan.scan_hits[1].has_frequency=true;scan.scan_hits[1].frequency_hz=453775000;ui.selected_scan_hit=1;   // verified and with a frequency: SAVE becomes usable
   assert(dashboard.handle_touch(430,598,scan,ui).kind==ActionKind::save_channel);
   ui.selected_scan_hit=0;
-  ui.view=View::live;
+  ui.view=View::live;ui.density=Density::analysis_first;   // the detailed LIVE page: the default LIVE page is tested below
   host_stub::reset();
   assert(dashboard.present(display,s,ui,true,false));
   assert(host_stub::contains("3024109"));
@@ -87,7 +87,6 @@ int main(){
   assert(host_stub::contains("TIME SLOT"));
   assert(host_stub::contains("UNKNOWN"));
   assert(!host_stub::contains("TS1") && !host_stub::contains("TS2"));
-  assert(host_stub::contains("IQ METADATA / RF UNVERIFIED"));
   assert(!host_stub::out_of_bounds && host_stub::full_clear_count==0);
   auto x=s; x.revision=3; x.evidence=Evidence::candidate;
   host_stub::reset();assert(dashboard.present(display,x,ui,true,false));
@@ -97,6 +96,7 @@ int main(){
   for(const auto& c:host_stub::calls) assert(!(c.kind==host_stub::Prim::round_fill&&c.w>=400));
   assert(!host_stub::contains("3024109"));
   assert(host_stub::full_clear_count==0); // value update not screen clear
+  ui.density=Density::discovery_first;host_stub::reset();assert(dashboard.present(display,x,ui,true,false));   // back to the default LIVE page
   {
     // FLICKER REGRESSION (docs/UI_RENDERING_STANDARD.md): a value that keeps changing (a heard counter) repaints only its own text. The
     // displayed value updates, no card or panel is refilled, nothing clears the screen, and the cost of a repaint stays small.
@@ -184,6 +184,91 @@ int main(){
     FCHK(host_stub::contains("LOG DATA: N/A"));
     FCHK(fd.handle_touch(la.x+500,la.y+280,fs,fu).kind==ActionKind::none);
   }
+  {
+    // The default LIVE page: the mode strip follows what the scan is doing, the tuned frequency, colour code, slot and talkgroup are in plain
+    // words, HOLD / RELEASE / SKIP and the listen buttons are touch targets, and the changing parts repaint without refilling a card.
+    Dashboard ld;lgfx::LovyanGFX ldisp;UiState lu{};lu.view=View::live;lu.density=Density::discovery_first;
+    Snapshot ls{};ls.revision=1;ls.receiver=Receiver::receiving;ls.can_scan=true;ls.voice.available=true;ls.voice.phase=VoicePhase::listening;
+    auto show=[&](const Snapshot& sn){host_stub::reset();FCHK(ld.present(ldisp,sn,lu,true,false));};
+    show(ls);
+    FCHK(host_stub::contains("SCAN STOPPED")&&host_stub::contains("press START on the SCAN screen")&&host_stub::contains("Not listening"));
+    FCHK(!host_stub::contains("UNKNOWN")&&host_stub::full_clear_count==0&&!host_stub::out_of_bounds);
+    // MONITOR scanning, a DMR call on 463.400
+    ls.scan.phase=ScanPhase::scanning;ls.scan.stage=ScanStage::scanning;ls.scan.planned=16;ls.scan.channel_index=9;ls.can_hold=true;ls.can_skip=true;
+    std::snprintf(ls.scan.plan_name,sizeof(ls.scan.plan_name),"MONITOR ALL (16)");
+    ls.has_frequency=true;ls.frequency_hz=463400000;ls.protocol=Protocol::dmr;ls.evidence=Evidence::identity_valid;ls.colour_code_valid=true;ls.colour_code=1;
+    ls.timeslot_valid=true;ls.timeslot=1;ls.rf_trace_on=true;++ls.revision;
+    ls.voice.phase=VoicePhase::decoding;ls.voice.active_slot=1;ls.voice.source_id=65535;ls.voice.destination_id=16;ls.voice.group_call=true;
+    show(ls);
+    FCHK(host_stub::contains("MONITOR")&&host_stub::contains("16 systems, channel 9 of 16"));
+    FCHK(host_stub::contains("463.4000 MHz")&&host_stub::contains("DMR   Colour Code 1   Slot 1"));
+    FCHK(host_stub::contains("Call in progress")&&host_stub::contains("TALKGROUP")&&host_stub::contains("65535")&&host_stub::contains("Group call"));
+    FCHK(host_stub::contains("HOLD")&&host_stub::contains("SKIP")&&host_stub::contains("AUTO")&&host_stub::contains("MUTE"));
+    // the plan kinds
+    auto plan=[&](const char* name,Snapshot& sn){std::snprintf(sn.scan.plan_name,sizeof(sn.scan.plan_name),"%s",name);++sn.revision;};
+    plan("SAVED LIST",ls);show(ls);FCHK(host_stub::contains("SAVED LIST")&&host_stub::contains("channel 9 of 16"));
+    plan("2M 144-148",ls);show(ls);FCHK(host_stub::contains("SWEEP")&&host_stub::contains("2M 144-148"));
+    plan("MONITOR ALL (16)",ls);
+    ls.scan.phase=ScanPhase::holding;++ls.revision;show(ls);FCHK(host_stub::contains("staying for a call"));
+    ls.scan.phase=ScanPhase::scanning;ls.scan_on_hold=true;++ls.revision;show(ls);
+    FCHK(host_stub::contains("HOLD")&&host_stub::contains("RELEASE")&&host_stub::contains("you paused the MONITOR scan here"));
+    ls.scan_on_hold=false;
+    ls.discover_running=true;ls.discover_phase=2;ls.discover_found=3;++ls.revision;show(ls);
+    FCHK(host_stub::contains("DISCOVERY")&&host_stub::contains("decoding channel 9 of 16, found 3"));
+    ls.discover_running=false;ls.follow_active=true;ls.follow_frequency_hz=463400000;++ls.revision;show(ls);
+    FCHK(host_stub::contains("FOLLOWING")&&host_stub::contains("one channel, the scan is paused"));
+    ls.follow_active=false;ls.scan.phase=ScanPhase::failed;ls.scan.stage=ScanStage::error;++ls.revision;show(ls);
+    FCHK(host_stub::contains("RECEIVER PROBLEM")&&host_stub::contains("check the USB cable"));
+    // touch targets
+    ls.scan.phase=ScanPhase::scanning;ls.scan.stage=ScanStage::scanning;++ls.revision;show(ls);
+    FCHK(ld.handle_touch(900,460,ls,lu).kind==ActionKind::toggle_hold);
+    FCHK(ld.handle_touch(1100,460,ls,lu).kind==ActionKind::skip_frequency);
+    FCHK(ld.handle_touch(880,550,ls,lu).kind==ActionKind::set_listen&&ld.handle_touch(1180,550,ls,lu).value==3);
+    ls.scan_on_hold=true;FCHK(ld.handle_touch(1100,460,ls,lu).kind==ActionKind::none);       // SKIP is off while held
+    ls.scan_on_hold=false;ls.can_hold=false;FCHK(ld.handle_touch(900,460,ls,lu).kind==ActionKind::none);
+    ls.can_hold=true;
+    // the RF trace moves without refilling any card or panel, and the page never clears the screen
+    show(ls);
+    for(int step=0;step<8;++step) {
+      for(size_t i=0;i+1<Snapshot::kFollowTrace;++i)ls.follow_trace[i]=ls.follow_trace[i+1];
+      ls.follow_trace[Snapshot::kFollowTrace-1]=static_cast<uint8_t>(40+(step*37)%150);++ls.revision;
+      show(ls);
+      FCHK(host_stub::full_clear_count==0);
+      for(const auto& c:host_stub::calls) FCHK(!((c.kind==host_stub::Prim::round_fill||c.kind==host_stub::Prim::round_line)&&c.w>=100));
+      FCHK(host_stub::calls.size()<=220);
+    }
+    // the tuned channel changes with each hop: only the changed texts are drawn
+    ls.frequency_hz=152157500;ls.protocol=Protocol::dmr;ls.scan.channel_index=10;++ls.revision;show(ls);
+    FCHK(host_stub::contains("152.1575 MHz")&&host_stub::contains("channel 10 of 16"));
+    FCHK(host_stub::full_clear_count==0&&host_stub::calls.size()<=220);
+  }
+  {
+    // (i) help card: every view has one, (i) opens and closes it, the card replaces the view, other controls do not react while it is open,
+    // a tab leaves it, and nothing clears the screen.
+    Dashboard id;lgfx::LovyanGFX idisp;UiState iu{};iu.density=Density::discovery_first;
+    Snapshot is{};is.revision=1;is.receiver=Receiver::receiving;is.can_scan=true;is.systems_available=true;is.last_heard_available=true;
+    const View views[]={View::explore,View::live,View::last_heard,View::systems,View::signal,View::setup,View::discover,View::follow};
+    const char* words[]={"The scanner steps through channels","what you are listening to right now","Events the receiver verified","Every system the receiver has found",
+                         "Health numbers for the receiver","Choose the bands to scan","Discovery looks for digital voice systems","FOLLOW stays on one channel"};
+    for(size_t k=0;k<sizeof(views)/sizeof(views[0]);++k) {
+      iu.view=views[k];iu.info_open=false;++is.revision;
+      host_stub::reset();FCHK(id.present(idisp,is,iu,true,false));
+      FCHK(host_stub::contains("DIGITAL VOICE  /  RECEIVE ONLY"));
+      const Action open=id.handle_touch(1230,130,is,iu);
+      FCHK(open.kind==ActionKind::toggle_info);
+      FCHK(apply_ui_action(iu,open,is)&&iu.info_open);
+      host_stub::reset();FCHK(id.present(idisp,is,iu,true,false));
+      FCHK(host_stub::contains("ABOUT THIS SCREEN")&&host_stub::contains(words[k]));
+      FCHK(host_stub::full_clear_count==0&&!host_stub::out_of_bounds);
+      FCHK(id.handle_touch(300,300,is,iu).kind==ActionKind::none);                                   // the view underneath does not react
+      FCHK(id.handle_touch(1100,590,is,iu).kind==ActionKind::toggle_info);                           // CLOSE
+      FCHK(id.handle_touch(100,675,is,iu).kind==ActionKind::switch_view);                            // a tab still works
+      FCHK(apply_ui_action(iu,{ActionKind::toggle_info,0},is)&&!iu.info_open);
+      host_stub::reset();FCHK(id.present(idisp,is,iu,true,false));
+      FCHK(!host_stub::contains("ABOUT THIS SCREEN")&&host_stub::full_clear_count==0);               // the view is back
+      iu.info_open=true;FCHK(apply_ui_action(iu,{ActionKind::switch_view,1},is)&&!iu.info_open);   // switching view closes the card
+    }
+  }
   ui.density=Density::analysis_first;
   host_stub::reset();assert(dashboard.present(display,s,ui,true,false));
   assert(host_stub::contains("ANALYSIS FIRST"));
@@ -218,7 +303,7 @@ int main(){
     }
   }
   // NXDN field-level evidence gates: untrusted candidate cannot expose RAN/site/identity.
-  ui.view=View::live;ui.density=Density::discovery_first;
+  ui.view=View::live;ui.density=Density::analysis_first;   // the detailed LIVE page shows every protocol field with its evidence gate
   auto nx=demo::make(demo::Case::nxdn_planned);
   nx.revision=11;nx.protocol=Protocol::nxdn96;nx.ran_valid=true;nx.ran=0;
   nx.nxdn.channel_valid=true;nx.nxdn.channel=NxdnChannel::rcch;
@@ -303,6 +388,7 @@ int main(){
     assert(host_stub::full_clear_count==0);
     dashboard.leave();
   }
+  ui.density=Density::discovery_first;
   // Toggle density through SETUP page, purely UI-local.
   ui.view=View::setup;
   host_stub::reset();assert(dashboard.present(display,nx,ui,true,false));

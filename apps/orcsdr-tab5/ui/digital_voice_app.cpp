@@ -686,14 +686,17 @@ void refresh(State& st) {
   }
   const bool diag = rs.running;
   const int32_t level = rs.level_milli > 0 ? static_cast<int32_t>(std::lround(200.0 * std::log10(rs.level_milli / 1000.0))) : 0;
-  if (st.follow_on && static_cast<uint32_t>(now() - st.follow_trace_ms) >= 100u) {      // one RF level sample every tenth of a second, oldest first
+  const bool trace_on = st.follow_on || st.scanner.active();
+  if (!trace_on && s.rf_trace_on) { std::memset(st.follow_trace, 0, sizeof(st.follow_trace)); ++s.revision; }
+  if (trace_on && static_cast<uint32_t>(now() - st.follow_trace_ms) >= 100u) {      // one RF level sample every tenth of a second, oldest first
     st.follow_trace_ms = now();
     std::memmove(st.follow_trace, st.follow_trace + 1, sizeof(st.follow_trace) - 1);
     const int v = rs.level_milli > 0 ? (level + 600) * 255 / 600 : 0;                         // -60 dB .. 0 dB over 0..255
     st.follow_trace[sizeof(st.follow_trace) - 1] = static_cast<uint8_t>(v < 1 ? 1 : v > 255 ? 255 : v);
     ++s.revision;
   }
-  if (s.follow_active != st.follow_on || s.follow_lost != st.follow_lost || s.follow_frequency_hz != st.follow_hz) ++s.revision;
+  if (s.follow_active != st.follow_on || s.follow_lost != st.follow_lost || s.follow_frequency_hz != st.follow_hz || s.rf_trace_on != trace_on) ++s.revision;
+  s.rf_trace_on = trace_on;
   s.follow_active = st.follow_on; s.follow_lost = st.follow_lost; s.follow_frequency_hz = st.follow_on ? st.follow_hz : 0;
   s.follow_protocol = static_cast<Protocol>(st.follow_proto); s.follow_area = st.follow_area; s.follow_area_valid = st.follow_area_valid;
   std::memcpy(s.follow_trace, st.follow_trace, sizeof(s.follow_trace));

@@ -70,7 +70,9 @@ const char* nxdn_topology_name(NxdnTopology t) {
   }
 }
 bool apply_ui_action(UiState& ui,Action action,const Snapshot& s) {
+  if(action.kind!=ActionKind::toggle_info) ui.info_open=false;     // any other action leaves the help card
   switch(action.kind) {
+    case ActionKind::toggle_info: ui.info_open=!ui.info_open;return true;
     case ActionKind::switch_view:
       if(action.value>=static_cast<uint8_t>(View::count))return false;
       ui.view=static_cast<View>(action.value);return true;

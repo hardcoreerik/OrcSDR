@@ -24,7 +24,7 @@ int main() {
   s.receiver = Receiver::receiving; s.protocol = Protocol::dmr; s.evidence = Evidence::identity_valid;
   s.has_source = s.has_destination = true; s.source_id = 4106011; s.destination_id = 1000; s.group_call = true;
   s.voice.available = true; s.voice.phase = VoicePhase::listening;
-  const struct { Density d; Rect vr; Rect extra; } kinds[] = {{Density::discovery_first, {32, 530, 778, 100}, {0, 0, 0, 0}}, {Density::analysis_first, {654, 488, 594, 100}, {38, 442, 570, 16}}};
+  const struct { Density d; Rect vr; Rect extra; } kinds[] = {{Density::analysis_first, {654, 488, 594, 100}, {38, 442, 570, 16}}};   // the voice panel belongs to the detailed (analysis) LIVE page; the default LIVE page is tested in dashboard_host_contract_tests
   for (const auto& k : kinds) {
     ui.density = k.d;
     s.voice = VoiceAudioView(); s.voice.available = true; s.voice.phase = VoicePhase::listening; ++s.audio_revision; ++s.revision;

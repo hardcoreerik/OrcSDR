@@ -40,9 +40,14 @@ static void show(View v, Density mode, const Snapshot& s) {
 int main() {
   const Snapshot s = dmr_call();
   for (Density mode : {Density::discovery_first, Density::analysis_first}) {
-    show(View::live, mode, s);
-    assert(host_stub::contains("4106011") && host_stub::contains("6011885") && host_stub::contains("TALKGROUP") && host_stub::contains("GROUP"));
-    assert(host_stub::contains("13") && host_stub::contains("TS2"));
+    {
+      Snapshot sl = s; sl.scan.phase = ScanPhase::scanning; sl.scan.channel_index = 1; sl.scan.planned = 4;   // the default LIVE page shows a call only while something is listening
+      sl.has_frequency = true; sl.frequency_hz = 152157500;
+      show(View::live, mode, sl);
+      assert(host_stub::contains("4106011") && host_stub::contains("6011885") && host_stub::contains("TALKGROUP") && host_stub::contains("GROUP"));
+      if (mode == Density::analysis_first) assert(host_stub::contains("13") && host_stub::contains("TS2"));
+      else assert(host_stub::contains("Colour Code 13") && host_stub::contains("Slot 2") && host_stub::contains("152.1575 MHz"));
+    }
     show(View::last_heard, mode, s);
     assert(host_stub::contains("23:19:58  DMR  4106011>6011885  CC13 TS2"));
     assert(host_stub::contains("NXDN96") && host_stub::contains("RAN 0"));     // RAN 0 shown as a value, not hidden

@@ -1,4 +1,5 @@
 #include "digital_voice_scan_view.hpp"
+#include "digital_voice_live_common.hpp"
 #include "digital_voice_dashboard_paint.hpp"
 #include <algorithm>
 #include <cstdio>
@@ -19,6 +20,8 @@ Geometry geometry(Density d) {
   g.counts = {a.x + 14, a.y + 230, a.w - 28, 34};
   g.ladder = {a.x + 14, a.y + 272, a.w - 28, 54};
   g.reason = {a.x + 14, a.y + 334, a.w - 28, 30};
+  g.mode = {a.x + 10, a.y + 6, a.w - 20, 38};
+  g.trace = basic ? scan_layout::Rect{a.x + 18, a.y + 368, a.w - 36, 44} : scan_layout::Rect{0, 0, 0, 0};
   if (basic) {
     g.start = {a.x + 14, a.y + 419, 150, 44};
     g.hold = {a.x + 172, a.y + 419, 100, 44};
@@ -50,7 +53,7 @@ namespace {
 using namespace paint;
 using scan_layout::Geometry;
 
-enum W { w_status, w_freq, w_plan, w_bar, w_counts, w_ladder, w_reason, w_start, w_hold, w_skip, w_save, w_prev, w_next, w_discover,
+enum W { w_status, w_freq, w_plan, w_bar, w_counts, w_ladder, w_reason, w_start, w_hold, w_skip, w_save, w_prev, w_next, w_discover, w_mode, w_trace,
          w_row0, w_detail = w_row0 + static_cast<int>(kScanHits), w_count };
 static_assert(w_count <= ScanView::kWidgets, "signature table too small");
 
@@ -316,12 +319,24 @@ void draw_detail(Paint& p, Rect r, const Snapshot& s, const UiState& u) {
   if (h.seen_count) { std::snprintf(t, sizeof(t), "OBSERVED %u TIMES", static_cast<unsigned>(h.seen_count)); p.label(t, r.x + 8, y, r); }
 }
 
+// The mode badge: which kind of scan this is, at a glance (MONITOR green, HOLD amber, DISCOVERY and SAVED LIST cyan, SWEEP amber, stopped grey).
+uint32_t sig_mode(const Snapshot& s) { const live_common::ModeInfo m = live_common::scan_mode_info(s); Hash h; h.str(m.name); h.str(m.state); h.u32(m.color); return h.h; }
+void draw_mode(Paint& p, Rect r, const Snapshot& s) {
+  const live_common::ModeInfo m = live_common::scan_mode_info(s);
+  p.g.fillRect(r.x, r.y, r.w, r.h, kPanel);
+  p.g.fillRect(r.x + 4, r.y + 6, 5, r.h - 12, m.color);
+  p.text(m.name, r.x + 18, r.y + r.h / 2, m.color, 3, r);
+  p.text(m.state, r.x + 310, r.y + r.h / 2, kWhite, 2, r);   // a fixed column: the longest name (16 characters at 18 px) ends before it
+}
+uint32_t sig_trace(const Snapshot& s) { Hash h; h.u32(s.rf_trace_on && live_common::scan_is_running(s)); for (size_t i = 0; i < Snapshot::kFollowTrace; ++i) h.u32(s.follow_trace[i]); return h.h; }
+void draw_trace(Paint& p, Rect r, const Snapshot& s) { live_common::rf_trace(p, s, r, s.rf_trace_on && live_common::scan_is_running(s)); }   // real receiver data, no pre-clear: every bar is overdrawn whole
 Rect rect_of(const Geometry& g, int w) {
   switch (w) {
     case w_status:return g.status; case w_freq:return g.freq; case w_plan:return g.plan; case w_bar:return g.bar;
     case w_counts:return g.counts; case w_ladder:return g.ladder; case w_reason:return g.reason;
     case w_start:return g.start; case w_hold:return g.hold; case w_skip:return g.skip; case w_save:return g.save;
     case w_prev:return g.plan_prev; case w_next:return g.plan_next; case w_discover:return g.discover; case w_detail:return g.detail;
+    case w_mode:return g.mode; case w_trace:return g.trace;
     default:return g.row[w - w_row0];
   }
 }
@@ -331,6 +346,7 @@ uint32_t signature(int w, const Snapshot& s, const UiState& u, const Geometry& g
     case w_counts:return sig_counts(s); case w_ladder:return sig_ladder(s); case w_reason:return sig_reason(s, u);
     case w_start:case w_hold:case w_skip:case w_save:case w_prev:case w_next:case w_discover:return sig_button(w, s, u);
     case w_detail:return sig_detail(s, u);
+    case w_mode:return sig_mode(s); case w_trace:return g.trace.h ? sig_trace(s) : 0u;
     default:return sig_row(static_cast<size_t>(w - w_row0), s, u);
   }
 }
@@ -346,6 +362,8 @@ void draw_widget(int w, Paint& p, const Geometry& g, const Snapshot& s, const Ui
     case w_reason:draw_reason(p, r, s, u); break;
     case w_start:case w_hold:case w_skip:case w_save:case w_prev:case w_next:case w_discover:draw_button(p, r, w, s, u); break;
     case w_detail:draw_detail(p, r, s, u); break;
+    case w_mode:draw_mode(p, r, s); break;
+    case w_trace:draw_trace(p, r, s); break;
     default:draw_row(p, r, static_cast<size_t>(w - w_row0), s, u); break;
   }
 }
@@ -357,7 +375,6 @@ int ScanView::paint(lgfx::LovyanGFX& display, const Snapshot& s, const UiState& 
   int painted = 0;
   if (force) {   // static layout: cards, titles, the progress bar outline, the footer note. Painted once per entry.
     p.card(g.a); p.card(g.b);
-    p.title("SCAN / DISCOVER", g.a.x + 18, g.a.y + 28, g.a);
     p.title("DISCOVERED SIGNALS", g.b.x + 18, g.list_title_y, g.b);
     p.title("SELECTED SIGNAL", g.b.x + 18, g.detail_title_y, g.b);
     p.label("Candidates are never identities.", g.b.x + 18, g.footer_y, g.b);
@@ -367,6 +384,7 @@ int ScanView::paint(lgfx::LovyanGFX& display, const Snapshot& s, const UiState& 
     const uint32_t sg = signature(w, s, u, g);
     if (!force && sg == sig_[w]) continue;
     sig_[w] = sg;
+    if (w == w_trace && !g.trace.h) continue;     // no room for the strip in the analysis density
     draw_widget(w, p, g, s, u);
     ++painted;
   }

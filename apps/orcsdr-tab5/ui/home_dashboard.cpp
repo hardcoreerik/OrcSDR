@@ -211,6 +211,19 @@ void draw_menu_icon(dashboards::Id id, int x, int y, uint16_t color) {
     for (int tone = 0; tone < 8; ++tone)
       M5.Display.drawFastVLine(x - 14 + tone * 4, y + 12 - tone * 3, 4 + tone * 3, color);
     M5.Display.drawFastHLine(x - 16, y + 14, 34, color);
+  } else if (id == dashboards::Id::digital_voice) {
+    // A speech bubble holding a stepped (digital) waveform: voice, sent as data.
+    M5.Display.drawRoundRect(x - 17, y - 15, 34, 24, 5, color);
+    M5.Display.fillTriangle(x - 9, y + 9, x - 2, y + 9, x - 9, y + 16, color);
+    M5.Display.drawFastHLine(x - 12, y - 3, 5, color);
+    M5.Display.drawFastVLine(x - 7, y - 9, 7, color);
+    M5.Display.drawFastHLine(x - 7, y - 9, 5, color);
+    M5.Display.drawFastVLine(x - 2, y - 9, 12, color);
+    M5.Display.drawFastHLine(x - 2, y + 2, 5, color);
+    M5.Display.drawFastVLine(x + 3, y - 7, 10, color);
+    M5.Display.drawFastHLine(x + 3, y - 7, 5, color);
+    M5.Display.drawFastVLine(x + 8, y - 7, 5, color);
+    M5.Display.drawFastHLine(x + 8, y - 3, 4, color);
   } else if (id == dashboards::Id::wifi_analysis) {
     M5.Display.drawCircle(x, y + 7, 3, color);
     M5.Display.drawArc(x, y + 7, 12, 12, 210, 330, color);

@@ -194,6 +194,7 @@ struct Snapshot {
   uint8_t follow_area = 0;
   static constexpr size_t kFollowTrace = 64;
   uint8_t follow_trace[kFollowTrace]{};
+  bool rf_trace_on = false;              // the trace is being sampled (a scan or FOLLOW is running); a stopped receiver draws an empty trace
   uint32_t audio_revision = 0;           // moves when the voice panel's content changes; the page revision does not
 };
 struct UiState {
@@ -204,12 +205,13 @@ struct UiState {
   uint8_t selected_scan_hit = 0;
   uint8_t selected_system = 0;
   uint8_t system_offset = 0;   // Systems page: index of the first listed system (newest first), moves in pages of kObservedSystems
+  bool info_open = false;      // the (i) help card for the current view is showing instead of the view
 };
 enum class ActionKind : uint8_t { none, switch_view, selected_history, save_channel, scan, setup_protocol,
                                   toggle_hold, skip_frequency, toggle_density, select_scan_hit,
                                   select_system, page_history, plan_prev, plan_next, set_listen, toggle_save_speech, toggle_band, toggle_save_iq, page_systems,
                                   open_discover, close_discover, discover_start, discover_stop, discover_save, monitor_filter,
-                                  follow_system, follow_stop, toggle_log_data };
+                                  follow_system, follow_stop, toggle_log_data, toggle_info };
 // Why a control is unavailable, in words the screen can show. `none` = the control is usable.
 enum class Disabled : uint8_t { none, no_receiver, no_plan, not_scanning, no_signal_selected, not_verified, already_saved,
                                 list_full, no_storage, scan_running, single_plan, no_frequency };

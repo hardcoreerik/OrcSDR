@@ -31,7 +31,7 @@ static bool erased(Rect r) {       // an opaque fill covering the widget precede
   return false;
 }
 static bool chrome_redrawn(const scan_layout::Geometry& g) {
-  if (contains("SCAN / DISCOVER") || contains("DISCOVERED SIGNALS") || contains("SELECTED SIGNAL")) return true;
+  if (contains("DISCOVERED SIGNALS") || contains("SELECTED SIGNAL")) return true;
   for (const auto& p : host_stub::calls) {
     if (p.kind == host_stub::Prim::round_line && ((p.x == g.a.x && p.y == g.a.y) || (p.x == g.b.x && p.y == g.b.y))) return true;   // card borders
     if (p.kind == host_stub::Prim::fill && p.w >= 1200) return true;                                                                  // page-wide clears
@@ -168,7 +168,7 @@ static void flicker(Density d) {
   host_stub::reset();
   CHECK(dash.present(display, s, ui, true, false));                                  // entry: whole layout once
   CHECK(host_stub::full_clear_count == 0 && !host_stub::out_of_bounds);
-  CHECK(contains("SCAN / DISCOVER") && contains("DISCOVERED SIGNALS") && contains("SELECTED SIGNAL"));
+  CHECK((contains("SCAN STOPPED") || contains("SAVED LIST") || contains("SWEEP") || contains("MONITOR") || contains("HOLD")) && contains("DISCOVERED SIGNALS") && contains("SELECTED SIGNAL"));   // the mode badge plus the static titles
   const size_t entry_calls = host_stub::calls.size();
   std::printf("  draw calls (%s): screen entry %zu", d == Density::discovery_first ? "discovery" : "analysis", entry_calls);
   // 1. repeated frequency updates: only the frequency widget (and the position/progress it implies) is touched
@@ -225,13 +225,13 @@ static void flicker(Density d) {
   // 6. start / stop, hold / resume
   Snapshot idle = s; idle.scan.phase = ScanPhase::idle; idle.scan.stage = ScanStage::ready; idle.scan.channel_index = 0; idle.scan.progress_valid = false; idle.can_hold = idle.can_skip = false; ++idle.revision;
   host_stub::reset(); CHECK(dash.present(display, idle, ui, true, false));
-  CHECK(contains("READY") && contains("START SCAN") && all_inside({g.status, g.freq, g.plan, g.bar, g.counts, g.ladder, g.reason, g.start, g.hold, g.skip, g.save, g.plan_prev, g.plan_next, g.row[0], g.row[1], g.row[2], g.row[3], g.detail}));
+  CHECK(contains("READY") && contains("START SCAN") && all_inside({g.mode, g.trace, g.status, g.freq, g.plan, g.bar, g.counts, g.ladder, g.reason, g.start, g.hold, g.skip, g.save, g.plan_prev, g.plan_next, g.row[0], g.row[1], g.row[2], g.row[3], g.detail}));
   CHECK(!chrome_redrawn(g));
   Snapshot run = s; run.scan_on_hold = false; ++run.revision; run.revision += 10;
   host_stub::reset(); CHECK(dash.present(display, run, ui, true, false)); CHECK(!chrome_redrawn(g) && host_stub::full_clear_count == 0);
   Snapshot held = run; held.scan.phase = ScanPhase::holding; held.scan.stage = ScanStage::hold; held.scan_on_hold = true; ++held.revision;
   host_stub::reset(); CHECK(dash.present(display, held, ui, true, false));
-  CHECK(contains("RESUME") && contains("HOLD") && all_inside({g.status, g.hold, g.ladder, g.plan, g.bar, g.counts, g.reason, g.start, g.skip, g.save, g.plan_prev, g.plan_next, g.row[0], g.row[1], g.row[2], g.row[3], g.detail}) && !chrome_redrawn(g));
+  CHECK(contains("RESUME") && contains("HOLD") && all_inside({g.mode, g.trace, g.status, g.hold, g.ladder, g.plan, g.bar, g.counts, g.reason, g.start, g.skip, g.save, g.plan_prev, g.plan_next, g.row[0], g.row[1], g.row[2], g.row[3], g.detail}) && !chrome_redrawn(g));
   Snapshot resumed = held; resumed.scan_on_hold = false; resumed.scan.phase = ScanPhase::scanning; resumed.scan.stage = ScanStage::scanning; ++resumed.revision;
   host_stub::reset(); CHECK(dash.present(display, resumed, ui, true, false)); CHECK(contains("SCANNING") && !chrome_redrawn(g));
   // 7. changes that are not visible on SCAN draw nothing at all, whatever the revision counter says
@@ -246,7 +246,7 @@ static void flicker(Density d) {
   // 9. leaving and re-entering repaints the whole layout once
   dash.leave(); ++other.revision;
   host_stub::reset(); CHECK(dash.present(display, other, ui, true, false));
-  CHECK(contains("SCAN / DISCOVER") && host_stub::full_clear_count == 0 && host_stub::calls.size() >= entry_calls / 2);
+  CHECK(contains("DISCOVERED SIGNALS") && host_stub::full_clear_count == 0 && host_stub::calls.size() >= entry_calls / 2);
   std::printf("  re-entry %zu\n", host_stub::calls.size());
 }
 
