@@ -29,7 +29,7 @@ size_t CicDecimator::process_cu8(const std::uint8_t* cu8, size_t pairs, std::uin
       im = integ_im_[s];
     }
 
-    if (++phase_ < kRate) continue;
+    if (++phase_ < rate_) continue;
     phase_ = 0;
 
     // Comb section, once per output sample.
@@ -43,8 +43,8 @@ size_t CicDecimator::process_cu8(const std::uint8_t* cu8, size_t pairs, std::uin
 
     if (written >= capacity) continue;  // keep state coherent even when truncated
     // Back to CU8: divide by the CIC gain, re-bias, saturate.
-    const std::int64_t scaled_re = (re >> kGainShift) + 128;
-    const std::int64_t scaled_im = (im >> kGainShift) + 128;
+    const std::int64_t scaled_re = (re >> gain_shift_) + 128;
+    const std::int64_t scaled_im = (im >> gain_shift_) + 128;
     out[written * 2 + 0] = std::uint8_t(std::max<std::int64_t>(0, std::min<std::int64_t>(255, scaled_re)));
     out[written * 2 + 1] = std::uint8_t(std::max<std::int64_t>(0, std::min<std::int64_t>(255, scaled_im)));
     ++written;

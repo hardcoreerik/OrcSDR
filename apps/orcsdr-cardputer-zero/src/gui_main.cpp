@@ -81,6 +81,7 @@ Options parse(int argc,char** argv){
     else if(y=="p25")a.dashboard=16;
     else if(y=="lora")a.dashboard=17;
     else if(y=="satellite")a.dashboard=18;
+ else if(y=="dmr")a.dashboard=19;
     else if(y!="fm")throw std::invalid_argument("Unknown dashboard: "+y);
   }
   else if(x=="--view")a.view=y;
@@ -307,8 +308,8 @@ int run_fb(const Options& a,ControlModel& model,FmSession* session){
    }
    if(model.s.page==orc::zero::Page::dashboards){
      auto& selection=model.s.dashboard_selection;
-     if(key==Key::up)selection=(selection+18)%19;
-     else if(key==Key::down)selection=(selection+1)%19;
+     if(key==Key::up)selection=(selection+19)%20;
+     else if(key==Key::down)selection=(selection+1)%20;
      else if(key==Key::enter){
        if(selection==4)model.s.page=orc::zero::Page::settings;
        else{select_dashboard(unsigned(selection));model.s.page=orc::zero::Page::receive;}

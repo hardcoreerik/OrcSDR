@@ -13,6 +13,9 @@
 #include <ctime>
 #include "compact/p25_screen.hpp"
 #include "compact/lora_screen.hpp"
+#include "compact/dmr_screen.hpp"
+#include "dv_decimator.hpp"
+#include "dv_channelizer.hpp"
 #include "lora_history.hpp"
 #include "settings.hpp"
 #include "compact/satellite_screen.hpp"
@@ -151,6 +154,11 @@ class DashboardSession {
     if(mode_==18){
       const bool handled=satellite_.input(key,digit);
       lab_target_=satellite_.tuning.requested;weather_volume_=satellite_.tuning.volume;weather_muted_=satellite_.tuning.muted;
+      return handled;
+    }
+    if(mode_==19){
+      const bool handled=dmr_.input(key,digit);
+      lab_target_=dmr_.tuning.requested;
       return handled;
     }
     if(mode_==1){
@@ -337,6 +345,7 @@ class DashboardSession {
     if(mode_==16)return p25_.render();
     if(mode_==17)return lora_.render();
     if(mode_==18)return satellite_.render(palette);
+    if(mode_==19)return dmr_.render();
     if(mode_==12){
       if(dead_air_storage_)dead_air_.storage_status(dead_air_storage_->saved(),dead_air_storage_->dropped(),dead_air_storage_->failed());
       dead_air_.render();
@@ -717,6 +726,7 @@ class DashboardSession {
       if(mode==9){meta.frequency_hz=929662500;meta.sample_rate_sps=orcsdr::pocsag::kInputSampleRateHz;}
       if(mode==10){meta.frequency_hz=145800000;meta.sample_rate_sps=300000;}
       if(mode==16){std::lock_guard<std::mutex> lock(mutex_);meta.frequency_hz=p25_.requested;meta.sample_rate_sps=960000;}
+  if(mode==19){std::lock_guard<std::mutex> lock(mutex_);meta.frequency_hz=dmr_.radio_hz();meta.sample_rate_sps=960000;dmr_reset_pending_=true;}
       uint32_t ft8_dial;
       {std::lock_guard<std::mutex> lock(mutex_);ft8_dial=ft8_band_.dial();}
       orcsdr::ftx::Mode ft8_mode;
@@ -1040,6 +1050,36 @@ class DashboardSession {
           dead_air_.consume(dead_air_block);
           next_measurement=meta.monotonic_ns+250000000;
         }
+        if(mode==19){
+          // DMR: 2.4 MS/s CU8 -> CIC decimator -> DV channeliser -> d1 chain.
+          // The statics keep DSP state between blocks; a retune calls
+          // discontinuity() so the protocol side does not stitch across it.
+          static orc::zero::dv::CicDecimator cic(4);  // 960 kS/s -> 240 kS/s
+          static orcsdr::dv::Channelizer channelizer;
+          static orcsdr::dmr::d1::integration::Receiver dmr_rx;
+          if(dmr_reset_pending_){
+            dmr_reset_pending_=false;
+            cic.reset();channelizer.reset();dmr_rx.reset();
+          }
+          std::vector<std::uint8_t> decimated(bytes/4+16);
+          const size_t decim_pairs=cic.process_cu8(buffer.data(),bytes/2,decimated.data(),decimated.size()/2);
+          std::vector<orcsdr::dv::Iq48> baseband(decim_pairs/5+8);
+          const size_t produced=channelizer.process_cu8(decimated.data(),decim_pairs,baseband.data(),baseband.size());
+          const double dv_level=double(channelizer.take_level());
+          if(produced){
+            const auto* samples=reinterpret_cast<const orcsdr::dmr::d1::ComplexSample*>(baseband.data());
+            dmr_rx.process(samples,produced,[](const orcsdr::dmr::d1::integration::Event& event,void* user) noexcept{
+              auto* self=static_cast<DashboardSession*>(user);
+              std::lock_guard<std::mutex> lock(self->mutex_);
+              self->dmr_.observe(event);
+            },this);
+          }
+          {
+            std::lock_guard<std::mutex> lock(mutex_);
+            dmr_.set_level(dv_level);
+            dmr_.update_stats(dmr_rx.stats());
+          }
+        }
         if(ft8){
           const auto utc=std::chrono::duration_cast<std::chrono::nanoseconds>(
             std::chrono::system_clock::now().time_since_epoch()).count();
@@ -1157,7 +1197,9 @@ class DashboardSession {
   P25Screen p25_;
   Ft8Visuals ft8_visual_;
   Ft8WorldMap ft8_map_;
-  bool ft8_map_open_=false;int ft8_page_=0;size_t ft8_log_offset_=0;
+  DmrScreen dmr_;
+bool dmr_reset_pending_=false;
+bool ft8_map_open_=false;int ft8_page_=0;size_t ft8_log_offset_=0;
   uint64_t ft8_visual_painted_=~uint64_t{0},ft8_map_painted_=~uint64_t{0};
   unsigned ft8_visual_palette_=~0u;
   ClockControl clock_;

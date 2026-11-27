@@ -258,7 +258,7 @@ struct CompactRenderer {
         text(43,39,"OrcSDR",green,2);
         const int first=std::max(0,s.dashboard_selection-4);
         for(int i=0;i<5;++i){
-          const char* names[]={"FM BROADCAST","ADS-B","ACARS","AIRBAND AM","SETTINGS","RF LAB","2.4 GHZ WIFI","WEATHER","MARINE","POCSAG","SSTV","AM RADIO","DEAD AIR","SHORTWAVE","CB RADIO","FT8 RX","P25 RADIO","LORA / MESH","SATELLITE"};
+          const char* names[]={"FM BROADCAST","ADS-B","ACARS","AIRBAND AM","SETTINGS","RF LAB","2.4 GHZ WIFI","WEATHER","MARINE","POCSAG","SSTV","AM RADIO","DEAD AIR","SHORTWAVE","CB RADIO","FT8 RX","P25 RADIO","LORA / MESH","SATELLITE","DMR"};
           const int y=65+i*13;
           rect(40,y,168,12,s.dashboard_selection==i+first?0x1264:panel);
           text(46,y+2,names[i+first],s.dashboard_selection==i+first?green:white);
