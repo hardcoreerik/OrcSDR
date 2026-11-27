@@ -1,0 +1,3 @@
+validated 1002000 rows; read_at=1002001
+validated 1002001 rows; read_at=1002002
+500100 complete result sets matched split experiment; step budget 256
