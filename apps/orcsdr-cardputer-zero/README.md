@@ -471,7 +471,7 @@ Z/C BAND   G MODE   M MAP   T UTC   SPACE DASH
 `CompactRenderer::keys()` draws the pair list and returns the next x, so a row
 that must also carry an attribution (the FT8 map's Natural Earth credit) can
 print it in muted grey first. Actions are spelled out rather than implied, and
-`SPACE` is labelled with what it does — it opens the dashboard selector.
+`TAB` is labelled with what it does — it opens the dashboard selector from any dashboard.
 
 ### Display ownership, and the launcher's status bar
 
@@ -521,8 +521,8 @@ per screen. Dashboards may add hotkeys, but they may not repurpose these:
 | `F` / `X` | move **within** the current screen: scroll, select, adjust |
 | `Enter` | act on the current screen |
 | `Esc` | leave the screen; from the first screen, leave the dashboard |
-| `Space` | dashboard selector |
-| `Tab` | menu |
+| `Tab` | dashboard selector |
+| `Space` | menu |
 | `V` | frequency entry |
 
 The status bar shows one dot per screen so a screen with siblings is obvious

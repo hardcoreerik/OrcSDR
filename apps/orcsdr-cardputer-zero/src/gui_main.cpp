@@ -171,12 +171,12 @@ bool translate_sdl(SDL_Keycode code,Key& key,char& digit){
   case SDLK_HOME:key=Key::home;break;
   case SDLK_BACKSPACE:key=Key::backspace;break;
   case SDLK_PERIOD:key=Key::point;break;
-  case SDLK_TAB:key=Key::menu;break;
+  case SDLK_TAB:key=Key::dashboards;break;
   case SDLK_b:key=Key::bias_tee;break;
   case SDLK_v:key=Key::frequency;break;
   case SDLK_m:key=Key::mute;break;
   case SDLK_p:key=Key::palette;break;
-  case SDLK_SPACE:key=Key::dashboards;break;
+  case SDLK_SPACE:key=Key::menu;break;
   case SDLK_s:case SDLK_MINUS:key=Key::volume_down;break;
   case SDLK_d:case SDLK_EQUALS:key=Key::volume_up;break;
   case SDLK_g:key=Key::gain;break;case SDLK_t:key=Key::step;break;
@@ -230,8 +230,8 @@ Key translate_evdev(unsigned code,char& digit){
   case KEY_UP:case KEY_F:return Key::up;case KEY_DOWN:case KEY_X:return Key::down;
   case KEY_ENTER:return Key::enter;case KEY_ESC:return Key::escape;case KEY_HOME:return Key::home;
   case KEY_BACKSPACE:return Key::backspace;case KEY_DOT:return Key::point;
-  case KEY_TAB:return Key::menu;case KEY_V:return Key::frequency;
-  case KEY_SPACE:return Key::dashboards;case KEY_P:return Key::palette;case KEY_M:return Key::mute;case KEY_S:case KEY_MINUS:return Key::volume_down;
+  case KEY_TAB:return Key::dashboards;case KEY_V:return Key::frequency;
+  case KEY_SPACE:return Key::menu;case KEY_P:return Key::palette;case KEY_M:return Key::mute;case KEY_S:case KEY_MINUS:return Key::volume_down;
   case KEY_D:case KEY_EQUAL:return Key::volume_up;case KEY_G:return Key::gain;
   case KEY_B:return Key::bias_tee;
   case KEY_T:return Key::step;case KEY_R:return Key::reconnect;

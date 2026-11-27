@@ -124,7 +124,7 @@ struct CompactRenderer {
     const bool layout_changed=!initialized||previous_page!=s.page;
     if(layout_changed){fill(bg);initialized=true;previous_page=s.page;
       rect(footer.x,footer.y,footer.w,footer.h,panel);
-      keys(4,162,{{"SPACE","DASH"},{"V","FREQ"},{"S/D","VOL"},{"P","COLOR"},{"TAB","MENU"}});
+      keys(4,162,{{"TAB","DASH"},{"V","FREQ"},{"S/D","VOL"},{"P","COLOR"},{"SPACE","MENU"}});
     }
     // Clear only the widgets being updated; framebuffer output skips identical pixels.
     status_bar("FM BROADCAST",s.battery_percent,int(s.fm_page),4);
@@ -215,7 +215,7 @@ struct CompactRenderer {
           text(286,y,b,cyan,1,5);
         }
       }
-      keys(4,160,{{"Z/C","PAGE"},{"F/X","TUNE"},{"TAB","MENU"}});
+      keys(4,160,{{"Z/C","PAGE"},{"F/X","TUNE"},{"SPACE","MENU"}});
     }else if(s.fm_page==2){
       text(4,42,"RF HEALTH",muted);
       int peak=0;unsigned total=0;
@@ -235,7 +235,7 @@ struct CompactRenderer {
       text(4,118,b,(s.known_dropped_samples?yellow:muted));
       std::snprintf(b,sizeof(b),"STEP %u KHZ",s.step_hz/1000u);
       text(4,130,b,white);
-      keys(4,160,{{"Z/C","PAGE"},{"F/X","TUNE"},{"TAB","MENU"}});
+      keys(4,160,{{"Z/C","PAGE"},{"F/X","TUNE"},{"SPACE","MENU"}});
     }else{
       text(4,42,"SETTINGS",muted);
       text(4,56,"LOCATION",muted,1,8);text(70,56,city.label,yellow,1,14);
@@ -248,7 +248,7 @@ struct CompactRenderer {
       text(4,96,b,white);
       text(4,120,"F/X CHANGES LOCATION",muted,1,20);
       text(4,132,"G GAIN   T STEP   S/D VOLUME",muted,1,26);
-      keys(4,160,{{"Z/C","PAGE"},{"F/X","CITY"},{"TAB","MENU"}});
+      keys(4,160,{{"Z/C","PAGE"},{"F/X","CITY"},{"SPACE","MENU"}});
     }
   }
   void overlay(const Snapshot& s) {
