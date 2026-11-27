@@ -274,3 +274,29 @@ was never qualified. So the ordering is:
 Worth stating because it would be easy to implement a correct Golay decoder,
 measure no change in superframe count, and conclude it was worthless - when the
 real limit was upstream in qualification.
+## Correction: the weak captures are short, not damaged (2026-11-27)
+
+The previous section hypothesised that weak captures lose superframes. Instrumenting
+`voice_stats()` disproves it:
+
+| Capture | anchors | groups | abandoned_sync | abandoned_emb | LC ok/bad |
+| --- | --- | --- | --- | --- | --- |
+| terra_152p1575_call_cc13 | 26 | 26 | 0 | 0 | 19/3 |
+| terra_152p685_call_cc8 | 5 | 5 | 0 | 0 | 4/1 |
+| terra_153p068_call_cc8 | 1 | 1 | 0 | 0 | 1/0 |
+
+`anchors == groups` everywhere, and nothing was abandoned. Every sync anchor
+produced a qualified superframe. The captures differ only in **how much call was
+present**: five superframes is a 1.8 s over, one is a key-up.
+
+Two consequences:
+
+1. There is nothing here for Golay to recover. Per-frame correction would not add
+   a single superframe to any of these files, because none were lost.
+2. Golay's remaining value is audio quality *inside* delivered frames on genuinely
+   marginal signals - a refinement, not a coverage fix, and not demonstrable with
+   this corpus because this corpus is not marginal.
+
+That is the second time in this project that measuring first prevented building the
+wrong thing. The rule worth keeping: before implementing error correction, prove
+that errors are what limit the result.

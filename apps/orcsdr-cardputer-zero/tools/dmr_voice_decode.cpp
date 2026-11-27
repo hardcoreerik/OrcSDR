@@ -136,6 +136,17 @@ int main(int argc, char** argv) {
     receiver.process(samples, out_pairs, nullptr, nullptr);
   }
 
+  // Why did superframes qualify or not? These counters separate "the call was
+  // short" from "qualification dropped it", which decides whether per-frame error
+  // correction would change anything at all.
+  {
+    const auto& v = receiver.voice_stats();
+    std::printf(
+        "voice: anchors %llu  groups %llu  abandoned_sync %llu  abandoned_emb %llu  lc ok %llu bad %llu\n",
+        (unsigned long long)v.anchors, (unsigned long long)v.groups,
+        (unsigned long long)v.abandoned_sync, (unsigned long long)v.abandoned_emb,
+        (unsigned long long)v.embedded_lc_ok, (unsigned long long)v.embedded_lc_bad);
+  }
   if (!state.player.frames_decoded()) {
     std::printf("no voice frames decoded\n");
     return 1;
