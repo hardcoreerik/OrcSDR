@@ -16,6 +16,7 @@
 #include "compact/dmr_screen.hpp"
 #include "dv_decimator.hpp"
 #include "dv_channelizer.hpp"
+#include "dv_voice.hpp"
 #include "lora_history.hpp"
 #include "settings.hpp"
 #include "compact/satellite_screen.hpp"
@@ -345,7 +346,17 @@ class DashboardSession {
     if(mode_==16)return p25_.render();
     if(mode_==17)return lora_.render();
     if(mode_==18)return satellite_.render(palette);
-    if(mode_==19)return dmr_.render();
+    if(mode_==19){
+      // Drain on the UI thread so ALSA never blocks the receiver. A call decodes
+      // faster than it plays, so the ring is normally a few hundred milliseconds
+      // deep; a chunk per repaint keeps it there without stalling.
+      if(dmr_audio_.audible()){
+        static std::int16_t dmr_pcm[4096];
+        const size_t got=dmr_voice_.take_upsampled(dmr_pcm,4096);
+        if(got)dmr_audio_.write_mono(dmr_pcm,got,100,false);
+      }
+      return dmr_.render();
+    }
     if(mode_==12){
       if(dead_air_storage_)dead_air_.storage_status(dead_air_storage_->saved(),dead_air_storage_->dropped(),dead_air_storage_->failed());
       dead_air_.render();
@@ -1060,6 +1071,15 @@ class DashboardSession {
           if(dmr_reset_pending_){
             dmr_reset_pending_=false;
             cic.reset();channelizer.reset();dmr_rx.reset();
+            dmr_voice_.reset();
+            // Decode into the player on this thread; the UI thread drains it.
+            dmr_rx.set_voice_sink([](const orcsdr::dmr::d1::VoiceGroup& group,void* user) noexcept {
+              static_cast<orc::zero::dv::VoicePlayer*>(user)->decode_superframe(group.payload.data(),group.payload.size());
+            },&dmr_voice_);
+            if(!dmr_audio_tried_){
+              dmr_audio_tried_=true;
+              dmr_audio_.open("plughw:ES8389Audio,0",false);
+            }
           }
           std::vector<std::uint8_t> decimated(bytes/4+16);
           const size_t decim_pairs=cic.process_cu8(buffer.data(),bytes/2,decimated.data(),decimated.size()/2);
@@ -1198,6 +1218,9 @@ class DashboardSession {
   Ft8Visuals ft8_visual_;
   Ft8WorldMap ft8_map_;
   DmrScreen dmr_;
+  orc::zero::dv::VoicePlayer dmr_voice_;
+  orc::zero::AudioSink dmr_audio_;
+  bool dmr_audio_tried_=false;
 bool dmr_reset_pending_=false;
 bool ft8_map_open_=false;int ft8_page_=0;size_t ft8_log_offset_=0;
   uint64_t ft8_visual_painted_=~uint64_t{0},ft8_map_painted_=~uint64_t{0};
