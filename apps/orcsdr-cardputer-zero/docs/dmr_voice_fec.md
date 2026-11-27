@@ -300,3 +300,29 @@ Two consequences:
 That is the second time in this project that measuring first prevented building the
 wrong thing. The rule worth keeping: before implementing error correction, prove
 that errors are what limit the result.
+## Complete frame map including Golay parity (2026-11-27)
+
+Locating the parity used the same correlation method as the data, so the whole
+72-bit frame is now accounted for without consulting any external table:
+
+| Field | Bits | On-air positions | Notes |
+| --- | --- | --- | --- |
+| C0 data | 12 | 0, 4, ... 44 | class 0 |
+| C0 parity | 6 | 48, 52, 56, 60, 64, 68 | class 0, continuing |
+| C0 parity | 5 | 1, 5, 9, 13, 17 | class 1 |
+| C1 parity | 11 | 2, 6, ... 42 | class 2, de-whitened ks[13..23] |
+| C1 data | 12 | 25, 29, ... 69 | class 1, de-whitened ks[1..12] |
+| C2 first | 7 | 46, 50, ... 70 | class 2 |
+| C2 rest + C3 | 18 | 3, 7, ... 71 | class 3 |
+| spare | 1 | (remaining) | not used |
+
+That is 71 of 72 positions: 12 + 11 for C0, 12 + 11 for C1, 11 + 14 for C2/C3.
+
+The Golay convention is the standard systematic (23,12) with generator polynomial
+0xC75, twelve data bits followed by eleven parity bits - confirmed by the parity
+correlating exactly on all twenty frames rather than merely approximately.
+
+With both codewords recoverable, correction up to three bit errors per codeword is
+now implementable: extract 23 bits, compute the syndrome, apply the matching
+one/two/three-bit error pattern, then rebuild the payload from corrected C0 and C1
+and the uncorrected C2/C3.
