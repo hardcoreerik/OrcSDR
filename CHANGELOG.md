@@ -2,7 +2,13 @@
 
 This is the **project-level release and current-source index**. It links the authoritative, version-specific release notes and feature-level development records rather than rewriting historic test results. For a current source/receiver matrix see [PROJECT_STATUS.md](PROJECT_STATUS.md), and for on-device decoders see [Native Decoder Inventory](docs/NATIVE_DECODER_INVENTORY.md).
 
-## Unreleased — Digital Voice: scan-aware LIVE screen, mode badge and RF strip on SCAN, (i) help cards, Digital Voice home icon — 2026-11-27
+## Unreleased
+
+### Digital Voice
+
+- LIVE screen is now the approved radio monitor (Now Listening, Signal Diagnostics, Decoder Status, Receiver Controls, RF level / waterfall area) with Audio, Filter, Tune and Options popups. Spectrum, symbol levels, SNR, BER and deviation have no producer yet and show as unavailable; see docs/digital-voice/LIVE_MONITOR_INTEGRATION.md. Host tested and flashed; native screenshots pending.
+
+ — Digital Voice: scan-aware LIVE screen, mode badge and RF strip on SCAN, (i) help cards, Digital Voice home icon — 2026-11-27
 
 - **LIVE (default density) redesigned:** a mode strip across the top says what the scan is doing: MONITOR (green, with systems and channel i of n, and "staying for a call"), HOLD (amber, "you paused the MONITOR scan here: press RELEASE"), DISCOVERY (cyan, survey pass or decoding channel i of n and the number found), SAVED LIST, SWEEP (the band), FOLLOWING, RECEIVER PROBLEM, or SCAN STOPPED ("press START on the SCAN screen"). Left card: the tuned frequency in large type, the protocol with colour code (or RAN) and slot, a plain status line (Listening - no call right now, Call in progress, Call ended - waiting for a reply, Encrypted call - we can't play it, Not listening), TALKGROUP (or TO RADIO) and FROM RADIO with group or private and slot, and the receiver's real RF level strip. Right card: what the scan is doing (mode, state, channel, plan), HOLD / RELEASE and SKIP buttons (new on LIVE), and AUTO / SLOT 1 / SLOT 2 / MUTE. The ids come from the call being played or, before the audio starts, from the last identity-validated event; nothing is guessed. The detailed LIVE page (analysis density) is unchanged. The RF strip now samples whenever a scan or FOLLOW is running (`rf_trace_on`).
 - **SCAN:** the title "SCAN / DISCOVER" became a mode badge (MONITOR, HOLD, SAVED LIST, SWEEP, DISCOVERY, SCAN STOPPED, with the state beside it) and the same real RF strip sits above the buttons (default density). Shared code is in `digital_voice_live_common.hpp`.

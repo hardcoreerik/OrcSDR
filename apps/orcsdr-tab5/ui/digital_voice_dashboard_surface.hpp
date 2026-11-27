@@ -20,6 +20,7 @@ class Surface final {
   // to the app, never directly executed here. No radio or USB ownership.
   Action touch(int32_t x, int32_t y, const Snapshot& snapshot, bool overlay_open);
   const UiState& state() const { return state_; }
+  void set_plot(const live_monitor::PlotData* plot) { dashboard_.set_plot(plot); }
   bool active() const { return dashboard_.active(); }
 
  private:

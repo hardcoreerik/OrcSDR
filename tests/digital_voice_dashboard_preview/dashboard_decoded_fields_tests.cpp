@@ -44,9 +44,9 @@ int main() {
       Snapshot sl = s; sl.scan.phase = ScanPhase::scanning; sl.scan.channel_index = 1; sl.scan.planned = 4;   // the default LIVE page shows a call only while something is listening
       sl.has_frequency = true; sl.frequency_hz = 152157500;
       show(View::live, mode, sl);
-      assert(host_stub::contains("4106011") && host_stub::contains("6011885") && host_stub::contains("TALKGROUP") && host_stub::contains("GROUP"));
-      if (mode == Density::analysis_first) assert(host_stub::contains("13") && host_stub::contains("TS2"));
-      else assert(host_stub::contains("Colour Code 13") && host_stub::contains("Slot 2") && host_stub::contains("152.1575 MHz"));
+      assert(host_stub::contains("4106011") && host_stub::contains("6011885"));
+      if (mode == Density::analysis_first) assert(host_stub::contains("13") && host_stub::contains("TS2") && host_stub::contains("TALKGROUP") && host_stub::contains("GROUP"));
+      else assert(host_stub::contains("CC 13") && host_stub::contains("TS 2") && host_stub::contains("152.157500 MHz") && host_stub::contains("TG"));
     }
     show(View::last_heard, mode, s);
     assert(host_stub::contains("23:19:58  DMR  4106011>6011885  CC13 TS2"));

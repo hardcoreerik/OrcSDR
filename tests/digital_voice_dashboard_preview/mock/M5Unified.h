@@ -17,11 +17,12 @@ inline std::vector<Prim> calls;
 inline int full_clear_count=0;
 inline bool out_of_bounds=false;
 inline int clipped_calls=0;
+inline int pushed_images=0;
 inline int clip_x=0,clip_y=0,clip_w=1280,clip_h=720,text_size=1;
 struct R {int x,y,w,h;};
 // What a primitive actually touches: its bounds intersected with the clip rectangle it was drawn under.
 inline R eff(const struct Prim& p){int x0=p.x>p.cx?p.x:p.cx,y0=p.y>p.cy?p.y:p.cy;int x1=(p.x+p.w<p.cx+p.cw)?p.x+p.w:p.cx+p.cw,y1=(p.y+p.h<p.cy+p.ch)?p.y+p.h:p.cy+p.ch;if(x1<x0)x1=x0;if(y1<y0)y1=y0;return {x0,y0,x1-x0,y1-y0};}
-inline void reset(){calls.clear();full_clear_count=0;out_of_bounds=false;clipped_calls=0;}
+inline void reset(){calls.clear();full_clear_count=0;out_of_bounds=false;clipped_calls=0;pushed_images=0;}
 inline void begin_frame(){reset();}
 inline void record(Prim::Kind kind,int x,int y,int w,int h,const char* s=nullptr){
   Prim p{kind,x,y,w,h,s?s:"",clip_x,clip_y,clip_w,clip_h};
@@ -41,6 +42,9 @@ class LovyanGFX {
   void fillRoundRect(int x,int y,int w,int h,int,uint16_t){host_stub::record(host_stub::Prim::round_fill,x,y,w,h);}
   void drawRoundRect(int x,int y,int w,int h,int,uint16_t){host_stub::record(host_stub::Prim::round_line,x,y,w,h);}
   void drawFastHLine(int x,int y,int w,uint16_t){host_stub::record(host_stub::Prim::line,x,y,w,1);}
+  void drawFastVLine(int x,int y,int h,uint16_t){host_stub::record(host_stub::Prim::line,x,y,1,h);}
+  void drawRect(int x,int y,int w,int h,uint16_t){host_stub::record(host_stub::Prim::line,x,y,w,h);}
+  void pushImage(int x,int y,int w,int h,const uint16_t*){host_stub::record(host_stub::Prim::fill,x,y,w,h);++host_stub::pushed_images;}
   void setClipRect(int x,int y,int w,int h){host_stub::record(host_stub::Prim::line,x,y,w,h); ++host_stub::clipped_calls;host_stub::clip_x=x;host_stub::clip_y=y;host_stub::clip_w=w;host_stub::clip_h=h;}
   void clearClipRect(){host_stub::clip_x=0;host_stub::clip_y=0;host_stub::clip_w=1280;host_stub::clip_h=720;}
   void setFont(decltype(nullptr)){}

@@ -185,14 +185,22 @@ int main(){
     FCHK(fd.handle_touch(la.x+500,la.y+280,fs,fu).kind==ActionKind::none);
   }
   {
-    // The default LIVE page: the mode strip follows what the scan is doing, the tuned frequency, colour code, slot and talkgroup are in plain
-    // words, HOLD / RELEASE / SKIP and the listen buttons are touch targets, and the changing parts repaint without refilling a card.
+    // The default LIVE screen is the radio monitor: five retained panels, an RF level fallback where no spectrum exists, popups, and graphs that
+    // draw only real data. Nothing here may clear the screen, overlap, or show a value nobody measured.
+    using namespace live_monitor;
     Dashboard ld;lgfx::LovyanGFX ldisp;UiState lu{};lu.view=View::live;lu.density=Density::discovery_first;
     Snapshot ls{};ls.revision=1;ls.receiver=Receiver::receiving;ls.can_scan=true;ls.voice.available=true;ls.voice.phase=VoicePhase::listening;
+    ls.can_save_speech=true;
     auto show=[&](const Snapshot& sn){host_stub::reset();FCHK(ld.present(ldisp,sn,lu,true,false));};
-    show(ls);
-    FCHK(host_stub::contains("SCAN STOPPED")&&host_stub::contains("press START on the SCAN screen")&&host_stub::contains("Not listening"));
-    FCHK(!host_stub::contains("UNKNOWN")&&host_stub::full_clear_count==0&&!host_stub::out_of_bounds);
+    show(ls);                                                                  // idle: nothing is scanning
+    FCHK(host_stub::contains("NOW LISTENING")&&host_stub::contains("SCAN STOPPED")&&host_stub::contains("-- MHz")&&host_stub::contains("NO CHANNEL TUNED"));
+    FCHK(host_stub::contains("NOT LISTENING")&&host_stub::contains("REPEATER UNKNOWN"));
+    FCHK(host_stub::contains("SIGNAL DIAGNOSTICS")&&host_stub::contains("SNR")&&host_stub::contains("BER")&&host_stub::contains("CRC FAIL --"));
+    FCHK(host_stub::contains("RF LEVEL / WATERFALL")&&host_stub::contains("SPECTRUM DATA UNAVAILABLE")&&host_stub::contains("NO WATERFALL")&&host_stub::contains("NO SYMBOL DATA"));
+    FCHK(host_stub::contains("DECODER STATUS")&&host_stub::contains("N48")&&host_stub::contains("P25 II")&&host_stub::contains("D-STAR")&&host_stub::contains("YSF"));
+    FCHK(host_stub::contains("RECEIVER CONTROLS")&&host_stub::contains("HOLD")&&host_stub::contains("SKIP")&&host_stub::contains("RECORD VOICE [OFF]"));
+    FCHK(host_stub::contains("AUDIO")&&host_stub::contains("FILTER")&&host_stub::contains("TUNE")&&host_stub::contains("OPTIONS"));
+    FCHK(host_stub::full_clear_count==0&&!host_stub::out_of_bounds);
     // MONITOR scanning, a DMR call on 463.400
     ls.scan.phase=ScanPhase::scanning;ls.scan.stage=ScanStage::scanning;ls.scan.planned=16;ls.scan.channel_index=9;ls.can_hold=true;ls.can_skip=true;
     std::snprintf(ls.scan.plan_name,sizeof(ls.scan.plan_name),"MONITOR ALL (16)");
@@ -200,47 +208,89 @@ int main(){
     ls.timeslot_valid=true;ls.timeslot=1;ls.rf_trace_on=true;++ls.revision;
     ls.voice.phase=VoicePhase::decoding;ls.voice.active_slot=1;ls.voice.source_id=65535;ls.voice.destination_id=16;ls.voice.group_call=true;
     show(ls);
-    FCHK(host_stub::contains("MONITOR")&&host_stub::contains("16 systems, channel 9 of 16"));
-    FCHK(host_stub::contains("463.4000 MHz")&&host_stub::contains("DMR   Colour Code 1   Slot 1"));
-    FCHK(host_stub::contains("Call in progress")&&host_stub::contains("TALKGROUP")&&host_stub::contains("65535")&&host_stub::contains("Group call"));
-    FCHK(host_stub::contains("HOLD")&&host_stub::contains("SKIP")&&host_stub::contains("AUTO")&&host_stub::contains("MUTE"));
-    // the plan kinds
+    FCHK(host_stub::contains("MONITOR")&&host_stub::contains("463.400000 MHz")&&host_stub::contains("CC 1")&&host_stub::contains("TS 1"));
+    FCHK(host_stub::contains("65535")&&host_stub::contains("TG")&&host_stub::contains("4FSK"));
+    FCHK(host_stub::contains("Scanning"));
     auto plan=[&](const char* name,Snapshot& sn){std::snprintf(sn.scan.plan_name,sizeof(sn.scan.plan_name),"%s",name);++sn.revision;};
-    plan("SAVED LIST",ls);show(ls);FCHK(host_stub::contains("SAVED LIST")&&host_stub::contains("channel 9 of 16"));
-    plan("2M 144-148",ls);show(ls);FCHK(host_stub::contains("SWEEP")&&host_stub::contains("2M 144-148"));
+    plan("SAVED LIST",ls);show(ls);FCHK(host_stub::contains("SAVED LIST"));
+    plan("2M 144-148",ls);show(ls);FCHK(host_stub::contains("SWEEP"));
     plan("MONITOR ALL (16)",ls);
-    ls.scan.phase=ScanPhase::holding;++ls.revision;show(ls);FCHK(host_stub::contains("staying for a call"));
+    ls.scan.phase=ScanPhase::holding;++ls.revision;show(ls);FCHK(host_stub::contains("Staying for a call"));
     ls.scan.phase=ScanPhase::scanning;ls.scan_on_hold=true;++ls.revision;show(ls);
-    FCHK(host_stub::contains("HOLD")&&host_stub::contains("RELEASE")&&host_stub::contains("you paused the MONITOR scan here"));
+    FCHK(host_stub::contains("RELEASE")&&host_stub::contains("Holding this channel"));
     ls.scan_on_hold=false;
     ls.discover_running=true;ls.discover_phase=2;ls.discover_found=3;++ls.revision;show(ls);
-    FCHK(host_stub::contains("DISCOVERY")&&host_stub::contains("decoding channel 9 of 16, found 3"));
+    FCHK(host_stub::contains("DISCOVERY"));
     ls.discover_running=false;ls.follow_active=true;ls.follow_frequency_hz=463400000;++ls.revision;show(ls);
-    FCHK(host_stub::contains("FOLLOWING")&&host_stub::contains("one channel, the scan is paused"));
+    FCHK(host_stub::contains("FOLLOWING"));
     ls.follow_active=false;ls.scan.phase=ScanPhase::failed;ls.scan.stage=ScanStage::error;++ls.revision;show(ls);
-    FCHK(host_stub::contains("RECEIVER PROBLEM")&&host_stub::contains("check the USB cable"));
-    // touch targets
+    FCHK(host_stub::contains("RECEIVER PROBLEM"));
     ls.scan.phase=ScanPhase::scanning;ls.scan.stage=ScanStage::scanning;++ls.revision;show(ls);
-    FCHK(ld.handle_touch(900,460,ls,lu).kind==ActionKind::toggle_hold);
-    FCHK(ld.handle_touch(1100,460,ls,lu).kind==ActionKind::skip_frequency);
-    FCHK(ld.handle_touch(880,550,ls,lu).kind==ActionKind::set_listen&&ld.handle_touch(1180,550,ls,lu).value==3);
-    ls.scan_on_hold=true;FCHK(ld.handle_touch(1100,460,ls,lu).kind==ActionKind::none);       // SKIP is off while held
-    ls.scan_on_hold=false;ls.can_hold=false;FCHK(ld.handle_touch(900,460,ls,lu).kind==ActionKind::none);
-    ls.can_hold=true;
-    // the RF trace moves without refilling any card or panel, and the page never clears the screen
+    // touch targets: at least 48 px, no overlap (compile time), the right action each
+    for(const Rect& r:buttons) FCHK(r.h>=48);
+    FCHK(ld.handle_touch(750,525,ls,lu).kind==ActionKind::toggle_hold);
+    FCHK(ld.handle_touch(900,525,ls,lu).kind==ActionKind::skip_frequency);
+    FCHK(ld.handle_touch(1100,525,ls,lu).kind==ActionKind::toggle_save_speech);
+    FCHK(ld.handle_touch(740,590,ls,lu).kind==ActionKind::toggle_popup&&ld.handle_touch(740,590,ls,lu).value==1);
+    FCHK(ld.handle_touch(890,590,ls,lu).value==2&&ld.handle_touch(1030,590,ls,lu).value==3&&ld.handle_touch(1180,590,ls,lu).value==4);
+    ls.scan_on_hold=true;FCHK(ld.handle_touch(900,525,ls,lu).kind==ActionKind::none);       // SKIP is off while held
+    ls.scan_on_hold=false;ls.can_hold=false;FCHK(ld.handle_touch(750,525,ls,lu).kind==ActionKind::none);
+    ls.can_hold=true;ls.can_save_speech=false;FCHK(ld.handle_touch(1100,525,ls,lu).kind==ActionKind::none);ls.can_save_speech=true;
+    // the RF level moves without refilling any card or panel, and the screen is never cleared
     show(ls);
     for(int step=0;step<8;++step) {
       for(size_t i=0;i+1<Snapshot::kFollowTrace;++i)ls.follow_trace[i]=ls.follow_trace[i+1];
       ls.follow_trace[Snapshot::kFollowTrace-1]=static_cast<uint8_t>(40+(step*37)%150);++ls.revision;
       show(ls);
-      FCHK(host_stub::full_clear_count==0);
+      FCHK(host_stub::full_clear_count==0&&!host_stub::out_of_bounds);
       for(const auto& c:host_stub::calls) FCHK(!((c.kind==host_stub::Prim::round_fill||c.kind==host_stub::Prim::round_line)&&c.w>=100));
-      FCHK(host_stub::calls.size()<=220);
+      FCHK(host_stub::calls.size()<=260);
     }
     // the tuned channel changes with each hop: only the changed texts are drawn
     ls.frequency_hz=152157500;ls.protocol=Protocol::dmr;ls.scan.channel_index=10;++ls.revision;show(ls);
-    FCHK(host_stub::contains("152.1575 MHz")&&host_stub::contains("channel 10 of 16"));
-    FCHK(host_stub::full_clear_count==0&&host_stub::calls.size()<=220);
+    FCHK(host_stub::contains("152.157500 MHz"));
+    FCHK(host_stub::full_clear_count==0&&host_stub::calls.size()<=260);
+    // popups: replace the right-hand column, only they react, CLOSE brings the panels back, a view change drops them
+    FCHK(apply_ui_action(lu,{ActionKind::toggle_popup,1},ls)&&lu.popup==1);
+    show(ls);
+    FCHK(host_stub::contains("AUTO")&&host_stub::contains("SLOT 2")&&host_stub::contains("MUTE")&&host_stub::contains("Volume: the speaker icon"));
+    FCHK(!host_stub::contains("SIGNAL DIAGNOSTICS")&&!host_stub::contains("RECEIVER CONTROLS")&&host_stub::full_clear_count==0);
+    FCHK(ld.handle_touch(1000,300,ls,lu).kind==ActionKind::set_listen&&ld.handle_touch(1000,300,ls,lu).value==3);
+    FCHK(ld.handle_touch(750,525,ls,lu).kind==ActionKind::none);                                        // the controls under it do not react
+    FCHK(ld.handle_touch(1100,580,ls,lu).kind==ActionKind::toggle_popup&&ld.handle_touch(1100,580,ls,lu).value==0);
+    lu.popup=2;show(ls);FCHK(host_stub::contains("MONITOR FILTER: ALL"));
+    FCHK(ld.handle_touch(900,240,ls,lu).kind==ActionKind::monitor_filter);
+    lu.popup=3;show(ls);FCHK(host_stub::contains("STOP SCAN")&&host_stub::contains("MANUAL FREQUENCY ENTRY: NOT AVAILABLE YET"));
+    FCHK(ld.handle_touch(900,310,ls,lu).kind==ActionKind::scan);
+    lu.popup=4;show(ls);FCHK(host_stub::contains("LOG DATA: OFF")&&host_stub::contains("DETAILED LIVE SCREEN"));
+    FCHK(ld.handle_touch(900,240,ls,lu).kind==ActionKind::toggle_log_data&&ld.handle_touch(900,308,ls,lu).kind==ActionKind::toggle_density);
+    lu.popup=0;show(ls);
+    FCHK(host_stub::contains("SIGNAL DIAGNOSTICS")&&host_stub::contains("RECEIVER CONTROLS")&&host_stub::full_clear_count==0);
+    lu.popup=3;FCHK(apply_ui_action(lu,{ActionKind::switch_view,static_cast<uint8_t>(View::systems)},ls)&&lu.popup==0);
+    lu.view=View::live;lu.popup=0;show(ls);
+    // real telemetry, when a producer exists: a fresh spectrum draws, a stale or other-epoch one does not, and nothing is invented without it
+    PlotData pd{};pd.epoch=5;pd.now_ms=1000;pd.spectrum_valid=true;pd.spectrum_epoch=5;pd.spectrum_ms=1000;pd.spectrum_seq=1;
+    pd.center_hz=463340000;pd.span_hz=240000;pd.floor=200;pd.ceiling=800;
+    for(unsigned i=0;i<bins;++i)pd.power[i]=static_cast<int16_t>(250+(i*5)%400);
+    ld.set_plot(&pd);ls.frequency_hz=463400000;++ls.revision;show(ls);
+    FCHK(host_stub::contains("SPECTRUM / WATERFALL")&&host_stub::contains("CENTER 463.340000")&&host_stub::contains("SPAN 240000 Hz"));
+    FCHK(host_stub::pushed_images>=2&&host_stub::full_clear_count==0&&!host_stub::out_of_bounds);
+    ++pd.spectrum_seq;pd.now_ms=1100;pd.spectrum_ms=1100;show(ls);                                     // a new frame adds a waterfall row
+    FCHK(host_stub::pushed_images>=4&&host_stub::full_clear_count==0);
+    pd.now_ms=1900;show(ls);                                                                           // no frame for 800 ms: stale, so not drawn
+    FCHK(host_stub::contains("SPECTRUM DATA UNAVAILABLE")&&host_stub::contains("NO WATERFALL"));
+    pd.now_ms=2000;pd.spectrum_ms=2000;++pd.spectrum_seq;pd.epoch=6;show(ls);                           // the channel changed: the old epoch's frame is not shown
+    FCHK(host_stub::pushed_images==0&&!host_stub::contains("SPECTRUM / WATERFALL"));
+    pd.spectrum_epoch=6;++pd.spectrum_seq;show(ls);FCHK(host_stub::contains("SPECTRUM / WATERFALL"));
+    pd.metric_epoch=6;pd.metric_ms=2000;pd.snr={true,123};pd.ber={true,21};pd.dev={true,-1500};pd.rssi={true,-847};
+    pd.symbol_valid=true;pd.symbol_epoch=6;pd.symbol_ms=2000;pd.symbol_seq=1;pd.symbol_protocol=Protocol::dmr;pd.extent_hz=2000;pd.symbol_count=8;pd.reference_count=4;
+    pd.reference={1944,648,-648,-1944};for(unsigned i=0;i<8;++i)pd.deviation[i]=static_cast<int16_t>((i%4)*1300-1944);
+    pd.directory_valid=true;pd.directory_epoch=6;pd.directory_hz=463400000;std::snprintf(pd.directory_source,sizeof(pd.directory_source),"LOCAL LIST");std::snprintf(pd.directory_hint,sizeof(pd.directory_hint),"TEST REPEATER");
+    ++ls.revision;show(ls);
+    FCHK(host_stub::contains("12.3 dB")&&host_stub::contains("2.1 %")&&host_stub::contains("-1500.0 Hz")==false&&host_stub::contains("-150.0 Hz")&&host_stub::contains("-84.7 dBm"));
+    FCHK(host_stub::contains("FSK LEVELS")&&host_stub::contains("LIKELY SYSTEM (DIRECTORY)")&&host_stub::contains("TEST REPEATER [LOCAL LIST]"));
+    pd.symbol_protocol=Protocol::nxdn96;++pd.symbol_seq;show(ls);FCHK(host_stub::contains("NO SYMBOL DATA"));   // levels of another protocol are not shown for this one
+    ld.set_plot(nullptr);
   }
   {
     // (i) help card: every view has one, (i) opens and closes it, the card replaces the view, other controls do not react while it is open,

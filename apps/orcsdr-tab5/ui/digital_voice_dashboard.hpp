@@ -6,6 +6,7 @@
 #include "digital_voice_dashboard_paint.hpp"
 #include "digital_voice_dashboard_model.hpp"
 #include "digital_voice_scan_view.hpp"
+#include "digital_voice_live_monitor.hpp"
 #include <M5Unified.h>
 
 namespace orcsdr::digital_voice_ui {
@@ -17,11 +18,17 @@ class Dashboard final {
                const UiState& state, bool owns_screen, bool overlay_open);
   Action handle_touch(int32_t x, int32_t y, const Snapshot& snapshot,
                       const UiState& state) const;
-  void leave() { ready_ = false; sys_ready_ = false; disc_ready_ = false; scan_.reset(); pb_.release(); }
+  void leave() { ready_ = false; sys_ready_ = false; disc_ready_ = false; live_ready_ = false; scan_.reset(); pb_.release(); graphs_.release(); }
   bool active() const { return ready_; }
+  // Optional real telemetry for the LIVE monitor (spectrum, symbol levels, SNR / BER / deviation, directory hint). The owner keeps the object
+  // alive and refreshes it on the UI task; nullptr (the default) means no producer: every plot then shows that it has no data.
+  void set_plot(const live_monitor::PlotData* plot) { plot_ = plot; }
  private:
   // Pages other than SCAN and SYSTEMS repaint only when something they show has changed.
   void present_page(lgfx::LovyanGFX& display, const Snapshot& s, const UiState& state);
+  bool present_main(lgfx::LovyanGFX& display, const Snapshot& snapshot, const UiState& state, bool owns_screen, bool overlay_open);
+  // The LIVE monitor: five retained panels, the RF level fallback, a popup and the graphs, each repainted only when what it shows changed.
+  void live_service(lgfx::LovyanGFX& display, const Snapshot& s, const UiState& state, bool entry);
   // Signature of the page the screen shows (see present_page); copying a Dashboard starts with no page shown.
   struct PageBuffers {
     bool valid = false;
@@ -51,5 +58,21 @@ class Dashboard final {
   // DISCOVER page: signatures of its parts (frame, progress, buttons, four rows) so only a changed part repaints
   uint32_t disc_sig_[7] = {};
   bool disc_ready_ = false;
+  // LIVE monitor
+  struct GraphBuf {
+    live_monitor::Graphs* g = nullptr;     // ~5.8 KiB of waterfall history: PSRAM, allocated on first use, freed on leave
+    GraphBuf() = default;
+    GraphBuf(const GraphBuf&) {}
+    GraphBuf& operator=(const GraphBuf&) { release(); return *this; }
+    ~GraphBuf() { release(); }
+    bool ensure();
+    void release();
+  };
+  GraphBuf graphs_;
+  const live_monitor::PlotData* plot_ = nullptr;
+  uint32_t live_sig_[live_monitor::kPanelCount] = {};
+  uint32_t live_ms_ = 0;
+  uint8_t live_popup_ = 0;
+  bool live_ready_ = false, live_trace_ok_ = false;
 };
 }

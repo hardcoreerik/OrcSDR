@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
+#include <new>
 #if defined(ESP_PLATFORM)
 #include <esp_heap_caps.h>
 #endif
@@ -668,91 +669,6 @@ void setup(Paint& p,const Snapshot& s,Density mode) {
   }
   p.text("RX ONLY  /  NO TX",b.x+18,b.y+420,kCyan,2,b);
 }
-// ---- LIVE (default density): what is tuned, what is on the air, and what the scan is doing, in plain words. ----
-constexpr Rect kLiveStrip{20,158,1240,50};
-constexpr Rect kLiveA{20,216,802,420};
-constexpr Rect kLiveB{834,216,426,420};
-Rect live_hold_button() {return {kLiveB.x+18,kLiveB.y+222,190,46};}
-Rect live_skip_button() {return {kLiveB.x+218,kLiveB.y+222,130,46};}
-Rect live_listen_button(int i) {return {kLiveB.x+18+i*100,kLiveB.y+314,92,44};}
-void live_friendly(Paint& p,const Snapshot& s) {
-  const Rect a=kLiveA,b=kLiveB,st=kLiveStrip;
-  const VoiceAudioView& v=s.voice;
-  const ModeInfo mode=scan_mode_info(s);
-  // The mode strip.
-  p.card(st);
-  p.fillRect(st.x+8,st.y+8,6,st.h-16,mode.color);
-  p.text(mode.name,st.x+28,st.y+st.h/2,mode.color,3,st);
-  p.text(mode.detail,st.x+330,st.y+st.h/2,kWhite,2,st);   // a fixed column: the longest mode name (16 characters at 18 px) ends before it, so a changing name never meets the detail's own clearing
-  p.card(a);p.card(b);
-  // What is tuned and on the air.
-  const bool running=scan_is_running(s)||s.follow_active||s.discover_running;
-  uint32_t hz=s.follow_active?s.follow_frequency_hz:(s.has_frequency?s.frequency_hz:0);
-  p.title("NOW LISTENING",a.x+18,a.y+30,a);
-  char t[64];
-  if(running&&hz) {char m[32];follow_mhz(m,hz);std::snprintf(t,sizeof(t),"%s",m);} else std::snprintf(t,sizeof(t),"-");
-  p.text(t,a.x+18,a.y+82,running&&hz?kWhite:kMuted,4,a);
-  {
-    char tt[64];tt[0]=0;
-    const bool known=s.protocol!=Protocol::unknown;
-    if(!running) std::snprintf(tt,sizeof(tt),"No channel tuned");
-    else if(!known) std::snprintf(tt,sizeof(tt),"Listening for digital voice");
-    else {
-      std::snprintf(tt,sizeof(tt),"%s",protocol_name(s.protocol));
-      if(s.colour_code_valid&&s.protocol==Protocol::dmr) std::snprintf(tt+std::strlen(tt),sizeof(tt)-std::strlen(tt),"   Colour Code %u",static_cast<unsigned>(s.colour_code));
-      if(s.ran_valid&&s.evidence>=Evidence::integrity_valid&&(s.protocol==Protocol::nxdn48||s.protocol==Protocol::nxdn96)) std::snprintf(tt+std::strlen(tt),sizeof(tt)-std::strlen(tt),"   RAN %u",static_cast<unsigned>(s.ran));
-      if(s.timeslot_valid&&(s.timeslot==1||s.timeslot==2)) std::snprintf(tt+std::strlen(tt),sizeof(tt)-std::strlen(tt),"   Slot %u",static_cast<unsigned>(s.timeslot));
-    }
-    p.label(tt,a.x+18,a.y+128,a);
-  }
-  const bool on_air=v.available&&(v.phase==VoicePhase::decoding||v.phase==VoicePhase::acquiring||v.phase==VoicePhase::buffering||
-                                  v.phase==VoicePhase::degraded||v.phase==VoicePhase::silence_frame);
-  const char* status="Listening - no call right now";uint16_t sc=kWhite;
-  if(!running){status="Not listening";sc=kMuted;}
-  else if(v.phase==VoicePhase::protected_voice){status="Encrypted call - we can't play it";sc=kRed;}
-  else if(on_air){status="Call in progress";sc=kGreen;}
-  else if(v.phase==VoicePhase::call_ended){status="Call ended - waiting for a reply";sc=kCyan;}
-  p.text(status,a.x+18,a.y+172,sc,3,a);
-  p.hr(a.x+18,a.y+200,a.w-36);
-  // The ids come from the call being played; before the audio starts (or after it ends) from the last identity-validated event.
-  bool have_ids=false,grp=false;uint32_t src=0,dst=0;uint8_t slot=0;
-  if(running&&(on_air||v.phase==VoicePhase::call_ended)&&v.source_id) {have_ids=true;src=v.source_id;dst=v.destination_id;grp=v.group_call;slot=v.active_slot;}
-  else if(running&&trusted_identity(s)&&s.has_source&&s.has_destination) {have_ids=true;src=s.source_id;dst=s.destination_id;grp=s.group_call;slot=s.timeslot_valid?s.timeslot:0;}
-  if(have_ids) {
-    char x[24];
-    std::snprintf(x,sizeof(x),"%lu",static_cast<unsigned long>(dst));
-    p.fact(grp?"TALKGROUP":"TO RADIO",x,a.x+18,a.y+226,a,kGreen,170);
-    std::snprintf(x,sizeof(x),"%lu",static_cast<unsigned long>(src));
-    p.fact("FROM RADIO",x,a.x+18,a.y+256,a,kWhite,170);
-    std::snprintf(x,sizeof(x),"%s%s%u",grp?"Group call":"Private call",slot?"   Slot ":"",static_cast<unsigned>(slot));
-    p.label(x,a.x+400,a.y+226,a);
-  } else {
-    p.label("TALKGROUP",a.x+18,a.y+226,a);p.text("-",a.x+188,a.y+226,kMuted,2,a);
-    p.label("FROM RADIO",a.x+18,a.y+256,a);p.text("-",a.x+188,a.y+256,kMuted,2,a);
-  }
-  const Rect tr{a.x+18,a.y+290,a.w-36,76};
-  const bool signal=rf_trace(p,s,tr,s.rf_trace_on&&running);
-  p.label(running?(signal?"Signal found":"Quiet right now"):"",a.x+18,a.y+386,a);
-  p.label("RF level, last 6 s (real data)",a.x+400,a.y+386,a);
-  // What the scan is doing.
-  p.title("WHAT THE SCAN IS DOING",b.x+18,b.y+30,b);
-  p.fact("MODE",mode.name,b.x+18,b.y+70,b,mode.color,130);
-  p.fact("STATE",mode.state,b.x+18,b.y+104,b,kWhite,130);
-  if(running&&s.scan.planned&&s.scan.channel_index) std::snprintf(t,sizeof(t),"%u of %u",static_cast<unsigned>(s.scan.channel_index),static_cast<unsigned>(s.scan.planned));
-  else std::snprintf(t,sizeof(t),"-");
-  p.fact("CHANNEL",t,b.x+18,b.y+138,b,kWhite,130);
-  {
-    char pl[28];std::snprintf(pl,sizeof(pl),"%.27s",s.scan.plan_name[0]?s.scan.plan_name:"-");
-    p.fact("PLAN",pl,b.x+18,b.y+172,b,kWhite,130);
-  }
-  const bool can_hold=s.can_hold&&!s.follow_active&&!s.discover_running;
-  p.button(s.scan_on_hold?"RELEASE":"HOLD",live_hold_button(),can_hold,s.scan_on_hold);
-  p.button("SKIP",live_skip_button(),s.can_skip&&!s.follow_active&&!s.scan_on_hold);
-  p.label("LISTEN",b.x+18,b.y+294,b);
-  for(int i=0;i<4;++i)
-    p.button(i==0?"AUTO":i==1?"SLOT 1":i==2?"SLOT 2":"MUTE",live_listen_button(i),v.available,static_cast<int>(v.listen)==i);
-  p.label("Volume: speaker icon at the top",b.x+18,b.y+390,b);
-}
 // ---- The (i) help card: what the current screen is for, in plain words. One short page per view. ----
 struct InfoText {const char* title;const char* lines[10];};
 const InfoText& info_text(View v) {
@@ -839,8 +755,7 @@ void page(Paint& p,const Snapshot& s,const UiState& u) {
   switch(u.view) {
     case View::explore:break;   // the SCAN view is retained widgets (ScanView), never repainted as a page
     case View::live:
-      if(u.density==Density::discovery_first)live_friendly(p,s);
-      else live_analysis(p,s);
+      if(u.density!=Density::discovery_first)live_analysis(p,s);   // the default density is the LIVE monitor (live_service), not a page
       break;
     case View::last_heard:last_heard(p,s,u.density,u.history_offset,u.selected_history);break;
     case View::systems:systems(p,s,u);break;
@@ -854,6 +769,77 @@ void page(Paint& p,const Snapshot& s,const UiState& u) {
 } // namespace
 
 void Dashboard::PageBuffers::release() {valid=false;}
+bool Dashboard::GraphBuf::ensure() {
+  if(g) return true;
+#if defined(ESP_PLATFORM)
+  void* m=heap_caps_calloc(1,sizeof(live_monitor::Graphs),MALLOC_CAP_SPIRAM|MALLOC_CAP_8BIT);
+#else
+  void* m=std::calloc(1,sizeof(live_monitor::Graphs));
+#endif
+  if(!m) return false;
+  g=new(m) live_monitor::Graphs();
+  return true;
+}
+void Dashboard::GraphBuf::release() {
+  if(!g) return;
+  g->~Graphs();
+#if defined(ESP_PLATFORM)
+  heap_caps_free(g);
+#else
+  std::free(g);
+#endif
+  g=nullptr;
+}
+// The LIVE monitor. Each of its panels is a retained widget (its own diff slot): a dry run folds what it would draw into a signature, and only a
+// panel whose signature moved is drawn, and then only the calls that changed. The graphs draw directly and only when a new frame arrived.
+void Dashboard::live_service(lgfx::LovyanGFX& display,const Snapshot& s,const UiState& state,bool entry) {
+  using namespace live_monitor;
+  const uint32_t t=millis();
+  if(entry) live_ready_=false;
+  const bool first=!live_ready_;
+  PlotData none{};
+  const PlotData& pd=plot_?*plot_:none;
+  const bool popup_moved=state.popup!=live_popup_;
+  const bool panels_due=first||popup_moved||static_cast<uint32_t>(t-live_ms_)>=120u;
+  const bool graphs_ok=graphs_.ensure();
+  const bool ok=spectrum_ok(pd);
+  bool force_graphs=first;
+  Paint p{display};
+  if(pb_.ensure_diff()) p.diff=&pb_.diff;
+  if(panels_due) {
+    live_ms_=t;
+    auto forget=[&](unsigned id) {live_sig_[id]=0;if(p.diff&&p.diff->h)p.diff->reset_slot(1+id);};
+    if(first) {
+      for(unsigned id=0;id<kPanelCount;++id) forget(id);
+      if(graphs_ok) graphs_.g->reset();
+      live_popup_=0;live_trace_ok_=ok;
+      if(!ok) display.fillRect(trace.x,trace.y,trace.w,trace.h,kBg);
+    }
+    if(state.popup!=live_popup_) {
+      display.fillRect(popup_area.x,popup_area.y,popup_area.w,popup_area.h,kBg);          // the popup replaces the whole right-hand column
+      forget(kPopup);
+      if(state.popup==0) {forget(kDiagnostics);forget(kDecoder);forget(kControls);force_graphs=true;}
+      live_popup_=state.popup;
+    }
+    if(ok!=live_trace_ok_) {
+      if(!ok) display.fillRect(trace.x,trace.y,trace.w,trace.h,kBg);
+      forget(kRfFallback);live_trace_ok_=ok;force_graphs=true;
+    }
+    for(unsigned id=0;id<kPanelCount;++id) {
+      if(id==kRfFallback&&ok) continue;                                   // a real spectrum owns that area
+      if(id==kPopup&&state.popup==0) continue;
+      if(state.popup!=0&&(id==kDiagnostics||id==kDecoder||id==kControls)) continue;   // hidden behind the popup
+      uint32_t sg=2166136261u;
+      {Paint dry{display,&sg};panel(dry,s,pd,state,id);}
+      if(!first&&sg==live_sig_[id]) continue;
+      live_sig_[id]=sg;
+      widget(p,1+id,id==kRfFallback?kBg:kPanel,[&]{panel(p,s,pd,state,id);});
+      if(id==kSpectrumCard) force_graphs=true;                           // the card is drawn first, the graphs over it
+    }
+  }
+  if(graphs_ok) graphs_.g->draw(display,s,pd,force_graphs,state.popup==0);
+  live_ready_=true;
+}
 bool Dashboard::PageBuffers::ensure_diff() {
   if(diff.h) return true;
   const uint16_t cap=static_cast<uint16_t>(paint::kSlots*paint::kSlotOps);
@@ -894,7 +880,15 @@ void Dashboard::present_page(lgfx::LovyanGFX& display,const Snapshot& s,const Ui
 
 bool Dashboard::present(lgfx::LovyanGFX& display,const Snapshot& s,
                         const UiState& state,bool owns_screen,bool overlay_open) {
+  const bool entry=!ready_||last_state_.view!=state.view||last_state_.density!=state.density||last_state_.info_open!=state.info_open;
+  const bool drew=present_main(display,s,state,owns_screen,overlay_open);
+  if(drew&&ready_&&state.view==View::live&&state.density==Density::discovery_first&&!state.info_open)live_service(display,s,state,entry);
+  return drew;
+}
+bool Dashboard::present_main(lgfx::LovyanGFX& display,const Snapshot& s,
+                             const UiState& state,bool owns_screen,bool overlay_open) {
   if(!owns_screen||overlay_open||state.view>=View::count)return false;
+  const bool monitor=state.view==View::live&&state.density==Density::discovery_first;   // drawn by live_service(), not as a page
   const bool entry = !ready_ || last_state_.view!=state.view || last_state_.density!=state.density || last_state_.info_open!=state.info_open;
   // A page other than SCAN whose only news is a faster-than-readable value change (a heard counter, a level) repaints at most every 250 ms.
   // Anything the user did (a view, a selection, a page) changes the UI state and is drawn at once.
@@ -911,7 +905,7 @@ bool Dashboard::present(lgfx::LovyanGFX& display,const Snapshot& s,
       if(static_cast<uint32_t>(millis()-last_paint_ms_)<120u) return true;   // a fast counter or level: at most about 8 repaints a second
       last_paint_ms_=millis();
       // Only the voice panel changed: the LIVE page repaints, and its diff painting draws only that panel's changed values.
-      if(state.view==View::live) present_page(display,s,state);
+      if(state.view==View::live&&!monitor) present_page(display,s,state);
       old_.voice=s.voice;old_.audio_revision=s.audio_revision;
     }
     return true; // idle means zero drawing
@@ -940,6 +934,8 @@ bool Dashboard::present(lgfx::LovyanGFX& display,const Snapshot& s,
     discover_update(p,s,state,disc_sig_);                               // changed parts only
   } else if(state.view==View::systems && sys_ready_) {
     systems_update(p,s,state,sys_row_sig_,sys_facts_sig_,sys_shape_);   // changed rows / panel only
+  } else if(monitor) {
+    // retained panels: live_service() paints them right after this call
   } else {
     if(state.view==View::systems||state.view==View::discover) page(p,s,state);   // first paint; later changes go through systems_update() / discover_update()
     else present_page(display,s,state);              // Live, Last Heard, Signal, Setup: only when what they show changes
@@ -960,14 +956,7 @@ Action Dashboard::handle_touch(int32_t x,int32_t y,const Snapshot& s,
   if(kInfoButton.contains(x,y))return {ActionKind::toggle_info,0};
   if(state.info_open)return kInfoClose.contains(x,y)?Action{ActionKind::toggle_info,0}:Action{};     // while the help card is open only it, the tabs and (i) react
   if(state.view==View::explore)return scan_.touch(x,y,s,state);
-  if(state.view==View::live&&state.density==Density::discovery_first) {
-    if(s.can_hold&&!s.follow_active&&!s.discover_running&&live_hold_button().contains(x,y))return {ActionKind::toggle_hold,0};
-    if(s.can_skip&&!s.follow_active&&!s.scan_on_hold&&live_skip_button().contains(x,y))return {ActionKind::skip_frequency,0};
-    if(s.voice.available)
-      for(int i=0;i<4;++i)
-        if(live_listen_button(i).contains(x,y))return {ActionKind::set_listen,static_cast<uint8_t>(i)};
-    return {};
-  }
+  if(state.view==View::live&&state.density==Density::discovery_first)return live_monitor::touch(x,y,s,state.popup);
   if(state.view==View::live&&s.voice.available) {
     const Rect vr=voice_rect(state.density);
     for(int i=0;i<4;++i)
