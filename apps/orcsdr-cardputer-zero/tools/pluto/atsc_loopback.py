@@ -1,25 +1,30 @@
 #!/usr/bin/env python3
-"""ATSC loopback: gr-dtv's transmitter feeding gr-dtv's receiver.
+"""ATSC loopback, mirroring upstream gr-dtv's file_atsc_tx.grc transmitter.
 
-Configuration mirrors upstream's own example (gr-dtv/examples/file_atsc_rx.grc):
-input 6.25 MS/s with sps 1.5. Earlier attempts here used 6.5 MS/s with sps 1.0 and
-2.0, which are not configurations the reference uses, and none of them locked.
+Earlier attempts omitted five blocks that the reference transmitter uses, which is
+why none of them locked. The important ones:
+
+  atsc_pad            pads the transport stream before randomisation
+  keep_m_in_n(832,1024,4)  drops the field-sync padding the modulator cannot take
+  dvbs2_modulator_bc(MOD_8VSB)  bytes -> 8-VSB symbols (the actual modulator)
+  rotator_cc          places the pilot at the standard offset
+  fft_filter (RRC)    pulse shaping; an unfiltered symbol stream is not VSB
 
 Run: atsc_loopback.py [packets]
 """
+import math
 import os
 import sys
 
-from gnuradio import blocks, dtv, gr
-from gnuradio import filter as grfilter
+from gnuradio import blocks, dtv, filter as grfilter, gr
+from gnuradio.filter import firdes
 
-SYMBOL_RATE = 4.5e6 / 286.0 * 684.0      # 10.762237 MHz, ATSC 1.0
-INPUT_RATE = 6.25e6                      # upstream example's rate
-RX_SPS = 1.5                             # upstream example's sps
+SYMBOL_RATE = 4500000.0 / 286.0 * 684.0     # 10.762237 MHz
+PILOT_FREQ = (6000000.0 - (SYMBOL_RATE / 2.0)) / 2.0
 TX_TS = "/tmp/atsc_tx_in.ts"
 RX_TS = "/tmp/atsc_rx_out.ts"
 PACKETS = int(sys.argv[1]) if len(sys.argv) > 1 else 2000
-ITEM = 256
+ITEM = 188
 
 
 def make_transport_stream(path, packets):
@@ -41,32 +46,37 @@ def main():
         os.remove(RX_TS)
 
     tb = gr.top_block("atsc_loopback")
-    src = blocks.file_source(ITEM, TX_TS, False)
+    src = blocks.file_source(gr.sizeof_char, TX_TS, False)
 
-    # ATSC order: randomise, RS encode, interleave, then trellis.
+    pad = dtv.atsc_pad()
     randomizer = dtv.atsc_randomizer()
     rs_encoder = dtv.atsc_rs_encoder()
     interleaver = dtv.atsc_interleaver()
     trellis = dtv.atsc_trellis_encoder()
     fs_mux = dtv.atsc_field_sync_mux()
-    unpack = blocks.vector_to_stream(gr.sizeof_gr_complex, 128)
+    v2s = blocks.vector_to_stream(1024, 1) if False else blocks.vector_to_stream(gr.sizeof_char, 1024)
+    keep = blocks.keep_m_in_n(gr.sizeof_char, 832, 1024, 4)
+    modulator = dtv.dvbs2_modulator_bc(
+        dtv.FECFRAME_NORMAL, dtv.C1_4, dtv.MOD_8VSB, dtv.INTERPOLATION_OFF)
+    # Pilot offset, exactly as the reference transmitter computes it.
+    rotator = blocks.rotator_cc(((-3000000.0 + PILOT_FREQ) / SYMBOL_RATE) * (math.pi * 2.0))
+    shaping = grfilter.fft_filter_ccc(
+        1, firdes.root_raised_cosine(0.11, SYMBOL_RATE, SYMBOL_RATE / 2.0, 0.1152, 200))
 
-    # Resample the symbol-rate stream to the 6.25 MS/s the reference expects.
-    # 625/1076 approximates 6.25e6 / 10.762237e6.
-    resample = grfilter.rational_resampler_ccf(625, 1076)
-    pilot = blocks.add_const_cc(0.2)
-
-    rx = dtv.atsc_rx(INPUT_RATE, RX_SPS)
+    # The receiver is told the same rate and one sample per symbol, so no
+    # resampling stands between the two.
+    rx = dtv.atsc_rx(SYMBOL_RATE, 1.0)
     sink = blocks.file_sink(1, RX_TS, False)
 
-    tb.connect(src, randomizer, rs_encoder, interleaver, trellis, fs_mux,
-               unpack, resample, pilot)
-    tb.connect(pilot, rx, sink)
+    tb.connect(src, pad, randomizer, rs_encoder, interleaver, trellis, fs_mux,
+               v2s, keep, modulator, rotator, shaping)
+    tb.connect(shaping, rx, sink)
 
-    print("loopback: %d packets, %.0f sample/s, sps %.1f" % (PACKETS, INPUT_RATE, RX_SPS),
+    print("loopback: %d packets, %.0f sym/s, pilot %.0f Hz" % (PACKETS, SYMBOL_RATE, PILOT_FREQ),
           flush=True)
     tb.run()
-    print("done", flush=True)
+    size = os.path.getsize(RX_TS) if os.path.exists(RX_TS) else 0
+    print("done, %d bytes of transport stream" % size, flush=True)
 
 
 if __name__ == "__main__":
