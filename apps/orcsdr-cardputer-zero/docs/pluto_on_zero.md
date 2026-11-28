@@ -155,3 +155,44 @@ Attenuation defaults to 24 dB on this unit, which is not the safest starting
 point. A transmitter should come up at **-89.75 dB** (effectively off) and be
 raised explicitly, so that merely selecting the Pluto as a source cannot key a
 signal into whatever is connected.
+## Frequency sweep, 2026-11-27 (gcv 40 dB, 300 ms per step)
+
+Measured with `tools/pluto_sweep.cpp`, which sweeps the LO at fixed manual gain and
+records the CU8 noise/signal floor:
+
+| Requested | Tuned | CU8 rms |
+| --- | --- | --- |
+| 70 MHz | 70 MHz | 7.31 |
+| 90 MHz | 90 MHz | 17.46 |
+| **100 MHz** | 100 MHz | **96.29** |
+| 150 MHz | 150 MHz | 20.77 |
+| 250 MHz | 250 MHz | 4.55 |
+| 325 MHz | 325 MHz | 0.69 |
+| 500 MHz | 500 MHz | 3.55 |
+| 900 MHz - 4 GHz | within 2 Hz | 0.58 - 0.62 (flat) |
+
+Three findings, one of them a correction:
+
+1. **My ~325 MHz lower edge was wrong.** The AD9363 datasheet says 325 MHz, but this
+   unit clearly receives at 100 MHz (rms 96.3, almost certainly FM broadcast) and
+   at 150 MHz. The clone's front end evidently extends below the datasheet figure,
+   so the honest lower bound is at or below 70 MHz until a calibrated source says
+   otherwise.
+2. **Below 70 MHz the driver refuses the write**, which is the advertised range
+   enforcing itself at the bottom. That is a real floor, not a measurement gap.
+3. **Above ~900 MHz the floor is flat at ~0.6** with no signals present. That does
+   not prove sensitivity or deafness either way - it means the band is quiet here,
+   and distinguishing working from deaf at UHF needs a known source.
+
+## A design limit the sweep exposed
+
+**`uint32_t` cannot represent the Pluto's advertised range.** 6 GHz overflows it, so
+`PlutoReceiver` inherits RTL's 32-bit frequency interface and can only address up to
+4.29 GHz. The sweep had to stop at 4.0 GHz for that reason, not because the radio
+did.
+
+This is fine for this unit (whatever its real top edge is, it is below 4.29 GHz), but
+it is a latent trap: any future radio with a genuine 6 GHz range - an AD9361, an
+ADRV9002, a real Pluto+ - cannot be expressed through this interface at all, and the
+failure would be a silently truncated frequency rather than an error. Either the
+interface moves to 64-bit Hz or the range must be clamped with an explicit check.
