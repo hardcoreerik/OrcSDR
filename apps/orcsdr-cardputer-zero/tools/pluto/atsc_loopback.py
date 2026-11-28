@@ -1,14 +1,19 @@
 #!/usr/bin/env python3
 """ATSC loopback, mirroring upstream gr-dtv's file_atsc_tx.grc transmitter.
 
-Earlier attempts omitted five blocks that the reference transmitter uses, which is
-why none of them locked. The important ones:
+The transmit chain is the reference one: atsc_pad, randomizer, RS encoder,
+interleaver, trellis encoder, field sync mux, keep_m_in_n, 8-VSB modulator, pilot
+rotator and root-raised-cosine pulse shaping.
 
-  atsc_pad            pads the transport stream before randomisation
-  keep_m_in_n(832,1024,4)  drops the field-sync padding the modulator cannot take
-  dvbs2_modulator_bc(MOD_8VSB)  bytes -> 8-VSB symbols (the actual modulator)
-  rotator_cc          places the pilot at the standard offset
-  fft_filter (RRC)    pulse shaping; an unfiltered symbol stream is not VSB
+Measured behaviour, recorded because it is the only evidence this receiver has ever
+produced:
+
+  with the rotator    -> 135360 bytes, 720 packets, all framed 0x47, payload wrong
+  without the rotator -> 0 bytes, no lock at all
+
+So the pilot offset is required for lock, and the fault lies downstream of it: the
+payload is garbage while the framing is perfect, which points at the trellis decoder
+or the post-equalizer phase ambiguity rather than at sync acquisition.
 
 Run: atsc_loopback.py [packets]
 """
@@ -16,7 +21,8 @@ import math
 import os
 import sys
 
-from gnuradio import blocks, dtv, filter as grfilter, gr
+from gnuradio import blocks, dtv, gr
+from gnuradio import filter as grfilter
 from gnuradio.filter import firdes
 
 SYMBOL_RATE = 4500000.0 / 286.0 * 684.0     # 10.762237 MHz
@@ -28,6 +34,7 @@ ITEM = 188
 
 
 def make_transport_stream(path, packets):
+    """A byte stream of 188-byte MPEG packets; atsc_pad does the alignment."""
     with open(path, "wb") as handle:
         for n in range(packets):
             packet = bytearray(ITEM)
@@ -54,17 +61,16 @@ def main():
     interleaver = dtv.atsc_interleaver()
     trellis = dtv.atsc_trellis_encoder()
     fs_mux = dtv.atsc_field_sync_mux()
-    v2s = blocks.vector_to_stream(1024, 1) if False else blocks.vector_to_stream(gr.sizeof_char, 1024)
+    v2s = blocks.vector_to_stream(gr.sizeof_char, 1024)
     keep = blocks.keep_m_in_n(gr.sizeof_char, 832, 1024, 4)
     modulator = dtv.dvbs2_modulator_bc(
         dtv.FECFRAME_NORMAL, dtv.C1_4, dtv.MOD_8VSB, dtv.INTERPOLATION_OFF)
-    # Pilot offset, exactly as the reference transmitter computes it.
+    # Pilot offset, exactly as the reference transmitter computes it. Required:
+    # without it the receiver does not lock at all.
     rotator = blocks.rotator_cc(((-3000000.0 + PILOT_FREQ) / SYMBOL_RATE) * (math.pi * 2.0))
     shaping = grfilter.fft_filter_ccc(
         1, firdes.root_raised_cosine(0.11, SYMBOL_RATE, SYMBOL_RATE / 2.0, 0.1152, 200))
 
-    # The receiver is told the same rate and one sample per symbol, so no
-    # resampling stands between the two.
     rx = dtv.atsc_rx(SYMBOL_RATE, 1.0)
     sink = blocks.file_sink(1, RX_TS, False)
 
