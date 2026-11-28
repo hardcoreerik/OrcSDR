@@ -196,3 +196,62 @@ it is a latent trap: any future radio with a genuine 6 GHz range - an AD9361, an
 ADRV9002, a real Pluto+ - cannot be expressed through this interface at all, and the
 failure would be a silently truncated frequency rather than an error. Either the
 interface moves to 64-bit Hz or the range must be clamped with an explicit check.
+## Reaching the Pluto's own Linux (verified 2026-11-27)
+
+The Pluto is a complete Debian 13 (trixie) host on a Zynq-7020: kernel 6.12,
+`armv7l`, 1 GB RAM, 15 GB disk with 14.6 GB free, 2 cores, `iiod` as a systemd
+unit. Treating it as "just a radio" caused two wrong conclusions this session, so
+the access facts are recorded here.
+
+```text
+ssh root@192.168.2.1           password: analog
+bind to the USB gadget:        ssh -b 192.168.2.3 root@192.168.2.1
+```
+
+**SSH listens only on the USB (RNDIS) interface.** Port 22 times out over the RJ45,
+which earlier made it look as if there were no shell at all. Both paths reach the
+same host, but the RJ45 does not serve SSH.
+
+`eth1` loses its address whenever the gadget re-binds - which `fishball-usb-bind`
+does on every `iiod` restart. So after any Pluto restart the host needs its address
+restored before SSH works again:
+
+```text
+sudo ip addr add 192.168.2.3/24 dev eth1
+```
+
+### Internet for the Pluto, via the Zero
+
+The Pluto has no network of its own; the Zero does (WiFi). Forwarding through the
+Zero gives the Pluto apt access, which is what makes installing a reference decoder
+on that side possible at all:
+
+```text
+# on the Zero
+sudo sysctl -w net.ipv4.ip_forward=1
+sudo iptables -t nat -A POSTROUTING -o wlan0 -j MASQUERADE
+sudo iptables -A FORWARD -i eth1 -o wlan0 -j ACCEPT
+sudo iptables -A FORWARD -i wlan0 -o eth1 -m state --state RELATED,ESTABLISHED -j ACCEPT
+
+# on the Pluto
+ip route add default via 192.168.2.3
+echo 'nameserver 1.1.1.1' > /etc/resolv.conf
+```
+
+Verified: `ping 1.1.1.1` at 39 ms and `deb.debian.org` resolving.
+
+These are runtime changes, not part of any image, so they vanish on reboot and must
+be re-applied by whatever script drives a session.
+
+### USB re-enumeration is the recovery for a wedged interface
+
+Killing a process mid-stream leaves interface 4 claimed and every later attempt
+fails with `Device or resource busy (16)`. Restarting `iiod` does **not** clear
+this; forcing re-enumeration does:
+
+```text
+sudo sh -c 'echo 0 > /sys/bus/usb/devices/1-1.2/authorized; sleep 2; echo 1 > /sys/bus/usb/devices/1-1.2/authorized'
+```
+
+This matters for digital-television work in particular, where captures are started
+and stopped constantly.
