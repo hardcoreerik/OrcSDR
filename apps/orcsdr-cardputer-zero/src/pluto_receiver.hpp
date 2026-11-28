@@ -69,7 +69,9 @@ class PlutoReceiver {
   std::vector<std::uint8_t> pending_;
   std::size_t pending_offset_ = 0;
   static constexpr std::uint32_t kMinDeviceRate = 2083333;
-  static constexpr std::size_t kBufferSamples = 32768;
+  // 8192 samples (32 KB) per transfer. Larger buffers made the transfer long
+  // enough to time out (-110) while the LoRa path was busy decoding between reads.
+  static constexpr std::size_t kBufferSamples = 8192;
 };
 
 }  // namespace orc::linux_sdr
