@@ -9,7 +9,9 @@
 #include <cstddef>
 #include <cstdint>
 #include <stdexcept>
+#include <iostream>
 #include <string>
+#include <utility>
 #include <vector>
 
 #include "rtl_receiver.hpp"
@@ -41,29 +43,78 @@ class RadioSource {
     device_index_ = device_index;
   }
 
+
+  // Frequency limits for the selected radio. The Pluto's figure comes from
+  // measurement, not the datasheet: the driver refuses below 70 MHz, and uint32
+  // caps the top at 4.29 GHz regardless of what the advertising says. The RTL is
+  // the usual 24 MHz - 1.766 GHz.
+  static std::pair<std::uint32_t, std::uint32_t> frequency_range(Kind kind) {
+    if (kind == Kind::pluto) return {70000000u, 4294000000u};
+    return {24000000u, 1766000000u};
+  }
+
+  std::pair<std::uint32_t, std::uint32_t> frequency_range() const {
+    return frequency_range(kind_);
+  }
+
+  // True when the last requested frequency had to be moved to fit the radio.
+  bool clamped() const { return clamped_; }
+  std::uint32_t requested_hz() const { return requested_hz_; }
+  void clear_clamped() { clamped_ = false; }
+  static const char* radio_name(Kind kind) { return kind == Kind::pluto ? "Pluto" : "RTL-SDR"; }
+  const char* radio_name() const { return radio_name(kind_); }
+
+
+  // One line per distinct out-of-range request. The screens repaint continuously,
+  // so logging at each tune turned a single misconfiguration into a log flood.
+  void note_clamp(std::uint32_t requested, std::uint32_t applied) {
+    clamped_ = applied != requested;
+    if (!clamped_ || requested == last_clamped_log_) return;
+    last_clamped_log_ = requested;
+    const auto range = frequency_range();
+    std::clog << radio_name() << " cannot tune " << requested << " Hz; range is "
+              << range.first << " - " << range.second << " Hz, using " << applied << std::endl;
+  }
+  std::uint32_t clamp_hz(std::uint32_t hz) {
+    const auto range = frequency_range();
+    if (hz < range.first) return range.first;
+    if (hz > range.second) return range.second;
+    return hz;
+  }
   void configure(std::uint32_t freq_hz, std::uint32_t rate_sps) {
+    requested_hz_ = freq_hz;
+    const std::uint32_t applied = clamp_hz(freq_hz);
+    note_clamp(freq_hz, applied);
     if (kind_ == Kind::pluto) {
-      pluto_.configure(freq_hz, rate_sps);
+      pluto_.configure(applied, rate_sps);
       return;
     }
-    rtl_.configure(freq_hz, rate_sps);
+    rtl_.configure(applied, rate_sps);
   }
 
   // RTL-only direct sampling; the Pluto has no equivalent and ignores it.
   void configure_direct_q(std::uint32_t freq_hz, std::uint32_t rate_sps) {
+    // Must clamp like configure(): the HF path reaches here, and the Pluto has no
+    // HF coverage at all, so an unclamped request silently fails every repaint.
+    requested_hz_ = freq_hz;
+    const std::uint32_t applied = clamp_hz(freq_hz);
+    note_clamp(freq_hz, applied);
     if (kind_ == Kind::pluto) {
-      pluto_.configure(freq_hz, rate_sps);
+      pluto_.configure(applied, rate_sps);
       return;
     }
-    rtl_.configure_direct_q(freq_hz, rate_sps);
+    rtl_.configure_direct_q(applied, rate_sps);
   }
 
   void retune(std::uint32_t freq_hz) {
+    requested_hz_ = freq_hz;
+    const std::uint32_t applied = clamp_hz(freq_hz);
+    note_clamp(freq_hz, applied);
     if (kind_ == Kind::pluto) {
-      pluto_.retune(freq_hz);
+      pluto_.retune(applied);
       return;
     }
-    rtl_.retune(freq_hz);
+    rtl_.retune(applied);
   }
 
   void set_tuner_gain_auto() {
@@ -88,6 +139,24 @@ class RadioSource {
     return kind_ == Kind::pluto ? pluto_.tuner_gain_tenth_db() : rtl_.tuner_gain_tenth_db();
   }
 
+
+  // Capabilities in the shape FmSession expects. The Pluto's gain is continuous,
+  // so it reports a coarse ladder spanning its real range rather than pretending to
+  // have the RTL's discrete tuner steps.
+  ReceiverCapabilities capabilities() const {
+    if (kind_ == Kind::pluto) {
+      ReceiverCapabilities caps;
+      caps.tuner_type = 0;
+      for (int db = 0; db <= 73; db += 10) caps.tuner_gains_tenth_db.push_back(db * 10);
+      caps.cu8_interleaved = true;
+      return caps;
+    }
+    return rtl_.capabilities();
+  }
+
+  std::string receiver_name() const {
+    return kind_ == Kind::pluto ? std::string("PlutoSDR AD9363") : std::string("RTL-SDR tuner");
+  }
   std::size_t read_cu8(std::uint8_t* data, std::size_t max_bytes) {
     return kind_ == Kind::pluto ? pluto_.read_cu8(data, max_bytes)
                                 : rtl_.read_cu8(data, max_bytes);
@@ -118,6 +187,9 @@ class RadioSource {
   PlutoReceiver pluto_;
   Kind kind_ = Kind::rtl;
   std::uint32_t device_index_ = 0;
+  std::uint32_t requested_hz_ = 0;
+  bool clamped_ = false;
+  std::uint32_t last_clamped_log_ = 0;
 };
 
 }  // namespace orc::linux_sdr

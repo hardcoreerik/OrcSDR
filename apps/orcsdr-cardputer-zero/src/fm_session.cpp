@@ -80,8 +80,8 @@ FmTelemetry FmSession::snapshot()const{
 void FmSession::capture_worker(std::uint32_t device){
  while(running_.load()){
   try{
-    orc::linux_sdr::RtlReceiver receiver;
-    receiver.open(device);
+    orc::linux_sdr::RadioSource receiver;
+    receiver.open(device,radio_kind_);
     receiver.configure(requested_hz_.load(),kFmSampleRate);
     const auto caps=receiver.capabilities();
     std::uint32_t applied=receiver.frequency_hz();
@@ -91,7 +91,7 @@ void FmSession::capture_worker(std::uint32_t device){
       state_.connection=Connection::ready;state_.applied_hz=applied;
       state_.requested_hz=applied;state_.applied_rate_sps=receiver.sample_rate_sps();
       state_.generation=generation;state_.supported_gains=caps.tuner_gains_tenth_db;
-      state_.receiver_name="RTL-SDR tuner "+std::to_string(caps.tuner_type);
+      state_.receiver_name=receiver.receiver_name();
       state_.last_error.clear();
       std::clog<<"FM receiver connected at "<<applied<<std::endl;
     }

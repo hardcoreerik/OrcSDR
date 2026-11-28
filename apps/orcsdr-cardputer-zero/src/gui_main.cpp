@@ -444,6 +444,7 @@ int main(int argc,char**argv){
   FmSession session;FmSession* owner=nullptr;
   if(a.demo)demo_state(model,a.view);
   else{
+    if(a.radio=="pluto")session.set_radio_kind(orc::linux_sdr::RadioSource::Kind::pluto);
     if(!a.dashboard)session.start(a.device,a.freq,a.audio,a.null_audio);
     session.set_volume(unsigned(model.s.volume));
     session.set_mute(model.s.muted);

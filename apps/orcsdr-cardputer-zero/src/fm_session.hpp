@@ -1,5 +1,6 @@
 #pragma once
 #include "control_model.hpp"
+#include "radio_source.hpp"
 #include "iq_queue.hpp"
 #include <array>
 #include <atomic>
@@ -31,7 +32,9 @@ class FmSession {
   ~FmSession();
   FmSession(const FmSession&)=delete;
   FmSession& operator=(const FmSession&)=delete;
-  void start(std::uint32_t device,std::uint32_t initial_hz,
+  void set_radio_kind(linux_sdr::RadioSource::Kind kind){radio_kind_=kind;}
+ linux_sdr::RadioSource::Kind radio_kind_=linux_sdr::RadioSource::Kind::rtl;
+ void start(std::uint32_t device,std::uint32_t initial_hz,
              std::string audio_device="default",bool null_audio=false);
   void stop();
   void restart(std::uint32_t hz);
