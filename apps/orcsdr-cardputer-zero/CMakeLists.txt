@@ -74,6 +74,7 @@ add_library(orc_zero_compact INTERFACE)
 target_include_directories(orc_zero_compact INTERFACE "${CMAKE_CURRENT_SOURCE_DIR}/src/compact")
 target_link_libraries(orc_zero_compact INTERFACE orc_zero_waterfall_style)
 add_executable(orc_zero_screenshot src/compact/screenshot_main.cpp)
+target_include_directories(orc_zero_screenshot PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src")
 target_link_libraries(orc_zero_screenshot PRIVATE orc_zero_compact)
 target_compile_options(orc_zero_screenshot PRIVATE -Wall -Wextra -Wpedantic)
 
