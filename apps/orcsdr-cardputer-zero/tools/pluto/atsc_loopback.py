@@ -71,12 +71,13 @@ def main():
     shaping = grfilter.fft_filter_ccc(
         1, firdes.root_raised_cosine(0.11, SYMBOL_RATE, SYMBOL_RATE / 2.0, 0.1152, 200))
 
-    rx = dtv.atsc_rx(SYMBOL_RATE, 1.0)
+    upsample = grfilter.rational_resampler_ccf(2, 1)
+    rx = dtv.atsc_rx(SYMBOL_RATE * 2.0, 2.0)
     sink = blocks.file_sink(1, RX_TS, False)
 
     tb.connect(src, pad, randomizer, rs_encoder, interleaver, trellis, fs_mux,
                v2s, keep, modulator, rotator, shaping)
-    tb.connect(shaping, rx, sink)
+    tb.connect(shaping, upsample, rx, sink)
 
     print("loopback: %d packets, %.0f sym/s, pilot %.0f Hz" % (PACKETS, SYMBOL_RATE, PILOT_FREQ),
           flush=True)
