@@ -16,7 +16,7 @@ from gnuradio import blocks, dtv, gr, iio
 
 FREQ = float(sys.argv[1]) if len(sys.argv) > 1 else 557e6   # KVAL RF 28
 SECONDS = float(sys.argv[2]) if len(sys.argv) > 2 else 10.0
-RATE = 10762238           # 1 sample per symbol, as the verified modulator uses
+RATE = int(sys.argv[3]) if len(sys.argv) > 3 else 10762238
 TS_PATH = "/tmp/atsc_ts.bin"
 
 
@@ -54,7 +54,7 @@ def main():
     subprocess.run(["iio_attr", "-u", "local:", "-c", "ad9361-phy", "voltage0",
                     "rf_bandwidth", "5000000"],
                    stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
-    rx = dtv.atsc_rx(RATE, 1.0)
+    rx = dtv.atsc_rx(RATE, RATE / 10762238.0)
     sink = blocks.file_sink(gr.sizeof_char, TS_PATH, False)
 
     tb.connect(src, rx)
