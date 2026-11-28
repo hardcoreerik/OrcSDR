@@ -58,8 +58,14 @@ def main():
     # atsc_rx emits a byte stream (itemsize 1), not whole packets.
     sink = blocks.file_sink(1, RX_TS, False)
 
+    # 8-VSB carries a pilot 310 kHz above the lower band edge, and gr-dtv's
+    # transmit chain does not insert it. Without a pilot the receiver's carrier
+    # recovery has nothing to lock to, which is a plausible cause of a silent
+    # loopback. A DC offset in the complex baseband is the simplest stand-in.
+    pilot = blocks.add_const_cc(0.2)
+
     tb.connect(src, randomizer, rs_encoder, interleaver, trellis, fs_mux)
-    tb.connect(fs_mux, unpack, rx, sink)
+    tb.connect(fs_mux, unpack, pilot, rx, sink)
 
     print("loopback: %d packets, %.0f sym/s, sps 1.0" % (PACKETS, SYMBOL_RATE), flush=True)
     tb.run()
