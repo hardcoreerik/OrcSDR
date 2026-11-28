@@ -5,6 +5,7 @@
 #include "acars_tuning.hpp"
 #include "airband.hpp"
 #include "linux_audio.hpp"
+#include "radio_source.hpp"
 #include "iq_metrics.hpp"
 #include "ft8_receiver.hpp"
 #include "ft8_band.hpp"
@@ -67,7 +68,9 @@ class DashboardSession {
     ac_archive_.stop();
     mode_=0;
   }
-  void start(unsigned mode,unsigned device,const std::string& audio,bool silent,uint32_t rf_center){
+  // Pluto or RTL for the dashboards; must be set before start() opens the radio.
+void set_radio_kind(linux_sdr::RadioSource::Kind kind){radio_kind_=kind;}
+void start(unsigned mode,unsigned device,const std::string& audio,bool silent,uint32_t rf_center){
     stop();
     mode_=mode;
     error_.clear();
@@ -664,7 +667,7 @@ class DashboardSession {
   }
   void run_lora(unsigned device)noexcept{
     try{
-      linux_sdr::RtlReceiver radio;radio.open(device);
+      linux_sdr::RadioSource radio;radio.open(device,radio_kind_);
       uint32_t target;uint8_t sf;
       {std::lock_guard<std::mutex> lock(mutex_);target=lora_.tuning.requested;sf=lora_.sf;}
       radio.configure(target,960000);
@@ -729,8 +732,8 @@ class DashboardSession {
   };
   void run(unsigned mode,unsigned device,const std::string& output,bool silent,uint32_t rf_center) noexcept{
     try{
-      linux_sdr::RtlReceiver radio;
-      radio.open(device);
+      linux_sdr::RadioSource radio;
+      radio.open(device,radio_kind_);
       linux_sdr::IqMetadata meta{};
       meta.receiver_generation=++generation_;
       acars_dashboard::RadioRequest ac_request;
@@ -884,7 +887,7 @@ class DashboardSession {
           const auto next_mode=requested_mode==orcsdr::ft8::DigitalMode::ft4?orcsdr::ftx::Mode::ft4:orcsdr::ftx::Mode::ft8;
           if(target!=ft8_dial||next_mode!=ft8_mode){
             // Reopen to reset both the tuner/direct-Q path and buffered IQ.
-            radio.close();radio.open(device);
+            radio.close();radio.open(device,radio_kind_);
             if(target<24000000)radio.configure_direct_q(target,meta.sample_rate_sps);
             else radio.configure(target,meta.sample_rate_sps);
             ft8_dial=radio.frequency_hz();
@@ -1232,6 +1235,7 @@ class DashboardSession {
   DmrScreen dmr_;
   orc::zero::dv::VoicePlayer dmr_voice_;
   orc::zero::AudioSink dmr_audio_;
+  linux_sdr::RadioSource::Kind radio_kind_=linux_sdr::RadioSource::Kind::rtl;
   bool dmr_audio_tried_=false;
 bool dmr_reset_pending_=false;
 bool ft8_map_open_=false;int ft8_page_=0;size_t ft8_log_offset_=0;

@@ -41,7 +41,7 @@ using orc::zero::Connection;
 using orc::zero::FmSession;
 using orc::zero::FmTelemetry;
 using orc::zero::CompactRenderer;
-struct Options { bool demo=false,null_audio=false;uint32_t device=0,freq=96100000;bool freq_explicit=false,audio_explicit=false,bias_explicit=false,bias_tee=false;
+struct Options { bool demo=false,null_audio=false;std::string radio;uint32_t device=0,freq=96100000;bool freq_explicit=false,audio_explicit=false,bias_explicit=false,bias_tee=false;
  std::string display="sdl",audio="default",screenshot,view="main",input;unsigned frames=0,dashboard=0; };
 unsigned parse_unsigned(const std::string& s){size_t used=0;auto v=std::stoul(s,&used);if(used!=s.size()||v>UINT32_MAX)throw std::invalid_argument("bad integer");return static_cast<unsigned>(v);}
 Options parse(int argc,char** argv){
@@ -58,6 +58,7 @@ Options parse(int argc,char** argv){
   if(++i>=argc)throw std::invalid_argument("missing option value for "+x);
   const std::string y=argv[i];
   if(x=="--device")a.device=parse_unsigned(y);
+        else if(x=="--radio")a.radio=y;
   else if(x=="--bias-tee"){if(y!="on"&&y!="off")throw std::invalid_argument("--bias-tee requires on or off");a.bias_explicit=true;a.bias_tee=y=="on";}
   else if(x=="--freq"){a.freq=parse_unsigned(y);a.freq_explicit=true;}
   else if(x=="--audio"){a.audio=y;a.audio_explicit=true;}
@@ -282,6 +283,7 @@ int run_fb(const Options& a,ControlModel& model,FmSession* session){
  if(keys<0)std::cerr<<"No matching evdev keyboard. Use --input /dev/input/eventN and check device permissions.\n";
  CompactRenderer renderer, dashboard_error;
  auto dashboards=std::make_unique<orc::zero::DashboardSession>();
+    if(a.radio=="pluto")dashboards->set_radio_kind(orc::linux_sdr::RadioSource::Kind::pluto);
  auto select_dashboard=[&](unsigned selection){
    if(!session)return;
    if(selection!=dashboards->mode()){
