@@ -117,3 +117,41 @@ were an RTL/dwcs2 path problem, not a general USB limit on this board.
 is accepted, and `2400000` is applied as `2399999`. The driver evidently enforces
 divisor-derived rates rather than the raw range, so a receiver must read back what
 it got instead of assuming the request took.
+## Verified capability matrix (2026-11-27)
+
+Both directions exercised from the Zero over `usb:1.53.4` with libiio 0.26.
+
+| Capability | Reported range | Notes |
+| --- | --- | --- |
+| RX LO | 70 MHz - 6 GHz | what libiio accepts |
+| TX LO | 46.875 MHz - 6 GHz | |
+| RX sample rate | 2.083 - 61.44 MS/s | `2083333` refused with EINVAL; `2100000` accepted |
+| RX gain | -1 to +73 dB | `hardwaregain_available: [-1 1 73]` |
+| RX RF bandwidth | 200 kHz - 56 MHz | |
+| TX attenuation | 0 to -89.75 dB | default was 24 dB |
+| TX DMA | `cf-ad9361-dds-core-lpc`, 4x S16 output channels | voltage0/1 = TX1 I/Q |
+
+### Both directions confirmed working
+
+- **RX**: 9.49 MB/s delivered at 2.4 MS/s (100% of nominal), ~22.9 MB/s ceiling.
+- **TX**: `iio_writedev` accepted a 960,000-byte buffer to
+  `cf-ad9361-dds-core-lpc` and exited 0, with TX_LO at 100 MHz and attenuation at
+  -89.75 dB. The DMA path works; nothing was radiated at that attenuation.
+
+### Caveat on the frequency range
+
+`frequency_available` reports **70 MHz - 6 GHz**, but that is the AD9361 range the
+driver advertises. The Pluto carries an **AD9363**, whose practical range is about
+**325 MHz - 3.8 GHz**. Tuning outside that will be accepted and read back happily
+while giving poor or no sensitivity, so "supported within its range" should mean
+the chip's range, not the advertised one, and the UI must not imply otherwise.
+
+That distinction needs an empirical check before it is stated as fact in the app:
+tune across the band and compare noise floor / a known signal at the edges.
+
+### Safety default for TX
+
+Attenuation defaults to 24 dB on this unit, which is not the safest starting
+point. A transmitter should come up at **-89.75 dB** (effectively off) and be
+raised explicitly, so that merely selecting the Pluto as a source cannot key a
+signal into whatever is connected.
