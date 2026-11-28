@@ -74,3 +74,46 @@ the driver design must reflect that rather than pretend otherwise.
   been exercised.
 - Next: attach the Pluto, confirm `iio_info -S` enumerates it, then measure
   sustained throughput at the minimum rate before writing `PlutoReceiver`.
+
+## Hardware verified on the Zero (2026-11-27)
+
+The Pluto (FISH Ball PlutoSDR Rev.A, Z7020/AD9361, fw exposing `ad9361-phy` and
+`cf-ad9361-lpc`) enumerates and works. Three independent paths are available:
+
+```text
+usb:1.53.4                                     native IIO over USB
+ip:fishball.local (eth1, RNDIS over USB)       USB Ethernet gadget
+ip:fishball.local (eth0, RJ45)                 the Zero's own 100 Mbps port
+```
+
+`iio_info -u usb:1.53.4` reports the expected device tree, and the ESP work's
+finding is confirmed on this host: `sampling_frequency_available: [2083333 1
+61440000]`.
+
+### The fix was power, not software
+
+Before an extra power connection was added to the Pluto, it did not enumerate at
+all and the RTL dongle on the same hub began failing with `error -71` (EPROTO) -
+the classic signature of a bus-powered hub being overdrawn. One extra supply fixed
+both: the Pluto appeared as `0456:b673` and the RTL failures stopped.
+
+### Throughput: the concern was misplaced
+
+Measured with `iio_readdev` on this board:
+
+| Requested | Delivered | Of nominal |
+| --- | --- | --- |
+| 2.4 MS/s | 9.49 MB/s | **100%** |
+| 30.72 MS/s (default) | ~22.9 MB/s | 18.7% - silent loss above the ceiling |
+
+So the earlier worry that the Zero could not carry the Pluto's 8.3 MB/s minimum
+was wrong: at 2.4 MS/s it delivers the full 9.49 MB/s with roughly 2.4x headroom
+to the ~23 MB/s ceiling. The RTL's failures at 2.4 MS/s earlier in this project
+were an RTL/dwcs2 path problem, not a general USB limit on this board.
+
+### Rate note
+
+`2083333` is rejected with EINVAL even though it is the reported minimum; `2100000`
+is accepted, and `2400000` is applied as `2399999`. The driver evidently enforces
+divisor-derived rates rather than the raw range, so a receiver must read back what
+it got instead of assuming the request took.
