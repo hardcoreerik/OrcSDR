@@ -13,6 +13,7 @@ import numpy as np
 
 CENTRE = float(sys.argv[1]) if len(sys.argv) > 1 else 557e6
 GAIN = sys.argv[2] if len(sys.argv) > 2 else "60"
+BW = sys.argv[3] if len(sys.argv) > 3 else str(RATE)
 RATE = 10762238
 RAW = "/tmp/snr_cap.iq"
 
@@ -24,7 +25,7 @@ def set_attr(channel, attr, value):
 
 def main():
     set_attr("voltage0", "sampling_frequency", str(RATE))
-    set_attr("voltage0", "rf_bandwidth", str(RATE))
+    set_attr("voltage0", "rf_bandwidth", BW)
     set_attr("voltage0", "gain_control_mode", "manual")
     set_attr("voltage0", "hardwaregain", GAIN)
     set_attr("altvoltage0", "frequency", str(int(CENTRE)))
@@ -64,7 +65,7 @@ def main():
     pilot = psd[np.abs(freqs + 2690559.0) < 8000]
     pilot_db = (10.0 * np.log10(float(np.max(pilot)) / noise_power)) if pilot.size else 0.0
 
-    print("centre %.0f MHz  gain %s dB" % (CENTRE / 1e6, GAIN))
+    print("centre %.0f MHz  gain %s dB  rf_bw %s Hz" % (CENTRE / 1e6, GAIN, BW))
     print("  noise floor %.1f dB   pilot %.1f dB above noise" % (10 * np.log10(noise_power), pilot_db))
     print("  estimated in-channel SNR %.1f dB   (8-VSB needs about 15 dB)" % snr_db)
 

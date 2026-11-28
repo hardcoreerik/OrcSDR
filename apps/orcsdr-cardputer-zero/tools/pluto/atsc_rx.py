@@ -46,6 +46,14 @@ def main():
     call(src, "set_gain", 0, 60)
 
     # ATSC symbol rate is 10.762237 Msym/s, so sps follows from the chosen input\n    # rate; a 6 MHz channel needs at least ~6.5 MS/s.
+    # gr-iio has no usable set_bandwidth in this version, but the analogue filter is
+    # worth about 7 dB of SNR: at 10.76 MHz wide the 6 MHz channel was being received
+    # through a filter twice its width. Set it directly, after gr-iio has finished
+    # configuring, and before streaming starts.
+    import subprocess
+    subprocess.run(["iio_attr", "-u", "local:", "-c", "ad9361-phy", "voltage0",
+                    "rf_bandwidth", "5000000"],
+                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False)
     rx = dtv.atsc_rx(RATE, 1.0)
     sink = blocks.file_sink(gr.sizeof_char, TS_PATH, False)
 
