@@ -21,6 +21,13 @@ struct Observation {
   bool has_source = false, has_destination = false, group_call = false;
   uint32_t source_id = 0, destination_id = 0;
   uint32_t utc = 0;              // receiver-provided UTC epoch seconds, 0 = unknown (never guessed)
+  uint8_t role_flags = 0;        // bit0=control, bit1=voice, bit2=data
+  bool has_sys = false;
+  uint8_t sys_model = 0;
+  uint16_t sys_code = 0;
+  uint16_t net_id = 0;
+  uint16_t site_id = 0;
+  uint16_t level_milli = 0;      // relative RF level (0 = unknown)
 };
 
 struct SystemRec {
@@ -33,6 +40,17 @@ struct SystemRec {
   uint8_t slots_seen = 0;        // bit0 = TS1, bit1 = TS2
   uint32_t first_utc = 0, last_utc = 0, count = 0;
   uint32_t seq = 0;              // recency, not persisted as a number (order is persisted)
+  uint8_t role_flags = 0;
+  bool has_sys = false;
+  uint8_t sys_model = 0;
+  uint16_t sys_code = 0;
+  uint16_t net_id = 0;
+  uint16_t site_id = 0;
+  uint32_t voice_count = 0;
+  uint32_t control_count = 0;
+  uint16_t peak_level_milli = 0;
+  uint16_t network_uid = 0;      // lowest UID in verified network / control group (0 = standalone)
+  bool suspected_ghost = false;
 };
 struct TalkgroupRec {
   uint16_t system_uid = 0;
@@ -50,6 +68,22 @@ struct SubscriberRec {
 
 constexpr size_t kMaxSystems = 128, kMaxTalkgroups = 128, kMaxSubscribers = 256;   // systems were 32: the oldest were being forgotten
 constexpr size_t kMaxSerializedBytes = 40 * 1024;   // upper bound for the text form (checked by a test)
+constexpr size_t kMaxGroupSites = 3;
+
+struct GroupSummary {
+  size_t primary_index = static_cast<size_t>(-1);
+  uint16_t network_uid = 0;
+  uint8_t site_count = 1;
+  uint8_t combined_role_flags = 0;
+  uint32_t total_heard = 0;
+  uint32_t total_voice = 0;
+  uint16_t total_talkgroups = 0;
+  uint16_t total_subscribers = 0;
+  uint32_t site_hz[kMaxGroupSites]{};
+  uint8_t site_role[kMaxGroupSites]{};
+  uint16_t site_id[kMaxGroupSites]{};
+  uint8_t site_listed = 0;
+};
 
 class Discovery {
  public:
@@ -71,6 +105,14 @@ class Discovery {
   size_t nth_newest_talkgroup(uint16_t uid, size_t n) const noexcept;
   size_t nth_newest_subscriber(uint16_t uid, size_t n) const noexcept;
   size_t nth_newest_system(size_t n) const noexcept;   // n-th most recently seen system, SIZE_MAX if none
+  // Voice-first ranking: non-ghost Voice/Mixed -> Data/Unknown -> Control-only -> suspected ghosts, newest first within each tier.
+  size_t nth_ranked_system(size_t n) const noexcept;
+  size_t network_member_count(uint16_t network_uid) const noexcept;
+  bool link_granted_channel(uint8_t protocol, uint32_t control_hz, uint32_t grant_hz) noexcept;
+  void consolidate() noexcept;
+  bool is_confirmed_system(const SystemRec& s) const noexcept;
+  size_t grouped_system_count() const noexcept;
+  bool nth_ranked_group(size_t n, GroupSummary& out) const noexcept;
   // Changes since the last mark_saved(): lets the app write at most when something moved.
   uint32_t revision() const noexcept { return revision_; }
   // Bumps only when a system, talkgroup or subscriber is added (or the table is replaced): what is worth an SD write now.

@@ -84,6 +84,33 @@ struct Status {
   uint8_t mask = 0;
 };
 
+// Real DMR demodulator / FEC diagnostics published by the decode side for the LIVE monitor.
+// Fields remain invalid (false) until produced by a locked DMR stream or verified burst.
+struct SignalDiag {
+  uint32_t epoch = 0;
+  uint32_t updated_ms = 0;
+  uint32_t symbol_seq = 0;
+  bool dmr_locked = false;
+  bool dev_valid = false;
+  int32_t dev_tenths_hz = 0;        // outer +-3 4FSK deviation (3 * deviation_per_level_hz), tenths of Hz
+  int32_t cfo_tenths_hz = 0;        // carrier frequency offset, tenths of Hz (valid when dev_valid)
+  bool snr_valid = false;
+  int32_t snr_tenths_db = 0;        // 4FSK slicer/constellation SNR (MER), tenths of dB
+  bool ber_valid = false;
+  int32_t ber_tenths_pct = 0;       // rolling pre-FEC BER from integrity-valid DMR data bursts (Golay20+BPTC), tenths of %
+  uint32_t ber_updated_ms = 0;      // monotonic ms of last integrity-valid DMR data burst
+  uint32_t dmr_crc_failures = 0;    // DMR bursts passing BPTC FEC but failing RS(12,9) or CRC-16
+  uint32_t dmr_fec_corrected = 0;   // Golay(20,8)+BPTC(196,96) corrected bits on integrity-valid DMR bursts
+  bool symbols_valid = false;
+  bool disc_valid = false;          // true when symbols[] holds live raw FM discriminator samples (unlocked/low-signal/NXDN)
+  int32_t disc_rms_tenths_hz = 0;   // live FM discriminator RMS deviation, tenths of Hz
+  int32_t symbol_extent_hz = 0;
+  uint8_t symbol_count = 0;
+  int16_t symbols[96] = {};
+  int16_t reference[4] = {};
+};
+SignalDiag signal_diag();
+
 // ---- Native voice path (receive only). The worker qualifies BS voice superframes (privacy/identity/continuity gates in
 // dmr::d1::CallManager) and queues them here for the voice audio task. Only CLEAR, positively identified groups arrive as
 // kind==group; everything else is a notice. Single consumer.

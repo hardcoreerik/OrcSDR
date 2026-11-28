@@ -58,6 +58,9 @@ struct Stats {
   uint32_t agc_gain_x100 = 100;         // current speech AGC gain x100
   uint32_t gap_min_ms = 0, gap_max_ms = 0;   // spacing between consecutive groups of one call (ideal 360): the jitter the buffer must absorb
   uint64_t test_samples = 0;            // injected via inject_test_pcm, NOT decoded speech
+  bool ber_valid = false;
+  uint32_t ber_tenths_pct = 0;          // rolling Golay C0(24,12)+C1(23,12) pre-FEC BER in tenths of % (e.g. 12 = 1.2%)
+  uint32_t ber_updated_ms = 0;          // monotonic ms when ber_tenths_pct was last updated
 };
 
 struct Snapshot {
@@ -175,6 +178,10 @@ private:
   bool pending_bad_ = false, pending_silent_only_ = true;
   uint32_t pending_us_ = 0, pending_now_ms_ = 0;
   uint64_t pending_first_sample_ = 0;
+  struct BerWin { uint16_t errs; uint16_t bits; };
+  BerWin ber_win_[4]{};
+  uint8_t ber_win_head_ = 0, ber_win_count_ = 0;
+  uint16_t pending_ber_errs_ = 0, pending_ber_bits_ = 0;
 };
 
 }  // namespace orcsdr::dv_voice

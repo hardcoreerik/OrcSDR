@@ -8,6 +8,7 @@
 #include <string>
 #include <vector>
 #include "dv_discovery.hpp"
+#include "dv_dmr_control.hpp"
 using namespace orcsdr::dv;
 static Observation obs(uint32_t f, uint8_t area, uint32_t src, uint32_t dst, uint32_t utc, uint8_t ev = 5, uint8_t proto = 3) {
   Observation o; o.protocol = proto; o.frequency_hz = f; o.area = area; o.area_kind = AreaKind::colour_code; o.evidence = ev; o.slot = 2;
@@ -92,6 +93,93 @@ int main() {
   static char wbuf[kMaxSerializedBytes + 4096];
   const size_t wn = worst.serialize(wbuf, sizeof(wbuf));
   assert(wn > 0 && wn <= kMaxSerializedBytes);
+  // Tier III C_ALOHA / C_BCAST / MBC parser (real Eugene 152.1575 bytes).
+  {
+    orcsdr::dv_radio::Event ev{};
+    ev.protocol = orcsdr::digital_voice_ui::Protocol::dmr;
+    ev.evidence = orcsdr::digital_voice_ui::Evidence::integrity_valid;
+    ev.colour_code_valid = true; ev.colour_code = 13;
+    ev.slot_valid = true; ev.slot = 1;
+    ev.has_data_type = true; ev.data_type = 3; ev.info_valid = true;
+    const uint8_t aloha[12] = {0x99, 0x00, 0x21, 0x00, 0xD6, 0xB0, 0x37, 0x00, 0x00, 0x00, 0x49, 0xE2};
+    std::memcpy(ev.info, aloha, 12);
+    const DmrControlInfo ci = parse_dmr_event(ev);
+    assert(ci.role_flags == kRoleControl && ci.has_sys && ci.model == 2 && ci.sys_code == 0x2C0D && ci.net_id == 12 && ci.site_id == 14);
+    // C_BCAST with byte 1 = 0x08 (not Hytera XPT): still parses SYScode.
+    const uint8_t bcast[12] = {0x28, 0x08, 0x35, 0x81, 0x96, 0xB0, 0x37, 0xFF, 0xFC, 0x80, 0x0A, 0xEE};
+    std::memcpy(ev.info, bcast, 12);
+    const DmrControlInfo cb = parse_dmr_event(ev);
+    assert(cb.role_flags == kRoleControl && cb.has_sys && cb.sys_code == 0x2C0D && cb.is_adj_site);
+    // MBC Header (dt=4) + Continuation (dt=5) harvests Adjacent Site frequency (160.485 MHz).
+    MbcTracker mbc;
+    ev.data_type = 4; std::memcpy(ev.info, bcast, 12);
+    (void)mbc.on_event(ev);
+    const uint8_t mbcc[12] = {0xA8, 0x00, 0x00, 0xD1, 0xC9, 0xF8, 0xAC, 0x14, 0x0F, 0x28, 0xD5, 0x98};
+    ev.data_type = 5; std::memcpy(ev.info, mbcc, 12);
+    const DmrControlInfo cm = mbc.on_event(ev);
+    assert(cm.role_flags == kRoleControl && cm.is_adj_site && cm.has_harvest_hz && cm.harvest_hz == 160485000u);
+  }
+  // DVDB1 backward compatibility.
+  {
+    static Discovery v1;
+    const char* legacy = "DVDB1\nS 1 3 152157500 1 13 5 2 100 200 5\nT 1 6011885 1 110 120 3\n";
+    assert(v1.parse(legacy, std::strlen(legacy)));
+    assert(v1.system_count() == 1 && v1.system(0).frequency_hz == 152157500u && (v1.system(0).role_flags & kRoleVoice) != 0);
+  }
+  // Near-frequency dedup (+-6.25 kHz), Net ID grouping, Ghost Guard, and voice-first ranking.
+  {
+    static Discovery grp;
+    Observation ctrl = obs(152157500u, 13, 0, 0, 100, 4);
+    ctrl.role_flags = kRoleControl; ctrl.has_sys = true; ctrl.sys_model = 2; ctrl.sys_code = 0x2C0D; ctrl.net_id = 12; ctrl.site_id = 14; ctrl.level_milli = 185;
+    assert(grp.record(ctrl));
+    // Near-frequency hit within 6.25 kHz merges into the same system (and adopts stronger center).
+    Observation near = ctrl; near.frequency_hz = 152160000u; near.level_milli = 220;
+    assert(grp.record(near));
+    assert(grp.system_count() == 1 && grp.system(0).frequency_hz == 152160000u);
+    // Second site in the same Net ID groups under the same network_uid.
+    Observation site2 = obs(152685000u, 13, 0, 0, 110, 4);
+    site2.role_flags = kRoleControl; site2.has_sys = true; site2.sys_model = 2; site2.sys_code = 0x2C0E; site2.net_id = 12; site2.site_id = 15; site2.level_milli = 160;
+    assert(grp.record(site2));
+    assert(grp.system_count() == 2 && grp.network_member_count(grp.system(0).network_uid) == 2);
+    // UHF channel sharing the same Net ID (12) stays in its own band group and does NOT merge into VHF Net 12.
+    Observation uhf = obs(453950000u, 13, 0, 0, 115, 4);
+    uhf.role_flags = kRoleControl; uhf.has_sys = true; uhf.sys_model = 2; uhf.sys_code = 0x2C0F; uhf.net_id = 12; uhf.site_id = 16; uhf.level_milli = 150;
+    assert(grp.record(uhf));
+    assert(grp.network_member_count(grp.system(0).network_uid) == 2);
+    // Weak ghost/image (>6.25 kHz away, exact same sys_code, <1/3 level) is flagged suspected_ghost.
+    Observation ghost = ctrl; ghost.frequency_hz = 153307500u; ghost.level_milli = 20;
+    assert(grp.record(ghost));
+    assert(grp.system_count() == 4);
+    assert(grp.system(grp.find_system(3, 153307500u, 13, AreaKind::colour_code)).suspected_ghost);
+    // Voice channel ranks ahead of Control-only and Ghost in nth_ranked_system().
+    Observation vch = obs(152900000u, 13, 4106011u, 6011885u, 120, 5);
+    vch.role_flags = kRoleVoice;
+    assert(grp.record(vch));
+    assert(grp.system(grp.nth_ranked_system(0)).frequency_hz == 152900000u);
+    assert(grp.system(grp.nth_ranked_system(4)).suspected_ghost);
+  }
+  // Retroactive consolidate() on legacy DVDB1: merges +-6.25 kHz, suppresses 1-hit glitched CC & 2-hit noise, and collapses shared (TG, Unit) sites.
+  {
+    static Discovery leg;
+    const char* raw =
+        "DVDB1\n"
+        "S 1 3 152157500 1 13 5 2 100 200 50\n"
+        "S 2 3 152160000 1 13 5 2 201 210 5\n"
+        "S 3 3 152157500 1 3 4 0 215 215 1\n"
+        "S 4 3 462725000 1 4 4 0 220 225 2\n"
+        "S 5 3 152685000 1 13 5 2 230 240 12\n"
+        "T 1 6011885 1 110 120 3\n"
+        "T 5 6011885 1 230 240 2\n"
+        "U 1 4106011 1 6011885 110 120 3\n"
+        "U 5 4106011 1 6011885 230 240 2\n";
+    assert(leg.parse(raw, std::strlen(raw)));
+    // S1+S2 merged (+-6.25 kHz), S3 (CC3 HEARD 1) flagged ghost, S4 (HEARD 2 no TG) unconfirmed, S1+S5 grouped by shared (TG, Unit).
+    assert(leg.system_count() == 4);
+    assert(leg.grouped_system_count() == 1);
+    GroupSummary gs{};
+    assert(leg.nth_ranked_group(0, gs));
+    assert(gs.site_count == 2 && gs.total_heard == 67 && gs.site_listed == 2);
+  }
   std::printf("PASS dv_discovery_tests (worst-case text %zu of %zu bytes)\n", wn, kMaxSerializedBytes);
   return 0;
 }

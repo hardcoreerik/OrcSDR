@@ -276,6 +276,24 @@ int main(){
     FCHK(host_stub::contains("12.3 dB")&&host_stub::contains("2.1 %")&&host_stub::contains("-1500.0 Hz")==false&&host_stub::contains("-150.0 Hz")&&host_stub::contains("-84.7 dBm"));
     FCHK(host_stub::contains("FSK LEVELS")&&host_stub::contains("LIKELY SYSTEM (DIRECTORY)")&&host_stub::contains("TEST REPEATER [LOCAL LIST]"));
     pd.symbol_protocol=Protocol::nxdn96;++pd.symbol_seq;show(ls);FCHK(host_stub::contains("NO SYMBOLS"));   // levels of another protocol are not shown for this one
+    // Wired DMR diagnostics without spectrum/RSSI/directory: shows real RF REL, SNR, BER, DEV, CRC FAIL, FSK LEVELS while unavailable fields stay honest
+    PlotData dmr_only{};dmr_only.epoch=7;dmr_only.now_ms=3000;dmr_only.metric_epoch=7;dmr_only.metric_ms=3000;
+    dmr_only.snr={true,215};dmr_only.ber={true,8};dmr_only.dev={true,19440};dmr_only.rssi={false,0};
+    dmr_only.symbol_valid=true;dmr_only.symbol_epoch=7;dmr_only.symbol_ms=3000;dmr_only.symbol_seq=2;
+    dmr_only.symbol_protocol=Protocol::dmr;dmr_only.extent_hz=2592;dmr_only.symbol_count=16;dmr_only.reference_count=4;
+    dmr_only.reference={1944,648,-648,-1944};
+    for(unsigned i=0;i<16;++i)dmr_only.deviation[i]=dmr_only.reference[i%4];
+    ls.relative_level_valid=true;ls.relative_level_tenths_db=-245;ls.diagnostics_valid=true;ls.crc_failures=3;
+    ld.set_plot(&dmr_only);++ls.revision;show(ls);
+    FCHK(host_stub::contains("RF REL")&&host_stub::contains("-24.5 dB")&&host_stub::contains("21.5 dB"));
+    FCHK(host_stub::contains("0.8 %")&&host_stub::contains("1944.0 Hz")&&host_stub::contains("CRC FAIL 3"));
+    FCHK(host_stub::contains("FSK LEVELS")&&host_stub::contains("REPEATER UNKNOWN"));
+    FCHK(host_stub::contains("SPECTRUM DATA UNAVAILABLE")&&host_stub::contains("NO WATERFALL")&&!host_stub::contains("dBm"));
+    FCHK(host_stub::full_clear_count==0&&!host_stub::out_of_bounds);
+    // Live unlocked raw FM discriminator baseline renders "DISC LIVE" with zero full clears.
+    dmr_only.symbol_protocol=Protocol::unknown;dmr_only.reference_count=0;++dmr_only.symbol_seq;
+    show(ls);
+    FCHK(host_stub::contains("DISC LIVE")&&host_stub::full_clear_count==0&&!host_stub::out_of_bounds);
     ld.set_plot(nullptr);
   }
   {
@@ -403,11 +421,19 @@ int main(){
     host_stub::reset();assert(dashboard.present(display,ds,dui,true,false));
     assert(host_stub::contains("DISCOVER SYSTEMS") && host_stub::contains("[X] 2M 144-148") && host_stub::contains("START DISCOVERY"));
     assert(host_stub::contains("2240 CH"));
-    assert(dashboard.handle_touch(hero.x+100,hero.y+440,ds,dui).kind==ActionKind::discover_start);
-    assert(dashboard.handle_touch(hero.x+330,hero.y+440,ds,dui).kind==ActionKind::none);            // SAVE TO LIST is off until something is found
-    ds.discover_running=true;ds.discover_found=0;ds.revision=142;
+    const Action pick=dashboard.handle_touch(hero.x+100,hero.y+440,ds,dui);
+    assert(pick.kind==ActionKind::toggle_discover_picker&&pick.value==1);
+    assert(apply_ui_action(dui,pick,ds)&&dui.discover_pick_mode);
     host_stub::reset();assert(dashboard.present(display,ds,dui,true,false));
-    assert(host_stub::contains("STOP DISCOVERY") && host_stub::contains("DISCOVERING"));
+    assert(host_stub::contains("CHOOSE DISCOVERY MODE")&&host_stub::contains("FAST")&&host_stub::contains("DEEP")&&host_stub::contains("FULL")&&host_stub::contains("CANCEL"));
+    assert(host_stub::full_clear_count==0&&!host_stub::out_of_bounds);
+    const Action start_deep=dashboard.handle_touch(hero.x+320,hero.y+290,ds,dui);
+    assert(start_deep.kind==ActionKind::discover_start&&start_deep.value==2);
+    assert(!apply_ui_action(dui,start_deep,ds)&&!dui.discover_pick_mode);
+    assert(dashboard.handle_touch(hero.x+330,hero.y+440,ds,dui).kind==ActionKind::none);            // SAVE TO LIST is off until something is found
+    ds.discover_running=true;ds.discover_mode=2;ds.discover_found=0;ds.revision=142;
+    host_stub::reset();assert(dashboard.present(display,ds,dui,true,false));
+    assert(host_stub::contains("STOP DISCOVERY") && host_stub::contains("DISCOVERING (DEEP)"));
     assert(dashboard.handle_touch(hero.x+100,hero.y+440,ds,dui).kind==ActionKind::discover_stop);
     ds.discover_running=false;ds.discover_found=2;ds.revision=143;
     host_stub::reset();assert(dashboard.present(display,ds,dui,true,false));
@@ -459,6 +485,39 @@ int main(){
   assert(apply_ui_action(ui,page,many) && ui.history_offset==2);
   host_stub::reset();assert(dashboard.present(display,many,ui,true,false));
   assert(host_stub::contains("PREV"));
+  // Tier III NET/SITE, role badges (CTRL/VOICE), single-TG display, and CONTROL CH banner render cleanly with zero full clears.
+  {
+    Snapshot cs=nx;
+    cs.revision=200;cs.systems_available=true;cs.db_available=true;cs.db_systems=2;cs.db_talkgroups=1;cs.db_subscribers=2;
+    cs.observed_system_count=2;
+    cs.observed_systems[0]={};
+    cs.observed_systems[0].protocol=Protocol::dmr;cs.observed_systems[0].evidence=Evidence::identity_valid;
+    cs.observed_systems[0].has_frequency=true;cs.observed_systems[0].frequency_hz=152685000;
+    cs.observed_systems[0].colour_code_valid=true;cs.observed_systems[0].colour_code=13;
+    cs.observed_systems[0].role_flags=2;cs.observed_systems[0].talkgroup_count=1;cs.observed_systems[0].subscriber_count=2;
+    cs.observed_systems[0].top_talkgroup_n=1;cs.observed_systems[0].top_talkgroups[0]=6011885;cs.observed_systems[0].heard_count=7;
+    cs.observed_systems[1]={};
+    cs.observed_systems[1].protocol=Protocol::dmr;cs.observed_systems[1].evidence=Evidence::integrity_valid;
+    cs.observed_systems[1].has_frequency=true;cs.observed_systems[1].frequency_hz=152157500;
+    cs.observed_systems[1].colour_code_valid=true;cs.observed_systems[1].colour_code=13;
+    cs.observed_systems[1].role_flags=1;cs.observed_systems[1].has_sys=true;cs.observed_systems[1].net_id=12;cs.observed_systems[1].site_id=14;
+    cs.observed_systems[1].network_sites=2;cs.observed_systems[1].group_site_n=2;
+    cs.observed_systems[1].group_site_hz[0]=152157500;cs.observed_systems[1].group_site_role[0]=1;
+    cs.observed_systems[1].group_site_hz[1]=152685000;cs.observed_systems[1].group_site_role[1]=2;
+    cs.observed_systems[1].heard_count=42;
+    ui.view=View::systems;ui.density=Density::discovery_first;ui.selected_system=1;ui.system_offset=0;
+    host_stub::reset();assert(dashboard.present(display,cs,ui,true,false));
+    assert(host_stub::contains("VOICE")&&host_stub::contains("CTRL")&&host_stub::contains("NET 12 (2 SITES)"));
+    assert(host_stub::contains("TG 6011885")&&host_stub::contains("2 UNITS")&&host_stub::contains("2 SYS  1 TG  2 U"));
+    assert(host_stub::contains("SITES")&&host_stub::contains("152.1575C"));
+    assert(host_stub::full_clear_count==0&&!host_stub::out_of_bounds);
+    ui.view=View::follow;cs.follow_active=true;cs.follow_frequency_hz=152157500;cs.follow_protocol=Protocol::dmr;
+    cs.follow_area_valid=true;cs.follow_area=13;cs.live_role_flags=1;cs.live_has_sys=true;cs.live_net_id=12;cs.live_site_id=14;
+    ++cs.revision;
+    host_stub::reset();assert(dashboard.present(display,cs,ui,true,false));
+    assert(host_stub::contains("CONTROL CH - WAITING FOR VOICE")&&host_stub::contains("DMR T3 NET 12 SITE 14"));
+    assert(host_stub::full_clear_count==0&&!host_stub::out_of_bounds);
+  }
   dashboard.leave();assert(!dashboard.active());
   std::puts("PASS 12 dashboard view/density combinations, evidence integrity, idle/overlay and geometry (recording stand-in only)");
 }

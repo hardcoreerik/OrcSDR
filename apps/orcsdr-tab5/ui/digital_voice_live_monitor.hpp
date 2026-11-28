@@ -39,8 +39,8 @@ static_assert(geometry_ok(),"Live layout");
 constexpr unsigned bins=141, rows=41, points=96;
 struct Metric {bool valid=false;int32_t tenths=0;};
 // Optional presentation fields: fill only from existing qualified producers. No synthetic fallbacks.
-// Today NO producer feeds the spectrum, the symbol levels or the SNR / BER / deviation / calibrated RSSI fields: they stay invalid and
-// the panels say so (see docs/digital-voice/LIVE_MONITOR_INTEGRATION.md for the producers that would fill them).
+// DMR outer deviation, slicer SNR, rolling Golay/BPTC BER, and 4FSK symbols are fed from d1_frontend/d1_bridge/d1_protocol/orcsdr_vocoder;
+// spectrum/waterfall, calibrated RSSI (dBm), directory hint, and NXDN diagnostics have no producer yet and stay invalid.
 struct PlotData {
   uint32_t epoch=0, now_ms=0, spectrum_epoch=0, spectrum_ms=0, spectrum_seq=0;
   uint32_t center_hz=0, span_hz=0;
@@ -65,8 +65,9 @@ inline bool spectrum_ok(const PlotData& d) {
   return d.spectrum_valid&&d.epoch==d.spectrum_epoch&&fresh(d.now_ms,d.spectrum_ms)&&d.span_hz&&d.ceiling>d.floor;
 }
 inline bool symbols_ok(const PlotData& d,Protocol p) {
-  return d.symbol_valid&&d.epoch==d.symbol_epoch&&fresh(d.now_ms,d.symbol_ms)&&d.symbol_protocol==p
-    &&(p==Protocol::dmr||p==Protocol::nxdn48||p==Protocol::nxdn96)
+  const bool raw_disc=(d.symbol_protocol==Protocol::unknown&&d.reference_count==0);
+  const bool proto_match=(d.symbol_protocol==p&&(p==Protocol::dmr||p==Protocol::nxdn48||p==Protocol::nxdn96));
+  return d.symbol_valid&&d.epoch==d.symbol_epoch&&fresh(d.now_ms,d.symbol_ms)&&(raw_disc||proto_match)
     &&d.extent_hz>0&&d.symbol_count&&d.symbol_count<=points&&d.reference_count<=4;
 }
 inline bool running(const Snapshot& s) {return live_common::scan_is_running(s)||s.follow_active||s.discover_running;}
@@ -136,6 +137,11 @@ inline void metric(Paint& p,const char* name,Metric m,const char* unit,int y,boo
 inline const char* phase(const Snapshot& s) {
   if(s.receiver==Receiver::disconnected||s.receiver==Receiver::error||s.receiver==Receiver::unavailable)return receiver_name(s.receiver);
   if(!running(s))return "NOT LISTENING";
+  const bool ctrl_only=(s.live_role_flags&1u)!=0u&&(s.live_role_flags&2u)==0u;
+  const bool voice_active=s.voice.available&&(s.voice.phase==VoicePhase::decoding||s.voice.phase==VoicePhase::acquiring||
+                                              s.voice.phase==VoicePhase::buffering||s.voice.phase==VoicePhase::degraded||
+                                              s.voice.phase==VoicePhase::protected_voice);
+  if(ctrl_only&&!voice_active)return "CONTROL CH - WAITING FOR VOICE";
   if(s.voice.available&&s.voice.phase!=VoicePhase::unavailable)return voice_phase_name(s.voice.phase);
   return s.scan_on_hold?"HOLD / MONITOR":"MONITORING";
 }
@@ -160,7 +166,9 @@ inline void panel(Paint& p,const Snapshot& s,const PlotData& d,const UiState& u,
     if(!run) {std::snprintf(a,sizeof(a),"NO CHANNEL TUNED");}
     else if(s.protocol==Protocol::dmr) {
       if(integrity&&s.colour_code_valid)std::snprintf(a,sizeof(a),"CC %u",unsigned(s.colour_code));else std::snprintf(a,sizeof(a),"CC --");
-      if(integrity&&s.timeslot_valid&&(s.timeslot==1||s.timeslot==2))std::snprintf(b,sizeof(b),"TS %u",unsigned(s.timeslot));else std::snprintf(b,sizeof(b),"TS --");
+      if(integrity&&s.timeslot_valid&&(s.timeslot==1||s.timeslot==2))std::snprintf(b,sizeof(b),"TS %u",unsigned(s.timeslot));
+      else if(integrity&&s.live_has_sys)std::snprintf(b,sizeof(b),"NET %u S%u",unsigned(s.live_net_id),unsigned(s.live_site_id));
+      else std::snprintf(b,sizeof(b),"TS --");
     }else if(s.protocol==Protocol::nxdn48||s.protocol==Protocol::nxdn96) {
       if(integrity&&s.ran_valid)std::snprintf(a,sizeof(a),"RAN %u",unsigned(s.ran));else std::snprintf(a,sizeof(a),"RAN --");
       std::snprintf(b,sizeof(b),"%s",s.protocol==Protocol::nxdn48?"NXDN48":"NXDN96");
@@ -295,8 +303,52 @@ class Graphs {
   static void label(lgfx::LovyanGFX& g,const char* t,Rect r) {
     g.setFont(nullptr);g.setTextSize(2);g.setTextDatum(middle_left);g.setTextColor(kMuted);g.setClipRect(r.x,r.y,r.w,r.h);g.drawString(t,r.x+4,r.y+r.h/2);g.clearClipRect();
   }
+  static void draw_symbols_on(lgfx::LovyanGFX& g,int ox,int oy,const PlotData& d,bool so) {
+    g.drawRect(ox,oy,symbols.w,symbols.h,kEdge);
+    if(so){
+      auto y=[&](int v){const int64_t bounded=std::clamp<int64_t>(v,-int64_t(d.extent_hz),int64_t(d.extent_hz));
+        return oy+22+int((int64_t(d.extent_hz)-bounded)*(symbols.h-26)/(2*int64_t(d.extent_hz)));};
+      const bool raw_disc=(d.symbol_protocol==Protocol::unknown&&d.reference_count==0);
+      label(g,raw_disc?"DISC LIVE":"FSK LEVELS",{ox+2,oy+2,symbols.w-4,18});
+      if(raw_disc)g.drawFastHLine(ox+2,y(0),symbols.w-4,kEdge);
+      else for(unsigned i=0;i<d.reference_count;++i)g.drawFastHLine(ox+2,y(d.reference[i]),symbols.w-4,kEdge);
+      const uint16_t dot_col=raw_disc?kCyan:kGreen;
+      for(unsigned i=0;i<d.symbol_count;++i)g.fillRect(ox+2+int(i)*(symbols.w-5)/int(points-1),y(d.deviation[i]),2,2,dot_col);
+    }else label(g,"NO SYMBOLS",{ox,oy,symbols.w,symbols.h});
+  }
+  void draw_symbols(lgfx::LovyanGFX& g,const PlotData& d,bool so) {
+#if defined(ESP_PLATFORM)
+    if(!sym_spr_) {
+      auto* sp=new lgfx::LGFX_Sprite();
+      sp->setColorDepth(16);
+      sp->setPsram(true);
+      if(sp->createSprite(symbols.w,symbols.h))sym_spr_=sp;
+      else delete sp;
+    }
+    if(sym_spr_) {
+      sym_spr_->fillRect(0,0,symbols.w,symbols.h,kBg);
+      draw_symbols_on(*sym_spr_,0,0,d,so);
+      sym_spr_->pushSprite(&g,symbols.x,symbols.y);
+      return;
+    }
+#endif
+    g.fillRect(symbols.x,symbols.y,symbols.w,symbols.h,kBg);
+    draw_symbols_on(g,symbols.x,symbols.y,d,so);
+  }
+#if defined(ESP_PLATFORM)
+  lgfx::LGFX_Sprite* sym_spr_=nullptr;
+#endif
   void clear_history(){count_=head_=0;}
  public:
+  Graphs()=default;
+  Graphs(const Graphs&)=delete;
+  Graphs& operator=(const Graphs&)=delete;
+  ~Graphs() {
+#if defined(ESP_PLATFORM)
+    delete sym_spr_;
+    sym_spr_=nullptr;
+#endif
+  }
   void reset(){clear_history();initialized_=have_=have_symbols_=previous_ok_=false;}
   // True when the spectrum trace area is drawn by the graphs (valid spectrum). When false the Dashboard fills it with the RF level strip.
   bool owns_trace() const {return previous_ok_;}
@@ -338,14 +390,7 @@ class Graphs {
     }
     const bool so=symbols_ok(d,s.protocol);
     if(symbols_visible&&(force||change||so!=have_symbols_||(so&&sym_seq_!=d.symbol_seq))){
-      g.fillRect(symbols.x,symbols.y,symbols.w,symbols.h,kBg);g.drawRect(symbols.x,symbols.y,symbols.w,symbols.h,kEdge);
-      if(so){
-        auto y=[&](int v){const int64_t bounded=std::clamp<int64_t>(v,-int64_t(d.extent_hz),int64_t(d.extent_hz));
-          return symbols.y+22+int((int64_t(d.extent_hz)-bounded)*(symbols.h-26)/(2*int64_t(d.extent_hz)));};
-        label(g,"FSK LEVELS",{symbols.x+2,symbols.y+2,symbols.w-4,18});
-        for(unsigned i=0;i<d.reference_count;++i)g.drawFastHLine(symbols.x+2,y(d.reference[i]),symbols.w-4,kEdge);
-        for(unsigned i=0;i<d.symbol_count;++i)g.fillRect(symbols.x+2+int(i)*(symbols.w-5)/int(points-1),y(d.deviation[i]),2,2,kGreen);
-      }else label(g,"NO SYMBOLS",symbols);
+      draw_symbols(g,d,so);
     }
     if(symbols_visible){sym_seq_=d.symbol_seq;have_symbols_=so;}
     have_=ok;previous_ok_=ok;initialized_=true;

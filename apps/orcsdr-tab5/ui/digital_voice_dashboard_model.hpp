@@ -91,6 +91,17 @@ struct ObservedSystem {
   uint32_t top_talkgroups[kTopIds]{}, top_subscribers[kTopIds]{};   // newest first, identity-validated only
   uint8_t top_talkgroup_n = 0, top_subscriber_n = 0;
   char last_time[12]{};                  // receiver-provided time, empty when unknown
+  uint8_t role_flags = 0;                // bit0=ctrl, bit1=voice, bit2=data
+  bool has_sys = false;
+  uint8_t sys_model = 0;
+  uint16_t net_id = 0, site_id = 0;
+  uint32_t voice_count = 0;
+  uint8_t network_sites = 0;             // >1 when grouped with other sites in the same verified Net ID
+  bool suspected_ghost = false;
+  static constexpr size_t kSiteSlots = 3;
+  uint32_t group_site_hz[kSiteSlots]{};
+  uint8_t group_site_role[kSiteSlots]{};
+  uint8_t group_site_n = 0;
 };
 struct ScanStatus {
   ScanPhase phase = ScanPhase::unavailable;
@@ -176,7 +187,14 @@ struct Snapshot {
   // DISCOVER page: a sweep of the MY BANDS plan. "Found" = channels with integrity-validated activity seen at least 3 times in this run
   // (one or two sightings are candidates: noise decoded as DMR looks like that); saved = added to the saved scan list by SAVE TO LIST.
   bool discover_running = false, discover_can_start = false;
+  uint8_t discover_mode = 0;             // 0 none, 1 FAST, 2 DEEP, 3 EXHAUSTIVE
   uint16_t discover_found = 0, discover_candidates = 0, discover_saved = 0, discover_skipped = 0;
+  uint16_t discover_voice = 0, discover_ctrl = 0, discover_neighbors = 0;
+  // Live channel role & Tier III SYScode (reset on retune; verified over-air only).
+  uint8_t live_role_flags = 0;
+  bool live_has_sys = false;
+  uint8_t live_sys_model = 0;
+  uint16_t live_net_id = 0, live_site_id = 0;
   // Wideband survey (the pre-screen): phase 1 = surveying (many channels per tune at the highest loss-free rate), phase 2 = decoding
   // the occupied channels it found, 0 = not running or a plain sweep. Hot = channels clearly above the noise floor (not yet decoded).
   uint8_t discover_phase = 0;
@@ -206,13 +224,14 @@ struct UiState {
   uint8_t selected_system = 0;
   uint8_t system_offset = 0;   // Systems page: index of the first listed system (newest first), moves in pages of kObservedSystems
   bool info_open = false;      // the (i) help card for the current view is showing instead of the view
+  bool discover_pick_mode = false; // DISCOVER: user tapped START DISCOVERY and is choosing FAST / DEEP / EXHAUSTIVE
   uint8_t popup = 0;           // LIVE monitor: 0 none, 1 AUDIO, 2 FILTER, 3 TUNE, 4 OPTIONS (presentation only: the popup replaces the right-hand column)
 };
 enum class ActionKind : uint8_t { none, switch_view, selected_history, save_channel, scan, setup_protocol,
                                   toggle_hold, skip_frequency, toggle_density, select_scan_hit,
                                   select_system, page_history, plan_prev, plan_next, set_listen, toggle_save_speech, toggle_band, toggle_save_iq, page_systems,
                                   open_discover, close_discover, discover_start, discover_stop, discover_save, monitor_filter,
-                                  follow_system, follow_stop, toggle_log_data, toggle_info, toggle_popup };
+                                  follow_system, follow_stop, toggle_log_data, toggle_info, toggle_popup, toggle_discover_picker };
 // Why a control is unavailable, in words the screen can show. `none` = the control is usable.
 enum class Disabled : uint8_t { none, no_receiver, no_plan, not_scanning, no_signal_selected, not_verified, already_saved,
                                 list_full, no_storage, scan_running, single_plan, no_frequency };

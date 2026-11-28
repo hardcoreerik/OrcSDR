@@ -49,6 +49,10 @@ struct ScanInputs {
   bool candidate = false;
   // Monotonic time of the newest identity-validated event or qualified voice group on the current channel, 0 = none since tune.
   uint32_t identity_ms = 0;
+  // True when DISCOVER has already classified the channel as CTRL-only with SYScode and allowed time for neighbor MBCs.
+  bool control_only_ready = false;
+  // True when the receiver reports no RF carrier above the noise floor on a fast MONITOR / group-FOLLOW check.
+  bool rf_quiet = false;
 };
 
 struct ScanStep {
@@ -109,6 +113,12 @@ class Scanner {
   bool demoted(size_t i) const noexcept { return config_.demote_after && i < kMaxScanChannels && ctrl_streak_[i] >= config_.demote_after; }
   void set_quick_lists(bool on) noexcept { config_.quick_lists = on; }
   bool quick_lists() const noexcept { return config_.quick_lists; }
+  void set_quick_ms(uint32_t ms) noexcept { config_.quick_ms = ms > 5000 ? 5000 : ms; }
+  uint32_t quick_ms() const noexcept { return config_.quick_ms; }
+  void set_settle_ms(uint32_t ms) noexcept { config_.settle_ms = ms < 100 ? 100 : ms > 2000 ? 2000 : ms; }
+  uint32_t settle_ms() const noexcept { return config_.settle_ms; }
+  void set_dwell_ms(uint32_t ms) noexcept { config_.dwell_ms = ms < 300 ? 300 : ms > 5000 ? 5000 : ms; }
+  uint32_t dwell_ms() const noexcept { return config_.dwell_ms; }
   // A hold that has seen only control traffic (verified events but no identity and no voice) is released after this long (1 s to 60 s). A shorter value
   // revisits more channels per minute; a call that starts on a held channel brings identity evidence, which keeps the hold.
   void set_control_hold_max_ms(uint32_t ms) noexcept { config_.control_hold_max_ms = ms < 1000 ? 1000 : ms > 60000 ? 60000 : ms; }

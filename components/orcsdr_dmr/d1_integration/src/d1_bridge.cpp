@@ -7,6 +7,7 @@ namespace orcsdr::dmr::d1::integration {
 void Receiver::clear_protocol() noexcept {
     protocol_.reset();
     sample_history_.fill(0);
+    locked_symbols_ = 0;
 }
 
 void Receiver::reset() noexcept {
@@ -104,11 +105,19 @@ Result Receiver::process(const ComplexSample* input, std::size_t count,
             prior_prerolls_ = fs.full_preroll_acquisitions;
         }
         if (step.produced == 1 && fs.locked) {
+            if (locked_symbols_ < 0xffffffffU) ++locked_symbols_;
             const auto index = protocol_.dibits_consumed();
             sample_history_[static_cast<std::size_t>(index % sample_history_.size())] =
                 symbol.sample_index;
             const std::uint8_t dibit = symbol.dibit;
             const float level_hz = std::max(fs.deviation_per_level_hz, 1.0F);
+            if (symbol_sink_) {
+                const float dev_f = std::clamp(
+                    static_cast<float>(dibit_level(dibit)) * level_hz + symbol.error_hz,
+                    -32000.0F, 32000.0F);
+                symbol_sink_(static_cast<std::int16_t>(std::lroundf(dev_f)),
+                             symbol.error_hz, symbol_user_);
+            }
             const float scaled = dibit_level(dibit) + (symbol.error_hz / level_hz);
             const auto q4 = [](float d) noexcept -> std::uint8_t {
                 const float clamped = std::clamp(d * 15.0F, 0.0F, 15.0F);

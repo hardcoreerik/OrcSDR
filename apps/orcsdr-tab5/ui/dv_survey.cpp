@@ -39,29 +39,42 @@ void init(Work& w) noexcept {
   }
 }
 
-void analyze(Work& w) noexcept {
+void analyze(Work& w, size_t frames) noexcept {
+  const size_t nf = (frames == 0 || frames > kMaxFrames) ? kFrames : frames;
   std::fill_n(w.pw, kFft, 0.0f);
-  for (size_t f = 0; f < kFrames; ++f) {
+  std::fill_n(w.pw_peak, kFft, 0.0f);
+  for (size_t f = 0; f < nf; ++f) {
     const uint8_t* p = w.cap + f * kFft * 2;
     for (size_t i = 0; i < kFft; ++i) {
       w.re[i] = (static_cast<float>(p[2 * i]) - 127.5f) * (1.0f / 127.5f) * w.win[i];
       w.im[i] = (static_cast<float>(p[2 * i + 1]) - 127.5f) * (1.0f / 127.5f) * w.win[i];
     }
     fft(w.re, w.im, w.twr, w.twi);
-    for (size_t k = 0; k < kFft; ++k) w.pw[(k + kFft / 2) % kFft] += w.re[k] * w.re[k] + w.im[k] * w.im[k];
+    for (size_t k = 0; k < kFft; ++k) {
+      const float mag2 = w.re[k] * w.re[k] + w.im[k] * w.im[k];
+      const size_t dst = (k + kFft / 2) % kFft;
+      w.pw[dst] += mag2;
+      if (mag2 > w.pw_peak[dst]) w.pw_peak[dst] = mag2;
+    }
   }
+  const float inv = 1.0f / static_cast<float>(nf);
+  for (size_t k = 0; k < kFft; ++k) w.pw[k] *= inv;
 }
 
-float channel_db(const Work& w, uint32_t rate, int32_t offset_hz) noexcept {
+float channel_db(const Work& w, uint32_t rate, int32_t offset_hz, bool peak_blend) noexcept {
   const double bw = static_cast<double>(rate) / kFft;
   const double mid = kFft / 2.0;
   long lo = static_cast<long>(std::ceil((offset_hz - kChannelHz / 2.0) / bw + mid));
   long hi = static_cast<long>(std::floor((offset_hz + kChannelHz / 2.0) / bw + mid));
   if (hi < lo) lo = hi = static_cast<long>(std::lround(offset_hz / bw + mid));
   if (lo < 1 || hi > static_cast<long>(kFft) - 2) return -200.0f;
-  double sum = 0;
-  for (long k = lo; k <= hi; ++k) sum += w.pw[k];
-  return 10.0f * std::log10(static_cast<float>(sum / static_cast<double>(hi - lo + 1)) + 1e-12f);
+  double sum = 0, psum = 0;
+  for (long k = lo; k <= hi; ++k) { sum += w.pw[k]; psum += w.pw_peak[k]; }
+  const double cnt = static_cast<double>(hi - lo + 1);
+  const float avg_db = 10.0f * std::log10(static_cast<float>(sum / cnt) + 1e-12f);
+  if (!peak_blend) return avg_db;
+  const float pk_db = 10.0f * std::log10(static_cast<float>(psum / cnt) + 1e-12f) - 4.0f;
+  return pk_db > avg_db ? pk_db : avg_db;
 }
 
 bool Survey::start(const dv::Segment* segs, size_t n, uint32_t now_ms, uint8_t first_rate_index) noexcept {
@@ -72,7 +85,8 @@ bool Survey::start(const dv::Segment* segs, size_t n, uint32_t now_ms, uint8_t f
   }
   nseg_ = n; seg_ = 0; seg_started_ = false;
   rate_i_ = first_rate_index; retries_ = 0; rate_loss_run_ = 0;
-  windows_done_ = 0; lossy_ = 0; rate_steps_ = 0; checked_ = 0; skirts_ = 0; hot_n_ = 0; last_floor_ = 0;
+  last_tuned_rate_ = 0; rate_changed_ = true;
+  windows_done_ = 0; lossy_ = 0; rate_steps_ = 0; checked_ = 0; skirts_ = 0; skipped_ = 0; hot_n_ = 0; last_floor_ = 0;
   frames_.store(0, std::memory_order_relaxed);
   state_since_ms_ = now_ms;
   plan_window();
@@ -122,7 +136,7 @@ void Survey::trim_skirts() noexcept {
   hot_n_ = w;
 }
 
-void Survey::add_hot(uint32_t hz, float margin) noexcept {
+void Survey::add_hot(uint32_t hz, float margin, uint8_t seg) noexcept {
   for (size_t i = 0; i < hot_n_; ++i) {
     if (hot_[i].hz != hz) continue;
     if (margin <= hot_[i].margin_db) return;
@@ -131,16 +145,49 @@ void Survey::add_hot(uint32_t hz, float margin) noexcept {
     return;
   }
   size_t at = hot_n_;
-  if (hot_n_ < kMaxHot) ++hot_n_;
-  else if (hot_[kMaxHot - 1].margin_db >= margin) return;
-  else at = kMaxHot - 1;
-  hot_[at] = {hz, margin};
+  if (hot_n_ < kMaxHot) {
+    ++hot_n_;
+  } else if (nseg_ > 1u) {
+    // Per-band fair-share quota: every selected band gets at least fair_share slots even if another band
+    // has 100+ loud analog/800 MHz carriers. Quiet bands automatically yield unused slots to busier bands.
+    const size_t fair_share = std::max<size_t>(16u, kMaxHot / nseg_);
+    size_t seg_cnt[dv::kMaxSegments]{};
+    for (size_t i = 0; i < kMaxHot; ++i) {
+      if (hot_[i].seg < dv::kMaxSegments) ++seg_cnt[hot_[i].seg];
+    }
+    const bool under_quota = seg < dv::kMaxSegments && seg_cnt[seg] < fair_share;
+    size_t evict = kMaxHot;
+    if (under_quota) {
+      for (size_t i = kMaxHot; i > 0; --i) {
+        const size_t k = i - 1;
+        if (hot_[k].seg < dv::kMaxSegments && seg_cnt[hot_[k].seg] > fair_share) { evict = k; break; }
+      }
+    }
+    if (evict == kMaxHot) {
+      for (size_t i = kMaxHot; i > 0; --i) {
+        const size_t k = i - 1;
+        if (hot_[k].margin_db >= margin) break;
+        if (hot_[k].seg == seg || (hot_[k].seg < dv::kMaxSegments && seg_cnt[hot_[k].seg] > fair_share)) {
+          evict = k;
+          break;
+        }
+      }
+    }
+    if (evict == kMaxHot) return;
+    at = evict;
+  } else {
+    if (hot_[kMaxHot - 1].margin_db >= margin) return;
+    at = kMaxHot - 1;
+  }
+  hot_[at] = {hz, margin, seg};
   while (at > 0 && hot_[at - 1].margin_db < hot_[at].margin_db) { std::swap(hot_[at - 1], hot_[at]); --at; }
+  while (at + 1 < hot_n_ && hot_[at + 1].margin_db > hot_[at].margin_db) { std::swap(hot_[at + 1], hot_[at]); ++at; }
 }
 
 void Survey::evaluate() noexcept {
   Work& w = *work_;
-  analyze(w);
+  const uint8_t nf = (cfg_.frames == 0 || cfg_.frames > kMaxFrames) ? static_cast<uint8_t>(kFrames) : cfg_.frames;
+  analyze(w, nf);
   const uint32_t rate_hz = rate();
   const dv::Segment& sg = segs_[seg_];
   const int64_t half = static_cast<int64_t>(0.375 * rate_hz);
@@ -156,7 +203,7 @@ void Survey::evaluate() noexcept {
     const uint32_t f = static_cast<uint32_t>(f0 + i * sg.step_hz);
     const int32_t off = static_cast<int32_t>(static_cast<int64_t>(f) - c);
     if (std::abs(off) < static_cast<int32_t>(kDcGuardHz)) continue;
-    w.lv[n] = channel_db(w, rate_hz, off);
+    w.lv[n] = channel_db(w, rate_hz, off, cfg_.peak_hold);
     w.lf[n] = f;
     ++n;
   }
@@ -167,14 +214,19 @@ void Survey::evaluate() noexcept {
   const float floor_db = tmp[n / 4];                  // 25th percentile: robust while most of the window is empty
   last_floor_ = floor_db;
   checked_ += static_cast<uint32_t>(n);
-  for (size_t i = 0; i < n; ++i)
-    if (w.lv[i] > -150.0f && w.lv[i] >= floor_db + cfg_.margin_db) add_hot(w.lf[i], w.lv[i] - floor_db);
+  for (size_t i = 0; i < n; ++i) {
+    if (w.lv[i] > -150.0f && w.lv[i] >= floor_db + cfg_.margin_db) {
+      if (skip_fn_ && skip_fn_(w.lf[i], skip_ctx_)) { ++skipped_; continue; }
+      add_hot(w.lf[i], w.lv[i] - floor_db, static_cast<uint8_t>(seg_));
+    }
+  }
 }
 
 void Survey::window_failed(uint32_t now_ms, bool lossy) noexcept {
   if (lossy) ++lossy_;
   ++retries_;
-  if (retries_ > cfg_.max_retries) {
+  const uint8_t lim = (lossy && windows_done_ == 0u && cfg_.max_retries > 1u) ? 1u : cfg_.max_retries;
+  if (retries_ > lim) {
     if (rate_i_ + 1u < kRates) { ++rate_i_; ++rate_steps_; retries_ = 0; }
     else { state_.store(State::failed, std::memory_order_release); return; }
   }
@@ -184,22 +236,27 @@ void Survey::window_failed(uint32_t now_ms, bool lossy) noexcept {
 }
 
 bool Survey::service(uint32_t now_ms, uint64_t lost_total, uint32_t* tune_hz, uint32_t* tune_rate) noexcept {
+  const uint8_t target_frames = (cfg_.frames == 0 || cfg_.frames > kMaxFrames) ? static_cast<uint8_t>(kFrames) : cfg_.frames;
   switch (state()) {
     case State::tuning:
       if (!tune_pending_) return false;
       tune_pending_ = false;
       *tune_hz = center_hz_; *tune_rate = rate();
+      rate_changed_ = (last_tuned_rate_ != *tune_rate);
+      last_tuned_rate_ = *tune_rate;
       return true;
-    case State::settling:
-      if (now_ms - state_since_ms_ >= cfg_.settle_ms) {
+    case State::settling: {
+      const uint32_t need_settle = rate_changed_ ? cfg_.settle_rate_change_ms : cfg_.settle_ms;
+      if (now_ms - state_since_ms_ >= need_settle) {
         frames_.store(0, std::memory_order_relaxed);
         lost_at_arm_ = lost_total;
         state_since_ms_ = now_ms;
         state_.store(State::capturing, std::memory_order_release);
       }
       return false;
+    }
     case State::capturing:
-      if (frames_.load(std::memory_order_acquire) >= kFrames) {
+      if (frames_.load(std::memory_order_acquire) >= target_frames) {
         if (lost_total != lost_at_arm_) { window_failed(now_ms, true); return false; }
         retries_ = 0;
         evaluate();
@@ -211,7 +268,7 @@ bool Survey::service(uint32_t now_ms, uint64_t lost_total, uint32_t* tune_hz, ui
           centre_ += s;
         }
         plan_window();
-      } else if (now_ms - state_since_ms_ > cfg_.capture_ms_max) {
+      } else if (now_ms - state_since_ms_ > (rate_changed_ ? cfg_.capture_ms_max + 2000u : cfg_.capture_ms_max)) {
         window_failed(now_ms, false);
       }
       return false;
@@ -231,8 +288,9 @@ void Survey::offer(const uint8_t* cu8, size_t bytes, uint32_t sample_rate) noexc
   if (state() != State::capturing || !work_ || !cu8 || bytes < kFft * 2) return;
   const uint32_t want = rate();
   if (sample_rate + want / 100u < want || sample_rate > want + want / 100u) return;     // stale block from another rate
+  const uint8_t target_frames = (cfg_.frames == 0 || cfg_.frames > kMaxFrames) ? static_cast<uint8_t>(kFrames) : cfg_.frames;
   const uint8_t n = frames_.load(std::memory_order_relaxed);
-  if (n >= kFrames) return;
+  if (n >= target_frames) return;
   std::copy_n(cu8, kFft * 2, work_->cap + static_cast<size_t>(n) * kFft * 2);
   frames_.store(static_cast<uint8_t>(n + 1), std::memory_order_release);
 }

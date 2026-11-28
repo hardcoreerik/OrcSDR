@@ -301,12 +301,22 @@ bool check_crc16(const std::array<std::uint8_t, 12>& data, std::uint8_t type) no
     std::uint16_t mask = 0;
     switch (type) {
         case 3: mask = 0xa5a5U; break;
+        case 4: mask = 0xaaaaU; break;
         case 6: mask = 0xccccU; break;
         case 11: mask = 0x3333U; break;
         default: return false;
     }
     const auto wire_crc = static_cast<std::uint16_t>((data[10] << 8U) | data[11]);
     return static_cast<std::uint16_t>(wire_crc ^ mask) == crc_ccitt(data.data(), 10);
+}
+
+bool check_mbc_combined_crc16(const std::array<std::uint8_t, 10>& hdr10,
+                              const std::array<std::uint8_t, 12>& cont12) noexcept {
+    std::uint8_t combined[20]{};
+    for (std::size_t i = 0; i < 10; ++i) combined[i] = hdr10[i];
+    for (std::size_t i = 0; i < 10; ++i) combined[10 + i] = cont12[i];
+    const auto wire_crc = static_cast<std::uint16_t>((cont12[10] << 8U) | cont12[11]);
+    return static_cast<std::uint16_t>(wire_crc ^ 0xaaaaU) == crc_ccitt(combined, 20);
 }
 
 bool parse_identity(const std::uint8_t* lc, Event& event) noexcept {
@@ -347,6 +357,7 @@ void Decoder::reset() noexcept {
     last_feed_soft_ = false;
     consumed_ = 0;
     late_ = {};
+    mbc_ = {};
     tracks_ = {};
     cach_cadence_.reset();
 }
@@ -507,7 +518,7 @@ void Decoder::scan(EventSink sink, void* user) noexcept {
     e.data_type = type;
     e.golay_corrected_bits = corrected;
     e.evidence = Evidence::slot_type;
-    if (type == 1 || type == 2 || type == 3 || type == 6 || type == 11) {
+    if (type == 1 || type == 2 || type == 3 || type == 4 || type == 5 || type == 6 || type == 11) {
         BptcWire tx{};
         for (unsigned i = 0; i < 196; ++i) {
             const unsigned pos = i < 98 ? i : i + 68;
@@ -520,7 +531,44 @@ void Decoder::scan(EventSink sink, void* user) noexcept {
             e.bptc_corrected_bits = repairs;
             e.info = content; e.info_valid = true;
             e.evidence = Evidence::fec_valid;
-            const bool check = (type <= 2) ? check_full_lc(content, type) : check_crc16(content, type);
+            bool check = false;
+            const std::size_t mbc_slot = (e.slot <= 2U) ? static_cast<std::size_t>(e.slot) : 0U;
+            if (type <= 2) {
+                check = check_full_lc(content, type);
+            } else if (type == 4) {
+                check = check_crc16(content, 4);
+                if (check) {
+                    auto& m = mbc_[mbc_slot];
+                    m.active = true;
+                    m.colour_code = cc;
+                    m.burst_dibit = start;
+                    for (std::size_t i = 0; i < 10; ++i) m.hdr[i] = content[i];
+                }
+            } else if (type == 5) {
+                std::size_t match_idx = mbc_slot;
+                if (!mbc_[match_idx].active && mbc_slot == 0U) {
+                    std::size_t hits = 0;
+                    for (std::size_t i = 0; i < 3U; ++i) {
+                        if (mbc_[i].active && mbc_[i].colour_code == cc &&
+                            start > mbc_[i].burst_dibit && (start - mbc_[i].burst_dibit) <= 288ULL * 4ULL) {
+                            match_idx = i;
+                            ++hits;
+                        }
+                    }
+                    if (hits != 1U) match_idx = 3U;
+                }
+                if (match_idx < 3U) {
+                    auto& m = mbc_[match_idx];
+                    if (m.active && m.colour_code == cc &&
+                        start > m.burst_dibit && (start - m.burst_dibit) <= 288ULL * 4ULL &&
+                        check_mbc_combined_crc16(m.hdr, content)) {
+                        check = true;
+                        m.active = false;
+                    }
+                }
+            } else {
+                check = check_crc16(content, type);
+            }
             if (check) {
                 e.integrity_valid = true;
                 e.evidence = Evidence::check_valid;

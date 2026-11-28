@@ -283,11 +283,22 @@ void test_dmr_end_to_end() {
   }
   CHECK(saw_identity);
   CHECK(s.verified_ms != 0 && s.candidate);
+  const auto sd = dv_radio::signal_diag();
+  CHECK(sd.dmr_locked && !sd.disc_valid && sd.epoch == s.epoch);
+  CHECK(sd.dev_valid && sd.dev_tenths_hz >= 17000 && sd.dev_tenths_hz <= 22000);
+  CHECK(sd.snr_valid && sd.snr_tenths_db >= 150);
+  CHECK(sd.ber_valid && sd.ber_tenths_pct <= 50);
+  CHECK(sd.dmr_crc_failures == 0);
+  CHECK(sd.symbols_valid && sd.symbol_count >= 16 && sd.symbol_count <= 96 && sd.symbol_extent_hz >= 2500);
+  CHECK(sd.reference[0] > sd.reference[1] && sd.reference[1] > 0 &&
+        sd.reference[2] == -sd.reference[1] && sd.reference[3] == -sd.reference[0]);
   // A discontinuity (lost samples upstream) resets decoders and bumps the epoch; nothing bridges across it.
   const uint32_t epoch = s.epoch;
   g_lost += 4096;
   dv_radio::offer_iq(cu8.data(), 8192, 240000);
   CHECK(dv_radio::status().loss_events == 1 && dv_radio::status().epoch == epoch + 1);
+  const auto sd_after = dv_radio::signal_diag();
+  CHECK(!sd_after.dev_valid && !sd_after.snr_valid && !sd_after.symbols_valid && sd_after.epoch == epoch + 1);
   // Another rate is refused, not resampled.
   dv_radio::offer_iq(cu8.data(), 8192, 250000);
   CHECK(dv_radio::status().wrong_rate_blocks == 1);
@@ -341,6 +352,8 @@ void test_nxdn_end_to_end(bool nxdn96) {
     }
   }
   CHECK(matching >= 2);
+  const auto sd_nx = dv_radio::signal_diag();
+  CHECK(!sd_nx.dmr_locked && !sd_nx.dev_valid && !sd_nx.snr_valid && sd_nx.disc_valid && sd_nx.symbols_valid && !sd_nx.ber_valid && sd_nx.dmr_crc_failures == 0);
   dv_radio::stop();
 }
 
@@ -356,6 +369,8 @@ void test_noise_no_false_identity() {
   feed(to_cu8_240k(noise, 0.9));
   CHECK(drain().empty());
   CHECK(dv_radio::status().dmr_identities == 0 && dv_radio::status().events == 0);
+  const auto sd_nz = dv_radio::signal_diag();
+  CHECK(!sd_nz.dmr_locked && !sd_nz.dev_valid && !sd_nz.snr_valid && sd_nz.disc_valid && sd_nz.symbols_valid && !sd_nz.ber_valid);
   dv_radio::stop();
 }
 
@@ -408,12 +423,85 @@ void test_single_channel_follow_no_pingpong() {
   s.service(t, in);
   CHECK(s.status().state == dv::ScanState::holding && s.status().holds == 2);
 }
+
+void test_discover_quick_ms_and_control_ready() {
+  const uint32_t plan[2] = {152157500u, 152685000u};
+  dv::Scanner s;
+  CHECK(s.set_plan(plan, 2));
+  s.set_quick_lists(true);
+  s.set_quick_ms(1250);
+  CHECK(s.quick_ms() == 1250);
+  uint32_t t = 1000;
+  dv::ScanInputs in;
+  in.receiver_ready = true;
+  CHECK(s.start(t));
+  CHECK(s.service(t, in).tune);
+  s.retune_result(true, t);
+  t += 700;
+  s.service(t, in);
+  CHECK(s.status().state == dv::ScanState::sampling);
+  // Still sampling at 1200 ms so NXDN48's third 400 ms auto-rotation slot can run; skips by 1300 ms.
+  t += 1200;
+  s.service(t, in);
+  CHECK(s.status().index == 0 && s.status().state == dv::ScanState::sampling);
+  t += 100;
+  s.service(t, in);
+  CHECK(s.status().index == 1 && s.status().quick_skips == 1);
+  // On channel 1, verified control-only event triggers hold, and control_only_ready releases it promptly.
+  s.service(t, in);
+  s.retune_result(true, t);
+  t += 700;
+  s.service(t, in);
+  in.verified_ms = t + 50;
+  t += 100;
+  s.service(t, in);
+  CHECK(s.status().state == dv::ScanState::holding);
+  in.control_only_ready = true;
+  t += 100;
+  s.service(t, in);
+  // Unlocked / noise IQ still produces a real live FM discriminator baseline (disc_valid=true) with no fake DMR lock.
+  {
+    install_hooks(); g_ready = true; g_accept = true; g_lost = 0; g_now = 1000;
+    CHECK(dv_radio::start());
+    CHECK(dv_radio::tune_channel(463400000u));
+    g_now += 700;
+    std::vector<uint8_t> noise(16384u * 2u);
+    uint32_t rng = 0x12345678u;
+    for (size_t i = 0; i < noise.size(); ++i) {
+      rng = rng * 1664525u + 1013904223u;
+      noise[i] = static_cast<uint8_t>(128 + static_cast<int8_t>((rng >> 24) % 31 - 15));
+    }
+    dv_radio::offer_iq(noise.data(), noise.size(), 240000);
+    g_now += 150;
+    dv_radio::offer_iq(noise.data(), noise.size(), 240000);
+    const auto nd = dv_radio::signal_diag();
+    CHECK(!nd.dmr_locked && nd.disc_valid && nd.symbols_valid && nd.symbol_count >= 16 && nd.disc_rms_tenths_hz > 0);
+    dv_radio::stop();
+  }
+  CHECK(s.status().index == 0 && s.status().control_releases == 1);
+  // Fast RF-gated MONITOR: 200 ms settle + 100 ms rf_quiet skip leaves a quiet channel in ~300 ms (~6 s for 20 channels).
+  {
+    dv::Scanner fm;
+    const uint32_t mplan[2] = {152125000u, 462400000u};
+    CHECK(fm.set_plan(mplan, 2));
+    fm.set_settle_ms(200); fm.set_quick_lists(true); fm.set_quick_ms(600);
+    uint32_t mt = 1000; dv::ScanInputs mi; mi.receiver_ready = true; mi.rf_quiet = true;
+    CHECK(fm.start(mt));
+    CHECK(fm.service(mt, mi).tune);
+    fm.retune_result(true, mt);
+    mt += 200; fm.service(mt, mi);
+    CHECK(fm.status().state == dv::ScanState::sampling);
+    mt += 100; fm.service(mt, mi);
+    CHECK(fm.status().index == 1 && fm.status().quick_skips == 1);
+  }
+}
 }  // namespace
 
 int main() {
   test_channelizer_tone();
   test_scanner();
   test_scanner_hold_time();
+  test_discover_quick_ms_and_control_ready();
   test_single_channel_follow_no_pingpong();
   test_monitor_revisits();
   test_control_demotion();

@@ -118,6 +118,13 @@ private:
     bool last_feed_soft_ = false;
     std::uint64_t consumed_ = 0;
     std::array<Late, 3> late_{};  // separate unknown, TS1, TS2 collections
+    struct MbcPending {
+        bool active = false;
+        std::uint8_t colour_code = 0;
+        std::uint64_t burst_dibit = 0;
+        std::array<std::uint8_t, 10> hdr{};
+    };
+    std::array<MbcPending, 3> mbc_{};
     CachCadence cach_cadence_{};   // one BS channel sequence, no heap or history growth
 
     struct Track {

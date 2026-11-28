@@ -30,14 +30,36 @@ using namespace digital_voice_ui;
 // Everything lives in PSRAM for the lifetime of a visit: the Tab5 internal boot pool is nearly full.
 struct State {
   // DISCOVER: channels with integrity-validated activity seen during the current discovery run (frequency + protocol + sightings).
-  static constexpr uint8_t kDiscMax = 32, kDiscFound = 3;      // a channel is "found" after 3 sightings; fewer are candidates
+  static constexpr uint8_t kDiscMax = 64, kDiscFound = 3;      // a channel is "found" after 3 sightings; fewer are candidates
   bool disc_running = false;
   uint8_t disc_n = 0;
   uint32_t disc_hz[kDiscMax]{};
-  uint8_t disc_proto[kDiscMax]{}, disc_seen[kDiscMax]{};
-  uint16_t disc_saved = 0, disc_skipped = 0;
+  uint8_t disc_proto[kDiscMax]{}, disc_seen[kDiscMax]{}, disc_role_flags[kDiscMax]{};
+  bool disc_ghost[kDiscMax]{};
+  uint16_t disc_saved = 0, disc_skipped = 0, disc_neighbors = 0;
+  dv::MbcTracker mbc_tracker{};
+  uint8_t live_role_flags = 0;
+  bool live_has_sys = false;
+  uint8_t live_sys_model = 0;
+  uint16_t live_net_id = 0, live_site_id = 0;
+  uint32_t live_ctrl_since_ms = 0;
   // Wideband pre-screen: phase 1 = survey the picked bands, 2 = decode the occupied channels in batches, 0 = off (or a plain sweep).
-  uint8_t disc_phase = 0, sv_rate_idx = 0, hot_n = 0, hot_at = 0;
+  uint8_t disc_phase = 0, disc_mode = 0, sv_rate_idx = 0;
+  uint16_t hot_n = 0, hot_at = 0, batch_base = 0;
+  uint32_t disc_passes_done = 0;
+  static constexpr size_t kNonDvCap = 256;
+  uint32_t non_dv_hz[kNonDvCap]{};
+  uint8_t non_dv_misses[kNonDvCap]{};      // consecutive wideband-DISCOVER visits with 0 DV sync/events
+  uint8_t non_dv_cool[kNonDvCap]{};        // survey passes remaining to skip (re-tested when it reaches 0)
+  uint16_t non_dv_n = 0;
+  bool visit_had_dv = false;
+  uint32_t last_disc_hz = 0;
+  uint32_t mon_noise_milli = 18;           // rolling RF noise floor for fast RF-gated MONITOR / group-FOLLOW (~300 ms/quiet ch)
+  uint32_t scan_noise_milli = 14;          // conservative band-aware RF noise floor for fast quiet-channel skip in DISCOVER/SCAN
+  uint32_t scan_noise_hz = 0;
+  uint32_t follow_group_hz[16]{};
+  uint8_t follow_group_mask[16]{};
+  uint8_t follow_group_n = 0;
   bool sv_rate_held = false, sv_failed = false;
   uint32_t survey_passes = 0;
   dv_survey::Work* sv_work = nullptr;       // PSRAM, allocated on the first survey of a visit
@@ -57,6 +79,7 @@ struct State {
   bool background = false;          // the screen is hidden but the receiver, scanner and speech are still running
   Surface surface;
   Snapshot snapshot;
+  live_monitor::PlotData plot{};
   dv::Scanner scanner;
   uint32_t last_loss_events = 0;
   uint32_t last_epoch = 0;
@@ -184,8 +207,7 @@ VoicePhase voice_phase_of(dv_voice::Phase p) {
 }
 
 // Voice panel facts for the LIVE page. Quantised so the panel repaints only when something visible changed.
-void refresh_voice(Snapshot& s) {
-  const dv_voice_service::Published p = dv_voice_service::snapshot();
+void refresh_voice(Snapshot& s, const dv_voice_service::Published& p) {
   VoiceAudioView v;
   v.available = p.running;
   v.phase = p.running ? voice_phase_of(p.engine.phase) : VoicePhase::unavailable;
@@ -210,6 +232,81 @@ void refresh_voice(Snapshot& s) {
       v.buffered_ms != o.buffered_ms || v.source_id != o.source_id || v.destination_id != o.destination_id) {
     s.voice = v;
     ++s.audio_revision;
+  }
+}
+
+void refresh_plot(State& st, const dv_radio::Status& rs, const dv_radio::SignalDiag& sd,
+                  const dv_voice_service::Published& vp) {
+  live_monitor::PlotData& pd = st.plot;
+  const uint32_t t = now();
+  pd.epoch = rs.epoch;
+  pd.now_ms = t;
+  // Unproduced visualizations stay explicitly invalid until a qualified producer exists.
+  pd.spectrum_valid = false;
+  pd.rssi = {false, 0};
+  pd.directory_valid = false;
+
+  const bool run = rs.running && (st.scanner.active() || st.follow_on || st.disc_running || st.replaying);
+  const bool diag_fresh = run && sd.epoch == rs.epoch && sd.updated_ms != 0 &&
+                          static_cast<uint32_t>(t - sd.updated_ms) <= 500u;
+  const bool dmr_fresh = diag_fresh && (sd.dmr_locked || sd.dev_valid || sd.snr_valid);
+  const bool voice_ber_fresh = run && vp.running && vp.engine.stats.ber_valid &&
+                               vp.engine.stats.ber_updated_ms != 0 &&
+                               static_cast<uint32_t>(t - vp.engine.stats.ber_updated_ms) <= 1500u &&
+                               (st.snapshot.protocol == Protocol::dmr || sd.dmr_locked);
+  const bool data_ber_fresh = run && sd.ber_valid && sd.epoch == rs.epoch &&
+                              sd.ber_updated_ms != 0 &&
+                              static_cast<uint32_t>(t - sd.ber_updated_ms) <= 2000u;
+
+  if (dmr_fresh && sd.dev_valid) {
+    pd.dev = {true, sd.dev_tenths_hz};
+  } else if (diag_fresh && sd.disc_valid && sd.disc_rms_tenths_hz > 0) {
+    pd.dev = {true, sd.disc_rms_tenths_hz};
+  } else {
+    pd.dev = {false, 0};
+  }
+  pd.snr = (dmr_fresh && sd.snr_valid) ? live_monitor::Metric{true, sd.snr_tenths_db}
+                                       : live_monitor::Metric{false, 0};
+  if (voice_ber_fresh) {
+    pd.ber = {true, static_cast<int32_t>(vp.engine.stats.ber_tenths_pct)};
+  } else if (data_ber_fresh) {
+    pd.ber = {true, sd.ber_tenths_pct};
+  } else {
+    pd.ber = {false, 0};
+  }
+  if (pd.dev.valid || pd.snr.valid || pd.ber.valid) {
+    pd.metric_epoch = rs.epoch;
+    pd.metric_ms = t;
+  } else {
+    pd.metric_epoch = 0;
+    pd.metric_ms = 0;
+  }
+
+  if (diag_fresh && sd.symbols_valid && !sd.disc_valid && sd.symbol_count > 0u) {
+    pd.symbol_valid = true;
+    pd.symbol_epoch = sd.epoch;
+    pd.symbol_ms = sd.updated_ms;
+    pd.symbol_seq = sd.symbol_seq;
+    pd.symbol_protocol = Protocol::dmr;
+    pd.extent_hz = sd.symbol_extent_hz;
+    pd.symbol_count = std::min<uint8_t>(sd.symbol_count, static_cast<uint8_t>(live_monitor::points));
+    pd.reference_count = 4;
+    for (uint8_t i = 0; i < pd.symbol_count; ++i) pd.deviation[i] = sd.symbols[i];
+    for (uint8_t i = 0; i < 4u; ++i) pd.reference[i] = sd.reference[i];
+  } else if (diag_fresh && sd.symbols_valid && sd.disc_valid && sd.symbol_count > 0u) {
+    pd.symbol_valid = true;
+    pd.symbol_epoch = sd.epoch;
+    pd.symbol_ms = sd.updated_ms;
+    pd.symbol_seq = sd.symbol_seq;
+    pd.symbol_protocol = Protocol::unknown;   // unclassified live RF FM discriminator baseline
+    pd.extent_hz = sd.symbol_extent_hz;
+    pd.symbol_count = std::min<uint8_t>(sd.symbol_count, static_cast<uint8_t>(live_monitor::points));
+    pd.reference_count = 0;
+    for (uint8_t i = 0; i < pd.symbol_count; ++i) pd.deviation[i] = sd.symbols[i];
+  } else {
+    pd.symbol_valid = false;
+    pd.symbol_count = 0;
+    pd.reference_count = 0;
   }
 }
 
@@ -279,6 +376,8 @@ size_t build_monitor_list(const State& st, uint32_t* out_hz, uint8_t* out_mask, 
   uint32_t hz[dv::kMaxSystems];
   uint8_t mask[dv::kMaxSystems];
   uint32_t hits[dv::kMaxSystems];
+  bool is_voice[dv::kMaxSystems]{};
+  uint32_t vhits[dv::kMaxSystems]{};
   const size_t cap = dv::kMaxSystems;
   size_t n = 0;
   const uint8_t want = st.mon_proto == 1 ? dv_radio::kMaskDmr : st.mon_proto == 2 ? dv_radio::kMaskNxdn48 : st.mon_proto == 3 ? dv_radio::kMaskNxdn96 : 0;
@@ -286,22 +385,37 @@ size_t build_monitor_list(const State& st, uint32_t* out_hz, uint8_t* out_mask, 
     const size_t i = st.db.nth_newest_system(k);
     if (i == static_cast<size_t>(-1)) break;
     const dv::SystemRec& r = st.db.system(i);
+    if (r.suspected_ghost) continue;
     const uint8_t m = mask_for_protocol(static_cast<Protocol>(r.protocol));
     if (r.frequency_hz == 0 || m == 0) continue;
     if (want && m != want) continue;
     if (r.count < st.mon_min_hits) continue;
     if (st.mon_cc != 255 && !(r.area_kind != dv::AreaKind::none && r.area == st.mon_cc)) continue;
+    const bool voiced = (r.role_flags & dv::kRoleVoice) != 0 || r.voice_count > 0 || st.db.talkgroups_of(r.uid) > 0;
     size_t j = 0;
     while (j < n && hz[j] != r.frequency_hz) ++j;
-    if (j < n) { mask[j] = static_cast<uint8_t>(mask[j] | m); hits[j] += r.count; continue; }
-    hz[n] = r.frequency_hz; mask[n] = m; hits[n++] = r.count;
+    if (j < n) {
+      mask[j] = static_cast<uint8_t>(mask[j] | m);
+      hits[j] += r.count;
+      vhits[j] += r.voice_count;
+      is_voice[j] = is_voice[j] || voiced;
+      continue;
+    }
+    hz[n] = r.frequency_hz; mask[n] = m; hits[n] = r.count; vhits[n] = r.voice_count; is_voice[n++] = voiced;
   }
-  // Most-heard first (stable: ties keep newest first), then the first out_cap entries: the scanner's list is short, so the weakest systems are the ones left out.
+  // Voice/Mixed channels first (by voice_count then total hits), then Data/Control-only channels.
   for (size_t a = 1; a < n; ++a) {
-    const uint32_t h = hits[a], f = hz[a]; const uint8_t m = mask[a];
+    const uint32_t h = hits[a], vh = vhits[a], f = hz[a]; const uint8_t m = mask[a]; const bool iv = is_voice[a];
     size_t b = a;
-    while (b > 0 && hits[b - 1] < h) { hits[b] = hits[b - 1]; hz[b] = hz[b - 1]; mask[b] = mask[b - 1]; --b; }
-    hits[b] = h; hz[b] = f; mask[b] = m;
+    auto better = [&](size_t idx) {
+      if (iv != is_voice[idx]) return iv;
+      if (iv && vh != vhits[idx]) return vh > vhits[idx];
+      return h > hits[idx];
+    };
+    while (b > 0 && better(b - 1)) {
+      hits[b] = hits[b - 1]; vhits[b] = vhits[b - 1]; hz[b] = hz[b - 1]; mask[b] = mask[b - 1]; is_voice[b] = is_voice[b - 1]; --b;
+    }
+    hits[b] = h; vhits[b] = vh; hz[b] = f; mask[b] = m; is_voice[b] = iv;
   }
   const size_t take = std::min(n, out_cap);
   for (size_t i = 0; i < take; ++i) { out_hz[i] = hz[i]; out_mask[i] = mask[i]; }
@@ -324,9 +438,15 @@ constexpr uint32_t kDefaultHoldMs = 4000, kMonitorHoldMs = 9000;      // MONITOR
 
 void apply_plan_option(State& st) {
   if (st.scanner.active()) return;
-  st.scanner.set_hold_ms(st.plan_option == monitor_option(st) ? kMonitorHoldMs : kDefaultHoldMs);
-  st.scanner.set_control_hold_max_ms(st.plan_option == monitor_option(st) ? kMonitorControlHoldMs : kDefaultControlHoldMs);
-  st.scanner.set_demote(st.plan_option == monitor_option(st) ? 2 : 0, 3);      // MONITOR: a channel that only ever shows control traffic is visited every 3rd round
+  const bool is_mon = (st.plan_option == monitor_option(st));
+  const bool is_range = (st.plan_option > 0 && !is_mon);
+  st.scanner.set_settle_ms(is_mon ? 200u : is_range ? 250u : 250u);         // fast ~200-250 ms settle (R828D retune ~30 ms + USB flush)
+  st.scanner.set_dwell_ms(1500u);
+  st.scanner.set_quick_lists(is_mon);                                       // MONITOR: fast RF-gated skip (~300 ms quiet, 600 ms carrier)
+  st.scanner.set_quick_ms(is_range ? 950u : 600u);                          // range: full 3-protocol rotation on occupied channels (3x300 ms); quiet skips in 120 ms
+  st.scanner.set_hold_ms(is_mon ? kMonitorHoldMs : kDefaultHoldMs);
+  st.scanner.set_control_hold_max_ms(is_mon ? 2500u : kDefaultControlHoldMs);
+  st.scanner.set_demote(is_mon ? 1 : 0, 5);                                 // MONITOR: control-only channels visited every 5th round
   if (st.plan_option >= plan_option_count(st)) st.plan_option = 0;
   if (st.plan_option == 0) {
     if (st.saved_n && st.scanner.set_plan(st.saved_hz, st.saved_n)) std::memcpy(st.plan_mask, st.saved_mask, sizeof(st.plan_mask));
@@ -464,15 +584,15 @@ void fill_systems(State& st) {
   Snapshot& s = st.snapshot;
   const dv::Discovery& d = st.show_replay_db ? st.replay_db : st.db;
   s.db_available = true;
-  s.db_systems = static_cast<uint16_t>(d.system_count());
+  s.db_systems = static_cast<uint16_t>(d.grouped_system_count());
   s.db_talkgroups = static_cast<uint16_t>(d.talkgroup_count());
   s.db_subscribers = static_cast<uint16_t>(d.subscriber_count());
   s.observed_system_count = 0;
-  const size_t first = st.surface.state().system_offset;   // the Systems page lists newest first, a page at a time
+  const size_t first = st.surface.state().system_offset;   // the Systems page lists Voice-first collapsed groups, a page at a time
   for (size_t n = 0; n < kObservedSystems; ++n) {
-    const size_t i = d.nth_newest_system(first + n);
-    if (i == static_cast<size_t>(-1)) break;
-    const dv::SystemRec& r = d.system(i);
+    dv::GroupSummary grp{};
+    if (!d.nth_ranked_group(first + n, grp)) break;
+    const dv::SystemRec& r = d.system(grp.primary_index);
     ObservedSystem& o = s.observed_systems[s.observed_system_count++];
     o = {};
     o.protocol = static_cast<Protocol>(r.protocol);
@@ -481,18 +601,58 @@ void fill_systems(State& st) {
     if (r.area_kind == dv::AreaKind::colour_code) { o.colour_code = r.area; o.colour_code_valid = true; }
     if (r.area_kind == dv::AreaKind::ran) { o.ran = r.area; o.ran_valid = true; }
     o.slots_seen = r.slots_seen;
-    o.heard_count = r.count;
-    o.talkgroup_count = static_cast<uint16_t>(d.talkgroups_of(r.uid));
-    o.subscriber_count = static_cast<uint16_t>(d.subscribers_of(r.uid));
-    for (size_t k = 0; k < kTopIds; ++k) {
-      const size_t t = d.nth_newest_talkgroup(r.uid, k);
-      if (t == static_cast<size_t>(-1)) break;
-      o.top_talkgroups[o.top_talkgroup_n++] = d.talkgroup(t).id;
+    o.heard_count = grp.total_heard;
+    o.role_flags = grp.combined_role_flags;
+    o.has_sys = r.has_sys;
+    o.sys_model = r.sys_model;
+    o.net_id = r.net_id;
+    o.site_id = r.site_id;
+    o.voice_count = grp.total_voice;
+    o.network_sites = grp.site_count;
+    o.suspected_ghost = r.suspected_ghost;
+    o.talkgroup_count = grp.total_talkgroups;
+    o.subscriber_count = grp.total_subscribers;
+    o.group_site_n = grp.site_listed;
+    for (size_t k = 0; k < grp.site_listed && k < ObservedSystem::kSiteSlots; ++k) {
+      o.group_site_hz[k] = grp.site_hz[k];
+      o.group_site_role[k] = grp.site_role[k];
     }
-    for (size_t k = 0; k < kTopIds; ++k) {
-      const size_t u = d.nth_newest_subscriber(r.uid, k);
-      if (u == static_cast<size_t>(-1)) break;
-      o.top_subscribers[o.top_subscriber_n++] = d.subscriber(u).id;
+    if (grp.network_uid == 0u || grp.site_count <= 1u) {
+      for (size_t k = 0; k < kTopIds; ++k) {
+        const size_t t = d.nth_newest_talkgroup(r.uid, k);
+        if (t == static_cast<size_t>(-1)) break;
+        o.top_talkgroups[o.top_talkgroup_n++] = d.talkgroup(t).id;
+      }
+      for (size_t k = 0; k < kTopIds; ++k) {
+        const size_t u = d.nth_newest_subscriber(r.uid, k);
+        if (u == static_cast<size_t>(-1)) break;
+        o.top_subscribers[o.top_subscriber_n++] = d.subscriber(u).id;
+      }
+    } else {
+      for (size_t si = 0; si < d.system_count() && o.top_talkgroup_n < kTopIds; ++si) {
+        const dv::SystemRec& m = d.system(si);
+        if (m.network_uid != grp.network_uid) continue;
+        for (size_t k = 0; k < kTopIds && o.top_talkgroup_n < kTopIds; ++k) {
+          const size_t t = d.nth_newest_talkgroup(m.uid, k);
+          if (t == static_cast<size_t>(-1)) break;
+          const uint32_t id = d.talkgroup(t).id;
+          bool dup = false;
+          for (size_t q = 0; q < o.top_talkgroup_n; ++q) if (o.top_talkgroups[q] == id) { dup = true; break; }
+          if (!dup) o.top_talkgroups[o.top_talkgroup_n++] = id;
+        }
+      }
+      for (size_t si = 0; si < d.system_count() && o.top_subscriber_n < kTopIds; ++si) {
+        const dv::SystemRec& m = d.system(si);
+        if (m.network_uid != grp.network_uid) continue;
+        for (size_t k = 0; k < kTopIds && o.top_subscriber_n < kTopIds; ++k) {
+          const size_t u = d.nth_newest_subscriber(m.uid, k);
+          if (u == static_cast<size_t>(-1)) break;
+          const uint32_t id = d.subscriber(u).id;
+          bool dup = false;
+          for (size_t q = 0; q < o.top_subscriber_n; ++q) if (o.top_subscribers[q] == id) { dup = true; break; }
+          if (!dup) o.top_subscribers[o.top_subscriber_n++] = id;
+        }
+      }
     }
     if (r.last_utc) format_utc(r.last_utc, o.last_time, sizeof(o.last_time));
   }
@@ -523,16 +683,52 @@ void note_event(State& st, const dv_radio::Event& e) {
   // Discovery: validated observations only. Replays go to their own RAM table, never the persistent one.
   const bool to_replay_table = e.replay && !st.learn_replay;
   dv::Discovery& table = to_replay_table ? st.replay_db : st.db;
-  const dv::Observation obs = dv::observation_from(e, clock_utc);
+  const dv::DmrControlInfo ctrl = st.mbc_tracker.on_event(e);
+  const auto rs_now = dv_radio::status();
+  const uint16_t lvl_milli = static_cast<uint16_t>(std::min<uint32_t>(rs_now.level_milli, 65535u));
+  const dv::Observation obs = dv::observation_from(e, clock_utc, ctrl, lvl_milli);
   const bool existed = table.find_system(obs.protocol, obs.frequency_hz, obs.area, obs.area_kind) != static_cast<size_t>(-1);
   table.record(obs);
+  const size_t rec_idx = table.find_system(obs.protocol, obs.frequency_hz, obs.area, obs.area_kind);
+  const bool rec_ghost = (rec_idx != static_cast<size_t>(-1)) && table.system(rec_idx).suspected_ghost;
+  if (ctrl.is_grant && ctrl.has_harvest_hz) {
+    table.link_granted_channel(obs.protocol, e.frequency_hz, ctrl.harvest_hz);
+  }
+  st.live_role_flags = static_cast<uint8_t>(st.live_role_flags | ctrl.role_flags);
+  if (ctrl.has_sys) {
+    st.live_has_sys = true;
+    st.live_sys_model = ctrl.model;
+    st.live_net_id = ctrl.net_id;
+    st.live_site_id = ctrl.site_id;
+    if (st.live_ctrl_since_ms == 0u && st.live_role_flags == dv::kRoleControl) {
+      st.live_ctrl_since_ms = now();
+    }
+  }
   if (st.disc_running && !e.replay && e.evidence >= Evidence::integrity_valid && e.frequency_hz) {
     uint8_t k = 0;
     while (k < st.disc_n && !(st.disc_hz[k] == e.frequency_hz && st.disc_proto[k] == static_cast<uint8_t>(e.protocol))) ++k;
     if (k == st.disc_n && st.disc_n < State::kDiscMax) {
-      st.disc_hz[k] = e.frequency_hz; st.disc_proto[k] = static_cast<uint8_t>(e.protocol); st.disc_seen[k] = 0; ++st.disc_n;
+      st.disc_hz[k] = e.frequency_hz; st.disc_proto[k] = static_cast<uint8_t>(e.protocol);
+      st.disc_seen[k] = 0; st.disc_role_flags[k] = 0; st.disc_ghost[k] = false; ++st.disc_n;
     }
-    if (k < st.disc_n && st.disc_seen[k] < 255) ++st.disc_seen[k];
+    if (k < st.disc_n) {
+      if (st.disc_seen[k] < 255) ++st.disc_seen[k];
+      st.disc_role_flags[k] = static_cast<uint8_t>(st.disc_role_flags[k] | obs.role_flags);
+      if (rec_ghost) st.disc_ghost[k] = true;
+    }
+    // Auto-harvest verified neighbor / granted frequencies into the DISCOVER queue.
+    if (st.disc_phase == 2 && ctrl.has_harvest_hz &&
+        ctrl.harvest_hz >= dv::kMinChannelHz && ctrl.harvest_hz <= dv::kMaxChannelHz) {
+      bool dup = false;
+      for (uint8_t h = 0; h < st.hot_n; ++h) {
+        const uint32_t d = st.hot_hz[h] >= ctrl.harvest_hz ? (st.hot_hz[h] - ctrl.harvest_hz) : (ctrl.harvest_hz - st.hot_hz[h]);
+        if (d <= 6250u) { dup = true; break; }
+      }
+      if (!dup && st.hot_n < dv_survey::kMaxHot) {
+        st.hot_hz[st.hot_n++] = ctrl.harvest_hz;
+        ++st.disc_neighbors;
+      }
+    }
   }
   st.show_replay_db = to_replay_table;
   upsert_hit(st, e.protocol, e.frequency_hz, e.evidence, &e, !existed, clock_utc);
@@ -590,9 +786,20 @@ void clear_call(State& st) {
   s.source_id = s.destination_id = 0; s.has_source = s.has_destination = s.group_call = false;
   s.colour_code = s.timeslot = s.ran = 0; s.colour_code_valid = s.timeslot_valid = s.ran_valid = false;
   s.nxdn = {};
+  st.mbc_tracker.reset();
+  st.live_role_flags = 0; st.live_has_sys = false; st.live_sys_model = 0; st.live_net_id = 0; st.live_site_id = 0; st.live_ctrl_since_ms = 0;
+  s.live_role_flags = 0; s.live_has_sys = false; s.live_sys_model = 0; s.live_net_id = 0; s.live_site_id = 0;
   st.have_call = false;
   st.have_identity = false;
   st.visit_sync_logged = st.visit_counted = false;
+  st.plot.symbol_valid = false;
+  st.plot.symbol_count = 0;
+  st.plot.reference_count = 0;
+  st.plot.dev = {};
+  st.plot.snr = {};
+  st.plot.ber = {};
+  st.plot.metric_epoch = 0;
+  st.plot.metric_ms = 0;
   const auto rs0 = dv_radio::status();
   st.base_dmr = rs0.dmr_acquisitions; st.base_n48 = rs0.nxdn48_frames; st.base_n96 = rs0.nxdn96_frames;   // sync evidence is judged against these
   ++s.revision;
@@ -627,6 +834,8 @@ void refresh(State& st) {
   rlap(6);
   const auto ss = st.scanner.status();
   const auto rs = dv_radio::status();
+  const auto sd = dv_radio::signal_diag();
+  const auto vp = dv_voice_service::snapshot();
   rlap(7);
   Receiver rx = ready ? Receiver::ready : Receiver::disconnected;
   if (ready && rs.running && rs.link == dv_radio::Link::receiving) rx = Receiver::receiving;
@@ -648,6 +857,14 @@ void refresh(State& st) {
   scan.mode = ss.count == 0 ? ScanMode::unavailable : ss.kind == dv::PlanKind::range ? ScanMode::frequency_range : ScanMode::channel_list;
   scan.channel_index = active && ss.count ? static_cast<uint16_t>(ss.index + 1) : 0;
   scan.passes = ss.passes;
+  if (st.disc_running && st.disc_phase != 0) {
+    scan.passes = st.disc_passes_done;
+    if (st.disc_phase == 2 && st.hot_n > 0) {
+      scan.planned = st.hot_n;
+      scan.visited = static_cast<uint16_t>(std::min<uint32_t>(st.hot_n, st.batch_base + ss.visited));
+      scan.channel_index = active && ss.count ? static_cast<uint16_t>(st.batch_base + ss.index + 1) : 0;
+    }
+  }
   scan.plan_option = st.plan_option;
   scan.plan_options = static_cast<uint8_t>(plan_option_count(st));
   if (ss.count == 0) std::snprintf(scan.plan_name, sizeof(scan.plan_name), "%s", st.plan_option == 0 ? "SAVED LIST" : "");
@@ -676,6 +893,7 @@ void refresh(State& st) {
     else if (rs.nxdn96_frames > st.base_n96) { synced = true; sync_protocol = Protocol::nxdn96; }
     else if (rs.nxdn48_frames > st.base_n48) { synced = true; sync_protocol = Protocol::nxdn48; }
   }
+  if (synced && ss.frequency_hz) st.visit_had_dv = true;
   if (synced && !st.visit_sync_logged && ss.frequency_hz) {
     st.visit_sync_logged = true;
     upsert_hit(st, sync_protocol, ss.frequency_hz, Evidence::sync, nullptr, true, g_hooks.utc_epoch ? g_hooks.utc_epoch() : 0);
@@ -716,10 +934,13 @@ void refresh(State& st) {
     }
     return ch;
   }();
+  const uint32_t crc_fail = sd.dmr_crc_failures;
+  const uint32_t fec_corr = sd.dmr_fec_corrected + static_cast<uint32_t>(vp.running ? vp.engine.stats.total_corrected_bits : 0ull);
   const bool changed = s.receiver != rx || s.scan.phase != scan.phase || s.scan.visited != scan.visited ||
       s.scan.current_frequency_hz != scan.current_frequency_hz || s.can_scan != can_scan || s.can_hold != active ||
       s.scan_on_hold != ss.manual_hold || s.sync_count != rs.dmr_acquisitions + rs.nxdn48_frames + rs.nxdn96_frames ||
-      s.integrity_frames != rs.events || s.iq_drops != rs.loss_events || s.diagnostics_valid != diag ||
+      s.integrity_frames != rs.events || s.iq_drops != rs.loss_events || s.crc_failures != crc_fail ||
+      s.fec_corrected != fec_corr || s.diagnostics_valid != diag ||
       s.relative_level_valid != (rs.level_milli > 0) || (rs.level_milli > 0 && std::abs(s.relative_level_tenths_db - level) >= 10) ||
       s.scan.stage != scan.stage || s.scan.mode != scan.mode || s.scan.channel_index != scan.channel_index ||
       s.scan.validated != scan.validated || s.scan.candidates != scan.candidates || s.scan.new_this_session != scan.new_this_session ||
@@ -735,8 +956,8 @@ void refresh(State& st) {
   s.sync_count = rs.dmr_acquisitions + rs.nxdn48_frames + rs.nxdn96_frames;
   s.integrity_frames = rs.events;
   s.iq_drops = rs.loss_events;
-  s.crc_failures = 0;
-  s.fec_corrected = 0;
+  s.crc_failures = crc_fail;
+  s.fec_corrected = fec_corr;
   s.diagnostics_valid = diag;
   s.relative_level_valid = rs.level_milli > 0;
   s.relative_level_tenths_db = level;
@@ -753,8 +974,16 @@ void refresh(State& st) {
     ++s.revision;
   }
   {
-    uint16_t found = 0, cand = 0;
-    for (uint8_t i = 0; i < st.disc_n; ++i) (st.disc_seen[i] >= State::kDiscFound ? found : cand)++;
+    uint16_t found = 0, cand = 0, d_voice = 0, d_ctrl = 0;
+    for (uint8_t i = 0; i < st.disc_n; ++i) {
+      if (st.disc_seen[i] >= State::kDiscFound) {
+        if (!st.disc_ghost[i]) ++found;
+        if (st.disc_role_flags[i] & dv::kRoleVoice) ++d_voice;
+        else if (st.disc_role_flags[i] & dv::kRoleControl) ++d_ctrl;
+      } else {
+        ++cand;
+      }
+    }
     const bool run = st.disc_running && (st.disc_phase == 1 || st.scanner.active());
     if (!run) { st.disc_running = false; st.disc_phase = 0; }
     const bool can_disc = st.band_mask != 0 && receiver_ok_for_discover(st);
@@ -765,12 +994,18 @@ void refresh(State& st) {
     const uint16_t sv_rate = static_cast<uint16_t>(st.disc_phase ? st.survey.rate() / 1000u : 0);
     const uint32_t sv_center = sv ? st.survey.current_center_hz() : 0;
     const uint16_t sv_pass = static_cast<uint16_t>(std::min<uint32_t>(st.survey_passes, 65535u));
-    if (s.discover_running != run || s.discover_found != found || s.discover_candidates != cand || s.discover_saved != st.disc_saved ||
+    if (s.discover_running != run || s.discover_mode != st.disc_mode || s.discover_found != found || s.discover_candidates != cand || s.discover_saved != st.disc_saved ||
         s.discover_skipped != st.disc_skipped || s.discover_can_start != can_disc || s.discover_phase != st.disc_phase ||
+        s.discover_voice != d_voice || s.discover_ctrl != d_ctrl || s.discover_neighbors != st.disc_neighbors ||
+        s.live_role_flags != st.live_role_flags || s.live_has_sys != st.live_has_sys ||
+        s.live_net_id != st.live_net_id || s.live_site_id != st.live_site_id ||
         s.survey_done != sv_done || s.survey_total != sv_total || s.survey_hot != sv_hot || s.survey_rate_khz != sv_rate ||
         s.survey_center_hz != sv_center || s.survey_passes != sv_pass)
       ++s.revision;
-    s.discover_running = run; s.discover_found = found; s.discover_candidates = cand;
+    s.discover_running = run; s.discover_mode = run ? st.disc_mode : 0u; s.discover_found = found; s.discover_candidates = cand;
+    s.discover_voice = d_voice; s.discover_ctrl = d_ctrl; s.discover_neighbors = st.disc_neighbors;
+    s.live_role_flags = st.live_role_flags; s.live_has_sys = st.live_has_sys;
+    s.live_sys_model = st.live_sys_model; s.live_net_id = st.live_net_id; s.live_site_id = st.live_site_id;
     s.discover_saved = st.disc_saved; s.discover_skipped = st.disc_skipped; s.discover_can_start = can_disc;
     {
       uint32_t mhz[dv::kMaxScanChannels];
@@ -785,7 +1020,8 @@ void refresh(State& st) {
   }
   if (changed) ++s.revision;
   rlap(8);
-  refresh_voice(s);
+  refresh_voice(s, vp);
+  refresh_plot(st, rs, sd, vp);
   rlap(9);
   {
     const uint32_t sp = s.voice.speech_frames;
@@ -885,16 +1121,92 @@ bool start_replay(State& st, const char* path, uint32_t channel_hz) {
 // ---- DISCOVER with the wideband pre-screen -------------------------------------------------------------------------------------
 // Survey the picked bands at the highest loss-free sample rate (many channels per tune), keep the channels clearly above the noise
 // floor, decode those in batches of the saved-list size, then survey again. The decoders only ever see occupied channels.
-size_t my_bands_segments(const State& st, dv::Segment* seg) {
+// Prioritize high-yield digital-voice bands (VHF/UHF Business, Public Safety, 800/900) before ham/gov bands.
+size_t my_bands_segments(const State& st, dv::Segment* seg, bool fine_625 = false) {
+  static constexpr size_t kOrder[dv::kBandPresetCount] = {1, 2, 4, 5, 8, 0, 3, 6, 7};
   size_t n = 0;
-  for (size_t i = 0; i < dv::kBandPresetCount && n < dv::kMaxSegments; ++i)
-    if ((st.band_mask >> i) & 1U) seg[n++] = {dv::kBandPresets[i].start_hz, dv::kBandPresets[i].step_hz, static_cast<uint32_t>(dv::channel_count(dv::kBandPresets[i]))};
+  for (size_t idx = 0; idx < dv::kBandPresetCount && n < dv::kMaxSegments; ++idx) {
+    const size_t i = kOrder[idx];
+    if ((st.band_mask >> i) & 1U) {
+      const auto& p = dv::kBandPresets[i];
+      const uint32_t step = fine_625 ? 6250u : p.step_hz;
+      const uint32_t cnt = static_cast<uint32_t>((p.end_hz - p.start_hz) / step) + 1u;
+      seg[n++] = {p.start_hz, step, cnt};
+    }
+  }
   return n;
 }
 
+bool skip_non_dv(uint32_t hz, void* ctx) noexcept {
+  const State* st = static_cast<const State*>(ctx);
+  if (!st || hz == 0) return false;
+  for (uint16_t i = 0; i < st->non_dv_n; ++i) {
+    if (st->non_dv_hz[i] == hz) return st->non_dv_cool[i] > 0u;
+  }
+  return false;
+}
+
+void note_disc_leave(State& st, uint32_t hz, bool had_dv) noexcept {
+  if (hz == 0) return;
+  if (had_dv) {
+    for (uint16_t i = 0; i < st.non_dv_n; ++i) {
+      if (st.non_dv_hz[i] == hz) { st.non_dv_misses[i] = 0; st.non_dv_cool[i] = 0; break; }
+    }
+    return;
+  }
+  // Never cool a channel already known to the persistent DB or session ledger.
+  for (size_t i = 0; i < st.db.system_count(); ++i) {
+    if (st.db.system(i).frequency_hz == hz) return;
+  }
+  for (uint8_t i = 0; i < st.led_n; ++i) {
+    if (st.led_hz[i] == hz) return;
+  }
+  uint16_t slot = st.non_dv_n;
+  for (uint16_t i = 0; i < st.non_dv_n; ++i) {
+    if (st.non_dv_hz[i] == hz) { slot = i; break; }
+  }
+  if (slot == st.non_dv_n) {
+    if (st.non_dv_n < State::kNonDvCap) {
+      ++st.non_dv_n;
+    } else {
+      // Evict the entry with the lowest miss/cool priority.
+      slot = 0;
+      for (uint16_t i = 1; i < State::kNonDvCap; ++i) {
+        if (st.non_dv_cool[i] < st.non_dv_cool[slot] ||
+            (st.non_dv_cool[i] == st.non_dv_cool[slot] && st.non_dv_misses[i] < st.non_dv_misses[slot])) {
+          slot = i;
+        }
+      }
+    }
+    st.non_dv_hz[slot] = hz;
+    st.non_dv_misses[slot] = 0;
+    st.non_dv_cool[slot] = 0;
+  }
+  if (st.non_dv_misses[slot] < 255u) ++st.non_dv_misses[slot];
+  // After 2 consecutive non-DV visits, cool for 4 survey passes (re-checked on the 5th) so deeper channels get a turn.
+  if (st.non_dv_misses[slot] >= 2u) st.non_dv_cool[slot] = 5u;
+}
+
 bool survey_pass(State& st) {
+  for (uint16_t i = 0; i < st.non_dv_n; ++i) {
+    if (st.non_dv_cool[i] > 0u) --st.non_dv_cool[i];
+  }
   dv::Segment seg[dv::kMaxSegments];
-  const size_t n = my_bands_segments(st, seg);
+  const bool deep = (st.disc_mode == 2u);
+  dv_survey::Config cfg{};
+  if (deep) {
+    cfg.margin_db = 4.5f;
+    cfg.frames = 16;
+    cfg.peak_hold = true;
+    cfg.capture_ms_max = 1400;
+  } else {
+    cfg.margin_db = 7.0f;
+    cfg.frames = 8;
+    cfg.peak_hold = false;
+    cfg.capture_ms_max = 900;
+  }
+  st.survey.set_config(cfg);
+  const size_t n = my_bands_segments(st, seg, deep);
   return n && st.sv_work && st.survey.start(seg, n, now(), st.sv_rate_idx);
 }
 
@@ -907,8 +1219,14 @@ bool begin_survey(State& st) {
     dv_survey::init(*st.sv_work);
   }
   st.survey.attach(st.sv_work);
+  st.survey.set_skip_filter(&skip_non_dv, &st);
   dv_survey::install(&st.survey);
-  st.sv_rate_idx = 0; st.survey_passes = 0; st.hot_n = 0; st.hot_at = 0; st.sv_failed = false;
+  st.sv_rate_idx = 0; st.survey_passes = 0; st.disc_passes_done = 0;
+  st.hot_n = 0; st.hot_at = 0; st.batch_base = 0; st.sv_failed = false;
+  st.non_dv_n = 0; st.visit_had_dv = false; st.last_disc_hz = 0;
+  std::memset(st.non_dv_hz, 0, sizeof(st.non_dv_hz));
+  std::memset(st.non_dv_misses, 0, sizeof(st.non_dv_misses));
+  std::memset(st.non_dv_cool, 0, sizeof(st.non_dv_cool));
   stop_replay(st);
   install_radio_hooks();
   if (!dv_radio::start()) return false;                                     // the decoders are ready when the first hot channel is found
@@ -920,10 +1238,16 @@ bool start_batch(State& st) {
   uint32_t plan[dv::kMaxScanChannels];
   size_t n = 0;
   while (n < dv::kMaxScanChannels && st.hot_at + n < st.hot_n) { plan[n] = st.hot_hz[st.hot_at + n]; ++n; }
-  st.hot_at = static_cast<uint8_t>(st.hot_at + n);
+  st.batch_base = st.hot_at;
+  st.hot_at = static_cast<uint16_t>(st.hot_at + n);
   std::memset(st.plan_mask, 0, sizeof(st.plan_mask));                       // every protocol decoder rotates through each dwell
+  const bool deep = (st.disc_mode == 2u);
   st.scanner.stop();
-  st.scanner.set_quick_lists(true);                                         // survey-confirmed channels are mostly analog: leave a silent one after quick_ms
+  st.scanner.set_settle_ms(250u);                                           // fast 250 ms settle (4+ USB blocks at 240 kS/s)
+  st.scanner.set_quick_lists(true);                                         // survey-confirmed channels: quiet/ended bursts exit in 100 ms; analog exits after quick_ms
+  st.scanner.set_dwell_ms(deep ? 2600u : 1500u);
+  st.scanner.set_quick_ms(st.mask_override ? 600u : (deep ? 2450u : 950u)); // FAST: 1 full 3-proto cycle (3x300 ms); DEEP: 2 full cycles (2450 ms)
+  st.scanner.set_control_hold_max_ms(deep ? 2500u : 2000u);                 // DISCOVER reads Net/Site + MBCs and moves on instead of stalling 20 s on silent CTRL
   if (!n || !st.scanner.set_plan(plan, n)) return false;
   install_radio_hooks();
   if (!dv_radio::start()) return false;                                     // a failed scan may have stopped it
@@ -940,6 +1264,8 @@ void stop_discover(State& st) {
   st.survey.stop();
   st.disc_phase = 0;
   st.disc_running = false;
+  st.last_disc_hz = 0;
+  st.visit_had_dv = false;
   st.scanner.stop();
   st.scanner.set_quick_lists(false);
   dv_radio::stop();
@@ -971,17 +1297,22 @@ void run_discover(State& st) {
     if (st.survey.finished()) {
       st.sv_rate_idx = st.survey.rate_index();                              // later passes start at the rate that worked
       ++st.survey_passes;
-      st.hot_n = static_cast<uint8_t>(std::min<size_t>(st.survey.hot_count(), dv_survey::kMaxHot));
-      for (uint8_t i = 0; i < st.hot_n; ++i) st.hot_hz[i] = st.survey.hot(i).hz;
+      st.hot_n = static_cast<uint16_t>(std::min<size_t>(st.survey.hot_count(), dv_survey::kMaxHot));
+      for (uint16_t i = 0; i < st.hot_n; ++i) st.hot_hz[i] = st.survey.hot(i).hz;
       st.hot_at = 0;
-      if (st.hot_n == 0) { if (!survey_pass(st)) survey_fallback(st); return; }   // a quiet pass: look again
+      st.batch_base = 0;
+      if (st.hot_n == 0) { ++st.disc_passes_done; if (!survey_pass(st)) survey_fallback(st); return; }   // a quiet pass: look again
       st.disc_phase = 2;
       if (!start_batch(st)) { st.disc_phase = 1; if (!survey_pass(st)) survey_fallback(st); }
     }
   } else if (st.disc_phase == 2) {
     const bool batch_done = !st.scanner.active() || st.scanner.status().passes >= 1;     // every channel of this batch was examined once
     if (batch_done) {
+      note_disc_leave(st, st.last_disc_hz, st.visit_had_dv);
+      st.last_disc_hz = 0;
+      st.visit_had_dv = false;
       if (st.hot_at < st.hot_n && start_batch(st)) return;                  // the next batch of occupied channels
+      ++st.disc_passes_done;
       st.scanner.stop();
       st.disc_phase = 1;                                                    // all of them checked: survey again
       if (!survey_pass(st)) survey_fallback(st);
@@ -1063,12 +1394,43 @@ void run_scanner(State& st) {
   in.verified_ms = rs.verified_ms;
   in.candidate = rs.candidate;
   in.identity_ms = rs.identity_ms;
+  in.control_only_ready = (st.disc_phase == 2) && (st.live_role_flags == dv::kRoleControl) &&
+                          st.live_has_sys && st.live_ctrl_since_ms != 0u &&
+                          (now() - st.live_ctrl_since_ms >= 1500u);
+  const bool fast_mon = (!st.disc_running && (st.plan_option == monitor_option(st) || (st.follow_on && st.follow_group_n > 1u)));
+  const auto cur_ss = st.scanner.status();
+  if (fast_mon && cur_ss.state == dv::ScanState::sampling && rs.level_milli > 0u) {
+    if (!rs.candidate && rs.verified_ms == 0u && rs.level_milli < 60u) {
+      st.mon_noise_milli = (st.mon_noise_milli * 15u + rs.level_milli) / 16u;
+      if (st.mon_noise_milli < 8u) st.mon_noise_milli = 8u;
+    }
+    in.rf_quiet = (rs.level_milli <= st.mon_noise_milli + 6u);
+  } else if (!fast_mon && st.disc_phase == 0 && cur_ss.kind == dv::PlanKind::range &&
+             cur_ss.state == dv::ScanState::sampling && rs.level_milli > 0u) {
+    // Plain range sweep only (98% empty channels): never apply rf_quiet in wideband DISCOVER Phase 2,
+    // where every channel was already FFT-confirmed occupied and needs the full 3-protocol rotation!
+    const uint32_t hz = cur_ss.frequency_hz;
+    const uint32_t d_hz = (hz > st.scan_noise_hz) ? (hz - st.scan_noise_hz) : (st.scan_noise_hz - hz);
+    if (st.scan_noise_hz == 0u || d_hz > 10000000u) {
+      st.scan_noise_milli = 12u;
+      st.scan_noise_hz = hz;
+    }
+    if (!rs.candidate && rs.verified_ms == 0u && rs.level_milli < 35u) {
+      st.scan_noise_milli = (st.scan_noise_milli * 15u + rs.level_milli) / 16u;
+      if (st.scan_noise_milli < 6u) st.scan_noise_milli = 6u;
+      st.scan_noise_hz = hz;
+    }
+    in.rf_quiet = (rs.level_milli <= st.scan_noise_milli + 3u);
+  }
   const dv::ScanStep step = st.scanner.service(now(), in);
   if (step.tune) {
+    if (st.disc_phase == 2 && st.last_disc_hz != 0) note_disc_leave(st, st.last_disc_hz, st.visit_had_dv);
     const bool ok = dv_radio::tune_channel(step.tune_hz);
     st.scanner.retune_result(ok, now());
     if (ok) {
       clear_call(st);                // new channel visit: nothing from the previous channel carries over
+      st.visit_had_dv = false;
+      st.last_disc_hz = (st.disc_phase == 2) ? step.tune_hz : 0;
       const uint8_t entry = entry_mask(st);
       st.auto_phase = 0;
       st.auto_switch_ms = now();
@@ -1077,8 +1439,9 @@ void run_scanner(State& st) {
   }
   // An "auto" entry cannot run every decoder at once (NXDN48 alone needs more than one core on the Tab5): it rotates them
   // through the dwell, restarting the decoder set at each switch so no decoder bridges a window it did not see.
+  const uint32_t rot_ms = (st.disc_running && st.disc_mode == 2u) ? 400u : 300u;
   if (st.scanner.active() && !st.mask_override && entry_mask(st) == 0 &&
-      st.scanner.status().state == dv::ScanState::sampling && now() - st.auto_switch_ms >= 400) {
+      st.scanner.status().state == dv::ScanState::sampling && now() - st.auto_switch_ms >= rot_ms) {
     static constexpr uint8_t kRotation[3] = {dv_radio::kMaskDmr, dv_radio::kMaskNxdn96, dv_radio::kMaskNxdn48};
     st.auto_phase = static_cast<uint8_t>((st.auto_phase + 1) % 3);
     st.auto_switch_ms = now();
@@ -1091,7 +1454,7 @@ void run_scanner(State& st) {
   dv_radio::Event e;
   const uint32_t channel_hz = st.replaying || st.replay_done ? rs.channel_hz : st.scanner.status().frequency_hz;
   while (dv_radio::pop_event(&e)) {
-    if (e.frequency_hz == channel_hz) note_event(st, e);   // an event from a previous channel visit is stale: dropped
+    if (e.frequency_hz == channel_hz) { st.visit_had_dv = true; note_event(st, e); }   // an event from a previous channel visit is stale: dropped
   }
 }
 
@@ -1138,7 +1501,7 @@ void save_found(State& st) {
   if (!g_hooks.save_plan) return;
   uint16_t added = 0, skipped = 0;
   for (uint8_t i = 0; i < st.disc_n; ++i) {
-    if (st.disc_seen[i] < State::kDiscFound) continue;
+    if (st.disc_seen[i] < State::kDiscFound || st.disc_ghost[i]) continue;
     bool have = false;
     for (uint8_t k = 0; k < st.saved_n; ++k) have = have || st.saved_hz[k] == st.disc_hz[i];
     if (have) continue;
@@ -1157,22 +1520,41 @@ void save_found(State& st) {
 
 // ---- FOLLOW: one channel, listened to continuously. A one-channel plan never retunes; the control-only release and the demotion are off. ----
 bool follow_arm(State& st) {
-  const uint32_t plan[1] = {st.follow_hz};
   std::memset(st.plan_mask, 0, sizeof(st.plan_mask));
+  if (st.follow_group_n > 1u) {
+    if (!st.scanner.set_plan(st.follow_group_hz, st.follow_group_n)) return false;
+    std::memcpy(st.plan_mask, st.follow_group_mask, st.follow_group_n);
+    st.scanner.set_settle_ms(200u);
+    st.scanner.set_quick_lists(true);
+    st.scanner.set_quick_ms(600u);
+    st.scanner.set_hold_ms(kMonitorHoldMs);
+    st.scanner.set_control_hold_max_ms(2500u);
+    st.scanner.set_demote(1, 5);
+    return start_scan(st);
+  }
+  const uint32_t plan[1] = {st.follow_hz};
   if (!st.scanner.set_plan(plan, 1)) return false;
   st.plan_mask[0] = mask_for_protocol(static_cast<Protocol>(st.follow_proto));
+  st.scanner.set_settle_ms(700u);
   st.scanner.set_control_hold_max_ms(60000);
   st.scanner.set_demote(0, 3);
   st.scanner.set_quick_lists(false);
   return start_scan(st);
 }
-bool follow_begin(State& st, uint32_t hz, Protocol pr, uint8_t area, bool area_valid) {
+bool follow_begin(State& st, uint32_t hz, Protocol pr, uint8_t area, bool area_valid,
+                  const uint32_t* grp_hz = nullptr, const uint8_t* grp_mask = nullptr, uint8_t grp_n = 0) {
   if (hz == 0 || mask_for_protocol(pr) == 0) return false;
   if (st.disc_phase) stop_discover(st);
   const bool was_scanning = st.scanner.active();
   if (was_scanning) stop_scan(st);
   if (!st.follow_on) st.follow_resume = was_scanning;
   st.follow_hz = hz; st.follow_proto = static_cast<uint8_t>(pr); st.follow_area = area; st.follow_area_valid = area_valid;
+  st.follow_group_n = 0;
+  if (grp_hz && grp_mask && grp_n > 1u) {
+    st.follow_group_n = static_cast<uint8_t>(std::min<uint8_t>(grp_n, 16u));
+    std::memcpy(st.follow_group_hz, grp_hz, st.follow_group_n * sizeof(uint32_t));
+    std::memcpy(st.follow_group_mask, grp_mask, st.follow_group_n);
+  }
   std::memset(st.follow_trace, 0, sizeof(st.follow_trace));
   st.follow_on = true;
   st.follow_lost = !follow_arm(st);                 // if the receiver is not ready yet, service_follow() keeps trying
@@ -1182,7 +1564,7 @@ bool follow_begin(State& st, uint32_t hz, Protocol pr, uint8_t area, bool area_v
 }
 void follow_end(State& st) {
   if (!st.follow_on) return;
-  st.follow_on = false; st.follow_lost = false;
+  st.follow_on = false; st.follow_lost = false; st.follow_group_n = 0;
   stop_scan(st);
   apply_plan_option(st);                            // the plan that was selected before FOLLOW
   if (st.follow_resume) (void)start_scan(st);
@@ -1208,7 +1590,31 @@ void apply_radio_action(State& st, const Action& a) {
       if (a.value >= s.observed_system_count || a.value >= kObservedSystems || !s.observed_systems[a.value].has_frequency) { ++g_unapplied_actions; return; }
       const ObservedSystem& o = s.observed_systems[a.value];
       const bool nx = o.protocol == Protocol::nxdn48 || o.protocol == Protocol::nxdn96;
-      if (!follow_begin(st, o.frequency_hz, o.protocol, nx ? o.ran : o.colour_code, nx ? o.ran_valid : o.colour_code_valid)) ++g_unapplied_actions;
+      uint32_t ghz[16]{}; uint8_t gmk[16]{}; uint8_t gn = 0;
+      if (o.network_sites > 1u) {
+        const dv::Discovery& d = st.show_replay_db ? st.replay_db : st.db;
+        const size_t idx = d.find_system(static_cast<uint8_t>(o.protocol), o.frequency_hz, nx ? o.ran : o.colour_code,
+                                         nx ? dv::AreaKind::ran : dv::AreaKind::colour_code);
+        const uint16_t net_uid = (idx != static_cast<size_t>(-1)) ? d.system(idx).network_uid : 0u;
+        if (net_uid != 0u) {
+          // Voice/Mixed sites first, then other confirmed sites in the same verified group.
+          for (int pass = 0; pass < 2; ++pass) {
+            for (size_t i = 0; i < d.system_count() && gn < 16u; ++i) {
+              const dv::SystemRec& r = d.system(i);
+              if (r.suspected_ghost || r.network_uid != net_uid || r.frequency_hz == 0u) continue;
+              const bool voiced = (r.role_flags & dv::kRoleVoice) != 0u || r.voice_count > 0u || d.talkgroups_of(r.uid) > 0u;
+              if ((pass == 0) != voiced) continue;
+              const uint8_t mk = mask_for_protocol(static_cast<Protocol>(r.protocol));
+              if (!mk) continue;
+              bool dup = false;
+              for (uint8_t k = 0; k < gn; ++k) if (ghz[k] == r.frequency_hz) { dup = true; break; }
+              if (!dup) { ghz[gn] = r.frequency_hz; gmk[gn++] = mk; }
+            }
+          }
+        }
+      }
+      if (!follow_begin(st, o.frequency_hz, o.protocol, nx ? o.ran : o.colour_code, nx ? o.ran_valid : o.colour_code_valid,
+                        gn > 1u ? ghz : nullptr, gn > 1u ? gmk : nullptr, gn)) ++g_unapplied_actions;
       return;
     }
     case ActionKind::follow_stop: follow_end(st); return;
@@ -1229,12 +1635,19 @@ void apply_radio_action(State& st, const Action& a) {
       if (st.band_mask == 0 || !receiver_ok_for_discover(st)) { ++g_unapplied_actions; return; }
       if (st.disc_phase) stop_discover(st);
       if (st.scanner.active()) stop_scan(st);
-      st.plan_option = static_cast<uint8_t>(1 + dv::kBandPresetCount);      // MY BANDS: the bands picked in SETUP
+      st.disc_mode = (a.value >= 1u && a.value <= 3u) ? a.value : 1u;        // 1=FAST, 2=DEEP, 3=EXHAUSTIVE
+      st.plan_option = static_cast<uint8_t>(1 + dv::kBandPresetCount);       // MY BANDS: the bands picked in SETUP
       apply_plan_option(st);
-      st.disc_n = 0; st.disc_saved = 0; st.disc_skipped = 0;
-      if (begin_survey(st)) { st.disc_phase = 1; st.disc_running = true; break; }
-      stop_scan(st);                                                         // the pre-screen could not start: plain sweep of the bands
-      st.sv_failed = true;
+      st.disc_n = 0; st.disc_saved = 0; st.disc_skipped = 0; st.disc_neighbors = 0;
+      if (st.disc_mode != 3u && begin_survey(st)) { st.disc_phase = 1; st.disc_running = true; break; }
+      stop_scan(st);                                                         // EXHAUSTIVE mode (or pre-screen unavailable): direct channel-by-channel sweep
+      st.sv_failed = (st.disc_mode != 3u);
+      dv::Segment seg[dv::kMaxSegments];
+      const size_t sn = my_bands_segments(st, seg, false);
+      if (sn) (void)st.scanner.set_ranges(seg, sn);
+      st.scanner.set_settle_ms(250u);
+      st.scanner.set_quick_ms(950u);
+      st.scanner.set_control_hold_max_ms(2000u);
       if (!start_scan(st)) { ++g_unapplied_actions; return; }
       st.disc_running = true;
       break;
@@ -1297,6 +1710,7 @@ void install(const Hooks& hooks) { g_hooks = hooks; }
 void open() {
   if (g_state && g_state->background) {        // back from Home with the receiver still running: just show the screen again
     g_state->background = false;
+    g_state->surface.set_plot(&g_state->plot);
     screens::begin_transition(screens::Id::digital_voice, now());
     screens::finish_transition();
     if (!full_draw()) {
@@ -1326,6 +1740,7 @@ void open() {
   g_state->db_saved_revision = g_state->db.revision();
   g_state->db_saved_structure = g_state->db.structure_revision();
   fill_systems(*g_state);
+  g_state->surface.set_plot(&g_state->plot);
   refresh(*g_state);
   g_state->snapshot.revision = 1;
   screens::begin_transition(screens::Id::digital_voice, now());
@@ -1575,11 +1990,13 @@ void describe(char* out, size_t size) {
   std::snprintf(out, size,
                 "RTL_DV_UI open=1 view=%u density=%u receiver=%s scan=%s plan=%u idx=%u visited=%lu holds=%lu passes=%lu "
                 "manual_hold=%d can_scan=%u hist=%u systems=%u rev=%lu repaints=%lu applied=%lu unapplied=%lu "
-                "db_sys=%u db_tg=%u db_units=%u db_saves=%lu db_save_fail=%lu db_saving=%d stage=%u mode=%u opt=%u/%u render_n=%lu render_avg_us=%lu render_max_us=%lu quick_skips=%lu control_releases=%lu segments=%u bands=0x%04x",
+                "db_sys=%u db_tg=%u db_units=%u db_saves=%lu db_save_fail=%lu db_saving=%d stage=%u mode=%u opt=%u/%u render_n=%lu render_avg_us=%lu render_max_us=%lu quick_skips=%lu control_releases=%lu segments=%u bands=0x%04x disc_run=%d disc_phase=%u disc_mode=%u sv_fail=%d sv_rate=%lu sv_done=%lu sv_tot=%lu sv_hot=%u sv_pass=%lu sv_skip=%lu non_dv=%u",
                 static_cast<unsigned>(ui.view), static_cast<unsigned>(ui.density),
                 receiver_name(g_state->snapshot.receiver), scan_phase_name(g_state->snapshot.scan.phase),
                 static_cast<unsigned>(ss.count), static_cast<unsigned>(ss.index), static_cast<unsigned long>(ss.visited),
-                static_cast<unsigned long>(ss.holds), static_cast<unsigned long>(ss.passes), ss.manual_hold ? 1 : 0,
+                static_cast<unsigned long>(ss.holds),
+                static_cast<unsigned long>(g_state->disc_running && g_state->disc_phase != 0 ? g_state->disc_passes_done : ss.passes),
+                ss.manual_hold ? 1 : 0,
                 g_state->snapshot.can_scan ? 1u : 0u, static_cast<unsigned>(g_state->snapshot.history_count),
                 static_cast<unsigned>(g_state->snapshot.observed_system_count),
                 static_cast<unsigned long>(g_state->snapshot.revision), static_cast<unsigned long>(g_repaints),
@@ -1591,7 +2008,13 @@ void describe(char* out, size_t size) {
                 static_cast<unsigned>(g_state->plan_option), static_cast<unsigned>(plan_option_count(*g_state)),
                 static_cast<unsigned long>(g_render_n), static_cast<unsigned long>(g_render_n ? g_render_us_total / g_render_n : 0),
                 static_cast<unsigned long>(g_render_us_max), static_cast<unsigned long>(ss.quick_skips), static_cast<unsigned long>(ss.control_releases),
-                static_cast<unsigned>(ss.segments), static_cast<unsigned>(g_state->band_mask));
+                static_cast<unsigned>(ss.segments), static_cast<unsigned>(g_state->band_mask),
+                g_state->disc_running ? 1 : 0, static_cast<unsigned>(g_state->disc_phase), static_cast<unsigned>(g_state->disc_mode),
+                g_state->sv_failed ? 1 : 0, static_cast<unsigned long>(g_state->survey.rate()),
+                static_cast<unsigned long>(g_state->survey.windows_done()), static_cast<unsigned long>(g_state->survey.windows_total()),
+                static_cast<unsigned>(g_state->disc_phase == 1 ? g_state->survey.hot_count() : g_state->hot_n),
+                static_cast<unsigned long>(g_state->survey_passes), static_cast<unsigned long>(g_state->survey.skipped_channels()),
+                static_cast<unsigned>(g_state->non_dv_n));
 }
 
 // ---- Scheduler probe (diagnostic): which task runs on each core, sampled every millisecond by a task on the other core. ----
@@ -1667,7 +2090,7 @@ bool probe_command(const char* op, void (*write_line)(const char*)) {
 bool handle_command(const char* command, bool authenticated, void (*write_line)(const char*)) {
   if (!command || !write_line || std::strncmp(command, "RTL_DV ", 7) != 0) return false;
   const char* arg = command + 7;
-  char line[640];
+  char line[768];
   if (std::strncmp(arg, "AUDIO", 5) == 0) {
     return dv_voice_service::handle_command(arg, authenticated, write_line);
   }
@@ -1930,6 +2353,21 @@ bool handle_command(const char* command, bool authenticated, void (*write_line)(
                   dv_radio::iq_enabled() ? 1 : 0, static_cast<unsigned long>(q.triggers), static_cast<unsigned long>(q.saved), static_cast<unsigned long>(q.failed),
                   static_cast<unsigned long>(q.skipped_busy), static_cast<unsigned long>(q.skipped_cooldown), static_cast<unsigned long>(q.skipped_limit),
                   static_cast<unsigned>(st.iq_files));
+    write_line(line);
+    return true;
+  }
+  if (std::strncmp(arg, "DISCOVER ", 9) == 0) {
+    const char* op = arg + 9;
+    Action a{};
+    if (std::strcmp(op, "FAST") == 0) { a.kind = ActionKind::discover_start; a.value = 1; }
+    else if (std::strcmp(op, "DEEP") == 0) { a.kind = ActionKind::discover_start; a.value = 2; }
+    else if (std::strcmp(op, "FULL") == 0) { a.kind = ActionKind::discover_start; a.value = 3; }
+    else if (std::strcmp(op, "STOP") == 0) { a.kind = ActionKind::discover_stop; }
+    else { write_line("RTL_DV_DISCOVER_INVALID use RTL_DV DISCOVER FAST|DEEP|FULL|STOP"); return true; }
+    apply_radio_action(st, a);
+    std::snprintf(line, sizeof(line), "RTL_DV_DISCOVER_OK running=%d phase=%u mode=%u sv_fail=%d",
+                  st.disc_running ? 1 : 0, static_cast<unsigned>(st.disc_phase),
+                  static_cast<unsigned>(st.disc_mode), st.sv_failed ? 1 : 0);
     write_line(line);
     return true;
   }

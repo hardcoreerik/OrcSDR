@@ -19,47 +19,55 @@
 namespace orcsdr::dv_survey {
 
 constexpr size_t kFft = 1024;
-constexpr size_t kFrames = 8;                 // independent 1024-sample frames averaged per window
-constexpr size_t kMaxHot = 128;               // hot channels kept per pass (strongest first)
+constexpr size_t kFrames = 8;                 // default frames averaged per window (FAST mode)
+constexpr size_t kMaxFrames = 16;             // DEEP mode averages + peak-holds up to 16 frames
+constexpr size_t kMaxHot = 256;               // hot channels kept per pass (strongest first, with per-band quota)
 // Skirt rule: a strong carrier raises the channels beside it (splatter, clipping products: 14 to 18 dB on the 2026-11-25 453 MHz capture). At the end of a pass, a hot
 // channel with another hot channel within kSkirtHz whose margin over its window floor is at least kSkirtDb larger is a skirt, not a signal, and is not sent to the
 // decoders. It is applied to the whole pass, not per window: a strong carrier inside one window's tuner-centre guard zone is invisible there but seen by the overlapping window.
 constexpr float kSkirtDb = 15.0f;
 constexpr uint32_t kSkirtHz = 25000;
 constexpr size_t kMaxWindowChannels = 400;    // channels evaluated per window
-constexpr size_t kRates = 5;
-constexpr uint32_t kRateLadder[kRates] = {2560000, 2400000, 2048000, 1536000, 1024000};   // highest first; driver-supported
+constexpr size_t kRates = 7;
+constexpr uint32_t kRateLadder[kRates] = {2560000, 2400000, 2048000, 1536000, 1024000, 900000, 250000};   // highest first; bottom 250 kS/s is zero-loss on Tab5
 constexpr uint32_t kChannelHz = 12500;
 constexpr uint32_t kDcGuardHz = 30000;        // the tuner's centre spike: channels this close to the centre come from the neighbouring window
 
-// Working memory (about 41 KB): the caller allocates it in PSRAM (the Tab5 internal boot pool is nearly full).
+// Working memory (about 61 KB): the caller allocates it in PSRAM (the Tab5 internal boot pool is nearly full).
 struct Work {
-  float re[kFft], im[kFft], pw[kFft], win[kFft], twr[kFft / 2], twi[kFft / 2];
-  uint8_t cap[kFrames * kFft * 2];
+  float re[kFft], im[kFft], pw[kFft], pw_peak[kFft], win[kFft], twr[kFft / 2], twi[kFft / 2];
+  uint8_t cap[kMaxFrames * kFft * 2];
   float lv[kMaxWindowChannels];
   uint32_t lf[kMaxWindowChannels];
 };
 void init(Work& w) noexcept;                  // Hann window and FFT twiddles
-// Averaged power spectrum of the kFrames frames in w.cap, FFT-shifted (index 0 = -rate/2) into w.pw (linear power).
-void analyze(Work& w) noexcept;
+// Averaged (+ peak-hold) power spectrum of `frames` frames in w.cap, FFT-shifted (index 0 = -rate/2) into w.pw / w.pw_peak.
+void analyze(Work& w, size_t frames = kFrames) noexcept;
 // Mean power (dB, relative) of the bins inside the 12.5 kHz channel `offset_hz` from the tune centre. -200 when outside the span.
-float channel_db(const Work& w, uint32_t rate, int32_t offset_hz) noexcept;
+float channel_db(const Work& w, uint32_t rate, int32_t offset_hz, bool peak_blend = false) noexcept;
 
-struct Hot { uint32_t hz = 0; float margin_db = 0; };
+struct Hot { uint32_t hz = 0; float margin_db = 0; uint8_t seg = 0; };
+using SkipFn = bool (*)(uint32_t hz, void* ctx) noexcept;
 
 enum class State : uint8_t { idle, tuning, settling, capturing, done, failed };
 
 struct Config {
-  uint32_t settle_ms = 120;       // after an accepted tune: samples from the old centre may still be in flight
-  uint32_t capture_ms_max = 700;  // a window that has not filled by then is retried
-  float margin_db = 7.0f;         // above the window's noise floor to count as occupied
-  uint8_t max_retries = 2;        // per window, before stepping the rate down
+  uint32_t settle_ms = 120;             // after an accepted tune: samples from the old centre may still be in flight
+  uint32_t settle_rate_change_ms = 200; // extra settle when changing sample rate so USB transients don't burn retries
+  uint32_t capture_ms_max = 900;        // a window that has not filled by then is retried
+  float margin_db = 7.0f;               // above the window's noise floor to count as occupied
+  uint8_t frames = kFrames;             // 8 = FAST, 16 = DEEP
+  bool peak_hold = false;               // true in DEEP mode: catches short 30 ms bursts & brief PTTs
+  uint8_t max_retries = 2;              // per window, before stepping the rate down
 };
 
 class Survey {
  public:
   explicit Survey(const Config& c = {}) noexcept : cfg_(c) {}
+  void set_config(const Config& c) noexcept { cfg_ = c; }
+  const Config& config() const noexcept { return cfg_; }
   void attach(Work* w) noexcept { work_ = w; }
+  void set_skip_filter(SkipFn fn, void* ctx) noexcept { skip_fn_ = fn; skip_ctx_ = ctx; }
   // Plan: the segments of the picked bands, surveyed in order. False without memory, segments or a first rate.
   bool start(const dv::Segment* segs, size_t n, uint32_t now_ms, uint8_t first_rate_index = 0) noexcept;
   void stop() noexcept;
@@ -82,6 +90,7 @@ class Survey {
   uint32_t rate_steps() const noexcept { return rate_steps_; }
   uint32_t channels_checked() const noexcept { return checked_; }
   uint32_t skirts_dropped() const noexcept { return skirts_; }
+  uint32_t skipped_channels() const noexcept { return skipped_; }
   uint32_t current_center_hz() const noexcept { return center_hz_; }
   size_t hot_count() const noexcept { return hot_n_; }
   const Hot& hot(size_t i) const noexcept { return hot_[i]; }
@@ -90,19 +99,23 @@ class Survey {
  private:
   void plan_window() noexcept;      // next window centre, or done
   void evaluate() noexcept;         // analyze + hot channels of the captured window
-  void add_hot(uint32_t hz, float margin) noexcept;
+  void add_hot(uint32_t hz, float margin, uint8_t seg) noexcept;
   void trim_skirts() noexcept;
   void window_failed(uint32_t now_ms, bool lossy) noexcept;
 
   Config cfg_;
   Work* work_ = nullptr;
+  SkipFn skip_fn_ = nullptr;
+  void* skip_ctx_ = nullptr;
   dv::Segment segs_[dv::kMaxSegments]{};
   size_t nseg_ = 0, seg_ = 0;
   int64_t centre_ = 0;              // next window centre in the current segment (can start below the segment)
   std::atomic<State> state_{State::idle};
   std::atomic<uint8_t> frames_{0};
   uint8_t rate_i_ = 0, retries_ = 0, rate_loss_run_ = 0;
-  uint32_t center_hz_ = 0, state_since_ms_ = 0, windows_done_ = 0, lossy_ = 0, rate_steps_ = 0, checked_ = 0, skirts_ = 0;
+  uint32_t last_tuned_rate_ = 0;
+  bool rate_changed_ = false;
+  uint32_t center_hz_ = 0, state_since_ms_ = 0, windows_done_ = 0, lossy_ = 0, rate_steps_ = 0, checked_ = 0, skirts_ = 0, skipped_ = 0;
   uint64_t lost_at_arm_ = 0;
   float last_floor_ = 0;
   Hot hot_[kMaxHot]{};

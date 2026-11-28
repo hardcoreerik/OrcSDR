@@ -174,6 +174,11 @@ ScanStep Scanner::service(uint32_t now_ms, const ScanInputs& in) noexcept {
         if (extended_) limit = config_.dwell_ms * 2;
         // Wide scans: a channel with no sync-level sign of life is left early (never while a candidate is pending or the user holds).
         if ((kind_ == PlanKind::range || config_.quick_lists) && config_.quick_ms && !in.candidate && !extended_ && limit > config_.quick_ms) limit = config_.quick_ms;
+        // Fast RF-gated skip: dead-quiet channels (no RF energy above local floor) leave early (100 ms list, 120 ms range).
+        if ((kind_ == PlanKind::range || config_.quick_lists) && in.rf_quiet && !in.candidate && !extended_) {
+          const uint32_t quiet_lim = (kind_ == PlanKind::list) ? 100u : 120u;
+          if (limit > quiet_lim) limit = quiet_lim;
+        }
         if (limit < config_.dwell_ms && !manual_hold_ && static_cast<int32_t>(now_ms - state_since_ms_) >= static_cast<int32_t>(limit)) ++quick_skips_;
         if (!manual_hold_ && static_cast<int32_t>(now_ms - state_since_ms_) >= static_cast<int32_t>(limit))
           next_channel(now_ms);
@@ -189,9 +194,10 @@ ScanStep Scanner::service(uint32_t now_ms, const ScanInputs& in) noexcept {
         next_channel(now_ms); break;
       }
       // Control-only channel: verified events keep renewing the hold, but no identity and no voice ever arrived. Move on.
-      if (!manual_hold_ && count_ > 1 && config_.control_hold_max_ms &&
-          static_cast<int32_t>(now_ms - hold_begin_ms_) >= static_cast<int32_t>(config_.control_hold_max_ms) &&
-          (in.identity_ms == 0 || static_cast<int32_t>(in.identity_ms - hold_begin_ms_) < 0)) {
+      if (!manual_hold_ && count_ > 1 &&
+          (in.identity_ms == 0 || static_cast<int32_t>(in.identity_ms - hold_begin_ms_) < 0) &&
+          (in.control_only_ready ||
+           (config_.control_hold_max_ms && static_cast<int32_t>(now_ms - hold_begin_ms_) >= static_cast<int32_t>(config_.control_hold_max_ms)))) {
         ++control_releases_;
         if (index_ < kMaxScanChannels && ctrl_streak_[index_] < 255) ++ctrl_streak_[index_];
         next_channel(now_ms);

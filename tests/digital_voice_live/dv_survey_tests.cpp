@@ -227,6 +227,40 @@ void test_multi_segment_and_refused_tune() {
   CHECK(has_hot(sim.s, 151000000));
   CHECK(has_hot(sim.s, 461000000));
 }
+
+void test_deep_peak_and_250k_ladder() {
+  // DEEP config (16 frames, peak_hold, +4.5 dB) steps down cleanly to 250 kS/s when higher rates drop and still finds signals.
+  Sim sim;
+  dv_survey::Config cfg{};
+  cfg.frames = 16; cfg.peak_hold = true; cfg.margin_db = 4.5f; cfg.capture_ms_max = 1400;
+  sim.s.set_config(cfg);
+  sim.max_ok_rate = 250000;
+  const dv::Segment seg{152000000, 12500, 33};
+  sim.tones = {{152150000.0, 0.06}};
+  CHECK(sim.s.start(&seg, 1, sim.now));
+  sim.run();
+  CHECK(sim.s.finished());
+  CHECK(sim.s.rate() == 250000);
+  CHECK(has_hot(sim.s, 152150000));
+}
+void test_per_band_quota_and_skip_filter() {
+  // Verify kMaxHot == 256, skip filter suppresses cooled analog channels, and multi-segment surveys keep all bands.
+  CHECK(dv_survey::kMaxHot == 256);
+  Sim sim;
+  const dv::Segment segs[2] = {{150000000, 12500, 161}, {460000000, 12500, 161}};
+  sim.tones = {{151000000.0, 0.25}, {151500000.0, 0.08}, {461000000.0, 0.08}};
+  const uint32_t skip_hz = 151000000u;
+  sim.s.set_skip_filter([](uint32_t hz, void* ctx) noexcept -> bool {
+    return hz == *static_cast<const uint32_t*>(ctx);
+  }, const_cast<uint32_t*>(&skip_hz));
+  CHECK(sim.s.start(segs, 2, sim.now));
+  sim.run();
+  CHECK(sim.s.finished());
+  CHECK(!has_hot(sim.s, 151000000));
+  CHECK(sim.s.skipped_channels() >= 1);
+  CHECK(has_hot(sim.s, 151500000));
+  CHECK(has_hot(sim.s, 461000000));
+}
 }  // namespace
 
 int main() {
@@ -239,6 +273,8 @@ int main() {
   test_loss_retry_and_rate_ladder();
   test_stale_rate_blocks_ignored_and_no_samples_fails();
   test_multi_segment_and_refused_tune();
+  test_deep_peak_and_250k_ladder();
+  test_per_band_quota_and_skip_filter();
   if (g_fail) { std::printf("FAILED %d checks\n", g_fail); return 1; }
   std::puts("PASS dv_survey");
   return 0;

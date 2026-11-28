@@ -150,6 +150,9 @@ bool Engine::begin(const Config& cfg) {
   stats_ = {};
   stats_.agc_gain_x100 = 100;
   synth_total_us_ = 0;
+  std::memset(ber_win_, 0, sizeof(ber_win_));
+  ber_win_head_ = ber_win_count_ = 0;
+  pending_ber_errs_ = pending_ber_bits_ = 0;
   rd_ = wr_ = 0;
   playing_ = false;
   voiced_slot_ = 0;
@@ -210,6 +213,12 @@ void Engine::reset_stream() {
     std::memset(slots_[i].hist, 0, sizeof(slots_[i].hist));
   }
   stats_.agc_gain_x100 = 100;
+  std::memset(ber_win_, 0, sizeof(ber_win_));
+  ber_win_head_ = ber_win_count_ = 0;
+  pending_ber_errs_ = pending_ber_bits_ = 0;
+  stats_.ber_valid = false;
+  stats_.ber_tenths_pct = 0;
+  stats_.ber_updated_ms = 0;
 }
 size_t Engine::buffered_samples() const { return static_cast<size_t>(wr_ - rd_); }
 
@@ -339,6 +348,8 @@ void Engine::begin_group(const dv_radio::VoiceMsg& m, uint32_t now_ms) {
   pending_samples_ = 0;
   pending_bad_ = false;
   pending_silent_only_ = true;
+  pending_ber_errs_ = 0;
+  pending_ber_bits_ = 0;
   pending_us_ = micros() - t0;
   pending_now_ms_ = now_ms;
 }
@@ -362,6 +373,18 @@ size_t Engine::service(uint32_t now_ms, size_t max_frames) {
     if (tap_) tap_(m.slot, m.call_serial, wire, pcm, r.corrected, r.total, r.flags, tap_user_);
     stats_.corrected_bits += static_cast<uint64_t>(r.corrected);
     stats_.total_corrected_bits += static_cast<uint64_t>(r.total);
+    if (ok) {
+      if (!error) {
+        const uint16_t e = static_cast<uint16_t>(r.total < 0 ? 0 : (r.total > 47 ? 47 : r.total));
+        pending_ber_errs_ = static_cast<uint16_t>(pending_ber_errs_ + e);
+        pending_ber_bits_ = static_cast<uint16_t>(pending_ber_bits_ + 47u);
+      } else {
+        // C0 failed (>3 errors): C1 demodulation key is invalid, so only C0's 24 bits contribute.
+        const uint16_t e = static_cast<uint16_t>((r.corrected >= 4 && r.corrected <= 24) ? r.corrected : 4);
+        pending_ber_errs_ = static_cast<uint16_t>(pending_ber_errs_ + e);
+        pending_ber_bits_ = static_cast<uint16_t>(pending_ber_bits_ + 24u);
+      }
+    }
     if (error) {
       ++stats_.frames_error;
       ++stats_.frames_concealed;
@@ -405,6 +428,20 @@ void Engine::finish_group() {
   if (pending_us_ > stats_.synth_us_max) stats_.synth_us_max = pending_us_;
   synth_total_us_ += pending_us_;
   stats_.synth_us_avg = static_cast<uint32_t>(synth_total_us_ / stats_.groups);
+  ber_win_[ber_win_head_] = {pending_ber_errs_, pending_ber_bits_};
+  ber_win_head_ = static_cast<uint8_t>((ber_win_head_ + 1u) & 3u);
+  if (ber_win_count_ < 4u) ++ber_win_count_;
+  uint32_t sum_e = 0, sum_b = 0;
+  for (uint8_t i = 0; i < ber_win_count_; ++i) {
+    sum_e += ber_win_[i].errs;
+    sum_b += ber_win_[i].bits;
+  }
+  if (sum_b > 0u) {
+    stats_.ber_valid = true;
+    const uint32_t t = static_cast<uint32_t>((static_cast<uint64_t>(sum_e) * 1000ull + sum_b / 2u) / sum_b);
+    stats_.ber_tenths_pct = t > 1000u ? 1000u : t;
+    stats_.ber_updated_ms = pending_now_ms_;
+  }
   // Latency bookkeeping: when the read position reaches this group's first sample we log now - arrival.
   Slot& v = slots_[m.slot];
   const uint8_t next = static_cast<uint8_t>((v.lat_w + 1) % kLatencyQueue);

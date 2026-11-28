@@ -292,9 +292,11 @@ void test_reset_and_discontinuity(){
     CHECK(r.ok && r.consumed==half);
     const auto before=rx.stats().acquisitions;
     CHECK(before>=1);
+    CHECK(rx.locked_symbols()>0);
     rx.discontinuity();
     CHECK(rx.stats().stream_epoch==1);
     CHECK(rx.protocol_dibits()==0);
+    CHECK(rx.locked_symbols()==0);
     r=rx.process(iq.data(),iq.size(),collect,&events);
     CHECK(r.ok && r.consumed==iq.size());
     CHECK(rx.stats().acquisitions>before);
@@ -304,15 +306,38 @@ void test_reset_and_discontinuity(){
     rx.reset();
     CHECK(rx.stats().acquisitions==0 && rx.stats().stream_epoch==0);
     CHECK(rx.protocol_dibits()==0);
+    CHECK(rx.locked_symbols()==0);
 }
 void test_noise_and_empty(){
     bridge::Receiver rx;
+    std::size_t sym_count=0;
+    rx.set_symbol_sink([](std::int16_t, float, void* u) noexcept { ++(*static_cast<std::size_t*>(u)); }, &sym_count);
     CHECK(rx.process(nullptr,0).ok);
     std::vector<ComplexSample> empty(48000,{0.0F,0.0F});
     std::vector<bridge::Event> events;
     const auto x=rx.process(empty.data(),empty.size(),collect,&events);
     CHECK(x.ok && x.consumed==empty.size() && x.events==0);
     CHECK(events.empty() && rx.stats().validated_identities==0);
+    CHECK(sym_count==0 && rx.locked_symbols()==0);
+}
+void test_symbol_sink_dmr(){
+    const auto iq=synthesize(make_stream());
+    bridge::Receiver rx;
+    std::vector<std::int16_t> devs;
+    rx.set_symbol_sink([](std::int16_t dev_hz, float, void* u) noexcept {
+        static_cast<std::vector<std::int16_t>*>(u)->push_back(dev_hz);
+    }, &devs);
+    std::vector<bridge::Event> events;
+    const auto r=rx.process(iq.data(),iq.size(),collect,&events);
+    CHECK(r.ok && r.consumed==iq.size());
+    CHECK(devs.size()==rx.locked_symbols() && devs.size()>500U);
+    unsigned near_inner=0, near_outer=0;
+    for(std::int16_t d:devs){
+        const int a=std::abs(static_cast<int>(d));
+        if(std::abs(a-648)<250) ++near_inner;
+        else if(std::abs(a-1944)<350) ++near_outer;
+    }
+    CHECK(near_inner>devs.size()/4 && near_outer>devs.size()/4);
 }
 }
 
@@ -323,6 +348,7 @@ int main(){
     test_stream_alignment();
     test_reset_and_discontinuity();
     test_noise_and_empty();
+    test_symbol_sink_dmr();
     std::puts("dmr_d1_integration_tests: PASS (synthetic IQ only)");
     return 0;
 }

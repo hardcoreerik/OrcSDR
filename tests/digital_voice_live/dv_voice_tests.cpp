@@ -493,6 +493,22 @@ static void engine_tests() {
     int pk = 0; for (int16_t x : pcm) pk = std::max(pk, std::abs(int(x)));
     CHECK(pk > 0);
   }
+  { // Rolling Golay BER in Engine: 0.0% on clean superframe, non-zero proportional on injected errors, cleared on flush
+    Engine eb; Config cb; cb.target_buffer_ms = 0; CHECK(eb.begin(cb)); eb.set_enabled(true);
+    CHECK(!eb.snapshot(now).stats.ber_valid);
+    eb.handle(msg(1, 1, true, kSpeech), now);
+    auto s0 = eb.snapshot(now).stats;
+    CHECK(s0.ber_valid && s0.ber_tenths_pct == 0 && s0.ber_updated_ms == now);
+    // Inject a 1-bit Golay C0 error into every frame (bit 7 of byte 0 -> matrix[0][23], 18 bits in 1692 -> ~1.1%)
+    auto m_err = msg(1, 2, true, "ACAA40200044408080");
+    for (int f = 0; f < 18; ++f) m_err.payload[f * 9] ^= 0x80;
+    eb.handle(m_err, now + 360);
+    auto s1 = eb.snapshot(now + 360).stats;
+    CHECK(s1.ber_valid && s1.ber_tenths_pct >= 5 && s1.ber_tenths_pct <= 50 && s1.ber_updated_ms == now + 360);
+    dv_radio::VoiceMsg fl; fl.kind = dv_radio::VoiceKind::flush;
+    eb.handle(fl, now + 400);
+    CHECK(!eb.snapshot(now + 400).stats.ber_valid && eb.snapshot(now + 400).stats.ber_tenths_pct == 0);
+  }
 }
 
 // ---- Real-IQ corpus acceptance ---------------------------------------------------------------------------------------

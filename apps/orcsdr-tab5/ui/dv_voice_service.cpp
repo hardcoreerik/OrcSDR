@@ -287,7 +287,7 @@ void format_status(char* out, size_t size) {
       "silence=%llu errors=%llu concealed=%llu corrected=%llu uncorrectable=%llu lost_sf=%llu underruns=%llu overruns=%llu flushes=%llu "
       "synth_us=%u/%u/%u buffered_ms=%u peak_ms=%u latency_ms=%u gap_ms=%u/%u rms=%d peak=%d clipped=%llu test_samples=%llu nfm_blocked=%u "
       "q_pending=%u q_drops=%u qual=%u prot=%u unq=%u calls=%u pumps=%u pump_max_us=%u stack_hwm=%u rec=%d rec_saved=%u rec_discarded=%u rec_busy=%u "
-      "anc=%u ab_emb=%u ab_sync=%u elc=%u/%u unk_slot=%u conflict=%u agc=%d agc_g=%.2f gain=%.2f",
+      "anc=%u ab_emb=%u ab_sync=%u elc=%u/%u unk_slot=%u conflict=%u agc=%d agc_g=%.2f gain=%.2f ber_v=%d ber_t=%u",
       U(p.engine.stats.target_buffer_ms), p.running ? 1 : 0, enabled() ? 1 : 0, p.allowed ? 1 : 0, p.path_ready ? 1 : 0, dv_voice::phase_name(p.engine.phase),
       dv_voice::listen_name(p.engine.listen), static_cast<unsigned>(p.engine.active_slot), static_cast<unsigned>(p.engine.privacy[1]),
       static_cast<unsigned>(p.engine.privacy[2]), (unsigned long long)s.groups, (unsigned long long)s.frames,
@@ -300,7 +300,8 @@ void format_status(char* out, size_t size) {
       U(vs.protected_groups), U(vs.unqualified), U(vs.calls_started), U(p.pumps), U(p.max_pump_us), U(p.stack_hwm_bytes), save_speech() ? 1 : 0,
       U(speech_stats().calls_saved), U(speech_stats().calls_discarded), U(speech_stats().calls_dropped_busy),
       U(vs.anchors), U(vs.emb_abandoned), U(vs.sync_abandoned), U(vs.embedded_lc_ok), U(vs.embedded_lc_bad), U(vs.unknown_slot), U(vs.conflicting_identity),
-      agc() ? 1 : 0, static_cast<double>(s.agc_gain_x100) / 100.0, static_cast<double>(gain()));
+      agc() ? 1 : 0, static_cast<double>(s.agc_gain_x100) / 100.0, static_cast<double>(gain()),
+      s.ber_valid ? 1 : 0, U(s.ber_tenths_pct));
 }
 
 void format_support(char* out, size_t size) {

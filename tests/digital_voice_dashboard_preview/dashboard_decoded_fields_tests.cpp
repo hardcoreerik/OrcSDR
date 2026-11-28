@@ -53,8 +53,8 @@ int main() {
     assert(host_stub::contains("NXDN96") && host_stub::contains("RAN 0"));     // RAN 0 shown as a value, not hidden
     show(View::systems, mode, s);
     assert(host_stub::contains("CC13") && host_stub::contains("RAN 0"));
-    assert(host_stub::contains("TG 1  UNITS 2  HEARD 14  23:19:58"));
-    assert(host_stub::contains("2 SYS  1 TG  2 UNITS"));
+    assert(host_stub::contains("TG 6011885  2 UNITS  HEARD 14  23:19:58"));
+    assert(host_stub::contains("2 SYS  1 TG  2 U"));
     assert(host_stub::contains("6011885") && host_stub::contains("4106011  4106019"));
     show(View::explore, Density::discovery_first, s);
     assert(host_stub::contains("CC13") && host_stub::contains("152.157500 MHz"));

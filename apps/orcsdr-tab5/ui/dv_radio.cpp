@@ -1,6 +1,8 @@
 #include "dv_radio.hpp"
 
+#include <algorithm>
 #include <atomic>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <new>
@@ -57,6 +59,26 @@ struct State {
   Event ring[kRing];
   VoiceMsg vring[kVoiceRing];
   uint32_t last_stats_ms = 0;
+  // Decode-thread-owned DMR signal diagnostics (published via g_diag_seq seqlock into diag).
+  int16_t dmr_sym_ring[96]{};
+  uint8_t dmr_sym_head = 0, dmr_sym_count = 0;
+  uint32_t dmr_sym_total = 0, dmr_sym_published = 0, dmr_sym_seq = 0;
+  // Live raw FM discriminator baseline (4800 Hz decimated from 48 kS/s channelized IQ: real signal, never synthetic).
+  float disc_prev_re = 0.0f, disc_prev_im = 0.0f;
+  bool disc_have_prev = false;
+  uint8_t disc_decim = 0;
+  int16_t disc_ring[96]{};
+  uint8_t disc_head = 0, disc_count = 0;
+  uint32_t disc_total = 0, disc_published = 0, disc_seq = 0;
+  float disc_rms_sq_ema = 0.0f;
+  uint32_t last_lock_ms = 0;
+  int32_t hold_dev_t = 0, hold_snr_t = 0;
+  bool hold_dev = false, hold_snr = false;
+  struct DataBerWin { uint16_t errs; uint16_t bits; };
+  DataBerWin data_ber_win[8]{};
+  uint8_t data_ber_head = 0, data_ber_count = 0;
+  uint32_t data_ber_ms = 0;
+  SignalDiag diag{};
 };
 
 Hooks g_hooks{};
@@ -92,6 +114,8 @@ uint32_t g_call_serial = 0;
 // Snapshot of decoder-owned voice counters, published by the decode side (the worker) for any reader thread.
 std::atomic<uint32_t> g_vs[16];
 std::atomic<uint8_t> g_vpriv[3], g_vactive[3];
+std::atomic<uint32_t> g_diag_seq{0};
+std::atomic<uint32_t> g_dmr_crc_fail{0}, g_dmr_fec_corr{0};
 std::atomic<bool> g_candidate{false}, g_replay{false};
 uint64_t g_last_lost = 0;
 uint32_t g_tune_calls = 0, g_tune_refused = 0, g_alloc_failed = 0;
@@ -201,12 +225,34 @@ void on_voice_notice(const dmr::d1::Notice& n, void*) noexcept {
   push_voice(m);
 }
 
+void on_dmr_symbol(std::int16_t dev_hz, float, void*) noexcept {
+  if (!g_state) return;
+  g_state->dmr_sym_ring[g_state->dmr_sym_head] = dev_hz;
+  g_state->dmr_sym_head = static_cast<uint8_t>((g_state->dmr_sym_head + 1u) % 96u);
+  if (g_state->dmr_sym_count < 96u) ++g_state->dmr_sym_count;
+  ++g_state->dmr_sym_total;
+}
+
 void on_dmr(const dmr1::Event& ev, void*) noexcept {
   const dmr::d1::Event& d = ev.decoded;
   g_state->dec->calls.on_data(d);
   g_dmr_ev.fetch_add(1, std::memory_order_relaxed);
+  if (d.bptc_valid && !d.integrity_valid) {
+    g_dmr_crc_fail.fetch_add(1, std::memory_order_relaxed);
+  }
   // Only events that passed RS/CRC (integrity_valid) become UI events; sync/slot-type alone stay counters.
   if (!d.integrity_valid) return;
+  const uint32_t fec_bits = (d.golay_valid ? static_cast<uint32_t>(d.golay_corrected_bits) : 0u) +
+                            (d.bptc_valid ? static_cast<uint32_t>(d.bptc_corrected_bits) : 0u);
+  const uint32_t coded_bits = (d.golay_valid ? 20u : 0u) + (d.bptc_valid ? 196u : 0u);
+  if (fec_bits) g_dmr_fec_corr.fetch_add(fec_bits, std::memory_order_relaxed);
+  if (coded_bits > 0u) {
+    const uint16_t e_clamped = static_cast<uint16_t>(std::min<uint32_t>(fec_bits, coded_bits));
+    g_state->data_ber_win[g_state->data_ber_head] = {e_clamped, static_cast<uint16_t>(coded_bits)};
+    g_state->data_ber_head = static_cast<uint8_t>((g_state->data_ber_head + 1u) & 7u);
+    if (g_state->data_ber_count < 8u) ++g_state->data_ber_count;
+    g_state->data_ber_ms = now();
+  }
   Event e;
   e.protocol = ui::Protocol::dmr;
   const bool identity = d.evidence == dmr::d1::Evidence::identity_valid && d.identity != dmr::d1::IdentityKind::none;
@@ -249,12 +295,38 @@ void on_dibit_96(std::uint8_t d, void*) noexcept {
   (void)g_state->dec->d96.feed(&d, 1, on_nxdn_event, nullptr, on_nxdn_frame_96, nullptr);
 }
 
+void publish_diag(const SignalDiag& d) {
+  if (!g_state) return;
+  g_diag_seq.fetch_add(1, std::memory_order_acq_rel);
+  g_state->diag = d;
+  g_diag_seq.fetch_add(1, std::memory_order_release);
+}
+
 void reset_channelizer() { g_state->channelizer.reset(); }
 void reset_decoders() {
   g_state->dec->dmr.reset();
   g_state->dec->calls.reset();
   g_state->dec->dmr.set_voice_sink(on_voice_group, nullptr);
+  g_state->dec->dmr.set_symbol_sink(on_dmr_symbol, nullptr);
   g_state->dec->calls.set_sinks(on_qualified, on_voice_notice, nullptr);
+  g_state->dmr_sym_head = g_state->dmr_sym_count = 0;
+  g_state->disc_prev_re = g_state->disc_prev_im = 0.0f;
+  g_state->disc_have_prev = false;
+  g_state->disc_decim = 0;
+  g_state->disc_head = g_state->disc_count = 0;
+  g_state->disc_rms_sq_ema = 0.0f;
+  g_state->last_lock_ms = 0;
+  g_state->hold_dev = g_state->hold_snr = false;
+  g_state->hold_dev_t = g_state->hold_snr_t = 0;
+  g_state->data_ber_head = g_state->data_ber_count = 0;
+  g_state->data_ber_ms = 0;
+  {
+    SignalDiag d{};
+    d.epoch = g_epoch.load(std::memory_order_relaxed);
+    d.dmr_crc_failures = g_dmr_crc_fail.load(std::memory_order_relaxed);
+    d.dmr_fec_corrected = g_dmr_fec_corr.load(std::memory_order_relaxed);
+    publish_diag(d);
+  }
   {   // the voice task must drop whatever speech it is holding: nothing may bridge a stream discontinuity
     VoiceMsg flush;
     flush.kind = VoiceKind::flush;
@@ -297,11 +369,129 @@ void publish_stats() {
   const uint32_t n48 = g_n48_frames.load(std::memory_order_relaxed);
   const uint32_t n96 = g_n96_frames.load(std::memory_order_relaxed);
   if (acq > g_baseline_acq || n48 > g_baseline_n48 || n96 > g_baseline_n96) g_candidate.store(true, std::memory_order_relaxed);
+
+  {
+    SignalDiag d{};
+    d.epoch = g_epoch.load(std::memory_order_relaxed);
+    d.updated_ms = now();
+    d.dmr_crc_failures = g_dmr_crc_fail.load(std::memory_order_relaxed);
+    d.dmr_fec_corrected = g_dmr_fec_corr.load(std::memory_order_relaxed);
+    const auto& fs = g_state->dec->dmr.frontend_stats();
+    const uint32_t lsym = g_state->dec->dmr.locked_symbols();
+    const uint32_t t_now = d.updated_ms;
+    d.dmr_locked = fs.locked;
+    if (fs.locked && std::isfinite(fs.deviation_per_level_hz) &&
+        fs.deviation_per_level_hz >= 400.0f && fs.deviation_per_level_hz <= 950.0f) {
+      d.dev_valid = true;
+      d.dev_tenths_hz = static_cast<int32_t>(std::lroundf(3.0f * fs.deviation_per_level_hz * 10.0f));
+      d.cfo_tenths_hz = std::isfinite(fs.carrier_offset_hz)
+                            ? static_cast<int32_t>(std::lroundf(fs.carrier_offset_hz * 10.0f))
+                            : 0;
+      g_state->last_lock_ms = t_now ? t_now : 1u;
+      g_state->hold_dev = true;
+      g_state->hold_dev_t = d.dev_tenths_hz;
+      if (lsym >= 102u && std::isfinite(fs.decision_rms_hz)) {
+        const uint32_t n_dec = lsym > 78u ? (lsym - 78u) : 0u;
+        const float raw_mse = fs.decision_rms_hz * fs.decision_rms_hz;
+        const float w = n_dec >= 400u ? 1.0f : (1.0f - std::pow(0.99f, static_cast<float>(n_dec)));
+        const float mse = w > 0.05f ? (raw_mse / w) : raw_mse;
+        const float sig_pow = 5.0f * fs.deviation_per_level_hz * fs.deviation_per_level_hz;
+        const float snr_db = std::clamp(10.0f * std::log10(sig_pow / std::max(mse, sig_pow * 1.0e-5f)), -10.0f, 50.0f);
+        d.snr_valid = true;
+        d.snr_tenths_db = static_cast<int32_t>(std::lroundf(snr_db * 10.0f));
+        g_state->hold_snr = true;
+        g_state->hold_snr_t = d.snr_tenths_db;
+      }
+      if (g_state->dmr_sym_count >= 16u) {
+        d.symbols_valid = true;
+        d.disc_valid = false;
+        d.symbol_count = g_state->dmr_sym_count;
+        const uint8_t start = (g_state->dmr_sym_count < 96u) ? 0u : g_state->dmr_sym_head;
+        for (uint8_t i = 0; i < d.symbol_count; ++i) {
+          d.symbols[i] = g_state->dmr_sym_ring[(start + i) % 96u];
+        }
+        const int16_t a1 = static_cast<int16_t>(std::lroundf(fs.deviation_per_level_hz));
+        const int16_t a3 = static_cast<int16_t>(std::lroundf(3.0f * fs.deviation_per_level_hz));
+        d.reference[0] = a3;
+        d.reference[1] = a1;
+        d.reference[2] = static_cast<int16_t>(-a1);
+        d.reference[3] = static_cast<int16_t>(-a3);
+        d.symbol_extent_hz = std::max<int32_t>(2500, static_cast<int32_t>(a3) + static_cast<int32_t>(a1));
+        if (g_state->dmr_sym_total != g_state->dmr_sym_published) {
+          g_state->dmr_sym_published = g_state->dmr_sym_total;
+          ++g_state->dmr_sym_seq;
+        }
+        d.symbol_seq = g_state->dmr_sym_seq;
+      }
+    } else {
+      // Short same-epoch hold-over (1.5 s) prevents SNR/DEV from blinking to "--" between bursts.
+      const bool hold_ok = g_state->last_lock_ms != 0u && static_cast<uint32_t>(t_now - g_state->last_lock_ms) <= 1500u;
+      if (hold_ok) {
+        if (g_state->hold_dev) { d.dev_valid = true; d.dev_tenths_hz = g_state->hold_dev_t; }
+        if (g_state->hold_snr) { d.snr_valid = true; d.snr_tenths_db = g_state->hold_snr_t; }
+      } else {
+        g_state->dmr_sym_head = g_state->dmr_sym_count = 0;
+      }
+      // Real live FM discriminator baseline whenever the receiver is streaming IQ (even at low signal or on NXDN).
+      if (g_state->disc_count >= 16u) {
+        d.symbols_valid = true;
+        d.disc_valid = true;
+        d.symbol_count = g_state->disc_count;
+        const uint8_t start = (g_state->disc_count < 96u) ? 0u : g_state->disc_head;
+        for (uint8_t i = 0; i < d.symbol_count; ++i) {
+          d.symbols[i] = g_state->disc_ring[(start + i) % 96u];
+        }
+        d.symbol_extent_hz = 4000;
+        const float rms_hz = std::sqrt(std::max(0.0f, g_state->disc_rms_sq_ema));
+        d.disc_rms_tenths_hz = static_cast<int32_t>(std::lroundf(std::clamp(rms_hz, 0.0f, 4000.0f) * 10.0f));
+        if (g_state->disc_total != g_state->disc_published) {
+          g_state->disc_published = g_state->disc_total;
+          ++g_state->disc_seq;
+        }
+        d.symbol_seq = g_state->disc_seq;
+      }
+    }
+    if (g_state->data_ber_count > 0u) {
+      uint32_t errs = 0, bits = 0;
+      for (uint8_t i = 0; i < g_state->data_ber_count; ++i) {
+        errs += g_state->data_ber_win[i].errs;
+        bits += g_state->data_ber_win[i].bits;
+      }
+      if (bits > 0u) {
+        d.ber_valid = true;
+        const uint32_t pct_t = static_cast<uint32_t>((static_cast<uint64_t>(errs) * 1000ull + bits / 2u) / bits);
+        d.ber_tenths_pct = static_cast<int32_t>(pct_t > 1000u ? 1000u : pct_t);
+        d.ber_updated_ms = g_state->data_ber_ms;
+      }
+    }
+    publish_diag(d);
+  }
 }
 
 // Decode side. Runs on the worker, or inline in offer_iq when there is no worker. Single consumer of the sample ring.
 void decode_samples(const dv::Iq48* in, size_t n, uint8_t mask) {
   State& st = *g_state;
+  // Live real FM discriminator tap at 4800 Hz (every 10th 48 kS/s channelized IQ sample) for unlocked/low-signal/NXDN baseline.
+  constexpr float kDiscScale = 48000.0f / (2.0f * 3.14159265f);
+  for (size_t i = 0; i < n; ++i) {
+    const float re = in[i].re, im = in[i].im;
+    if (++st.disc_decim >= 10u) {
+      st.disc_decim = 0u;
+      if (st.disc_have_prev) {
+        const float cross = im * st.disc_prev_re - re * st.disc_prev_im;
+        const float dot = re * st.disc_prev_re + im * st.disc_prev_im;
+        const float f_hz = (cross == 0.0f && dot == 0.0f) ? 0.0f : std::clamp(std::atan2(cross, dot) * kDiscScale, -4000.0f, 4000.0f);
+        st.disc_ring[st.disc_head] = static_cast<int16_t>(std::lroundf(f_hz));
+        st.disc_head = static_cast<uint8_t>((st.disc_head + 1u) % 96u);
+        if (st.disc_count < 96u) ++st.disc_count;
+        ++st.disc_total;
+        st.disc_rms_sq_ema = st.disc_rms_sq_ema * 0.96f + (f_hz * f_hz) * 0.04f;
+      }
+      st.disc_have_prev = true;
+    }
+    st.disc_prev_re = re;
+    st.disc_prev_im = im;
+  }
   uint32_t a = micros32();
   if (mask & kMaskDmr) {
     for (size_t i = 0; i < n; ++i) st.dmr_in[i] = {in[i].re, in[i].im};
@@ -333,6 +523,7 @@ void decode_samples(const dv::Iq48* in, size_t n, uint8_t mask) {
 void worker_main(void*) {
   uint32_t seen_gen = g_reset_gen.load(std::memory_order_acquire);
   uint32_t last_stats = 0;
+  bool work_pending_publish = false;
   while (g_worker_run.load(std::memory_order_acquire)) {
     const uint32_t gen = g_reset_gen.load(std::memory_order_acquire);
     if (gen != seen_gen) {
@@ -340,11 +531,17 @@ void worker_main(void*) {
       const uint32_t pos = g_reset_pos.load(std::memory_order_acquire);
       if (static_cast<int32_t>(pos - g_ring_r.load(std::memory_order_relaxed)) > 0) g_ring_r.store(pos, std::memory_order_release);
       reset_decoders();
+      work_pending_publish = false;
     }
     const uint32_t r = g_ring_r.load(std::memory_order_relaxed);
     const uint32_t w = g_ring_w.load(std::memory_order_acquire);
     uint32_t avail = w - r;
     if (avail == 0) {
+      if (work_pending_publish) {
+        publish_stats();
+        work_pending_publish = false;
+        last_stats = now();
+      }
       if (g_hooks.sleep_ms) g_hooks.sleep_ms(2);
       continue;
     }
@@ -354,12 +551,15 @@ void worker_main(void*) {
     const uint32_t t0 = micros32();
     decode_samples(local, avail, g_mask.load(std::memory_order_relaxed));
     g_worker_busy_us.fetch_add(micros32() - t0, std::memory_order_relaxed);
+    work_pending_publish = true;
     // A reset requested while this chunk decoded makes it stale: do not advance past the reset position.
     if (g_reset_gen.load(std::memory_order_acquire) == seen_gen) g_ring_r.store(r + avail, std::memory_order_release);
     const uint32_t t = now();
-    if (t - last_stats >= kStatsPeriodMs) {
+    if (t - last_stats >= kStatsPeriodMs ||
+        (g_state->dmr_sym_total != g_state->dmr_sym_published && g_state->dmr_sym_count >= 16u && t - last_stats >= 50u)) {
       last_stats = t;
       publish_stats();
+      work_pending_publish = false;
     }
   }
 }
@@ -422,6 +622,10 @@ bool start() {
   g_vring_head.store(0); g_vring_tail.store(0); g_voice_dropped = g_voice_flushes = g_voice_pending_lost = 0; g_call_serial = 0;
   g_blocks = g_wrong_rate = g_settle_skipped = g_gaps = g_loss_events = 0;
   g_events = g_dropped = g_seq = 0;
+  g_diag_seq = 0; g_dmr_crc_fail = 0; g_dmr_fec_corr = 0;
+  g_state->dmr_sym_total = 0; g_state->dmr_sym_published = 0; g_state->dmr_sym_seq = 0;
+  g_state->last_stats_ms = now();
+  g_state->diag = SignalDiag{};
   g_max_us = g_level_milli = 0; g_total_us = 0; g_samples = 0; g_verified_ms = 0; g_identity_ms = 0;
   g_us_ch = g_us_dmr = g_us_n48 = g_us_n96 = 0;
   g_smp_dmr = g_smp_n48 = g_smp_n96 = 0;
@@ -596,8 +800,8 @@ void offer_internal(const uint8_t* cu8, size_t bytes, uint32_t sample_rate, bool
   };
   if (reset || gap) {
     reset_channelizer();
-    request_decoder_reset();
     if (!g_apply_pending.load()) g_epoch.fetch_add(1, std::memory_order_relaxed);
+    request_decoder_reset();
   }
   if (reset || gap) g_iq.reset();
   g_last_block_ms.store(t, std::memory_order_release);
@@ -631,7 +835,9 @@ void offer_internal(const uint8_t* cu8, size_t bytes, uint32_t sample_rate, bool
     }
   }
   g_level_milli.store(static_cast<uint32_t>(st.channelizer.take_level() * 1000.0f), std::memory_order_relaxed);
-  if (!worker && t - st.last_stats_ms >= kStatsPeriodMs) {
+  if (!worker && (t - st.last_stats_ms >= kStatsPeriodMs ||
+                  (st.dmr_sym_total != st.dmr_sym_published && st.dmr_sym_count >= 16u &&
+                   (t - st.last_stats_ms >= 50u || st.dmr_sym_published == 0u)))) {
     st.last_stats_ms = t;
     publish_stats();
   }
@@ -704,13 +910,32 @@ Status status() {
   return s;
 }
 
+SignalDiag signal_diag() {
+  SignalDiag out{};
+  g_voice_readers.fetch_add(1, std::memory_order_acq_rel);
+  if (g_state && !g_state_stopping.load(std::memory_order_acquire)) {
+    for (int i = 0; i < 4; ++i) {
+      const uint32_t a = g_diag_seq.load(std::memory_order_acquire);
+      if (a & 1u) continue;
+      out = g_state->diag;
+      if (g_diag_seq.load(std::memory_order_acquire) == a) break;
+    }
+  }
+  g_voice_readers.fetch_sub(1, std::memory_order_acq_rel);
+  return out;
+}
+
 void format_status(char* out, size_t size) {
   if (!out || size == 0) return;
   const Status s = status();
+  const SignalDiag sd = signal_diag();
+  const unsigned diag_mask = (sd.dev_valid ? 1u : 0u) | (sd.snr_valid ? 2u : 0u) |
+                             (sd.ber_valid ? 4u : 0u) | (sd.symbols_valid ? 8u : 0u);
   std::snprintf(out, size,
       "RTL_DV_STATUS link=%s running=%d ch_hz=%lu epoch=%lu blocks=%lu wrong_rate=%lu settle_skipped=%lu gaps=%lu loss=%lu "
       "tune=%lu/%lu events=%lu dropped=%lu dmr_acq=%lu dmr_ev=%lu dmr_id=%lu n48_frames=%lu n48_ok=%lu n96_frames=%lu n96_ok=%lu "
-      "blk_us_max=%lu blk_us_avg=%lu level_milli=%lu mask=%u state_bytes=%lu pairs=%llu us_ch=%llu us_dmr=%llu us_n48=%llu us_n96=%llu worker=%d ring_pend=%lu ring_max=%lu ring_drops=%lu worker_busy_pm=%lu dec_internal=%lu smp_dmr=%llu smp_n48=%llu smp_n96=%llu",
+      "blk_us_max=%lu blk_us_avg=%lu level_milli=%lu mask=%u state_bytes=%lu pairs=%llu us_ch=%llu us_dmr=%llu us_n48=%llu us_n96=%llu worker=%d ring_pend=%lu ring_max=%lu ring_drops=%lu worker_busy_pm=%lu dec_internal=%lu smp_dmr=%llu smp_n48=%llu smp_n96=%llu "
+      "dmr_lock=%d dmr_diag_mask=%u dmr_dev_t=%ld dmr_snr_t=%ld dmr_ber_t=%ld dmr_crc_fail=%lu dmr_fec=%lu",
       link_name(s.link), s.running ? 1 : 0, (unsigned long)s.channel_hz, (unsigned long)s.epoch, (unsigned long)s.blocks,
       (unsigned long)s.wrong_rate_blocks, (unsigned long)s.settle_skipped, (unsigned long)s.discontinuities,
       (unsigned long)s.loss_events, (unsigned long)s.tune_calls, (unsigned long)s.tune_refused, (unsigned long)s.events,
@@ -722,7 +947,10 @@ void format_status(char* out, size_t size) {
       (unsigned long long)g_us_n48.load(), (unsigned long long)g_us_n96.load(), s.worker ? 1 : 0,
       (unsigned long)s.ring_pending, (unsigned long)s.ring_fill_max, (unsigned long)s.ring_drops,
       (unsigned long)s.worker_busy_permille, (unsigned long)g_dec_internal_bytes.load(),
-      (unsigned long long)g_smp_dmr.load(), (unsigned long long)g_smp_n48.load(), (unsigned long long)g_smp_n96.load());
+      (unsigned long long)g_smp_dmr.load(), (unsigned long long)g_smp_n48.load(), (unsigned long long)g_smp_n96.load(),
+      sd.dmr_locked ? 1 : 0, diag_mask, static_cast<long>(sd.dev_valid ? sd.dev_tenths_hz : 0),
+      static_cast<long>(sd.snr_valid ? sd.snr_tenths_db : 0), static_cast<long>(sd.ber_valid ? sd.ber_tenths_pct : 0),
+      static_cast<unsigned long>(sd.dmr_crc_failures), static_cast<unsigned long>(sd.dmr_fec_corrected));
 }
 
 }  // namespace orcsdr::dv_radio

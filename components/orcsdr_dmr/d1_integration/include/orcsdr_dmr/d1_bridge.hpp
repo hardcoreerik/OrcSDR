@@ -17,6 +17,7 @@ struct Event {
     std::uint32_t stream_epoch = 0;       // Separate from any UTC or station identity.
 };
 using EventSink = void (*)(const Event&, void*) noexcept;
+using SymbolSink = void (*)(std::int16_t dev_hz, float error_hz, void*) noexcept;
 
 struct Stats {
     std::uint64_t iq_samples = 0;
@@ -50,7 +51,9 @@ public:
     void reset() noexcept;
     void discontinuity() noexcept;
     void set_voice_sink(d1::VoiceSink sink, void* user) noexcept { protocol_.set_voice_sink(sink, user); }
+    void set_symbol_sink(SymbolSink sink, void* user) noexcept { symbol_sink_ = sink; symbol_user_ = user; }
     [[nodiscard]] const d1::VoiceStats& voice_stats() const noexcept { return protocol_.voice_stats(); }
+    [[nodiscard]] std::uint32_t locked_symbols() const noexcept { return locked_symbols_; }
     Result process(const ComplexSample* input, std::size_t count,
                    EventSink callback = nullptr, void* user = nullptr) noexcept;
     [[nodiscard]] const Stats& stats() const noexcept { return stats_; }
@@ -78,6 +81,9 @@ private:
     EventSink active_callback_ = nullptr;
     void* active_user_ = nullptr;
     std::size_t call_events_ = 0;
+    SymbolSink symbol_sink_ = nullptr;
+    void* symbol_user_ = nullptr;
+    std::uint32_t locked_symbols_ = 0;
 };
 
 }  // namespace orcsdr::dmr::d1::integration

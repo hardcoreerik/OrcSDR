@@ -259,6 +259,10 @@ uint32_t sys_row_sig(const ObservedSystem& y,bool selected) {
   h=fnv_val(h,y.ran);h=fnv_val(h,y.ran_valid);h=fnv_val(h,y.topology);h=fnv_val(h,y.topology_valid);
   h=fnv_val(h,y.has_frequency);h=fnv_val(h,y.frequency_hz);h=fnv_val(h,y.talkgroup_count);
   h=fnv_val(h,y.subscriber_count);h=fnv_val(h,y.heard_count);h=fnv_bytes(h,y.last_time,sizeof(y.last_time));
+  h=fnv_val(h,y.role_flags);h=fnv_val(h,y.has_sys);h=fnv_val(h,y.net_id);h=fnv_val(h,y.site_id);
+  h=fnv_val(h,y.network_sites);h=fnv_val(h,y.suspected_ghost);
+  h=fnv_val(h,y.group_site_n);for(unsigned k=0;k<ObservedSystem::kSiteSlots;++k)h=fnv_val(h,y.group_site_hz[k]);
+  h=fnv_val(h,y.top_talkgroup_n);if(y.top_talkgroup_n)h=fnv_val(h,y.top_talkgroups[0]);
   return fnv_val(h,selected);
 }
 // What the right-hand panel shows (database totals, the selected system's talkgroups and units, the save button).
@@ -269,7 +273,10 @@ uint32_t sys_facts_sig(const Snapshot& s,const UiState& u,unsigned count) {
   if(count) {
     const auto& y=s.observed_systems[std::min<unsigned>(u.selected_system,count-1)];
     h=fnv_val(h,y.talkgroup_count);h=fnv_val(h,y.subscriber_count);h=fnv_val(h,y.top_talkgroup_n);h=fnv_val(h,y.top_subscriber_n);
+    h=fnv_val(h,y.role_flags);h=fnv_val(h,y.has_sys);h=fnv_val(h,y.net_id);h=fnv_val(h,y.site_id);h=fnv_val(h,y.suspected_ghost);
+    h=fnv_val(h,y.network_sites);h=fnv_val(h,y.group_site_n);
     for(unsigned i=0;i<kTopIds;++i){h=fnv_val(h,y.top_talkgroups[i]);h=fnv_val(h,y.top_subscribers[i]);}
+    for(unsigned k=0;k<ObservedSystem::kSiteSlots;++k)h=fnv_val(h,y.group_site_hz[k]);
   }
   return h;
 }
@@ -278,27 +285,53 @@ void systems_row(Paint& p,const Snapshot& s,const UiState& u,Rect a,unsigned i) 
   const int yy=a.y+93+static_cast<int>(i)*76;
   p.fillRoundRect(a.x+11,yy-17,a.w-22,70,4,i==u.selected_system?kSelected:kPanel);   // this row only, painted over itself
   p.text(protocol_name(sys.protocol),a.x+18,yy,
-         sys.evidence>=Evidence::integrity_valid?kGreen:kAmber,2,a);
+         sys.suspected_ghost?kAmber:(sys.evidence>=Evidence::integrity_valid?kGreen:kAmber),2,a);
   const bool verified=sys.evidence>=Evidence::integrity_valid;
   char area[16];area_text(area,sys.protocol,sys.colour_code,sys.colour_code_valid,sys.ran,sys.ran_valid);
-  if(area[0]&&verified)p.text(area,a.x+240,yy,kWhite,2,a);
-  if(sys.topology_valid&&verified)p.label(nxdn_topology_name(sys.topology),a.x+(area[0]&&verified?400:240),yy,a);
-  else if(!(area[0]&&verified))p.label("SYSTEM TYPE UNKNOWN",a.x+240,yy,a);
+  if(area[0]&&verified)p.text(area,a.x+210,yy,kWhite,2,a);
+  if(sys.has_sys&&verified) {
+    char net[36];
+    if(sys.network_sites>1) std::snprintf(net,sizeof(net),"NET %u (%u SITES)",static_cast<unsigned>(sys.net_id),static_cast<unsigned>(sys.network_sites));
+    else std::snprintf(net,sizeof(net),"NET %u S%u",static_cast<unsigned>(sys.net_id),static_cast<unsigned>(sys.site_id));
+    p.text(net,a.x+320,yy,kCyan,2,a);
+  } else if(sys.network_sites>1&&verified) {
+    char net[24];
+    std::snprintf(net,sizeof(net),"(%u SITES)",static_cast<unsigned>(sys.network_sites));
+    p.text(net,a.x+320,yy,kCyan,2,a);
+  } else if(sys.topology_valid&&verified) {
+    p.label(nxdn_topology_name(sys.topology),a.x+(area[0]&&verified?320:210),yy,a);
+  } else if(!(area[0]&&verified)) {
+    p.label("SYSTEM TYPE UNKNOWN",a.x+210,yy,a);
+  }
+  const bool rv=(sys.role_flags&2u)!=0,rc=(sys.role_flags&1u)!=0,rd=(sys.role_flags&4u)!=0;
+  const char* rtag=sys.suspected_ghost?"GHOST?":(rv&&rc)?"MIXED":rv?"VOICE":rc?"CTRL":rd?"DATA":"";
+  if(rtag[0]) {
+    const uint16_t rcol=sys.suspected_ghost?kAmber:rv?kGreen:rc?kCyan:kWhite;
+    p.text(rtag,a.x+a.w-96,yy,rcol,2,a);
+  }
   char val[160];
-  if(sys.has_frequency)std::snprintf(val,sizeof(val),"%lu.%06lu MHz  TG %u  UNITS %u  HEARD %lu%s%s",
-      static_cast<unsigned long>(sys.frequency_hz/1000000),static_cast<unsigned long>(sys.frequency_hz%1000000),
-      static_cast<unsigned>(sys.talkgroup_count),static_cast<unsigned>(sys.subscriber_count),
-      static_cast<unsigned long>(sys.heard_count),sys.last_time[0]?"  ":"",sys.last_time);
-  else std::snprintf(val,sizeof(val),"FREQUENCY UNKNOWN");
+  if(sys.has_frequency) {
+    if(sys.talkgroup_count==1&&sys.top_talkgroup_n>=1) {
+      std::snprintf(val,sizeof(val),"%lu.%06lu MHz  TG %lu  %u UNITS  HEARD %lu%s%s",
+          static_cast<unsigned long>(sys.frequency_hz/1000000),static_cast<unsigned long>(sys.frequency_hz%1000000),
+          static_cast<unsigned long>(sys.top_talkgroups[0]),static_cast<unsigned>(sys.subscriber_count),
+          static_cast<unsigned long>(sys.heard_count),sys.last_time[0]?"  ":"",sys.last_time);
+    } else {
+      std::snprintf(val,sizeof(val),"%lu.%06lu MHz  %u TG  %u UNITS  HEARD %lu%s%s",
+          static_cast<unsigned long>(sys.frequency_hz/1000000),static_cast<unsigned long>(sys.frequency_hz%1000000),
+          static_cast<unsigned>(sys.talkgroup_count),static_cast<unsigned>(sys.subscriber_count),
+          static_cast<unsigned long>(sys.heard_count),sys.last_time[0]?"  ":"",sys.last_time);
+    }
+  } else std::snprintf(val,sizeof(val),"FREQUENCY UNKNOWN");
   p.label(val,a.x+18,yy+31,a);
   p.hr(a.x+18,yy+51,a.w-36);
 }
 void systems_facts(Paint& p,const Snapshot& s,const UiState& u,Rect b,unsigned count) {
-  constexpr int kDx=140;   // value column: wide enough for "INTEGRITY VALIDATED" and "10 SYS  3 TG  5 UNITS" inside the panel
+  constexpr int kDx=140;   // value column: wide enough for "INTEGRITY VALIDATED" and "10 SYS  3 TG  5 U" inside the panel
   p.fillRect(b.x+10,b.y+90,b.w-20,300,kPanel);
   p.fact("RF LOCK",evidence_name(s.evidence),b.x+18,b.y+110,b,kWhite,kDx);
   if(s.db_available) {
-    char t[40];std::snprintf(t,sizeof(t),"%u SYS  %u TG  %u UNITS",static_cast<unsigned>(s.db_systems),
+    char t[40];std::snprintf(t,sizeof(t),"%u SYS  %u TG  %u U",static_cast<unsigned>(s.db_systems),
                              static_cast<unsigned>(s.db_talkgroups),static_cast<unsigned>(s.db_subscribers));
     p.fact("DATABASE",t,b.x+18,b.y+156,b,kGreen,kDx);
   } else p.fact("DATABASE","NOT AVAILABLE",b.x+18,b.y+156,b,kAmber,kDx);
@@ -319,6 +352,23 @@ void systems_facts(Paint& p,const Snapshot& s,const UiState& u,Rect b,unsigned c
       char one[16];std::snprintf(one,sizeof(one),"%s%lu",i?"  ":"",static_cast<unsigned long>(sys.top_subscribers[i]));
       std::strncat(ids,one,sizeof(ids)-std::strlen(ids)-1);}
     if(ids[0])p.label(ids,b.x+18,b.y+292,b);
+    if(sys.network_sites>1&&sys.group_site_n>0) {
+      char sites[72]{};
+      const unsigned show_n=std::min<unsigned>(sys.group_site_n,2u);
+      for(unsigned k=0;k<show_n;++k) {
+        char one[24];
+        const char rc=(sys.group_site_role[k]&2u)?'V':(sys.group_site_role[k]&1u)?'C':' ';
+        std::snprintf(one,sizeof(one),"%s%lu.%04lu%c",k?" ":"",
+            static_cast<unsigned long>(sys.group_site_hz[k]/1000000u),
+            static_cast<unsigned long>((sys.group_site_hz[k]%1000000u)/100u),rc==' '?' ':rc);
+        std::strncat(sites,one,sizeof(sites)-std::strlen(sites)-1);
+      }
+      if(sys.network_sites>show_n) {
+        char more[12];std::snprintf(more,sizeof(more)," +%u",static_cast<unsigned>(sys.network_sites-show_n));
+        std::strncat(sites,more,sizeof(sites)-std::strlen(sites)-1);
+      }
+      p.fact("SITES",sites,b.x+18,b.y+312,b,kCyan,72);
+    }
   }
   p.button("SAVE CHANNEL",{b.x+18,b.y+334,242,48},s.can_save_channel);
   p.button("FOLLOW",{b.x+270,b.y+334,138,48},s.can_scan&&count>0&&s.observed_systems[std::min<unsigned>(u.selected_system,count-1)].has_frequency);
@@ -399,13 +449,37 @@ void disc_mhz(char (&out)[32],uint32_t hz) {
   std::snprintf(out,sizeof(out),"%lu.%06lu MHz",static_cast<unsigned long>(hz/1000000u),static_cast<unsigned long>(hz%1000000u));
 }
 bool disc_can_save(const Snapshot& s) {return !s.discover_running && s.discover_found>0 && s.can_save_channel;}
-void disc_progress(Paint& p,const Snapshot& s,const DiscGeom& g) {
+Rect disc_mode_btn(const DiscGeom& g,unsigned idx) {
+  return {g.prog.x+6+static_cast<int>(idx)*242,g.prog.y+36,228,74};
+}
+void disc_progress(Paint& p,const Snapshot& s,const UiState& u,const DiscGeom& g) {
   const Rect r=g.prog;
   p.fillRect(r.x,r.y,r.w,r.h,kPanel);
   const bool run=s.discover_running;
+  if(!run&&u.discover_pick_mode) {
+    p.text("CHOOSE DISCOVERY MODE",r.x+6,r.y+16,kCyan,2,r);
+    const unsigned mins_full=s.band_minutes?s.band_minutes:1u;
+    const unsigned mins_fast=std::max(1u,(mins_full+29u)/30u);
+    const unsigned mins_deep=std::max(2u,(mins_full+9u)/10u);
+    char b0[32],b1[32],b2[32];
+    std::snprintf(b0,sizeof(b0),"FAST (~%um)",mins_fast);
+    std::snprintf(b1,sizeof(b1),"DEEP (~%um)",mins_deep);
+    std::snprintf(b2,sizeof(b2),"FULL (~%um)",mins_full);
+    p.button(b0,disc_mode_btn(g,0),true,false);
+    p.button(b1,disc_mode_btn(g,1),true,false);
+    p.button(b2,disc_mode_btn(g,2),true,false);
+    p.label("FAST: wideband   DEEP: peak+avg 6.25k   FULL: every ch",r.x+6,r.y+128,r);
+    return;
+  }
   const bool sv=run&&s.discover_phase==1;
   const bool dec=run&&s.discover_phase==2;
-  p.text(sv?"SURVEYING":dec?"DECODING":run?"DISCOVERING":"READY",r.x+6,r.y+20,run?kCyan:kWhite,3,r);
+  const char* mtag=s.discover_mode==1?"FAST":s.discover_mode==2?"DEEP":s.discover_mode==3?"FULL":"";
+  char hdr[40];
+  if(sv&&mtag[0]) std::snprintf(hdr,sizeof(hdr),"SURVEYING (%s)",mtag);
+  else if(dec&&mtag[0]) std::snprintf(hdr,sizeof(hdr),"DECODING (%s)",mtag);
+  else if(run&&mtag[0]) std::snprintf(hdr,sizeof(hdr),"DISCOVERING (%s)",mtag);
+  else std::snprintf(hdr,sizeof(hdr),"%s",sv?"SURVEYING":dec?"DECODING":run?"DISCOVERING":"READY");
+  p.text(hdr,r.x+6,r.y+20,run?kCyan:kWhite,3,r);
   char f[48];
   if(sv&&s.survey_center_hz){char m[32];disc_mhz(m,s.survey_center_hz);std::snprintf(f,sizeof(f),"NOW  %s",m);}
   else if(run&&s.scan.current_frequency_valid){char m[32];disc_mhz(m,s.scan.current_frequency_hz);std::snprintf(f,sizeof(f),"NOW  %s",m);}
@@ -427,8 +501,12 @@ void disc_progress(Paint& p,const Snapshot& s,const DiscGeom& g) {
   else if(run&&s.scan.planned)std::snprintf(t,sizeof(t),"CH %u / %u   PASS %u   PLAIN SWEEP",static_cast<unsigned>(s.scan.channel_index),static_cast<unsigned>(s.scan.planned),static_cast<unsigned>(s.scan.passes));
   else std::snprintf(t,sizeof(t),"%u CH IN THE PICKED BANDS",static_cast<unsigned>(s.band_channels));
   p.label(t,r.x+6,r.y+112,r);
-  if(sv||dec)std::snprintf(t,sizeof(t),"SIGNALS %u   FOUND %u   CANDIDATES %u",static_cast<unsigned>(s.survey_hot),static_cast<unsigned>(s.discover_found),static_cast<unsigned>(s.discover_candidates));
-  else std::snprintf(t,sizeof(t),"FOUND %u   CANDIDATES %u",static_cast<unsigned>(s.discover_found),static_cast<unsigned>(s.discover_candidates));
+  if(sv||dec)std::snprintf(t,sizeof(t),"SIG %u  FOUND %u (V:%u C:%u)  CAND %u  NGH %u",static_cast<unsigned>(s.survey_hot),static_cast<unsigned>(s.discover_found),
+                           static_cast<unsigned>(s.discover_voice),static_cast<unsigned>(s.discover_ctrl),
+                           static_cast<unsigned>(s.discover_candidates),static_cast<unsigned>(s.discover_neighbors));
+  else std::snprintf(t,sizeof(t),"FOUND %u (V:%u C:%u)  CANDIDATES %u  NGH %u",static_cast<unsigned>(s.discover_found),
+                     static_cast<unsigned>(s.discover_voice),static_cast<unsigned>(s.discover_ctrl),
+                     static_cast<unsigned>(s.discover_candidates),static_cast<unsigned>(s.discover_neighbors));
   p.text(t,r.x+6,r.y+134,s.discover_found?kGreen:kMuted,2,r);
 }
 void disc_result(Paint& p,const Snapshot& s,const DiscGeom& g) {
@@ -441,9 +519,10 @@ void disc_result(Paint& p,const Snapshot& s,const DiscGeom& g) {
     p.text(t,r.x+6,r.y+r.h/2,s.discover_skipped?kAmber:kGreen,2,r);
   } else p.label("A channel counts as found after 3 sightings",r.x+6,r.y+r.h/2,r);
 }
-void disc_buttons(Paint& p,const Snapshot& s,const DiscGeom& g) {
+void disc_buttons(Paint& p,const Snapshot& s,const UiState& u,const DiscGeom& g) {
   const bool run=s.discover_running;
-  p.button(run?"STOP DISCOVERY":"START DISCOVERY",g.start,run||s.discover_can_start);
+  if(!run&&u.discover_pick_mode) p.button("CANCEL",g.start,true,false);
+  else p.button(run?"STOP DISCOVERY":"START DISCOVERY",g.start,run||s.discover_can_start);
   p.button("SAVE TO LIST",g.save,disc_can_save(s));
   p.button("BACK",g.back,true);
 }
@@ -469,18 +548,21 @@ uint32_t disc_frame_sig(const Snapshot& s) {
   h=fnv_val(h,s.band_mask);h=fnv_val(h,s.band_channels);h=fnv_val(h,s.band_minutes);
   return h;
 }
-uint32_t disc_progress_sig(const Snapshot& s) {
+uint32_t disc_progress_sig(const Snapshot& s,const UiState& u) {
   uint32_t h=2166136261u;
-  h=fnv_val(h,s.discover_running);h=fnv_val(h,s.scan.current_frequency_valid);h=fnv_val(h,s.scan.current_frequency_hz);
+  h=fnv_val(h,s.discover_running);h=fnv_val(h,s.discover_mode);h=fnv_val(h,u.discover_pick_mode);
+  h=fnv_val(h,s.scan.current_frequency_valid);h=fnv_val(h,s.scan.current_frequency_hz);
   h=fnv_val(h,s.scan.channel_index);h=fnv_val(h,s.scan.planned);h=fnv_val(h,s.scan.passes);
   h=fnv_val(h,s.discover_found);h=fnv_val(h,s.discover_candidates);
+  h=fnv_val(h,s.discover_voice);h=fnv_val(h,s.discover_ctrl);h=fnv_val(h,s.discover_neighbors);
   h=fnv_val(h,s.discover_phase);h=fnv_val(h,s.survey_done);h=fnv_val(h,s.survey_total);h=fnv_val(h,s.survey_hot);
   h=fnv_val(h,s.survey_passes);h=fnv_val(h,s.survey_rate_khz);h=fnv_val(h,s.survey_center_hz);
   return h;
 }
-uint32_t disc_button_sig(const Snapshot& s) {
+uint32_t disc_button_sig(const Snapshot& s,const UiState& u) {
   uint32_t h=2166136261u;
   h=fnv_val(h,s.discover_running);h=fnv_val(h,s.discover_can_start);h=fnv_val(h,disc_can_save(s));
+  h=fnv_val(h,u.discover_pick_mode);
   h=fnv_val(h,s.discover_saved);h=fnv_val(h,s.discover_skipped);h=fnv_val(h,s.band_mask);
   return h;
 }
@@ -497,22 +579,22 @@ void discover(Paint& p,const Snapshot& s,const UiState& u) {
     }
     p.title("NEWEST SYSTEMS",g.b.x+18,g.b.y+32,g.b);
   });
-  widget(p,kSlotDiscProgress,kPanel,[&]{disc_progress(p,s,g);});
+  widget(p,kSlotDiscProgress,kPanel,[&]{disc_progress(p,s,u,g);});
   widget(p,kSlotDiscResult,kPanel,[&]{disc_result(p,s,g);});
-  widget(p,kSlotDiscButtons,kBg,[&]{disc_buttons(p,s,g);});
+  widget(p,kSlotDiscButtons,kBg,[&]{disc_buttons(p,s,u,g);});
   for(unsigned i=0;i<kObservedSystems;++i)widget(p,kSlotDiscRow+i,kPanel,[&]{disc_row(p,s,g,i);});
 }
-void discover_sigs(const Snapshot& s,uint32_t* sig) {
-  sig[0]=disc_frame_sig(s);sig[1]=disc_progress_sig(s);sig[2]=disc_button_sig(s);
+void discover_sigs(const Snapshot& s,const UiState& u,uint32_t* sig) {
+  sig[0]=disc_frame_sig(s);sig[1]=disc_progress_sig(s,u);sig[2]=disc_button_sig(s,u);
   const unsigned n=sys_count(s);
   for(unsigned i=0;i<kObservedSystems;++i)sig[3+i]=i<n?sys_row_sig(s.observed_systems[i],false):0;
 }
 void discover_update(Paint& p,const Snapshot& s,const UiState& u,uint32_t* sig) {
-  uint32_t now[7];discover_sigs(s,now);
+  uint32_t now[7];discover_sigs(s,u,now);
   if(now[0]!=sig[0]) {discover(p,s,u);std::memcpy(sig,now,sizeof(now));return;}   // the band list changed: repaint the page once
   const DiscGeom g=disc_geom(u.density);
-  if(now[1]!=sig[1]) {widget(p,kSlotDiscProgress,kPanel,[&]{disc_progress(p,s,g);});sig[1]=now[1];}
-  if(now[2]!=sig[2]) {widget(p,kSlotDiscResult,kPanel,[&]{disc_result(p,s,g);});widget(p,kSlotDiscButtons,kBg,[&]{disc_buttons(p,s,g);});sig[2]=now[2];}
+  if(now[1]!=sig[1]) {widget(p,kSlotDiscProgress,kPanel,[&]{disc_progress(p,s,u,g);});sig[1]=now[1];}
+  if(now[2]!=sig[2]) {widget(p,kSlotDiscResult,kPanel,[&]{disc_result(p,s,g);});widget(p,kSlotDiscButtons,kBg,[&]{disc_buttons(p,s,u,g);});sig[2]=now[2];}
   for(unsigned i=0;i<kObservedSystems;++i)
     if(now[3+i]!=sig[3+i]) {widget(p,kSlotDiscRow+i,kPanel,[&]{disc_row(p,s,g,i);});sig[3+i]=now[3+i];}
 }
@@ -536,13 +618,16 @@ void follow_page(Paint& p,const Snapshot& s,const UiState&) {
   else if(v.phase==VoicePhase::protected_voice){status="Encrypted call - we can't play it";sc=kRed;}
   else if(on_air){status="Call in progress";sc=kGreen;}
   else if(v.phase==VoicePhase::call_ended){status="Call ended - waiting for a reply";sc=kCyan;}
+  else if((s.live_role_flags&1u)!=0u&&(s.live_role_flags&2u)==0u){status="CONTROL CH - WAITING FOR VOICE";sc=kCyan;}
   p.title(s.follow_active?"FOLLOWING":"FOLLOW",a.x+18,a.y+32,a);
   char t[64];
   if(s.follow_active&&s.follow_frequency_hz) {char m[32];follow_mhz(m,s.follow_frequency_hz);std::snprintf(t,sizeof(t),"%s",m);}
   else std::snprintf(t,sizeof(t),"-");
   p.text(t,a.x+18,a.y+84,kWhite,4,a);
   if(s.follow_active) {
-    if(s.follow_protocol==Protocol::dmr&&s.follow_area_valid) std::snprintf(t,sizeof(t),"DMR   Colour Code %u",static_cast<unsigned>(s.follow_area));
+    if(s.follow_protocol==Protocol::dmr&&s.live_has_sys&&s.follow_area_valid)
+      std::snprintf(t,sizeof(t),"DMR T3 NET %u SITE %u   CC %u",static_cast<unsigned>(s.live_net_id),static_cast<unsigned>(s.live_site_id),static_cast<unsigned>(s.follow_area));
+    else if(s.follow_protocol==Protocol::dmr&&s.follow_area_valid) std::snprintf(t,sizeof(t),"DMR   Colour Code %u",static_cast<unsigned>(s.follow_area));
     else if((s.follow_protocol==Protocol::nxdn48||s.follow_protocol==Protocol::nxdn96)&&s.follow_area_valid)
       std::snprintf(t,sizeof(t),"%s   RAN %u",protocol_name(s.follow_protocol),static_cast<unsigned>(s.follow_area));
     else std::snprintf(t,sizeof(t),"%s",protocol_name(s.follow_protocol));
@@ -896,12 +981,12 @@ bool Dashboard::present_main(lgfx::LovyanGFX& display,const Snapshot& s,
   if(!entry && state.view!=View::explore && old_.revision!=s.revision &&
      last_state_.history_offset==state.history_offset && last_state_.selected_history==state.selected_history &&
      last_state_.selected_scan_hit==state.selected_scan_hit && last_state_.selected_system==state.selected_system &&
-     last_state_.system_offset==state.system_offset &&
+     last_state_.system_offset==state.system_offset && last_state_.discover_pick_mode==state.discover_pick_mode &&
      static_cast<uint32_t>(millis()-last_paint_ms_)<(state.view==View::follow?60u:250u)) return true;   // FOLLOW animates: about 16 a second
   if(!entry && old_.revision==s.revision &&
      last_state_.history_offset==state.history_offset && last_state_.selected_history==state.selected_history &&
      last_state_.selected_scan_hit==state.selected_scan_hit && last_state_.selected_system==state.selected_system &&
-     last_state_.system_offset==state.system_offset) {
+     last_state_.system_offset==state.system_offset && last_state_.discover_pick_mode==state.discover_pick_mode) {
     if(old_.audio_revision!=s.audio_revision) {
       if(static_cast<uint32_t>(millis()-last_paint_ms_)<120u) return true;   // a fast counter or level: at most about 8 repaints a second
       last_paint_ms_=millis();
@@ -941,7 +1026,7 @@ bool Dashboard::present_main(lgfx::LovyanGFX& display,const Snapshot& s,
     if(state.view==View::systems||state.view==View::discover) page(p,s,state);   // first paint; later changes go through systems_update() / discover_update()
     else present_page(display,s,state);              // Live, Last Heard, Signal, Setup: only when what they show changes
     if(state.view==View::systems) {systems_sigs(s,state,sys_row_sig_,sys_facts_sig_,sys_shape_);sys_ready_=true;}
-    if(state.view==View::discover) {discover_sigs(s,disc_sig_);disc_ready_=true;}
+    if(state.view==View::discover) {discover_sigs(s,state,disc_sig_);disc_ready_=true;}
   }
   last_state_=state;
   old_=s;
@@ -994,8 +1079,18 @@ Action Dashboard::handle_touch(int32_t x,int32_t y,const Snapshot& s,
   }
   if(state.view==View::discover) {
     const DiscGeom g=disc_geom(state.density);
-    if(g.start.contains(x,y)&&(s.discover_running||s.discover_can_start))
-      return {s.discover_running?ActionKind::discover_stop:ActionKind::discover_start,0};
+    if(!s.discover_running&&state.discover_pick_mode) {
+      for(unsigned m=0;m<3;++m)
+        if(disc_mode_btn(g,m).contains(x,y)&&s.discover_can_start)
+          return {ActionKind::discover_start,static_cast<uint8_t>(m+1)};
+      if(g.start.contains(x,y)) return {ActionKind::toggle_discover_picker,0};
+      if(g.back.contains(x,y)) return {ActionKind::close_discover,0};
+      return {};
+    }
+    if(g.start.contains(x,y)&&(s.discover_running||s.discover_can_start)) {
+      if(s.discover_running) return {ActionKind::discover_stop,0};
+      return {ActionKind::toggle_discover_picker,1};
+    }
     if(g.save.contains(x,y)&&disc_can_save(s))return {ActionKind::discover_save,0};
     if(g.back.contains(x,y))return {ActionKind::close_discover,0};
     return {};

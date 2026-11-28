@@ -6,6 +6,9 @@ This is the **project-level release and current-source index**. It links the aut
 
 ### Digital Voice
 
+- LIVE monitor real DMR Signal Diagnostics (`d1_bridge`, `dv_voice_audio`, `dv_radio`, `digital_voice_live_monitor`, `digital_voice_app`):
+  - Expose CFO-removed 4FSK symbol residuals and locked symbol count from `d1_bridge::Receiver`, rolling 4-superframe Golay C0/C1 BER from `dv_voice::Engine`, and seqlock-published `dv_radio::SignalDiag` (outer `+-3` deviation, slicer/constellation SNR once settled, rolling Golay/BPTC BER, 96-symbol scatter + reference levels, and real DMR RS/CRC failure and Golay/BPTC FEC bit counts).
+  - Render the 4FSK symbol scatter through a PSRAM `LGFX_Sprite` on `ESP_PLATFORM` (zero flicker) while keeping unproduced fields (spectrum/waterfall, calibrated dBm RSSI, directory hint, NXDN diagnostics) honestly marked unavailable. Host Release + ASan/UBSan + conformance + dashboard suites and ESP-IDF 5.5.4 build verified (not yet flashed).
 - Zero-flicker UI fix, DMR weak-signal detection, soft-ML Golay C0 vocoder, and 8 kHz voice shaping:
   - Zero-flicker UI (`dv_scanner`, `digital_voice_scan_view`, `digital_voice_dashboard`): fix single-channel `FOLLOW` hold/sampling ping-pong resetting `tune_ms_` every frame; push ScanView table rows via preallocated PSRAM `LGFX_Sprite` buffers instead of clearing cards before redrawing (`digital_voice_dashboard_preview` 5/5 PASS).
   - DMR channelizer & frontend (`dv_channelizer`, `d1_frontend`, `d1_protocol`): tighten channelizer LPF cutoff (18 kHz to 8.2 kHz, 65 taps, >23 dB at +12.5 kHz); remove hot-path `double` math in `Frontend`, add causal local-peak acquisition with 3-point parabolic timing refinement and outer `+-3` deviation tracking; add private fuzzy (1-2 bit) voice SYNC anchor (`>=4` clean CACHs, zero public events), 1-EMB-miss tolerance, and cross-checked 1-bit `VoiceGroup` ELC repair (`scan_embedded` unchanged).
