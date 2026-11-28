@@ -16,7 +16,7 @@ from gnuradio import blocks, dtv, gr, iio
 
 FREQ = float(sys.argv[1]) if len(sys.argv) > 1 else 557e6   # KVAL RF 28
 SECONDS = float(sys.argv[2]) if len(sys.argv) > 2 else 10.0
-RATE = 6250000            # upstream gr-dtv example (file_atsc_rx.grc)
+RATE = 10762238           # 1 sample per symbol, as the verified modulator uses
 TS_PATH = "/tmp/atsc_ts.bin"
 
 
@@ -43,10 +43,10 @@ def main():
     call(src, "set_bandwidth", int(RATE))
     # Manual gain keeps the measurement repeatable; AGC hides weak signals.
     call(src, "set_gain_mode", 0, "manual")
-    call(src, "set_gain", 0, 40)
+    call(src, "set_gain", 0, 60)
 
     # ATSC symbol rate is 10.762237 Msym/s, so sps follows from the chosen input\n    # rate; a 6 MHz channel needs at least ~6.5 MS/s.
-    rx = dtv.atsc_rx(RATE, 1.5)
+    rx = dtv.atsc_rx(RATE, 1.0)
     sink = blocks.file_sink(gr.sizeof_char, TS_PATH, False)
 
     tb.connect(src, rx)
