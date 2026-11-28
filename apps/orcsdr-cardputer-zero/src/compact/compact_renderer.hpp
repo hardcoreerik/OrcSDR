@@ -112,6 +112,44 @@ struct CompactRenderer {
     }
     return cx;
   }
+
+  // ---- Living mascot -------------------------------------------------------
+  // The Orc face reacts to what the receiver is doing. Landmarks were read off
+  // the 28px art: eyes are the dark slits at rows 9-11 (x 8-9 and 17-19), tusks
+  // are the white pixels at rows 18-20 and must not be touched, and the mouth
+  // sits at x 11-16 below the nose.
+  enum class Mood : unsigned char { idle, hearing, talking };
+  Mood mood = Mood::idle;
+  uint32_t anim_tick = 0;
+
+  void badge_live(int x, int y, int size) {
+    badge(x, y, size);
+    if (size != 28) return;
+    constexpr uint16_t kFace = 0x8fe0, kDark = 0x0000;
+    const int eye_x[2] = {8, 17};
+    const int eye_w[2] = {2, 3};
+
+    // Blink for ~220 ms every 3.2 s: lids are the face colour over the slits.
+    if ((anim_tick % 3200u) < 220u) {
+      for (int e = 0; e < 2; ++e)
+        for (int xx = eye_x[e]; xx < eye_x[e] + eye_w[e]; ++xx)
+          for (int yy = 9; yy <= 11; ++yy) point(x + xx, y + yy, kFace);
+      return;
+    }
+    if (mood == Mood::hearing) {  // widen: one dark row above each slit
+      for (int e = 0; e < 2; ++e)
+        for (int xx = eye_x[e]; xx < eye_x[e] + eye_w[e]; ++xx) point(x + xx, y + 8, kDark);
+    }
+    if (mood == Mood::talking) {  // jaw: mouth opens and closes
+      const int open = 1 + int((anim_tick / 90u) % 3u);
+      for (int xx = 11; xx <= 16; ++xx)
+        for (int yy = 17; yy <= 17 + open - 1; ++yy) point(x + xx, y + yy, kDark);
+    }
+  }
+
+  // Redraws only the mascot cell, so animation costs 28x28 pixels a frame rather
+  // than a whole-screen repaint.
+  void animate_badge() { badge_live(1, 1, 28); }
   void badge(int x,int y,int size){
     const auto* icon=size==28?kOrcMascot28:size==11?kOrcMascot11:kOrcMascot21;
     const int side=size==28?28:size==11?11:21;

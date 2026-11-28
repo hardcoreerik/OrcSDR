@@ -355,7 +355,19 @@ class DashboardSession {
         const size_t got=dmr_voice_.take_upsampled(dmr_pcm,4096);
         if(got)dmr_audio_.write_mono(dmr_pcm,got,100,false);
       }
-      return dmr_.render();
+      // Mascot: talking while decoded voice is waiting, wide-eyed when the
+      // channel is active, blinking when it is idle.
+      {
+        static const auto start=std::chrono::steady_clock::now();
+        const auto ms=std::chrono::duration_cast<std::chrono::milliseconds>(
+            std::chrono::steady_clock::now()-start).count();
+        dmr_.frame.anim_tick=uint32_t(ms);
+        dmr_.frame.mood=dmr_voice_.pending()?CompactRenderer::Mood::talking
+            :(dmr_.level>0.02?CompactRenderer::Mood::hearing:CompactRenderer::Mood::idle);
+      }
+      dmr_.render();
+      dmr_.frame.animate_badge();
+      return dmr_.frame.pixels;
     }
     if(mode_==12){
       if(dead_air_storage_)dead_air_.storage_status(dead_air_storage_->saved(),dead_air_storage_->dropped(),dead_air_storage_->failed());
