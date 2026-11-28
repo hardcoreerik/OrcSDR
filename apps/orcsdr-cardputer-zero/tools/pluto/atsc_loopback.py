@@ -1,10 +1,9 @@
 #!/usr/bin/env python3
-"""ATSC loopback: gr-dtv's transmitter chain feeding gr-dtv's receiver chain.
+"""ATSC loopback: gr-dtv's transmitter feeding gr-dtv's receiver.
 
-Exists to separate two questions that "0 bytes of transport stream" cannot
-distinguish: is the decoder wrong, or is there simply no signal? Both ends are the
-same code base, so a clean recovery here proves the receive chain decodes, and any
-later failure on air is then genuinely an antenna or signal problem.
+Configuration mirrors upstream's own example (gr-dtv/examples/file_atsc_rx.grc):
+input 6.25 MS/s with sps 1.5. Earlier attempts here used 6.5 MS/s with sps 1.0 and
+2.0, which are not configurations the reference uses, and none of them locked.
 
 Run: atsc_loopback.py [packets]
 """
@@ -12,23 +11,25 @@ import os
 import sys
 
 from gnuradio import blocks, dtv, gr
+from gnuradio import filter as grfilter
 
-SYMBOL_RATE = 10762237.0       # ATSC 1.0 symbol rate; sps = 1 at this rate
+SYMBOL_RATE = 4.5e6 / 286.0 * 684.0      # 10.762237 MHz, ATSC 1.0
+INPUT_RATE = 6.25e6                      # upstream example's rate
+RX_SPS = 1.5                             # upstream example's sps
 TX_TS = "/tmp/atsc_tx_in.ts"
 RX_TS = "/tmp/atsc_rx_out.ts"
 PACKETS = int(sys.argv[1]) if len(sys.argv) > 1 else 2000
-ITEM = 256                     # gr-dtv passes MPEG packets as 256-byte items
+ITEM = 256
 
 
 def make_transport_stream(path, packets):
-    """MPEG-TS in 256-byte items: a 188-byte packet plus padding."""
     with open(path, "wb") as handle:
         for n in range(packets):
             packet = bytearray(ITEM)
             packet[0] = 0x47
-            packet[1] = 0x20 if n % 2 else 0x00      # PID 0x0020
+            packet[1] = 0x20 if n % 2 else 0x00
             packet[2] = n & 0xFF
-            packet[3] = 0x10                          # payload only
+            packet[3] = 0x10
             for i in range(4, 188):
                 packet[i] = (n + i) & 0xFF
             handle.write(packet)
@@ -42,32 +43,28 @@ def main():
     tb = gr.top_block("atsc_loopback")
     src = blocks.file_source(ITEM, TX_TS, False)
 
-    # Standard ATSC order: randomise, RS encode, then interleave *before* trellis
-    # coding. Trellis-then-interleave is a plausible-looking mistake.
+    # ATSC order: randomise, RS encode, interleave, then trellis.
     randomizer = dtv.atsc_randomizer()
     rs_encoder = dtv.atsc_rs_encoder()
     interleaver = dtv.atsc_interleaver()
     trellis = dtv.atsc_trellis_encoder()
     fs_mux = dtv.atsc_field_sync_mux()
-
-    # field_sync_mux emits fixed vectors of complex samples; atsc_rx consumes a
-    # plain sample stream, so unpack them. 1024 bytes = 128 complex64.
     unpack = blocks.vector_to_stream(gr.sizeof_gr_complex, 128)
 
-    rx = dtv.atsc_rx(SYMBOL_RATE, 1.0)
-    # atsc_rx emits a byte stream (itemsize 1), not whole packets.
-    sink = blocks.file_sink(1, RX_TS, False)
-
-    # 8-VSB carries a pilot 310 kHz above the lower band edge, and gr-dtv's
-    # transmit chain does not insert it. Without a pilot the receiver's carrier
-    # recovery has nothing to lock to, which is a plausible cause of a silent
-    # loopback. A DC offset in the complex baseband is the simplest stand-in.
+    # Resample the symbol-rate stream to the 6.25 MS/s the reference expects.
+    # 625/1076 approximates 6.25e6 / 10.762237e6.
+    resample = grfilter.rational_resampler_ccf(625, 1076)
     pilot = blocks.add_const_cc(0.2)
 
-    tb.connect(src, randomizer, rs_encoder, interleaver, trellis, fs_mux)
-    tb.connect(fs_mux, unpack, pilot, rx, sink)
+    rx = dtv.atsc_rx(INPUT_RATE, RX_SPS)
+    sink = blocks.file_sink(1, RX_TS, False)
 
-    print("loopback: %d packets, %.0f sym/s, sps 1.0" % (PACKETS, SYMBOL_RATE), flush=True)
+    tb.connect(src, randomizer, rs_encoder, interleaver, trellis, fs_mux,
+               unpack, resample, pilot)
+    tb.connect(pilot, rx, sink)
+
+    print("loopback: %d packets, %.0f sample/s, sps %.1f" % (PACKETS, INPUT_RATE, RX_SPS),
+          flush=True)
     tb.run()
     print("done", flush=True)
 
